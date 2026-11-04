@@ -1,0 +1,23 @@
+# Comment `@claude` on a PR to get a Claude review. Logic and default prompt
+# live in https://harbor.solarnexus.space/alex/claude-ci; a repo-specific
+# prompt can go in .forgejo/prompts/pr-review.md on the default branch.
+
+name: claude
+
+on:
+  issue_comment:
+    types: [created]
+
+concurrency:
+  group: claude-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # PR comments only, from the operator only: each run spends the subscription.
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '@claude') &&
+      github.event.comment.user.login == 'alex'
+    uses: alex/claude-ci/.forgejo/workflows/pr-review.yml@main
+    secrets: inherit
