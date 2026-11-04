@@ -1,0 +1,13 @@
+[package]
+name = "taskmaster-core"
+description = "Domain model, storage and commands for task-master. Every front end is an adapter over this crate."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "taskmaster_core"
+
+[lints]
+workspace = true

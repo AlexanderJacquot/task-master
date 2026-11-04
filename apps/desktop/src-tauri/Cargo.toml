@@ -1,0 +1,25 @@
+[package]
+name = "taskmaster-desktop"
+description = "task-master desktop shell: thin Tauri adapter over taskmaster-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "taskmaster_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5", features = [] }
+
+[dependencies]
+taskmaster-core.workspace = true
+tauri = { version = "2.12", features = [] }
+# Release candidates: pinned exactly (plan, section 10 risks).
+specta = "=2.0.0-rc.26"
+tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
+specta-typescript = "=0.0.13"
+
+[lints]
+workspace = true
