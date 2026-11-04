@@ -4,7 +4,8 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M0 Scaffold**, branch `m0-scaffold`: done, pending review and merge.
+**M1 Data core**, branch `m1-data-core` (stacked on `m0-scaffold`): done, pending review.
+Next up: **M2 List and detail**.
 
 ## Done
 
@@ -25,7 +26,27 @@ Running log for task-master. Read at the start of every session; update at the e
 
 Verified locally on Linux: all checks pass; release build produces a 2.9 MiB `.deb`.
 
-### Deviations from the plan
+### M1 Data core (2026-11-04)
+
+- Schema `0001_init.sql` (plan section 4) with indexes, FTS5 triggers and the six default
+  statuses (fixed ids). Migrations run at startup; an existing DB is copied to `backups/` first.
+- `Store` API: `open`, `execute`/`execute_all` (atomic batch), `undo`, `redo`, `snapshot`,
+  `search`, `subscribe`. Modules: `model`, `db`, `ops`, `commands`, `history`, `query`,
+  `events`, `rank`, `clock`.
+- 16 commands: create/update/move/set-parent/delete task, tag/untag, and create/update/delete
+  for projects, epics and tags. Every write appends `ops` (patch + inverse, batch id, HLC).
+- Fractional ranks ported from `fractional-indexing`; shared vectors in
+  `crates/core/test-vectors/rank.json`.
+- Tauri commands `snapshot`, `execute`, `undo`, `redo`, `search` (+ `ping`) and a
+  `storeChanged` event; DB at `<app data>/task-master.sqlite`.
+- 36 Rust tests: every command with undo and redo back to the exact snapshot, validation
+  rules, atomic batches, events, search, the ops log, migration of a fresh and an existing
+  file, and the UI's JSON wire format.
+- Design choices and deviations: `docs/adr/002-data-core.md`.
+
+Verified locally: all checks pass; the app creates and migrates its DB on first launch.
+
+### M0 deviations from the plan
 
 - CI is Forgejo, Linux only; the 3-OS matrix moves to M6 (ADR 001).
 - Biome pinned to 2.6.4: pnpm 12's minimum release age rejected 2.6.5 (released the same day).
@@ -40,31 +61,30 @@ Verified locally on Linux: all checks pass; release build produces a 2.9 MiB `.d
 - Window opens on **Windows** and **macOS** (M0 "done when" asks for Windows). No CI for them yet.
 - First run of the Forgejo workflow (runner image, apt access, cache action).
 
-## Next: M1 Data core
+## Next: M2 List and detail
 
-Branch `m1-data-core`. Core features land with tests (in-memory SQLite) before any UI.
+Branch `m2-list-detail`. Dependencies to propose first: `zustand`, `@tanstack/react-virtual`,
+`tailwindcss` + Radix primitives, `fractional-indexing`, a router (plan does not name one:
+React Router or TanStack Router), a markdown editor (CodeMirror 6 or Milkdown); dev:
+`@testing-library/react` + `jsdom` for component tests.
 
-New dependencies to propose first: `rusqlite` (bundled, FTS5), `rusqlite_migration`, `uuid`
-(v7), `serde` + `serde_json`, `thiserror`; dev: `insta` (parser, later).
-
-1. `model`: Task, Project, Epic, Tag, Status, View, Priority, StatusCategory; specta-exported.
-2. `db`: connection setup (WAL, foreign keys), embedded migrations, `0001_init.sql` from
-   plan section 4 with the listed indexes; copy DB to `backups/` before migrating.
-3. Seed default statuses: Backlog, To do, In progress, Waiting, Done, Cancelled (hidden).
-4. IDs (UUIDv7), timestamps (Unix ms), HLC (wall time + counter + device id), device id in
-   `settings`.
-5. Fractional ranks: Rust implementation plus shared test vectors for the TS side.
-6. `Command` enum and `execute()`: validate, write rows, append `ops` (patch + inverse,
-   `batch_id`) in one transaction, return changed entities. Start with CreateTask,
-   UpdateTask, MoveTask, DeleteTask (soft), SetParent, TagTask/UntagTask, CreateProject,
-   UpdateProject, CreateEpic, UpdateEpic, CreateTag.
-7. `history`: undo/redo by applying the inverse of the last batch as a new batch.
-8. `query::snapshot()`; FTS5 table kept in sync (triggers) and `search()`.
-9. `events`: `Changed { entities, op_seq }` broadcast after commit.
-10. Tauri commands `snapshot`, `execute`, `undo`, `redo`; regenerate bindings.
-11. Tests: every command, undo of each, migration on a fresh and an existing DB.
+1. Store: normalized maps hydrated from `snapshot`; selectors (children by parent, tasks by
+   status, Inbox, Today); apply `Changes` and `storeChanged` events.
+2. Optimistic writes: client UUIDv7 ids, apply locally, call `execute`, reconcile with the
+   returned entities, roll back on error. Ctrl+Z / Ctrl+Shift+Z call `undo`/`redo`.
+3. TS ranks via `fractional-indexing`, tested against `rank.json`.
+4. App shell: three panes; sidebar with Inbox, Today, All tasks, projects, epics, tags.
+5. Routing: `/inbox`, `/today`, `/all`, `/project/:id`, `/epic/:id`; detail panel on `?task=<id>`.
+6. List view: subtask tree (two levels shown), group by status; inline title/status/priority/due.
+7. Task detail panel: all fields, markdown description, subtask checklist, activity (needs a
+   core `history(task_id)` query over `ops`).
+8. Create/edit/delete end to end; state survives restart. Start dogfooding.
 
 ## Later
 
+- Core: writer thread + reader pool if the M6 perf test needs it (ADR 002).
+- Core: rank rebalancing when a key exceeds 32 chars (M3).
+- Core: status commands (M6), view commands and specs (M4), undo across restarts.
+- Bump `rusqlite` to 0.41 once `rusqlite_migration` supports it.
 - CSP in `tauri.conf.json` is a strict baseline; revisit when adding the markdown editor.
 - Replace the placeholder icon.
