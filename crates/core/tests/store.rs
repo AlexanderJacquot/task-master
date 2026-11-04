@@ -870,3 +870,42 @@ fn commands_parse_from_the_ui_json_shape() {
     assert_eq!(snapshot["tasks"][0]["priority"], "urgent");
     assert_eq!(snapshot["statuses"][2]["category"], "in_progress");
 }
+
+#[test]
+fn task_activity_lists_meaningful_changes_newest_first() {
+    let mut s = store();
+    let tag = add_tag(&mut s, "history");
+    let t = add_task(&mut s, new_task("Track me"));
+    s.execute(Command::UpdateTask {
+        id: t.id.clone(),
+        changes: vec![TaskChange::Title("Tracked".into())],
+    })
+    .unwrap();
+    s.execute(Command::TagTask {
+        task_id: t.id.clone(),
+        tag_id: tag.id.clone(),
+    })
+    .unwrap();
+
+    let activity = s.task_activity(&t.id, 50).unwrap();
+    let kinds: Vec<&str> = activity.iter().map(|a| a.kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        ["link", "update", "create"],
+        "updated_at-only ops are skipped"
+    );
+    let title = &activity[1].fields;
+    assert_eq!(title.len(), 1);
+    assert_eq!(
+        (
+            title[0].field.as_str(),
+            title[0].before.as_str(),
+            title[0].after.as_str()
+        ),
+        ("title", "\"Track me\"", "\"Tracked\"")
+    );
+    assert_eq!(activity[0].fields[0].after, format!("\"{}\"", tag.id));
+    assert!(activity[2].fields.is_empty(), "create lists no field diffs");
+    assert!(activity[0].at > 0);
+    assert_eq!(s.task_activity(&t.id, 1).unwrap().len(), 1);
+}

@@ -14,6 +14,8 @@ export const commands = {
 	redo: () => typedError<Changes_Serialize | null, CommandError>(__TAURI_INVOKE("redo")),
 	/**  Live task ids matching every word of `text`, best first. */
 	search: (text: string, limit: number) => typedError<string[], CommandError>(__TAURI_INVOKE("search", { text, limit })),
+	/**  A task's change history, newest first (read from the ops log). */
+	taskActivity: (taskId: string, limit: number) => typedError<Activity_Serialize[], CommandError>(__TAURI_INVOKE("task_activity", { taskId, limit })),
 };
 
 /** Events */
@@ -22,6 +24,31 @@ export const events = {
 };
 
 /* Types */
+/**  One recorded change to a task, for its activity feed. */
+export type Activity = Activity_Serialize | Activity_Deserialize;
+
+/**  One recorded change to a task, for its activity feed. */
+export type Activity_Deserialize = {
+	seq: number,
+	/**  When it happened (wall-clock part of the HLC), Unix ms. */
+	at: number,
+	batch_id?: string | null,
+	/**  `create`, `update`, `delete`, `restore`, `link` (tag added) or `unlink` (tag removed). */
+	kind: string,
+	fields: FieldChange[],
+};
+
+/**  One recorded change to a task, for its activity feed. */
+export type Activity_Serialize = {
+	seq: number,
+	/**  When it happened (wall-clock part of the HLC), Unix ms. */
+	at: number,
+	batch_id: string | null,
+	/**  `create`, `update`, `delete`, `restore`, `link` (tag added) or `unlink` (tag removed). */
+	kind: string,
+	fields: FieldChange[],
+};
+
 /**  Sent after a batch commits. */
 export type Changed = {
 	batch_id: string,
@@ -157,6 +184,13 @@ export type Epic_Serialize = {
 	created_at: number,
 	updated_at: number,
 	deleted_at: number | null,
+};
+
+/**  A field's value before and after, JSON-encoded (`null` for none). */
+export type FieldChange = {
+	field: string,
+	before: string,
+	after: string,
 };
 
 export type NewEpic = NewEpic_Serialize | NewEpic_Deserialize;

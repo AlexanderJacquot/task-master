@@ -28,6 +28,7 @@ pub use model::{
     Timestamp, View,
 };
 pub use ops::EntityKind;
+pub use query::{Activity, FieldChange};
 pub use store::{Changes, Store};
 
 /// Crate version, reported to adapters for diagnostics.

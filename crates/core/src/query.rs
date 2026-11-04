@@ -255,3 +255,88 @@ pub(crate) fn search(conn: &Connection, text: &str, limit: u32) -> Result<Vec<Id
         |r| r.get(0),
     )
 }
+
+/// One recorded change to a task, for its activity feed.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct Activity {
+    pub seq: i64,
+    /// When it happened (wall-clock part of the HLC), Unix ms.
+    pub at: crate::model::Timestamp,
+    pub batch_id: Option<Id>,
+    /// `create`, `update`, `delete`, `restore`, `link` (tag added) or `unlink` (tag removed).
+    pub kind: String,
+    pub fields: Vec<FieldChange>,
+}
+
+/// A field's value before and after, JSON-encoded (`null` for none).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct FieldChange {
+    pub field: String,
+    pub before: String,
+    pub after: String,
+}
+
+/// A task's history, newest first. Bookkeeping-only updates (`updated_at`) are skipped.
+pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Result<Vec<Activity>> {
+    type Row = (i64, String, Option<String>, String, String, String, String);
+    let rows: Vec<Row> = query(
+        conn,
+        "SELECT seq, hlc, batch_id, entity, kind, patch, inverse FROM ops
+         WHERE entity IN ('task', 'task_tag') AND entity_id = ?1
+         ORDER BY seq DESC LIMIT ?2",
+        &[&task_id, &(limit * 2)],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+            ))
+        },
+    )?;
+    let mut out = Vec::new();
+    for (seq, hlc, batch_id, entity, kind, patch, inverse) in rows {
+        let patch: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&patch)?;
+        let inverse: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&inverse)?;
+        let fields: Vec<FieldChange> = patch
+            .iter()
+            .filter(|(k, _)| k.as_str() != "updated_at")
+            .filter(|_| kind != "create" || entity == "task_tag")
+            .map(|(k, after)| FieldChange {
+                field: k.clone(),
+                before: if entity == "task_tag" {
+                    "null".to_owned()
+                } else {
+                    inverse
+                        .get(k)
+                        .unwrap_or(&serde_json::Value::Null)
+                        .to_string()
+                },
+                after: after.to_string(),
+            })
+            .collect();
+        if fields.is_empty() && kind == "update" {
+            continue;
+        }
+        out.push(Activity {
+            seq,
+            at: hlc
+                .split('-')
+                .next()
+                .and_then(|w| w.parse().ok())
+                .unwrap_or(0),
+            batch_id,
+            kind,
+            fields,
+        });
+        if out.len() == limit as usize {
+            break;
+        }
+    }
+    Ok(out)
+}

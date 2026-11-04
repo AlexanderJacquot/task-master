@@ -4,8 +4,8 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M1 Data core**, branch `m1-data-core` (stacked on `m0-scaffold`): done, pending review.
-Next up: **M2 List and detail**.
+**M2 List and detail**, branch `m2-list-detail` (stacked on `m1-data-core`): done, pending
+review and a hands-on check. Next up: **M3 Kanban**.
 
 ## Done
 
@@ -25,6 +25,25 @@ Next up: **M2 List and detail**.
   `pnpm --filter desktop tauri icon src-tauri/app-icon.png`).
 
 Verified locally on Linux: all checks pass; release build produces a 2.9 MiB `.deb`.
+
+### M2 List and detail (2026-11-04)
+
+- Store (`src/store`): normalized Zustand store over an injected `Api`, hydrated from
+  `snapshot`; serialized optimistic writes with per-entity rollback; own-vs-foreign change
+  event matching; undo/redo.
+- Actions: create (with client UUIDv7 + rank), update, toggle done, delete with subtasks,
+  set parent/promote, reorder subtasks, tag/untag, create tag on a task, create project/epic.
+- Views (`src/lib/views.ts`): Inbox, Today (picked today, or due today/overdue and open),
+  All, project (areas include their projects), epic; default sort (today, overdue,
+  priority, due, rank); status groups with a two-level subtask tree.
+- UI: sidebar (counts, projects tree with inline add, epics with progress, tags), list view
+  (virtualized, inline title/status/priority/due, collapsible groups and subtasks, capture
+  input), detail panel (all fields, CodeMirror markdown description, tag picker,
+  subtask checklist, activity feed from `ops`), error toast, shortcuts.
+- Core: `task_activity` query + Tauri command.
+- Tests: 66 Vitest (rank vectors shared with Rust, views, store, API wrapper, full-app UI
+  in jsdom) and 37 Rust. Release `.deb` builds (4.7 MiB) and starts.
+- Decisions: `docs/adr/003-frontend-state.md`.
 
 ### M1 Data core (2026-11-04)
 
@@ -58,29 +77,32 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Not yet verified
 
+- M2 UI by hand in the real window (`pnpm dev`): layout, dark mode, CodeMirror, popover.
+
 - Window opens on **Windows** and **macOS** (M0 "done when" asks for Windows). No CI for them yet.
 - First run of the Forgejo workflow (runner image, apt access, cache action).
 
-## Next: M2 List and detail
+## Next: M3 Kanban
 
-Branch `m2-list-detail`. Dependencies to propose first: `zustand`, `@tanstack/react-virtual`,
-`tailwindcss` + Radix primitives, `fractional-indexing`, a router (plan does not name one:
-React Router or TanStack Router), a markdown editor (CodeMirror 6 or Milkdown); dev:
-`@testing-library/react` + `jsdom` for component tests.
+Branch `m3-kanban`. New dependency to propose: `@dnd-kit/core` + `@dnd-kit/sortable` (named
+in the plan).
 
-1. Store: normalized maps hydrated from `snapshot`; selectors (children by parent, tasks by
-   status, Inbox, Today); apply `Changes` and `storeChanged` events.
-2. Optimistic writes: client UUIDv7 ids, apply locally, call `execute`, reconcile with the
-   returned entities, roll back on error. Ctrl+Z / Ctrl+Shift+Z call `undo`/`redo`.
-3. TS ranks via `fractional-indexing`, tested against `rank.json`.
-4. App shell: three panes; sidebar with Inbox, Today, All tasks, projects, epics, tags.
-5. Routing: `/inbox`, `/today`, `/all`, `/project/:id`, `/epic/:id`; detail panel on `?task=<id>`.
-6. List view: subtask tree (two levels shown), group by status; inline title/status/priority/due.
-7. Task detail panel: all fields, markdown description, subtask checklist, activity (needs a
-   core `history(task_id)` query over `ops`).
-8. Create/edit/delete end to end; state survives restart. Start dogfooding.
+1. Board view: columns = statuses, cards (title, project color, epic, tags, priority, due,
+   subtask progress); same view keys and filters as the list (`lib/views.ts`).
+2. Drag and drop within and between columns: one `move_task` with a rank between the drop
+   neighbours; undo reverts a drag.
+3. Keyboard moves `Alt+←/→`; list/board toggle per view.
+4. Swimlanes by project, epic or priority; WIP limit warning in column headers.
+5. Subtasks hidden as cards by default, with a toggle.
+6. Rank rebalancing in the core when a key exceeds 32 chars (one transaction).
+7. Test: 50 consecutive drags never reorder wrongly (store-level and core-level).
+8. Check scrolling performance on Linux (WebKitGTK) with a seeded DB.
 
 ## Later
+
+- Markdown preview: needs a renderer dependency (`marked` + `DOMPurify` or `react-markdown`).
+- List view multi-select and bulk actions (plan section 6), via one `execute` batch.
+- Tag views (click a tag in the sidebar), project rename/archive/delete UI, epic edit UI (M4).
 
 - Core: writer thread + reader pool if the M6 perf test needs it (ADR 002).
 - Core: rank rebalancing when a key exceeds 32 chars (M3).

@@ -1,0 +1,21 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-sm text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Native date inputs: keep the picker icon legible in dark mode. */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  @apply dark:invert;
+}

@@ -9,14 +9,18 @@ The full plan is in docs/plan.md. Architecture decisions are in docs/adr/.
   an `ops` entry (patch + inverse) in ONE transaction. Never write tables directly.
 - IDs are UUIDv7. Ordering uses fractional rank strings. Deletes are soft.
 - Timestamps: Unix ms UTC. Calendar dates: ISO YYYY-MM-DD strings.
-- IPC surface stays small: snapshot, execute, undo, redo, search, export, import.
+- IPC surface stays small: snapshot, execute, undo, redo, search, task_activity, export, import.
 - apps/desktop/src/bindings.ts is generated. Never edit it by hand.
 
 ## Frontend
 
-- Normalized store; views are pure functions of store + view spec.
-- Writes are optimistic and reconciled with the entities returned by execute.
+- Normalized store; views are pure functions of store + view spec (`src/lib/views.ts`).
+- Writes are optimistic and reconciled with the entities returned by execute. New writes go
+  in `src/store/actions.ts`: build the command and the optimistic entity together; send
+  client-generated ids and ranks.
 - Virtualize any list that can exceed 100 rows.
+- Tests: plain functions (not `vi.fn`) for mocks that return rejected promises; component
+  tests opt into jsdom with `// @vitest-environment jsdom` (stubs in `src/test/setup.ts`).
 
 ## Workflow
 

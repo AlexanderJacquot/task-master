@@ -4,7 +4,7 @@
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use taskmaster_core::{Changed, Changes, Command, Id, Snapshot, Store};
+use taskmaster_core::{Activity, Changed, Changes, Command, Id, Snapshot, Store};
 use tauri::{Manager, State};
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 
@@ -89,11 +89,28 @@ fn search(state: State<'_, AppState>, text: String, limit: u32) -> CommandResult
     with_store(&state, |s| s.search(&text, limit))
 }
 
+/// A task's change history, newest first (read from the ops log).
+#[tauri::command]
+#[specta::specta]
+fn task_activity(
+    state: State<'_, AppState>,
+    task_id: Id,
+    limit: u32,
+) -> CommandResult<Vec<Activity>> {
+    with_store(&state, |s| s.task_activity(&task_id, limit))
+}
+
 /// Every IPC command and event the UI can use. New ones are registered here only.
 fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
         .commands(collect_commands![
-            ping, snapshot, execute, undo, redo, search
+            ping,
+            snapshot,
+            execute,
+            undo,
+            redo,
+            search,
+            task_activity
         ])
         .events(collect_events![StoreChanged])
         // Timestamps (Unix ms) and op sequence numbers stay far below 2^53.

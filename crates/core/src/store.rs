@@ -128,6 +128,11 @@ impl Store {
         query::search(&self.conn, text, limit)
     }
 
+    /// A task's change history, newest first.
+    pub fn task_activity(&self, task_id: &str, limit: u32) -> Result<Vec<query::Activity>> {
+        query::task_activity(&self.conn, task_id, limit)
+    }
+
     /// Receives a [`Changed`] event after every committed batch.
     pub fn subscribe(&mut self) -> Receiver<Changed> {
         self.events.subscribe()

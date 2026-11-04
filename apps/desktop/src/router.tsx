@@ -1,0 +1,109 @@
+import {
+  createHashHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  type RouterHistory,
+  redirect,
+} from "@tanstack/react-router";
+import { ListView } from "./features/list/ListView";
+import { Layout } from "./features/shell/Layout";
+import { isoDate } from "./lib/dates";
+import { useStoreState } from "./store/context";
+
+export type AppSearch = { task?: string };
+
+const rootRoute = createRootRoute({
+  component: Layout,
+  // The detail panel is driven by ?task=<id> on every view.
+  validateSearch: (search: Record<string, unknown>): AppSearch =>
+    typeof search.task === "string" ? { task: search.task } : {},
+});
+
+const indexRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: "/inbox" });
+  },
+});
+
+const inboxRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "inbox",
+  component: () => <ListView view={{ kind: "inbox" }} title="Inbox" defaults={{}} />,
+});
+
+const todayRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "today",
+  component: () => (
+    <ListView view={{ kind: "today" }} title="Today" defaults={{ today_on: isoDate() }} />
+  ),
+});
+
+const allRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "all",
+  component: () => <ListView view={{ kind: "all" }} title="All tasks" defaults={{}} />,
+});
+
+const projectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "project/$projectId",
+  component: function ProjectView() {
+    const { projectId } = projectRoute.useParams();
+    const project = useStoreState((s) => s.projects[projectId]);
+    if (!project) return <Missing what="Project" />;
+    return (
+      <ListView
+        key={projectId}
+        view={{ kind: "project", id: projectId }}
+        title={project.name}
+        defaults={{ project_id: projectId }}
+      />
+    );
+  },
+});
+
+const epicRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "epic/$epicId",
+  component: function EpicView() {
+    const { epicId } = epicRoute.useParams();
+    const epic = useStoreState((s) => s.epics[epicId]);
+    if (!epic) return <Missing what="Epic" />;
+    return (
+      <ListView
+        key={epicId}
+        view={{ kind: "epic", id: epicId }}
+        title={epic.name}
+        defaults={{ epic_id: epicId }}
+      />
+    );
+  },
+});
+
+function Missing({ what }: { what: string }) {
+  return <p className="p-8 text-neutral-500">{what} not found. It may have been deleted.</p>;
+}
+
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  inboxRoute,
+  todayRoute,
+  allRoute,
+  projectRoute,
+  epicRoute,
+]);
+
+export function createAppRouter(history?: RouterHistory) {
+  // Hash history: the Tauri webview serves one file, so reloads must not hit the server path.
+  return createRouter({ routeTree, history: history ?? createHashHistory() });
+}
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: ReturnType<typeof createAppRouter>;
+  }
+}
