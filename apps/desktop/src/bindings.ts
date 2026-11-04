@@ -21,6 +21,24 @@ export const commands = {
 	 *  `execute`). `today` is the user's local date, for relative due dates.
 	 */
 	parseCapture: (text: string, today: string) => typedError<Capture_Serialize, CommandError>(__TAURI_INVOKE("parse_capture", { text, today })),
+	/**  Where the data lives and the remote backup settings (without the secret). */
+	getConfig: () => typedError<ConfigView_Serialize, CommandError>(__TAURI_INVOKE("get_config")),
+	/**  Saves the remote backup settings. An empty secret keeps the stored one. */
+	setRemoteBackup: (input: RemoteInput) => typedError<ConfigView_Serialize, CommandError>(__TAURI_INVOKE("set_remote_backup", { input })),
+	/**  Writes a small probe object with these settings, without saving them. */
+	testRemoteBackup: (input: RemoteInput) => typedError<null, CommandError>(__TAURI_INVOKE("test_remote_backup", { input })),
+	backupStatus: () => typedError<BackupStatus_Serialize, CommandError>(__TAURI_INVOKE("backup_status")),
+	/**  Runs a backup cycle now (today's backup if missing) and uploads the newest backup. */
+	backupNow: () => typedError<BackupStatus_Serialize, CommandError>(__TAURI_INVOKE("backup_now")),
+	/**  Writes every user table to a JSON file. */
+	exportTo: (path: string) => typedError<null, CommandError>(__TAURI_INVOKE("export_to", { path })),
+	/**  Replaces all data with an export file, after saving a backup of the current data. */
+	importFrom: (path: string) => typedError<ImportSummary, CommandError>(__TAURI_INVOKE("import_from", { path })),
+	/**
+	 *  Moves the data to `path` (or back to the OS default when `None`) and restarts. An
+	 *  existing database there is used as is; otherwise the current one is copied over.
+	 */
+	setDataDir: (path: string | null) => typedError<null, CommandError>(__TAURI_INVOKE("set_data_dir", { path })),
 };
 
 /** Events */
@@ -53,6 +71,37 @@ export type Activity_Serialize = {
 	/**  `create`, `update`, `delete`, `restore`, `link` (tag added) or `unlink` (tag removed). */
 	kind: string,
 	fields: FieldChange[],
+};
+
+/**  Shown in settings. */
+export type BackupStatus = BackupStatus_Serialize | BackupStatus_Deserialize;
+
+/**  Shown in settings. */
+export type BackupStatus_Deserialize = {
+	/**  Folder holding the local backups. */
+	dir: string,
+	/**  Newest local backup file name, and when it was written (Unix ms). */
+	last_local?: string | null,
+	last_local_at?: number | null,
+	/**  Last successful upload: object key and time. */
+	last_remote?: string | null,
+	last_remote_at?: number | null,
+	/**  Why the last upload attempt failed (cleared on success). */
+	remote_error?: string | null,
+};
+
+/**  Shown in settings. */
+export type BackupStatus_Serialize = {
+	/**  Folder holding the local backups. */
+	dir: string,
+	/**  Newest local backup file name, and when it was written (Unix ms). */
+	last_local: string | null,
+	last_local_at: number | null,
+	/**  Last successful upload: object key and time. */
+	last_remote: string | null,
+	last_remote_at: number | null,
+	/**  Why the last upload attempt failed (cleared on success). */
+	remote_error: string | null,
 };
 
 /**
@@ -119,6 +168,7 @@ export type Changes_Deserialize = {
 	epics: Epic_Deserialize[],
 	tags: Tag_Deserialize[],
 	views: View_Deserialize[],
+	statuses: Status_Deserialize[],
 };
 
 /**
@@ -134,6 +184,7 @@ export type Changes_Serialize = {
 	epics: Epic_Serialize[],
 	tags: Tag_Serialize[],
 	views: View_Serialize[],
+	statuses: Status_Serialize[],
 };
 
 /**  A user action. Several commands sent together form one undoable batch. */
@@ -162,7 +213,11 @@ export type Command_Deserialize = { type: "create_task"; task: NewTask_Deseriali
 /**  Detaches its tasks, then deletes the epic. */
 { type: "delete_epic"; id: string } | { type: "create_tag"; tag: NewTag_Deserialize } | { type: "update_tag"; id: string; changes: TagChange_Deserialize[] } | 
 /**  Removes the tag from every task, then deletes it. */
-{ type: "delete_tag"; id: string } | { type: "create_view"; view: NewView_Deserialize } | { type: "update_view"; id: string; changes: ViewChange_Deserialize[] } | { type: "delete_view"; id: string };
+{ type: "delete_tag"; id: string } | 
+/**  A workflow column (settings). */
+{ type: "create_status"; status: NewStatus_Deserialize } | { type: "update_status"; id: string; changes: StatusChange_Deserialize[] } | 
+/**  Refused while tasks are in it, or when it is the last `todo` or `done` column. */
+{ type: "delete_status"; id: string } | { type: "create_view"; view: NewView_Deserialize } | { type: "update_view"; id: string; changes: ViewChange_Deserialize[] } | { type: "delete_view"; id: string };
 
 /**  A user action. Several commands sent together form one undoable batch. */
 export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize } | { type: "update_task"; id: string; changes: TaskChange_Serialize[] } | 
@@ -180,7 +235,32 @@ export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize }
 /**  Detaches its tasks, then deletes the epic. */
 { type: "delete_epic"; id: string } | { type: "create_tag"; tag: NewTag_Serialize } | { type: "update_tag"; id: string; changes: TagChange_Serialize[] } | 
 /**  Removes the tag from every task, then deletes it. */
-{ type: "delete_tag"; id: string } | { type: "create_view"; view: NewView_Serialize } | { type: "update_view"; id: string; changes: ViewChange_Serialize[] } | { type: "delete_view"; id: string };
+{ type: "delete_tag"; id: string } | 
+/**  A workflow column (settings). */
+{ type: "create_status"; status: NewStatus_Serialize } | { type: "update_status"; id: string; changes: StatusChange_Serialize[] } | 
+/**  Refused while tasks are in it, or when it is the last `todo` or `done` column. */
+{ type: "delete_status"; id: string } | { type: "create_view"; view: NewView_Serialize } | { type: "update_view"; id: string; changes: ViewChange_Serialize[] } | { type: "delete_view"; id: string };
+
+/**  What the settings screen shows: never the secret itself. */
+export type ConfigView = ConfigView_Serialize | ConfigView_Deserialize;
+
+/**  What the settings screen shows: never the secret itself. */
+export type ConfigView_Deserialize = {
+	/**  The folder in use now. */
+	data_dir: string,
+	/**  Whether it was chosen in settings (vs the OS default). */
+	custom_data_dir: boolean,
+	remote?: RemoteView | null,
+};
+
+/**  What the settings screen shows: never the secret itself. */
+export type ConfigView_Serialize = {
+	/**  The folder in use now. */
+	data_dir: string,
+	/**  Whether it was chosen in settings (vs the OS default). */
+	custom_data_dir: boolean,
+	remote: RemoteView | null,
+};
 
 export type DueFilter = 
 /**  Before today and still open. */
@@ -193,7 +273,7 @@ export type DueFilter =
 "none";
 
 /**  Kinds of entity front ends get back in [`crate::Changes`] and events. */
-export type EntityKind = "task" | "project" | "epic" | "tag" | "view";
+export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status";
 
 export type EntityRef = {
 	kind: EntityKind,
@@ -250,6 +330,15 @@ export type FieldChange = {
 
 /**  List grouping (the board always has status columns). */
 export type GroupBy = "status" | "project" | "epic" | "priority" | "due";
+
+/**  What an import replaced, for the UI to report. */
+export type ImportSummary = {
+	tasks: number,
+	projects: number,
+	epics: number,
+	tags: number,
+	views: number,
+};
 
 export type Layout = "list" | "board";
 
@@ -316,6 +405,26 @@ export type NewProject_Serialize = {
 	color: string | null,
 	icon: string | null,
 	rank: string | null,
+};
+
+export type NewStatus = NewStatus_Serialize | NewStatus_Deserialize;
+
+export type NewStatus_Deserialize = {
+	id?: string | null,
+	name: string,
+	category: StatusCategory,
+	color?: string | null,
+	rank?: string | null,
+	wip_limit?: number | null,
+};
+
+export type NewStatus_Serialize = {
+	id: string | null,
+	name: string,
+	category: StatusCategory,
+	color: string | null,
+	rank: string | null,
+	wip_limit: number | null,
 };
 
 export type NewTag = NewTag_Serialize | NewTag_Deserialize;
@@ -437,6 +546,27 @@ export type Project_Serialize = {
 	deleted_at: number | null,
 };
 
+/**  What the settings screen sends. An empty `secret_key` keeps the stored one. */
+export type RemoteInput = {
+	enabled: boolean,
+	endpoint: string,
+	bucket: string,
+	region: string,
+	access_key: string,
+	secret_key: string,
+	prefix: string,
+};
+
+export type RemoteView = {
+	enabled: boolean,
+	endpoint: string,
+	bucket: string,
+	region: string,
+	access_key: string,
+	prefix: string,
+	has_secret: boolean,
+};
+
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
 export type Snapshot = Snapshot_Serialize | Snapshot_Deserialize;
 
@@ -470,6 +600,20 @@ export type Status = Status_Serialize | Status_Deserialize;
 /**  Drives behavior regardless of the status names a user picks. */
 export type StatusCategory = "backlog" | "todo" | "in_progress" | "done" | "cancelled";
 
+export type StatusChange = StatusChange_Serialize | StatusChange_Deserialize;
+
+export type StatusChange_Deserialize = ({ name: string }) & { category?: never; color?: never; rank?: never; wip_limit?: never } | 
+/**  Refused while tasks are in the column (their `completed_at` would no longer agree). */
+({ category: StatusCategory }) & { color?: never; name?: never; rank?: never; wip_limit?: never } | ({ color?: string | null }) & { category?: never; name?: never; rank?: never; wip_limit?: never } | ({ rank: string }) & { category?: never; color?: never; name?: never; wip_limit?: never } | 
+/**  `None` removes the limit. */
+({ wip_limit?: number | null }) & { category?: never; color?: never; name?: never; rank?: never };
+
+export type StatusChange_Serialize = ({ name: string }) & { category?: never; color?: never; rank?: never; wip_limit?: never } | 
+/**  Refused while tasks are in the column (their `completed_at` would no longer agree). */
+({ category: StatusCategory }) & { color?: never; name?: never; rank?: never; wip_limit?: never } | ({ color: string | null }) & { category?: never; name?: never; rank?: never; wip_limit?: never } | ({ rank: string }) & { category?: never; color?: never; name?: never; wip_limit?: never } | 
+/**  `None` removes the limit. */
+({ wip_limit: number | null }) & { category?: never; color?: never; name?: never; rank?: never };
+
 /**  A workflow column. */
 export type Status_Deserialize = {
 	id: string,
@@ -478,6 +622,9 @@ export type Status_Deserialize = {
 	color?: string | null,
 	rank: string,
 	wip_limit?: number | null,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
 };
 
 /**  A workflow column. */
@@ -488,6 +635,9 @@ export type Status_Serialize = {
 	color: string | null,
 	rank: string,
 	wip_limit: number | null,
+	created_at: number,
+	updated_at: number,
+	deleted_at: number | null,
 };
 
 /**  Emitted after every committed batch, whoever wrote it. */

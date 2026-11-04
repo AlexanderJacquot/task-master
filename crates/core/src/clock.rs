@@ -95,6 +95,11 @@ impl Hlc {
     }
 }
 
+/// The UTC calendar date of a Unix-ms timestamp, `YYYY-MM-DD` (names daily backups).
+pub fn utc_date(ms: crate::model::Timestamp) -> String {
+    crate::parse::dates::to_iso(ms.div_euclid(86_400_000))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -237,7 +237,7 @@ pub(crate) fn resolve(conn: &Connection, parsed: Parsed) -> Result<Capture> {
 }
 
 /// Calendar arithmetic on ISO dates, without a date crate.
-mod dates {
+pub(crate) mod dates {
     use crate::clock::check_date;
 
     /// Days since 1970-01-01 for a proleptic Gregorian date (Howard Hinnant's algorithm).
@@ -268,7 +268,7 @@ mod dates {
         Some(days_from_civil(n(0..4)?, n(5..7)?, n(8..10)?))
     }
 
-    fn to_iso(days: i64) -> String {
+    pub(crate) fn to_iso(days: i64) -> String {
         let (y, m, d) = civil_from_days(days);
         format!("{y:04}-{m:02}-{d:02}")
     }

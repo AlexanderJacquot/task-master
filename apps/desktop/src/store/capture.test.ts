@@ -29,6 +29,7 @@ async function setup() {
         epics: [],
         tags: [],
         views: [],
+        statuses: [],
       } as Changes;
     },
     undo: async () => null,

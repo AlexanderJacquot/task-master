@@ -31,8 +31,21 @@ export interface Entities {
 
 /** Local edits shown before the core confirms them. */
 export interface Optimistic {
-  upsert?: { tasks?: Task[]; projects?: Project[]; epics?: Epic[]; tags?: Tag[]; views?: View[] };
-  remove?: { tasks?: string[]; projects?: string[]; epics?: string[]; views?: string[] };
+  upsert?: {
+    tasks?: Task[];
+    projects?: Project[];
+    epics?: Epic[];
+    tags?: Tag[];
+    views?: View[];
+    statuses?: Status[];
+  };
+  remove?: {
+    tasks?: string[];
+    projects?: string[];
+    epics?: string[];
+    views?: string[];
+    statuses?: string[];
+  };
 }
 
 export interface TaskStoreState extends Entities {
@@ -53,8 +66,21 @@ export interface TaskStoreState extends Entities {
 
 export type TaskStore = StoreApi<TaskStoreState>;
 
-type Kind = "tasks" | "projects" | "epics" | "tags" | "views";
-const KINDS: Kind[] = ["tasks", "projects", "epics", "tags", "views"];
+type Kind = "tasks" | "projects" | "epics" | "tags" | "views" | "statuses";
+const KINDS: Kind[] = ["tasks", "projects", "epics", "tags", "views", "statuses"];
+
+/** Statuses are kept as an array in workflow order; every other kind as a map by id. */
+function mapOf(state: Entities, kind: Kind): ById<{ id: string }> {
+  return kind === "statuses" ? byId(state.statuses) : { ...(state[kind] as ById<{ id: string }>) };
+}
+
+function fromMap(kind: Kind, map: ById<unknown>): Partial<Entities> {
+  if (kind !== "statuses") return { [kind]: map } as Partial<Entities>;
+  const list = Object.values(map as ById<Status>).sort((a, b) =>
+    a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : 1,
+  );
+  return { statuses: list };
+}
 
 function byId<T extends { id: string }>(list: T[]): ById<T> {
   return Object.fromEntries(list.map((item) => [item.id, item]));
@@ -73,16 +99,16 @@ function fromSnapshot(snapshot: Snapshot): Entities {
 
 /** Upserts live entities and drops deleted ones. */
 function applyChanges(state: Entities, changes: Changes): Partial<Entities> {
-  const next: Partial<Entities> = {};
+  let next: Partial<Entities> = {};
   for (const kind of KINDS) {
-    const incoming = changes[kind] as Array<{ id: string; deleted_at: number | null }>;
+    const incoming = (changes[kind] ?? []) as Array<{ id: string; deleted_at: number | null }>;
     if (!incoming.length) continue;
-    const map = { ...state[kind] } as ById<{ id: string }>;
+    const map = mapOf(state, kind);
     for (const entity of incoming) {
       if (entity.deleted_at === null) map[entity.id] = entity;
       else delete map[entity.id];
     }
-    (next as Record<Kind, unknown>)[kind] = map;
+    next = { ...next, ...fromMap(kind, map) };
   }
   return next;
 }
@@ -160,22 +186,22 @@ export function createTaskStore(api: Api): TaskStore {
         const before = new Map<string, unknown>();
         if (optimistic) {
           set((s) => {
-            const next: Partial<Entities> = {};
+            let next: Partial<Entities> = {};
             for (const kind of KINDS) {
               const upserts = (optimistic.upsert?.[kind] ?? []) as Array<{ id: string }>;
               const removals =
                 (optimistic.remove as Record<string, string[] | undefined>)?.[kind] ?? [];
               if (!upserts.length && !removals.length) continue;
-              const map = { ...s[kind] } as ById<unknown>;
+              const map = mapOf(s, kind) as ById<unknown>;
               for (const entity of upserts) {
-                before.set(`${kind}:${entity.id}`, s[kind][entity.id]);
+                before.set(`${kind}:${entity.id}`, map[entity.id]);
                 map[entity.id] = entity;
               }
               for (const id of removals) {
-                before.set(`${kind}:${id}`, s[kind][id]);
+                before.set(`${kind}:${id}`, map[id]);
                 delete map[id];
               }
-              (next as Record<Kind, unknown>)[kind] = map;
+              next = { ...next, ...fromMap(kind, map) };
             }
             return next;
           });
@@ -188,15 +214,19 @@ export function createTaskStore(api: Api): TaskStore {
             return changes;
           } catch (err) {
             set((s) => {
-              const next: Partial<Record<Kind, ById<unknown>>> = {};
+              const maps: Partial<Record<Kind, ById<unknown>>> = {};
               for (const [key, value] of before) {
                 const [kind, id] = key.split(":") as [Kind, string];
-                const map = next[kind] ?? { ...(s[kind] as ById<unknown>) };
-                next[kind] = map;
+                const map = maps[kind] ?? (mapOf(s, kind) as ById<unknown>);
+                maps[kind] = map;
                 if (value === undefined) delete map[id];
                 else map[id] = value;
               }
-              return { ...(next as Partial<Entities>), lastError: message(err) };
+              let next: Partial<Entities> = {};
+              for (const [kind, map] of Object.entries(maps) as Array<[Kind, ById<unknown>]>) {
+                next = { ...next, ...fromMap(kind, map) };
+              }
+              return { ...next, lastError: message(err) };
             });
             return null;
           }

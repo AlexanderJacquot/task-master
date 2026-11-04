@@ -9,7 +9,8 @@ The full plan is in docs/plan.md. Architecture decisions are in docs/adr/.
   an `ops` entry (patch + inverse) in ONE transaction. Never write tables directly.
 - IDs are UUIDv7. Ordering uses fractional rank strings. Deletes are soft.
 - Timestamps: Unix ms UTC. Calendar dates: ISO YYYY-MM-DD strings.
-- IPC surface stays small: snapshot, execute, undo, redo, search, task_activity, export, import.
+- IPC surface stays small: data edits only through execute; reads (snapshot, search,
+  task_activity, parse_capture) and settings/backup/export/import commands (ADR 007).
 - apps/desktop/src/bindings.ts is generated. Never edit it by hand.
 
 ## Frontend
@@ -35,4 +36,5 @@ The full plan is in docs/plan.md. Architecture decisions are in docs/adr/.
 ## CI
 
 - The repo lives on Forgejo. `.forgejo/workflows/ci.yml` runs lint, tests and a
-  Linux Tauri build. A 3-OS release matrix (GitHub mirror) is deferred to M6, see ADR 001.
+  Linux Tauri build. Installers for 3 OSes: `.github/workflows/release.yml` on a GitHub
+  push mirror (docs/release.md, ADR 007).

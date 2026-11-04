@@ -12,6 +12,7 @@ use crate::error::Result;
 const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0001_init.sql")),
     M::up(include_str!("../migrations/0002_views.sql")),
+    M::up(include_str!("../migrations/0003_statuses.sql")),
 ];
 
 pub(crate) fn migrations() -> Migrations<'static> {
@@ -56,7 +57,7 @@ fn configure(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn applied_migrations(conn: &Connection) -> Result<usize> {
+pub(crate) fn applied_migrations(conn: &Connection) -> Result<usize> {
     Ok(match migrations().current_version(conn)? {
         SchemaVersion::NoneSet => 0,
         SchemaVersion::Inside(n) | SchemaVersion::Outside(n) => n.get(),

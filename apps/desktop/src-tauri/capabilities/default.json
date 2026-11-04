@@ -3,5 +3,11 @@
   "identifier": "default",
   "description": "Permissions for the main and quick-capture windows",
   "windows": ["main", "capture"],
-  "permissions": ["core:default", "core:window:allow-hide", "core:window:allow-set-focus"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "dialog:allow-open",
+    "dialog:allow-save"
+  ]
 }

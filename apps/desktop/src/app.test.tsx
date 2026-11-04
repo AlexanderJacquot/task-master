@@ -28,6 +28,7 @@ function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
         epics: [],
         tags: [],
         views: [],
+        statuses: [],
       } as Changes;
     },
     undo: async () => {
@@ -319,5 +320,28 @@ describe("speed", () => {
       }),
     );
     expect(await within(panel).findByText(/Nothing pressing/)).toBeTruthy();
+  });
+});
+
+describe("settings", () => {
+  it("edits the workflow, and the board shows the WIP limit", async () => {
+    fireEvent.keyDown(window, { key: "g" });
+    fireEvent.keyDown(window, { key: "s" });
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
+    const limit = screen.getByLabelText("To do WIP limit");
+    fireEvent.change(limit, { target: { value: "0" } });
+    fireEvent.change(limit, { target: { value: "1" } });
+    fireEvent.blur(limit);
+    await waitFor(() =>
+      expect(fake.executed.at(-1)).toEqual([
+        { type: "update_status", id: STATUS.todo, changes: [{ wip_limit: 1 }] },
+      ]),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add column" }));
+    const name = screen.getByPlaceholderText(/Column name/);
+    fireEvent.change(name, { target: { value: "Review" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    await waitFor(() => expect(fake.executed.at(-1)?.[0]).toMatchObject({ type: "create_status" }));
+    expect(screen.getAllByTestId("status-row")).toHaveLength(7);
   });
 });

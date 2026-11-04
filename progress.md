@@ -4,8 +4,9 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M5 Speed**, branch `m5-speed` (stacked on `m4-organization`): done, pending review and a
-hands-on check of the hotkey and capture window. Next up: **M6 Hardening**.
+**M6 Hardening**, branch `m6-hardening` (stacked on `m5-speed`): done, pending review, the
+GitHub mirror setup and hands-on checks. The MVP milestones are complete; next is using
+the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
@@ -25,6 +26,31 @@ hands-on check of the hotkey and capture window. Next up: **M6 Hardening**.
   `pnpm --filter desktop tauri icon src-tauri/app-icon.png`).
 
 Verified locally on Linux: all checks pass; release build produces a 2.9 MiB `.deb`.
+
+### M6 Hardening (2026-11-04)
+
+- Core: migration `0003_statuses.sql`; status commands (create, update incl. WIP limit,
+  delete) with workflow guards; `daily_backup` (VACUUM INTO, keep 14), `backup_to`,
+  `export` / `import` (versioned JSON of every user table; replace-all, FK-checked, clears
+  history); `utc_date`.
+- Shell: `config.json` (data folder, remote backup; 0600), backup thread (20 s after start,
+  then every 15 min), remote upload to Garage S3 (presigned PUT, retry, status), commands
+  `get_config`, `set_remote_backup`, `test_remote_backup`, `backup_status`, `backup_now`,
+  `export_to`, `import_from` (backup first), `set_data_dir` (copy + restart);
+  `tauri-plugin-dialog`.
+- UI: Settings (`/settings`, sidebar, palette, `g s`): workflow editor (order, name,
+  color, category, WIP limit, add, delete), theme (system/light/dark), data folder,
+  backups, export/import with confirmation, remote backup form with test. Store handles
+  statuses as an ordered kind (optimistic + rollback).
+- Perf: `cargo test --release -p taskmaster-core --test perf -- --ignored` (10k hydrate
+  ~23 ms vs 300 ms; write ~75 µs); `PERF=1 pnpm --filter desktop exec vitest run
+  src/perf.test.ts` (board ~1 ms, list ~4 ms vs 16 ms).
+- Release: `.github/workflows/release.yml` (tauri-action, Linux/Windows/macOS draft
+  release on `v*` tags); `docs/release.md`, `docs/backups.md`.
+- Tests: 57 Rust (+ status rules, export/import, backups rotation, config, upload errors;
+  2 perf ignored) and 115 Vitest (+ status actions, theme, settings UI; 2 perf opt-in).
+- Decisions: `docs/adr/007-hardening.md`. New dependencies: `tauri-plugin-dialog` 2.8.3
+  (+ JS), `rusty-s3` 0.10.2, `ureq` 3.4.3, `url` 2.5, `serde_json` in the shell.
 
 ### M5 Speed (2026-11-04)
 
@@ -148,6 +174,10 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 ## Not yet verified
 
 - M2 UI by hand in the real window (`pnpm dev`): layout, dark mode, CodeMirror, popover.
+- M6 by hand: Settings in the real window; dialogs (export, import, data folder + restart);
+  a remote upload to Garage after creating the bucket/key (docs/backups.md); dark/light
+  toggle; board scrolling with the 10k seed; first GitHub release after the mirror is set
+  up (docs/release.md); fresh install on Linux and Windows (M6 "done when").
 - M5 by hand: `Ctrl+Shift+Space` in a native X11 session or on Windows (WSLg only sees it
   while a WSLg window has focus), the capture window (appears centered, focused, hides on
   blur/Esc/save), the 3 s capture goal, palette feel.
@@ -162,14 +192,13 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Window opens on **Windows** and **macOS** (M0 "done when" asks for Windows). No CI for them yet.
 - First run of the Forgejo workflow (runner image, apt access, cache action).
 
-## Next: M6 Hardening
+## Next
 
-Branch `m6-hardening`. Plan row: daily backups (online backup API, keep 14), JSON
-export/import (versioned with the schema number), settings screen (statuses with names,
-colors, order, WIP limits; theme; data folder; backup and export), 10k-task perf test
-against the section 5 budget, installers for 3 OSes (GitHub mirror matrix, ADR 001).
-Done when the perf budget is met on the seeded DB and a fresh install works on Linux and
-Windows. Status commands land here (WIP limit editing for the board).
+1. Set up by hand: Garage bucket + key (docs/backups.md), GitHub repo + Forgejo push mirror
+   (docs/release.md), then tag `v0.1.0` and check the installers.
+2. Merge the milestone branches into `main` (M3 → M6 are stacked).
+3. Use the app daily for two weeks; collect issues in the app itself.
+4. Then Phase 2 (folder workspaces and the `tk` CLI on the same core and parser).
 
 ## Later
 
@@ -182,11 +211,14 @@ Windows. Status commands land here (WIP limit editing for the board).
 - Sidebar: drag a project into another area (today: the project page's Area menu); keyboard
   reordering of projects; reorder saved views.
 - Bump `rusqlite` to 0.41 once `rusqlite_migration` supports it.
+- Purge soft-deleted rows after 30 days (plan section 3), designed with sync (ops expiry).
+- Secret key in the OS keychain instead of `config.json`; signed installers.
+- Board: WIP limits are now editable (M6); quick in-board column add/rename could follow.
 - CSP in `tauri.conf.json` is a strict baseline; revisit when adding the markdown editor.
 - Replace the placeholder icon.
 - Capture: a tray icon and a `--capture` flag (needs the single-instance plugin) for
-  desktops that refuse global hotkeys; configurable hotkey (settings, M6).
+  desktops that refuse global hotkeys; configurable hotkey in settings.
 - Palette: run per-view actions (toggle board/list, group by) and task actions (done,
   move, tag) on the selected task.
-- Board: WIP limit editing (with status commands, M6); `Alt+↑/↓` to reorder within a column;
+- Board: `Alt+↑/↓` to reorder within a column;
   scroll a keyboard-moved card into view when it lands below the fold.

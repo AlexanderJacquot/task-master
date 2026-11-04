@@ -1,7 +1,15 @@
 @import "tailwindcss";
 
+/* Theme (settings): `dark` on <html> switches; `lib/theme.ts` sets it from the choice
+   (light, dark, or following the system). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
 }
 
 html,

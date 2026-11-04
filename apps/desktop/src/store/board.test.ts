@@ -25,6 +25,7 @@ function confirmingApi(getStore: () => TaskStore, tasks: Task[]) {
         epics: [],
         tags: [],
         views: [],
+        statuses: [],
       } as Changes;
     },
     undo: async () => null,

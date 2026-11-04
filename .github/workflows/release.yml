@@ -1,0 +1,79 @@
+# Installers for Linux, Windows and macOS (plan M6; ADR 001 and 007). Runs on the GitHub
+# mirror only: Forgejo reads .forgejo/workflows and ignores this folder while that exists.
+#
+# Release: bump `version` in apps/desktop/src-tauri/tauri.conf.json, push a `v<version>`
+# tag to Forgejo; the push mirror forwards it here and this builds a draft release.
+# Builds are unsigned (Windows SmartScreen and macOS Gatekeeper will warn).
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            target: aarch64-apple-darwin
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v6.1.0
+
+      - name: Install Linux build dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      # rustup reads the pinned toolchain from rust-toolchain.toml.
+      - name: Rust toolchain
+        shell: bash
+        run: |
+          rustup show active-toolchain
+          if [ -n "${{ matrix.target }}" ]; then rustup target add "${{ matrix.target }}"; fi
+
+      - uses: swatinem/rust-cache@v2.9.2
+        with:
+          key: ${{ matrix.platform }}-${{ matrix.target }}
+
+      # pnpm version comes from `packageManager` in package.json.
+      - uses: pnpm/action-setup@v6.1.0
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: task-master ${{ github.ref_name }}
+          releaseBody: Unsigned builds. See the assets for each OS.
+          releaseDraft: true
+          args: ${{ matrix.args }}

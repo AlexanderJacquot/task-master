@@ -46,6 +46,7 @@ pub enum EntityKind {
     Epic,
     Tag,
     View,
+    Status,
 }
 
 /// What an op targets. `TaskTag` rows are links: `entity_id` is the task, the patch holds
@@ -57,6 +58,7 @@ pub(crate) enum Entity {
     Epic,
     Tag,
     View,
+    Status,
     TaskTag,
 }
 
@@ -68,6 +70,7 @@ impl Entity {
             Self::Epic => "epic",
             Self::Tag => "tag",
             Self::View => "view",
+            Self::Status => "status",
             Self::TaskTag => "task_tag",
         }
     }
@@ -79,6 +82,7 @@ impl Entity {
             "epic" => Self::Epic,
             "tag" => Self::Tag,
             "view" => Self::View,
+            "status" => Self::Status,
             "task_tag" => Self::TaskTag,
             other => return Err(Error::invalid(format!("unknown op entity '{other}'"))),
         })
@@ -91,6 +95,7 @@ impl Entity {
             Self::Epic => "epics",
             Self::Tag => "tags",
             Self::View => "views",
+            Self::Status => "statuses",
             Self::TaskTag => "task_tags",
         }
     }
@@ -157,6 +162,17 @@ impl Entity {
                 "updated_at",
                 "deleted_at",
             ],
+            Self::Status => &[
+                "id",
+                "name",
+                "category",
+                "color",
+                "rank",
+                "wip_limit",
+                "created_at",
+                "updated_at",
+                "deleted_at",
+            ],
             Self::TaskTag => &["tag_id"],
         }
     }
@@ -168,6 +184,7 @@ impl Entity {
             Self::Epic => EntityKind::Epic,
             Self::Tag => EntityKind::Tag,
             Self::View => EntityKind::View,
+            Self::Status => EntityKind::Status,
         }
     }
 }

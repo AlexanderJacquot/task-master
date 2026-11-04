@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { EpicPage } from "./features/organize/EpicPage";
 import { ProjectPage } from "./features/organize/ProjectPage";
+import { SettingsPage } from "./features/settings/SettingsPage";
 import { Layout } from "./features/shell/Layout";
 import { SavedViewPage, ViewPage } from "./features/shell/ViewPage";
 import { TodayPage } from "./features/today/TodayPage";
@@ -96,6 +97,12 @@ const savedViewRoute = createRoute({
   },
 });
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "settings",
+  component: SettingsPage,
+});
+
 function Missing({ what }: { what: string }) {
   return <p className="p-8 text-neutral-500">{what} not found. It may have been deleted.</p>;
 }
@@ -109,6 +116,7 @@ const routeTree = rootRoute.addChildren([
   epicRoute,
   tagRoute,
   savedViewRoute,
+  settingsRoute,
 ]);
 
 export function createAppRouter(history?: RouterHistory) {

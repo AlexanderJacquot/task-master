@@ -289,6 +289,9 @@ export function Sidebar() {
           </div>
         </Section>
       )}
+      <div className="mt-auto pt-4">
+        <NavItem to="/settings">Settings</NavItem>
+      </div>
     </nav>
   );
 }

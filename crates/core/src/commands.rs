@@ -7,7 +7,8 @@ use serde_json::{Map, Value, json};
 use crate::clock::{check_date, check_id, new_id};
 use crate::error::{Error, Result};
 use crate::model::{
-    EpicState, Id, IsoDate, Priority, StatusCategory, Task, VIEW_SPEC_VERSION, ViewScope, ViewSpec,
+    EpicState, Id, IsoDate, Priority, Status, StatusCategory, Task, VIEW_SPEC_VERSION, ViewScope,
+    ViewSpec,
 };
 use crate::ops::{Batch, Change, Entity, OpKind};
 use crate::{query, rank};
@@ -79,6 +80,18 @@ pub enum Command {
     },
     /// Removes the tag from every task, then deletes it.
     DeleteTag {
+        id: Id,
+    },
+    /// A workflow column (settings).
+    CreateStatus {
+        status: NewStatus,
+    },
+    UpdateStatus {
+        id: Id,
+        changes: Vec<StatusChange>,
+    },
+    /// Refused while tasks are in it, or when it is the last `todo` or `done` column.
+    DeleteStatus {
         id: Id,
     },
     CreateView {
@@ -197,6 +210,30 @@ pub struct NewTag {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewStatus {
+    pub id: Option<Id>,
+    pub name: String,
+    pub category: StatusCategory,
+    pub color: Option<String>,
+    pub rank: Option<String>,
+    pub wip_limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum StatusChange {
+    Name(String),
+    /// Refused while tasks are in the column (their `completed_at` would no longer agree).
+    Category(StatusCategory),
+    Color(Option<String>),
+    Rank(String),
+    /// `None` removes the limit.
+    WipLimit(Option<i64>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct NewView {
     pub id: Option<Id>,
     pub name: String,
@@ -247,6 +284,9 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
         Command::CreateTag { tag } => create_tag(b, tag),
         Command::UpdateTag { id, changes } => update_tag(b, &id, changes),
         Command::DeleteTag { id } => delete_tag(b, &id),
+        Command::CreateStatus { status } => create_status(b, status),
+        Command::UpdateStatus { id, changes } => update_status(b, &id, changes),
+        Command::DeleteStatus { id } => delete_status(b, &id),
         Command::CreateView { view } => create_view(b, view),
         Command::UpdateView { id, changes } => update_view(b, &id, changes),
         Command::DeleteView { id } => delete_view(b, &id),
@@ -277,7 +317,7 @@ fn create_task(b: &mut Batch<'_, '_>, n: NewTask) -> Result<()> {
         live_epic(b, e)?;
     }
     let status = match &n.status_id {
-        Some(s) => query::status(b.tx, s)?,
+        Some(s) => live_status(b, s)?,
         None => default_status(b)?,
     };
     check_optional_date("due_date", n.due_date.as_deref())?;
@@ -372,7 +412,7 @@ fn update_task(b: &mut Batch<'_, '_>, id: &str, changes: Vec<TaskChange>) -> Res
                 ("epic_id", json!(e))
             }
             TaskChange::StatusId(s) => {
-                let new = query::status(b.tx, &s)?;
+                let new = live_status(b, &s)?;
                 let old = query::status(b.tx, &task.status_id)?;
                 let (was_done, is_done) = (
                     old.category == StatusCategory::Done,
@@ -884,6 +924,164 @@ fn delete_tag(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
 // Helpers
 
 // ---------------------------------------------------------------------------------------
+// Statuses
+
+fn check_wip(limit: Option<i64>) -> Result<()> {
+    match limit {
+        Some(n) if !(1..=999).contains(&n) => Err(Error::invalid(format!(
+            "WIP limit must be between 1 and 999, got {n}"
+        ))),
+        _ => Ok(()),
+    }
+}
+
+fn status_name(b: &Batch<'_, '_>, raw: &str, own_id: &str) -> Result<String> {
+    let name = non_empty("status name", raw)?;
+    let taken: i64 = b.tx.query_row(
+        "SELECT COUNT(*) FROM statuses
+         WHERE name = ?1 COLLATE NOCASE AND deleted_at IS NULL AND id != ?2",
+        [&name, own_id],
+        |r| r.get(0),
+    )?;
+    if taken > 0 {
+        return Err(Error::invalid(format!("status '{name}' already exists")));
+    }
+    Ok(name)
+}
+
+/// The app needs a `todo` column (new tasks) and a `done` column (the checkbox).
+fn check_keeps_workflow(b: &Batch<'_, '_>, status: &Status) -> Result<()> {
+    if !matches!(status.category, StatusCategory::Todo | StatusCategory::Done) {
+        return Ok(());
+    }
+    let others: i64 = b.tx.query_row(
+        "SELECT COUNT(*) FROM statuses WHERE category = ?1 AND deleted_at IS NULL AND id != ?2",
+        [status.category.as_str(), &status.id],
+        |r| r.get(0),
+    )?;
+    if others == 0 {
+        return Err(Error::invalid(format!(
+            "'{}' is the last {} column; add another one first",
+            status.name,
+            status.category.as_str()
+        )));
+    }
+    Ok(())
+}
+
+fn tasks_in(b: &Batch<'_, '_>, status_id: &str) -> Result<i64> {
+    count(
+        b,
+        "SELECT COUNT(*) FROM tasks WHERE status_id = ?1 AND deleted_at IS NULL",
+        status_id,
+    )
+}
+
+fn create_status(b: &mut Batch<'_, '_>, n: NewStatus) -> Result<()> {
+    let id = client_id(n.id)?;
+    let name = status_name(b, &n.name, &id)?;
+    check_wip(n.wip_limit)?;
+    let rank = match n.rank {
+        Some(r) => {
+            rank::validate(&r)?;
+            r
+        }
+        None => {
+            let last: Option<String> = b.tx.query_row(
+                "SELECT MAX(rank) FROM statuses WHERE deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )?;
+            rank::key_between(last.as_deref(), None)?
+        }
+    };
+    b.apply(Change::new(
+        Entity::Status,
+        &id,
+        OpKind::Create,
+        json!({
+            "name": name,
+            "category": n.category.as_str(),
+            "color": n.color,
+            "rank": rank,
+            "wip_limit": n.wip_limit,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn update_status(b: &mut Batch<'_, '_>, id: &str, changes: Vec<StatusChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_status needs at least one change"));
+    }
+    let status = live_status(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            StatusChange::Name(n) => ("name", json!(status_name(b, &n, id)?)),
+            StatusChange::Category(c) => {
+                if c != status.category {
+                    let n = tasks_in(b, id)?;
+                    if n > 0 {
+                        return Err(Error::invalid(format!(
+                            "'{}' holds {n} task(s); move them before changing its category",
+                            status.name
+                        )));
+                    }
+                    check_keeps_workflow(b, &status)?;
+                }
+                ("category", json!(c.as_str()))
+            }
+            StatusChange::Color(c) => ("color", json!(c)),
+            StatusChange::Rank(r) => {
+                rank::validate(&r)?;
+                ("rank", json!(r))
+            }
+            StatusChange::WipLimit(l) => {
+                check_wip(l)?;
+                ("wip_limit", json!(l))
+            }
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Status,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_status(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    let status = live_status(b, id)?;
+    let n = tasks_in(b, id)?;
+    if n > 0 {
+        return Err(Error::invalid(format!(
+            "'{}' still holds {n} task(s); move them to another column first",
+            status.name
+        )));
+    }
+    check_keeps_workflow(b, &status)?;
+    b.apply(Change::new(
+        Entity::Status,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+fn live_status(b: &Batch<'_, '_>, id: &str) -> Result<Status> {
+    let status = query::status(b.tx, id)?;
+    if status.deleted_at.is_some() {
+        return Err(Error::not_found("status", id));
+    }
+    Ok(status)
+}
+
+// ---------------------------------------------------------------------------------------
 // Saved views
 
 /// Checks the version and that the scope and filters name live entities and statuses.
@@ -903,7 +1101,7 @@ fn view_spec_json(b: &Batch<'_, '_>, spec: &ViewSpec) -> Result<String> {
     }
     let f = &spec.filter;
     for id in &f.status_ids {
-        query::status(b.tx, id)?;
+        live_status(b, id)?;
     }
     for id in &f.project_ids {
         live_project(b, id)?;
@@ -1057,7 +1255,8 @@ fn live_tag(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Tag> {
 
 fn default_status(b: &Batch<'_, '_>) -> Result<crate::model::Status> {
     let id: String = b.tx.query_row(
-        "SELECT id FROM statuses ORDER BY category != 'todo', rank LIMIT 1",
+        "SELECT id FROM statuses WHERE deleted_at IS NULL
+         ORDER BY category != 'todo', rank LIMIT 1",
         [],
         |r| r.get(0),
     )?;

@@ -8,6 +8,7 @@
 mod clock;
 mod commands;
 mod db;
+mod dump;
 mod error;
 mod events;
 mod history;
@@ -18,11 +19,12 @@ mod query;
 pub mod rank;
 mod store;
 
-pub use clock::{new_id, now_ms};
+pub use clock::{new_id, now_ms, utc_date};
 pub use commands::{
-    Command, EpicChange, MAX_RANK_LEN, NewEpic, NewProject, NewTag, NewTask, NewView,
-    ProjectChange, TagChange, TaskChange, ViewChange,
+    Command, EpicChange, MAX_RANK_LEN, NewEpic, NewProject, NewStatus, NewTag, NewTask, NewView,
+    ProjectChange, StatusChange, TagChange, TaskChange, ViewChange,
 };
+pub use dump::{EXPORT_FORMAT, ExportFile, ImportSummary};
 pub use error::{Error, Result};
 pub use events::{Changed, EntityRef};
 pub use model::{

@@ -12,7 +12,7 @@ use crate::commands::{self, Command};
 use crate::error::Result;
 use crate::events::{Changed, EntityRef, EventBus};
 use crate::history::{self, History};
-use crate::model::{Epic, Id, Project, Snapshot, Tag, Task, View};
+use crate::model::{Epic, Id, Project, Snapshot, Status, Tag, Task, View};
 use crate::ops::{Batch, EntityKind};
 use crate::{db, query};
 
@@ -29,6 +29,7 @@ pub struct Changes {
     pub epics: Vec<Epic>,
     pub tags: Vec<Tag>,
     pub views: Vec<View>,
+    pub statuses: Vec<Status>,
 }
 
 impl Changes {
@@ -130,6 +131,45 @@ impl Store {
     }
 
     /// A task's change history, newest first.
+    /// Writes a consistent copy of the database to `target` (replacing it).
+    pub fn backup_to(&self, target: impl AsRef<Path>) -> Result<()> {
+        crate::dump::backup_to(&self.conn, target.as_ref())
+    }
+
+    /// Today's rotating backup in `dir` (`daily-YYYY-MM-DD.sqlite`), keeping the newest
+    /// `keep`. Returns the new file, or `None` when today's already exists.
+    pub fn daily_backup(
+        &self,
+        dir: impl AsRef<Path>,
+        today: &str,
+        keep: usize,
+    ) -> Result<Option<std::path::PathBuf>> {
+        crate::dump::daily_backup(&self.conn, dir.as_ref(), today, keep)
+    }
+
+    /// Every user table as JSON, versioned with the schema.
+    pub fn export(&self) -> Result<crate::dump::ExportFile> {
+        crate::dump::export(&self.conn, db::applied_migrations(&self.conn)?)
+    }
+
+    /// Replaces all data with an export, atomically. Not undoable: the history is cleared
+    /// (take a backup first). Subscribers get a change event so they re-read everything.
+    pub fn import(&mut self, file: &crate::dump::ExportFile) -> Result<crate::dump::ImportSummary> {
+        let version = db::applied_migrations(&self.conn)?;
+        let summary = crate::dump::import(&mut self.conn, file, version)?;
+        self.history = History::default();
+        self.clock = Hlc::new(self.device_id.clone(), db::last_hlc(&self.conn)?.as_deref());
+        let op_seq: i64 =
+            self.conn
+                .query_row("SELECT COALESCE(MAX(seq), 0) FROM ops", [], |r| r.get(0))?;
+        self.events.publish(&Changed {
+            batch_id: crate::clock::new_id(),
+            op_seq,
+            entities: Vec::new(),
+        });
+        Ok(summary)
+    }
+
     /// Parses a quick-capture line and matches its names to live entities. `today` is the
     /// user's local date (`YYYY-MM-DD`), which relative due dates count from.
     pub fn parse_capture(&self, text: &str, today: &str) -> Result<crate::parse::Capture> {
@@ -189,6 +229,7 @@ fn load_changes(
             EntityKind::Epic => changes.epics.push(query::epic(conn, id)?),
             EntityKind::Tag => changes.tags.push(query::tag(conn, id)?),
             EntityKind::View => changes.views.push(query::view(conn, id)?),
+            EntityKind::Status => changes.statuses.push(query::status(conn, id)?),
         }
     }
     Ok(changes)

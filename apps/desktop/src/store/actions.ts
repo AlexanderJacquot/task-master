@@ -12,6 +12,7 @@ import type {
   Project,
   ProjectChange,
   Status,
+  StatusChange,
   Tag,
   Task,
   TaskChange,
@@ -624,4 +625,67 @@ export async function captureTask(
     tag_ids: [...new Set([...(defaults.tag_ids ?? []), ...tagIds])],
   };
   return createTask(store, input, { before: commands, upsert });
+}
+
+// ---------------------------------------------------------------------------------------
+// Statuses (settings)
+
+export function createStatus(store: TaskStore, rawName: string, category: Status["category"]) {
+  const name = rawName.trim();
+  const s = store.getState();
+  if (!name) return Promise.resolve(null);
+  const now = Date.now();
+  const rank = rankBetween(
+    lastRank(s.statuses, () => true),
+    null,
+  );
+  const status: Status = {
+    id: uuidv7(now),
+    name,
+    category,
+    color: null,
+    rank,
+    wip_limit: null,
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  };
+  return s.mutate([{ type: "create_status", status: { id: status.id, name, category, rank } }], {
+    upsert: { statuses: [status] },
+  });
+}
+
+export function updateStatus(store: TaskStore, id: string, changes: StatusChange[]) {
+  const s = store.getState();
+  const status = s.statuses.find((st) => st.id === id);
+  if (!status || !changes.length) return Promise.resolve(null);
+  const next: Status = { ...status, updated_at: Date.now() };
+  for (const c of changes) {
+    if ("name" in c && c.name !== undefined) next.name = c.name.trim();
+    else if ("category" in c && c.category !== undefined) next.category = c.category;
+    else if ("color" in c) next.color = c.color ?? null;
+    else if ("rank" in c && c.rank !== undefined) next.rank = c.rank;
+    else if ("wip_limit" in c) next.wip_limit = c.wip_limit ?? null;
+  }
+  return s.mutate([{ type: "update_status", id, changes }], { upsert: { statuses: [next] } });
+}
+
+/** Moves a column one step left (-1) or right (1) in the workflow. */
+export function moveStatus(store: TaskStore, id: string, direction: -1 | 1) {
+  const list = store.getState().statuses;
+  const index = list.findIndex((st) => st.id === id);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= list.length) return Promise.resolve(null);
+  const before = direction < 0 ? list[target - 1] : list[target];
+  const after = direction < 0 ? list[target] : list[target + 1];
+  return updateStatus(store, id, [
+    { rank: rankBetween(before?.rank ?? null, after?.rank ?? null) },
+  ]);
+}
+
+/** Refused by the core while tasks are in it, or for the last todo/done column. */
+export function deleteStatus(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.statuses.some((st) => st.id === id)) return Promise.resolve(null);
+  return s.mutate([{ type: "delete_status", id }], { remove: { statuses: [id] } });
 }

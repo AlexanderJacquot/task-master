@@ -86,7 +86,7 @@ fn roundtrip(s: &mut Store, command: Command) -> Changes {
     changes
 }
 
-fn invalid(result: Result<Changes>) -> String {
+fn invalid<T: std::fmt::Debug>(result: Result<T>) -> String {
     match result {
         Err(Error::Invalid(message)) => message,
         other => panic!("expected Invalid, got {other:?}"),
@@ -1280,4 +1280,257 @@ fn parse_capture_matches_live_names_and_flags_unknown_ones() {
         s.parse_capture("x", "04/11/2026"),
         Err(Error::Invalid(_))
     ));
+}
+
+// ---------------------------------------------------------------------------------------
+// Statuses (M6 settings)
+
+const WAITING: &str = "00000000-0000-7000-8000-000000000004";
+const CANCELLED: &str = "00000000-0000-7000-8000-000000000006";
+
+fn new_status(name: &str, category: StatusCategory) -> Command {
+    Command::CreateStatus {
+        status: NewStatus {
+            id: None,
+            name: name.into(),
+            category,
+            color: Some("#0ea5e9".into()),
+            rank: None,
+            wip_limit: None,
+        },
+    }
+}
+
+#[test]
+fn status_commands_roundtrip() {
+    let mut s = store();
+    let created = roundtrip(&mut s, new_status("Review", StatusCategory::InProgress));
+    let review = created.statuses[0].clone();
+    uuid_v7(&review.id);
+    let names: Vec<_> = s
+        .snapshot()
+        .unwrap()
+        .statuses
+        .into_iter()
+        .map(|st| st.name)
+        .collect();
+    assert_eq!(
+        names.last().map(String::as_str),
+        Some("Review"),
+        "appended last"
+    );
+
+    let updated = roundtrip(
+        &mut s,
+        Command::UpdateStatus {
+            id: IN_PROGRESS.into(),
+            changes: vec![
+                StatusChange::Name("Doing".into()),
+                StatusChange::WipLimit(Some(3)),
+                StatusChange::Color(None),
+                StatusChange::Rank("a05".into()),
+            ],
+        },
+    );
+    assert_eq!(updated.statuses[0].name, "Doing");
+    assert_eq!(updated.statuses[0].wip_limit, Some(3));
+
+    roundtrip(
+        &mut s,
+        Command::DeleteStatus {
+            id: review.id.clone(),
+        },
+    );
+    assert!(
+        s.snapshot()
+            .unwrap()
+            .statuses
+            .iter()
+            .all(|st| st.id != review.id)
+    );
+    // A deleted column cannot receive tasks.
+    let t = add_task(&mut s, new_task("Moved"));
+    assert!(matches!(
+        s.execute(Command::MoveTask {
+            id: t.id,
+            status_id: review.id,
+            rank: "a0".into()
+        }),
+        Err(Error::NotFound { .. })
+    ));
+}
+
+#[test]
+fn status_rules_protect_the_workflow_and_its_tasks() {
+    let mut s = store();
+    let t = add_task(&mut s, new_task("In waiting"));
+    s.execute(Command::MoveTask {
+        id: t.id.clone(),
+        status_id: WAITING.into(),
+        rank: "a0".into(),
+    })
+    .unwrap();
+    assert!(invalid(s.execute(Command::DeleteStatus { id: WAITING.into() })).contains("task"));
+    assert!(
+        invalid(s.execute(Command::UpdateStatus {
+            id: WAITING.into(),
+            changes: vec![StatusChange::Category(StatusCategory::Done)],
+        }))
+        .contains("task")
+    );
+    assert!(invalid(s.execute(Command::DeleteStatus { id: TODO.into() })).contains("last todo"));
+    assert!(invalid(s.execute(Command::DeleteStatus { id: DONE.into() })).contains("last done"));
+    assert!(
+        invalid(s.execute(Command::UpdateStatus {
+            id: DONE.into(),
+            changes: vec![StatusChange::Category(StatusCategory::Cancelled)],
+        }))
+        .contains("last done")
+    );
+    assert!(invalid(s.execute(new_status("to DO", StatusCategory::Todo))).contains("exists"));
+    assert!(
+        invalid(s.execute(Command::UpdateStatus {
+            id: TODO.into(),
+            changes: vec![StatusChange::WipLimit(Some(0))],
+        }))
+        .contains("WIP")
+    );
+    // Empty, non-essential columns can go; a second todo column frees the first.
+    s.execute(Command::DeleteStatus {
+        id: CANCELLED.into(),
+    })
+    .unwrap();
+    s.execute(new_status("Next", StatusCategory::Todo)).unwrap();
+    s.execute(Command::DeleteStatus { id: TODO.into() })
+        .unwrap();
+    let fresh = add_task(&mut s, new_task("Lands in Next"));
+    let next = s
+        .snapshot()
+        .unwrap()
+        .statuses
+        .into_iter()
+        .find(|st| st.name == "Next")
+        .unwrap();
+    assert_eq!(
+        fresh.status_id, next.id,
+        "new tasks go to the remaining todo column"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// Backups, export and import (M6)
+
+/// A store with one of everything, including a subtask listed before its parent.
+fn populated() -> Store {
+    let mut s = store();
+    let project = add_project(&mut s, "Homelab", None);
+    let epic = add_epic(&mut s, "IaC");
+    let tag = add_tag(&mut s, "deep");
+    let parent = add_task(
+        &mut s,
+        NewTask {
+            title: "Parent".into(),
+            project_id: Some(project.id.clone()),
+            epic_id: Some(epic.id.clone()),
+            tag_ids: vec![tag.id.clone()],
+            description: "Ünïcode **markdown**".into(),
+            ..NewTask::default()
+        },
+    );
+    add_task(
+        &mut s,
+        NewTask {
+            title: "Child".into(),
+            parent_id: Some(parent.id),
+            ..NewTask::default()
+        },
+    );
+    add_view(&mut s, "All", spec(ViewScope::All));
+    s.execute(new_status("Review", StatusCategory::InProgress))
+        .unwrap();
+    s
+}
+
+#[test]
+fn export_then_import_reproduces_everything() {
+    let source = populated();
+    let file = source.export().unwrap();
+    assert_eq!(file.format, EXPORT_FORMAT);
+    // Through text, as a file would.
+    let text = serde_json::to_string(&file).unwrap();
+    let file: ExportFile = serde_json::from_str(&text).unwrap();
+
+    let mut target = store();
+    add_task(&mut target, new_task("Replaced"));
+    let summary = target.import(&file).unwrap();
+    assert_eq!(summary.tasks, 2);
+    assert_eq!(summary.projects, 1);
+    assert_eq!(target.snapshot().unwrap(), source.snapshot().unwrap());
+    assert!(!target.can_undo(), "import clears the history");
+    // Search (FTS, rebuilt by triggers) and new writes work on the imported data.
+    assert_eq!(
+        target.search("unicode", 10).unwrap().len(),
+        1,
+        "accents are ignored"
+    );
+    assert_eq!(target.search("markdown", 10).unwrap().len(), 1);
+    add_task(&mut target, new_task("After import"));
+}
+
+#[test]
+fn bad_imports_change_nothing() {
+    let mut s = populated();
+    let before = s.snapshot().unwrap();
+    let good = s.export().unwrap();
+
+    let mut wrong_format = good.clone();
+    wrong_format.format = "something-else".into();
+    assert!(invalid(s.import(&wrong_format)).contains("not a task-master"));
+
+    let mut newer = good.clone();
+    newer.schema_version += 1;
+    assert!(invalid(s.import(&newer)).contains("schema version"));
+
+    let mut broken = good.clone();
+    let tasks = broken
+        .tables
+        .get_mut("tasks")
+        .unwrap()
+        .as_array_mut()
+        .unwrap();
+    tasks[0]["project_id"] = serde_json::json!(new_id());
+    assert!(invalid(s.import(&broken)).contains("broken reference"));
+
+    let mut unknown = good;
+    unknown.tables["tags"][0]["evil"] = serde_json::json!("x");
+    assert!(invalid(s.import(&unknown)).contains("unknown column"));
+
+    assert_eq!(s.snapshot().unwrap(), before);
+}
+
+#[test]
+fn daily_backups_rotate_and_open_as_databases() {
+    let dir = TempDir::new();
+    let s = populated();
+    let backups = dir.0.join("backups");
+    for day in 1..=16 {
+        let today = format!("2026-10-{day:02}");
+        assert!(s.daily_backup(&backups, &today, 14).unwrap().is_some());
+    }
+    assert!(
+        s.daily_backup(&backups, "2026-10-16", 14)
+            .unwrap()
+            .is_none(),
+        "one per day"
+    );
+    let mut names: Vec<String> = std::fs::read_dir(&backups)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(names.len(), 14);
+    assert_eq!(names[0], "daily-2026-10-03.sqlite");
+
+    let copy = Store::open(backups.join("daily-2026-10-16.sqlite")).unwrap();
+    assert_eq!(copy.snapshot().unwrap(), s.snapshot().unwrap());
 }

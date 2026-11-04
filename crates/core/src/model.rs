@@ -179,6 +179,9 @@ pub struct Status {
     pub color: Option<String>,
     pub rank: String,
     pub wip_limit: Option<i64>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

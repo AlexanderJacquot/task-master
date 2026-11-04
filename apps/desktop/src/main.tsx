@@ -5,9 +5,12 @@ import { createRoot } from "react-dom/client";
 import "./index.css";
 import { CaptureWindow } from "./features/capture/CaptureWindow";
 import { tauriApi } from "./lib/api";
+import { applyTheme, loadTheme } from "./lib/theme";
 import { createAppRouter } from "./router";
 import { StoreProvider } from "./store/context";
 import { createTaskStore } from "./store/store";
+
+applyTheme(loadTheme());
 
 const store = createTaskStore(tauriApi);
 void store.getState().hydrate();

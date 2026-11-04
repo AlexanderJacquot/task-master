@@ -113,6 +113,14 @@ export function CommandPalette({
       { key: "view:inbox", group: "Views", label: "Inbox", hint: "g i", run: () => go("/inbox") },
       { key: "view:today", group: "Views", label: "Today", hint: "g t", run: () => go("/today") },
       { key: "view:all", group: "Views", label: "All tasks", hint: "g a", run: () => go("/all") },
+      {
+        key: "view:settings",
+        group: "Views",
+        label: "Settings",
+        hint: "g s",
+        keywords: "statuses columns workflow wip theme backup export import data",
+        run: () => go("/settings"),
+      },
     ];
     for (const v of Object.values(views)) {
       list.push({

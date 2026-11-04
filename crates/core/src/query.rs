@@ -16,6 +16,8 @@ const PROJECT_COLS: &str =
 const EPIC_COLS: &str = "id, project_id, name, description, target_date, state, rank, \
     created_at, updated_at, deleted_at";
 const TAG_COLS: &str = "id, name, color, created_at, updated_at, deleted_at";
+const STATUS_COLS: &str =
+    "id, name, category, color, rank, wip_limit, created_at, updated_at, deleted_at";
 const VIEW_COLS: &str = "id, name, spec, rank, created_at, updated_at, deleted_at";
 
 fn bad_value(col: usize, value: String) -> rusqlite::Error {
@@ -116,6 +118,9 @@ fn status_row(r: &Row<'_>) -> rusqlite::Result<Status> {
         color: r.get(3)?,
         rank: r.get(4)?,
         wip_limit: r.get(5)?,
+        created_at: r.get(6)?,
+        updated_at: r.get(7)?,
+        deleted_at: r.get(8)?,
     })
 }
 
@@ -196,7 +201,7 @@ pub(crate) fn view(conn: &Connection, id: &str) -> Result<View> {
 
 pub(crate) fn status(conn: &Connection, id: &str) -> Result<Status> {
     conn.query_row(
-        "SELECT id, name, category, color, rank, wip_limit FROM statuses WHERE id = ?1",
+        &format!("SELECT {STATUS_COLS} FROM statuses WHERE id = ?1"),
         [id],
         status_row,
     )
@@ -231,7 +236,9 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
         )?,
         statuses: query(
             conn,
-            "SELECT id, name, category, color, rank, wip_limit FROM statuses ORDER BY rank, id",
+            &format!(
+                "SELECT {STATUS_COLS} FROM statuses WHERE deleted_at IS NULL ORDER BY rank, id"
+            ),
             &[],
             status_row,
         )?,
