@@ -3,7 +3,7 @@ import type { Api } from "../lib/api";
 import { buildBoard } from "../lib/board";
 import { rankBetween } from "../lib/rank";
 import type { Changes, Command, Task } from "../lib/types";
-import type { ViewContext } from "../lib/views";
+import { EMPTY_FILTER, type ViewContext } from "../lib/views";
 import { STATUS, snapshot, statuses, task } from "../test/fixtures";
 import { moveCard } from "./actions";
 import { createTaskStore, type TaskStore } from "./store";
@@ -24,6 +24,7 @@ function confirmingApi(getStore: () => TaskStore, tasks: Task[]) {
         projects: [],
         epics: [],
         tags: [],
+        views: [],
       } as Changes;
     },
     undo: async () => null,
@@ -45,11 +46,16 @@ const ctx: ViewContext = {
 function boardColumns(store: TaskStore): string[][] {
   const board = buildBoard(
     Object.values(store.getState().tasks),
-    { kind: "all" },
+    {
+      scope: { kind: "all" },
+      filter: EMPTY_FILTER,
+      swimlane: "none",
+      show_subtasks: true,
+      show_cancelled: false,
+    },
     ctx,
     statuses,
     { projects: {}, epics: {} },
-    { swimlane: "none", showSubtasks: true, showCancelled: false },
   );
   return COLUMNS.map((id) => (board.lanes[0]?.cells[id] ?? []).map((c) => c.task.id));
 }

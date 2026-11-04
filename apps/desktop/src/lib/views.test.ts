@@ -1,13 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { project, STATUS, statuses, task } from "../test/fixtures";
+import type { ViewScope } from "./types";
 import {
   buildRows,
   childrenByParent,
   compareTasks,
   descendantIds,
+  EMPTY_FILTER,
   inView,
+  matchesFilter,
   type ViewContext,
+  type ViewQuery,
 } from "./views";
+
+function q(scope: ViewScope, extra: Partial<ViewQuery> = {}): ViewQuery {
+  return {
+    scope,
+    filter: EMPTY_FILTER,
+    group_by: "status",
+    sort: "default",
+    show_cancelled: false,
+    ...extra,
+  };
+}
+
+const label = (r: ReturnType<typeof buildRows>[number]) =>
+  r.type === "group" ? `# ${r.group.label}` : r.task.title;
 
 const TODAY = "2026-11-04";
 
@@ -20,7 +38,6 @@ function ctx(projects = {}): ViewContext {
 }
 
 const noCollapse = {
-  showCancelled: false,
   collapsedGroups: new Set<string>(),
   collapsedTasks: new Set<string>(),
 };
@@ -80,13 +97,13 @@ describe("buildRows", () => {
     const loose = task({ title: "Loose" });
     const rows = buildRows(
       [loose, childOpen, parent, grandchild, childDone],
-      { kind: "all" },
+      q({ kind: "all" }),
       ctx(),
       statuses,
       noCollapse,
     );
     expect(
-      rows.map((r) => (r.type === "group" ? `# ${r.status.name}` : `${r.depth}:${r.task.id}`)),
+      rows.map((r) => (r.type === "group" ? `# ${r.group.label}` : `${r.depth}:${r.task.id}`)),
     ).toEqual([
       "# To do",
       `0:${loose.id}`,
@@ -102,7 +119,7 @@ describe("buildRows", () => {
   it("promotes a subtask whose parent is outside the view", () => {
     const parent = task({ project_id: "p" });
     const child = task({ parent_id: parent.id, project_id: null });
-    const rows = buildRows([parent, child], { kind: "inbox" }, ctx(), statuses, noCollapse);
+    const rows = buildRows([parent, child], q({ kind: "inbox" }), ctx(), statuses, noCollapse);
     expect(
       rows.filter((r) => r.type === "task").map((r) => r.type === "task" && r.task.id),
     ).toEqual([child.id]);
@@ -113,23 +130,122 @@ describe("buildRows", () => {
     const parent = task();
     const child = task({ parent_id: parent.id });
     const all = [cancelled, parent, child];
-    expect(buildRows(all, { kind: "all" }, ctx(), statuses, noCollapse)).toHaveLength(3);
+    expect(buildRows(all, q({ kind: "all" }), ctx(), statuses, noCollapse)).toHaveLength(3);
     expect(
-      buildRows(all, { kind: "all" }, ctx(), statuses, { ...noCollapse, showCancelled: true }),
+      buildRows(all, q({ kind: "all" }, { show_cancelled: true }), ctx(), statuses, noCollapse),
     ).toHaveLength(5);
     expect(
-      buildRows(all, { kind: "all" }, ctx(), statuses, {
+      buildRows(all, q({ kind: "all" }), ctx(), statuses, {
         ...noCollapse,
         collapsedTasks: new Set([parent.id]),
       }),
     ).toHaveLength(2);
-    const collapsed = buildRows(all, { kind: "all" }, ctx(), statuses, {
+    const collapsed = buildRows(all, q({ kind: "all" }), ctx(), statuses, {
       ...noCollapse,
       collapsedGroups: new Set([STATUS.todo]),
     });
     expect(collapsed).toEqual([
       expect.objectContaining({ type: "group", count: 1, collapsed: true }),
     ]);
+  });
+});
+
+describe("filters, grouping and sorting", () => {
+  it("scopes a tag view to tagged tasks", () => {
+    expect(inView({ kind: "tag", id: "g1" }, task({ tag_ids: ["g1"] }), ctx())).toBe(true);
+    expect(inView({ kind: "tag", id: "g1" }, task({ tag_ids: ["g2"] }), ctx())).toBe(false);
+  });
+
+  it("matches every non-empty filter list, any value within one", () => {
+    const t = task({ priority: "high", tag_ids: ["g1"], project_id: "p1", due_date: TODAY });
+    const f = (patch: Partial<typeof EMPTY_FILTER>) =>
+      matchesFilter({ ...EMPTY_FILTER, ...patch }, t, ctx());
+    expect(f({})).toBe(true);
+    expect(f({ priorities: ["urgent", "high"] })).toBe(true);
+    expect(f({ priorities: ["low"] })).toBe(false);
+    expect(f({ tag_ids: ["g2", "g1"], project_ids: ["p1"] })).toBe(true);
+    expect(f({ tag_ids: ["g1"], project_ids: ["p2"] })).toBe(false);
+    expect(f({ epic_ids: ["e1"] })).toBe(false);
+    expect(f({ status_ids: [STATUS.todo] })).toBe(true);
+    expect(f({ due: "today" })).toBe(true);
+    expect(f({ due: "overdue" })).toBe(false);
+    expect(f({ due: "none" })).toBe(false);
+    expect(
+      matchesFilter({ ...EMPTY_FILTER, due: "week" }, task({ due_date: "2026-11-11" }), ctx()),
+    ).toBe(true);
+    expect(
+      matchesFilter({ ...EMPTY_FILTER, due: "week" }, task({ due_date: "2026-11-12" }), ctx()),
+    ).toBe(false);
+  });
+
+  it("groups by project with the project-less group last", () => {
+    const home = project({ name: "Home", rank: "a2" });
+    const work = project({ name: "Work", rank: "a1" });
+    const tasks = [
+      task({ title: "Loose" }),
+      task({ title: "Fix roof", project_id: home.id }),
+      task({ title: "Report", project_id: work.id }),
+    ];
+    const c = ctx({ [home.id]: home, [work.id]: work });
+    const rows = buildRows(
+      tasks,
+      q({ kind: "all" }, { group_by: "project" }),
+      c,
+      statuses,
+      noCollapse,
+    );
+    expect(rows.map(label)).toEqual([
+      "# Work",
+      "Report",
+      "# Home",
+      "Fix roof",
+      "# No project",
+      "Loose",
+    ]);
+  });
+
+  it("groups by due date buckets and by priority", () => {
+    const tasks = [
+      task({ title: "Late", due_date: "2026-11-01" }),
+      task({ title: "Now", due_date: TODAY }),
+      task({ title: "Soon", due_date: "2026-11-08" }),
+      task({ title: "Far", due_date: "2027-01-01" }),
+      task({ title: "Whenever", priority: "low" }),
+    ];
+    const due = buildRows(
+      tasks,
+      q({ kind: "all" }, { group_by: "due" }),
+      ctx(),
+      statuses,
+      noCollapse,
+    );
+    expect(due.filter((r) => r.type === "group").map(label)).toEqual([
+      "# Overdue",
+      "# Today",
+      "# Next 7 days",
+      "# Later",
+      "# No due date",
+    ]);
+    const byPriority = buildRows(
+      tasks,
+      q({ kind: "all" }, { group_by: "priority" }),
+      ctx(),
+      statuses,
+      noCollapse,
+    );
+    expect(byPriority.filter((r) => r.type === "group").map(label)).toEqual(["# Normal", "# Low"]);
+  });
+
+  it("sorts by the spec within a group", () => {
+    const old = task({ title: "Old", created_at: 1, rank: "a2" });
+    const recent = task({ title: "Recent", created_at: 5, rank: "a1", priority: "low" });
+    const rows = (sort: ViewQuery["sort"]) =>
+      buildRows([old, recent], q({ kind: "all" }, { sort }), ctx(), statuses, noCollapse)
+        .filter((r) => r.type === "task")
+        .map(label);
+    expect(rows("created")).toEqual(["Recent", "Old"]);
+    expect(rows("manual")).toEqual(["Recent", "Old"]);
+    expect(rows("default")).toEqual(["Old", "Recent"]);
   });
 });
 

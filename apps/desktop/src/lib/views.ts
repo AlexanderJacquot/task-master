@@ -1,23 +1,53 @@
-// Views are pure functions of the store's entities + a view key (plan, section 5), so the
-// list, the board (M3) and the calendar (later) share filtering and sorting.
+// Views are pure functions of the store's entities + a view spec (plan, section 5), so the
+// list, the board and later the calendar share filtering, grouping and sorting. Built-in
+// routes and saved views use the same `ViewSpec` (generated from the Rust core).
 
-import { isoDate } from "./dates";
-import type { Priority, Project, Status, StatusCategory, Task } from "./types";
+import { daysFrom, isoDate } from "./dates";
+import type {
+  DueFilter,
+  Epic,
+  GroupBy,
+  Priority,
+  Project,
+  SortBy,
+  Status,
+  StatusCategory,
+  Task,
+  ViewFilter,
+  ViewScope,
+  ViewSpec,
+} from "./types";
 
-export type ViewKey =
-  | { kind: "inbox" }
-  | { kind: "today" }
-  | { kind: "all" }
-  | { kind: "project"; id: string }
-  | { kind: "epic"; id: string };
+/** The task set a view starts from; same shape as `ViewScope` in the core. */
+export type ViewKey = ViewScope;
+
+/** The parts of a spec that decide which tasks show and in what order. */
+export type ViewQuery = Pick<ViewSpec, "scope" | "filter" | "group_by" | "sort" | "show_cancelled">;
 
 export interface ViewContext {
   today: string;
   statuses: Record<string, Status>;
   projects: Record<string, Project>;
+  /** Needed only to group by epic. */
+  epics?: Record<string, Epic>;
 }
 
+export const EMPTY_FILTER: ViewFilter = {
+  status_ids: [],
+  priorities: [],
+  project_ids: [],
+  epic_ids: [],
+  tag_ids: [],
+  due: null,
+};
+
 const PRIORITY_ORDER: Record<Priority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+const PRIORITY_LABELS: Record<Priority, string> = {
+  urgent: "Urgent",
+  high: "High",
+  normal: "Normal",
+  low: "Low",
+};
 
 export function categoryOf(task: Task, ctx: Pick<ViewContext, "statuses">): StatusCategory {
   return ctx.statuses[task.status_id]?.category ?? "todo";
@@ -46,7 +76,7 @@ export interface InViewOptions {
   keepClosedToday?: boolean;
 }
 
-/** Whether `task` belongs in a view, ignoring the tree. */
+/** Whether `task` belongs in a view's scope, ignoring filters and the tree. */
 export function inView(
   view: ViewKey,
   task: Task,
@@ -73,7 +103,59 @@ export function inView(
     }
     case "epic":
       return task.epic_id === view.id;
+    case "tag":
+      return task.tag_ids.includes(view.id);
   }
+}
+
+function matchesDue(due: DueFilter, task: Task, ctx: ViewContext): boolean {
+  switch (due) {
+    case "overdue":
+      return isOverdue(task, ctx);
+    case "today":
+      return task.due_date !== null && task.due_date <= ctx.today;
+    case "week":
+      return task.due_date !== null && daysFrom(ctx.today, task.due_date) <= 7;
+    case "none":
+      return task.due_date === null;
+  }
+}
+
+/** A task matches every non-empty list of the filter (any value within a list). */
+export function matchesFilter(filter: ViewFilter, task: Task, ctx: ViewContext): boolean {
+  if (filter.status_ids.length && !filter.status_ids.includes(task.status_id)) return false;
+  if (filter.priorities.length && !filter.priorities.includes(task.priority)) return false;
+  if (
+    filter.project_ids.length &&
+    !(task.project_id !== null && filter.project_ids.includes(task.project_id))
+  )
+    return false;
+  if (filter.epic_ids.length && !(task.epic_id !== null && filter.epic_ids.includes(task.epic_id)))
+    return false;
+  if (filter.tag_ids.length && !task.tag_ids.some((t) => filter.tag_ids.includes(t))) return false;
+  if (filter.due && !matchesDue(filter.due, task, ctx)) return false;
+  return true;
+}
+
+export function filterIsEmpty(filter: ViewFilter): boolean {
+  return (
+    !filter.status_ids.length &&
+    !filter.priorities.length &&
+    !filter.project_ids.length &&
+    !filter.epic_ids.length &&
+    !filter.tag_ids.length &&
+    !filter.due
+  );
+}
+
+/** Scope and filter together. */
+export function matchesQuery(
+  query: Pick<ViewQuery, "scope" | "filter">,
+  task: Task,
+  ctx: ViewContext,
+  options: InViewOptions = {},
+): boolean {
+  return inView(query.scope, task, ctx, options) && matchesFilter(query.filter, task, ctx);
 }
 
 /** Default order: picked for today, overdue, priority, due date, then manual rank. */
@@ -90,9 +172,27 @@ export function compareTasks(a: Task, b: Task, ctx: ViewContext): number {
   );
 }
 
-/** Manual order only, for subtask checklists. */
+/** Manual order only, for subtask checklists and board columns. */
 export function compareRank(a: Task, b: Task): number {
   return compareStrings(a.rank, b.rank) || compareStrings(a.id, b.id);
+}
+
+export function comparator(sort: SortBy, ctx: ViewContext): (a: Task, b: Task) => number {
+  switch (sort) {
+    case "default":
+      return (a, b) => compareTasks(a, b, ctx);
+    case "manual":
+      return compareRank;
+    case "due":
+      return (a, b) => compareNullable(a.due_date, b.due_date) || compareRank(a, b);
+    case "priority":
+      return (a, b) =>
+        PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || compareTasks(a, b, ctx);
+    case "created":
+      return (a, b) => b.created_at - a.created_at || compareStrings(a.id, b.id);
+    case "updated":
+      return (a, b) => b.updated_at - a.updated_at || compareStrings(a.id, b.id);
+  }
 }
 
 function compareStrings(a: string, b: string): number {
@@ -119,8 +219,15 @@ export function childrenByParent(tasks: Iterable<Task>): Map<string, Task[]> {
   return map;
 }
 
+export interface Group {
+  /** Stable within a grouping: a status/project/epic id, a priority, a due bucket, `none`. */
+  key: string;
+  label: string;
+  color: string | null;
+}
+
 export type Row =
-  | { type: "group"; status: Status; count: number; collapsed: boolean }
+  | { type: "group"; group: Group; count: number; collapsed: boolean }
   | {
       type: "task";
       task: Task;
@@ -133,34 +240,105 @@ export type Row =
     };
 
 export interface RowOptions {
-  showCancelled: boolean;
   collapsedGroups: ReadonlySet<string>;
   collapsedTasks: ReadonlySet<string>;
 }
 
+const DUE_BUCKETS: Group[] = [
+  { key: "overdue", label: "Overdue", color: "#ef4444" },
+  { key: "today", label: "Today", color: "#f59e0b" },
+  { key: "week", label: "Next 7 days", color: "#3b82f6" },
+  { key: "later", label: "Later", color: null },
+  { key: "none", label: "No due date", color: null },
+];
+
+function dueBucket(task: Task, ctx: ViewContext): string {
+  if (task.due_date === null) return "none";
+  const days = daysFrom(ctx.today, task.due_date);
+  if (days < 0) return isOpen(task, ctx) ? "overdue" : "today";
+  if (days === 0) return "today";
+  return days <= 7 ? "week" : "later";
+}
+
+/** Group key of a task and the groups in display order, for a grouping. */
+function grouping(
+  by: GroupBy,
+  ctx: ViewContext,
+  statuses: Status[],
+): { keyOf: (t: Task) => string; groups: (keys: Set<string>) => Group[] } {
+  const byRank = <T extends { rank: string; id: string }>(a: T, b: T) =>
+    compareStrings(a.rank, b.rank) || compareStrings(a.id, b.id);
+  switch (by) {
+    case "status":
+      return {
+        keyOf: (t) => t.status_id,
+        groups: () => statuses.map((s) => ({ key: s.id, label: s.name, color: s.color })),
+      };
+    case "project":
+      return {
+        keyOf: (t) => (t.project_id && ctx.projects[t.project_id] ? t.project_id : "none"),
+        groups: (keys) => [
+          ...Object.values(ctx.projects)
+            .filter((p) => keys.has(p.id))
+            .sort(byRank)
+            .map((p) => ({ key: p.id, label: p.name, color: p.color })),
+          { key: "none", label: "No project", color: null },
+        ],
+      };
+    case "epic":
+      return {
+        keyOf: (t) => (t.epic_id && ctx.epics?.[t.epic_id] ? t.epic_id : "none"),
+        groups: (keys) => [
+          ...Object.values(ctx.epics ?? {})
+            .filter((e) => keys.has(e.id))
+            .sort(byRank)
+            .map((e) => ({ key: e.id, label: e.name, color: null })),
+          { key: "none", label: "No epic", color: null },
+        ],
+      };
+    case "priority":
+      return {
+        keyOf: (t) => t.priority,
+        groups: () =>
+          (Object.keys(PRIORITY_ORDER) as Priority[]).map((p) => ({
+            key: p,
+            label: PRIORITY_LABELS[p],
+            color: null,
+          })),
+      };
+    case "due":
+      return { keyOf: (t) => dueBucket(t, ctx), groups: () => DUE_BUCKETS };
+  }
+}
+
 /**
- * Rows for the list view: grouped by status (in workflow order), top-level tasks in default
- * order, each followed by its visible subtasks. A task whose parent is not in the view is
- * shown at the top level. Two levels are shown; deeper subtasks live in the detail panel.
+ * Rows for the list view: grouped (status in workflow order by default), top-level tasks
+ * sorted by the spec, each followed by its visible subtasks in manual order. A task whose
+ * parent is not in the view is shown at the top level. Two levels are shown; deeper
+ * subtasks live in the detail panel. Cancelled tasks only show when asked for.
  */
 export function buildRows(
   tasks: Iterable<Task>,
-  view: ViewKey,
+  query: ViewQuery,
   ctx: ViewContext,
   statuses: Status[],
   options: RowOptions,
 ): Row[] {
   const all = Array.from(tasks);
   const children = childrenByParent(all);
-  const visible = new Set(all.filter((t) => inView(view, t, ctx)).map((t) => t.id));
+  const shown = (t: Task) =>
+    matchesQuery(query, t, ctx) && (query.show_cancelled || categoryOf(t, ctx) !== "cancelled");
+  const visible = new Set(all.filter(shown).map((t) => t.id));
+  const { keyOf, groups } = grouping(query.group_by, ctx, statuses);
 
   const roots = new Map<string, Task[]>();
   for (const task of all) {
     if (!visible.has(task.id)) continue;
     if (task.parent_id !== null && visible.has(task.parent_id)) continue;
-    const list = roots.get(task.status_id);
+    const key = keyOf(task);
+    const list = roots.get(key);
     if (list) list.push(task);
-    else roots.set(task.status_id, [task]);
+    else roots.set(key, [task]);
   }
 
   const taskRow = (task: Task, depth: 0 | 1, shownChildren: Task[]): Row => {
@@ -175,20 +353,20 @@ export function buildRows(
     };
   };
 
+  const compare = comparator(query.sort, ctx);
   const rows: Row[] = [];
-  for (const status of statuses) {
-    if (status.category === "cancelled" && !options.showCancelled) continue;
-    const list = roots.get(status.id);
+  for (const group of groups(new Set(roots.keys()))) {
+    const list = roots.get(group.key);
     if (!list?.length) continue;
-    list.sort((a, b) => compareTasks(a, b, ctx));
-    const collapsed = options.collapsedGroups.has(status.id);
-    rows.push({ type: "group", status, count: list.length, collapsed });
+    list.sort(compare);
+    const collapsed = options.collapsedGroups.has(group.key);
+    rows.push({ type: "group", group, count: list.length, collapsed });
     if (collapsed) continue;
     for (const task of list) {
-      const shown = (children.get(task.id) ?? []).filter((c) => visible.has(c.id));
-      rows.push(taskRow(task, 0, shown));
+      const kids = (children.get(task.id) ?? []).filter((c) => visible.has(c.id));
+      rows.push(taskRow(task, 0, kids));
       if (options.collapsedTasks.has(task.id)) continue;
-      for (const child of shown) {
+      for (const child of kids) {
         rows.push(taskRow(child, 1, []));
       }
     }

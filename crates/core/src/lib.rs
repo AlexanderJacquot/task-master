@@ -19,14 +19,15 @@ mod store;
 
 pub use clock::{new_id, now_ms};
 pub use commands::{
-    Command, EpicChange, MAX_RANK_LEN, NewEpic, NewProject, NewTag, NewTask, ProjectChange,
-    TagChange, TaskChange,
+    Command, EpicChange, MAX_RANK_LEN, NewEpic, NewProject, NewTag, NewTask, NewView,
+    ProjectChange, TagChange, TaskChange, ViewChange,
 };
 pub use error::{Error, Result};
 pub use events::{Changed, EntityRef};
 pub use model::{
-    Epic, EpicState, Id, IsoDate, Priority, Project, Snapshot, Status, StatusCategory, Tag, Task,
-    Timestamp, View,
+    DueFilter, Epic, EpicState, GroupBy, Id, IsoDate, Layout, Priority, Project, Snapshot, SortBy,
+    Status, StatusCategory, Swimlane, Tag, Task, Timestamp, VIEW_SPEC_VERSION, View, ViewFilter,
+    ViewScope, ViewSpec,
 };
 pub use ops::EntityKind;
 pub use query::{Activity, FieldChange};

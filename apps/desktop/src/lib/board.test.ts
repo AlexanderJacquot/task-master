@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { project, STATUS, statuses, task } from "../test/fixtures";
-import { adjacentStatus, type BoardOptions, buildBoard, ranksForDrop } from "./board";
-import type { Epic, Status } from "./types";
-import type { ViewContext } from "./views";
+import {
+  adjacentStatus,
+  type BoardLookups,
+  buildBoard,
+  ranksForDrop,
+  type Swimlane,
+} from "./board";
+import type { Epic, Status, Task, ViewFilter, ViewScope } from "./types";
+import { EMPTY_FILTER, type ViewContext } from "./views";
 
 const TODAY = "2026-11-04";
 
@@ -10,14 +16,43 @@ function ctx(projects = {}, list: Status[] = statuses): ViewContext {
   return { today: TODAY, statuses: Object.fromEntries(list.map((s) => [s.id, s])), projects };
 }
 
-const plain: BoardOptions = { swimlane: "none", showSubtasks: false, showCancelled: false };
+interface Opts {
+  swimlane: Swimlane;
+  showSubtasks: boolean;
+  showCancelled: boolean;
+}
+const plain: Opts = { swimlane: "none", showSubtasks: false, showCancelled: false };
+
+function build(
+  tasks: Task[],
+  scope: ViewScope,
+  c: ViewContext,
+  list: Status[],
+  lookups: BoardLookups,
+  o: Opts,
+  filter: ViewFilter = EMPTY_FILTER,
+) {
+  return buildBoard(
+    tasks,
+    {
+      scope,
+      filter,
+      swimlane: o.swimlane,
+      show_subtasks: o.showSubtasks,
+      show_cancelled: o.showCancelled,
+    },
+    c,
+    list,
+    lookups,
+  );
+}
 const none = { projects: {}, epics: {} };
 const titles = (cards: Array<{ task: { title: string } }> | undefined) =>
   (cards ?? []).map((c) => c.task.title);
 
 describe("buildBoard", () => {
   it("has a column per status in workflow order, cancelled only on request", () => {
-    const board = buildBoard([], { kind: "all" }, ctx(), statuses, none, plain);
+    const board = build([], { kind: "all" }, ctx(), statuses, none, plain);
     expect(board.columns.map((c) => c.status.name)).toEqual([
       "Backlog",
       "To do",
@@ -25,7 +60,7 @@ describe("buildBoard", () => {
       "Waiting",
       "Done",
     ]);
-    const all = buildBoard([], { kind: "all" }, ctx(), statuses, none, {
+    const all = build([], { kind: "all" }, ctx(), statuses, none, {
       ...plain,
       showCancelled: true,
     });
@@ -39,7 +74,7 @@ describe("buildBoard", () => {
       task({ title: "A", rank: "a1", due_date: "2020-01-01" }),
       task({ title: "C", rank: "a3" }),
     ];
-    const board = buildBoard(tasks, { kind: "all" }, ctx(), statuses, none, plain);
+    const board = build(tasks, { kind: "all" }, ctx(), statuses, none, plain);
     expect(titles(board.lanes[0]?.cells[STATUS.todo])).toEqual(["A", "B", "C"]);
   });
 
@@ -49,12 +84,12 @@ describe("buildBoard", () => {
     const p = project();
     const elsewhere = task({ title: "In a project", project_id: p.id });
     const tasks = [parent, child, elsewhere];
-    const inbox = buildBoard(tasks, { kind: "inbox" }, ctx({ [p.id]: p }), statuses, none, plain);
+    const inbox = build(tasks, { kind: "inbox" }, ctx({ [p.id]: p }), statuses, none, plain);
     expect(titles(inbox.lanes[0]?.cells[STATUS.todo])).toEqual(["Parent"]);
     // Done subtask: not in the inbox (closed), but still counted in progress.
     expect(inbox.lanes[0]?.cells[STATUS.todo]?.[0]).toMatchObject({ childCount: 1, childDone: 1 });
 
-    const all = buildBoard(tasks, { kind: "all" }, ctx({ [p.id]: p }), statuses, none, {
+    const all = build(tasks, { kind: "all" }, ctx({ [p.id]: p }), statuses, none, {
       ...plain,
       showSubtasks: true,
     });
@@ -69,7 +104,7 @@ describe("buildBoard", () => {
       task({ title: "Done today", status_id: STATUS.done, completed_at: today }),
       task({ title: "Done before", status_id: STATUS.done, completed_at: lastWeek }),
     ];
-    const board = buildBoard(tasks, { kind: "inbox" }, ctx(), statuses, none, plain);
+    const board = build(tasks, { kind: "inbox" }, ctx(), statuses, none, plain);
     expect(titles(board.lanes[0]?.cells[STATUS.todo])).toEqual(["Open"]);
     expect(titles(board.lanes[0]?.cells[STATUS.done])).toEqual(["Done today"]);
   });
@@ -83,14 +118,14 @@ describe("buildBoard", () => {
       task({ title: "Report", project_id: work.id, priority: "high" }),
     ];
     const lookups = { projects: { [work.id]: work, [home.id]: home }, epics: {} };
-    const byProject = buildBoard(tasks, { kind: "all" }, ctx(lookups.projects), statuses, lookups, {
+    const byProject = build(tasks, { kind: "all" }, ctx(lookups.projects), statuses, lookups, {
       ...plain,
       swimlane: "project",
     });
     expect(byProject.lanes.map((l) => l.label)).toEqual(["Work", "Home", "No project"]);
     expect(byProject.lanes[2]?.changes).toEqual([{ project_id: null }]);
 
-    const byPriority = buildBoard(tasks, { kind: "all" }, ctx(), statuses, none, {
+    const byPriority = build(tasks, { kind: "all" }, ctx(), statuses, none, {
       ...plain,
       swimlane: "priority",
     });
@@ -112,7 +147,7 @@ describe("buildBoard", () => {
       deleted_at: null,
     };
     const tasks = [task({ title: "Plain" }), task({ title: "Ship", epic_id: epic.id })];
-    const board = buildBoard(
+    const board = build(
       tasks,
       { kind: "all" },
       ctx(),
@@ -126,6 +161,21 @@ describe("buildBoard", () => {
     expect(board.lanes.map((l) => l.label)).toEqual(["Launch", "No epic"]);
   });
 
+  it("applies the filter and limits columns to filtered statuses", () => {
+    const tasks = [
+      task({ title: "Urgent", priority: "urgent", status_id: STATUS.inProgress }),
+      task({ title: "Calm", priority: "low", status_id: STATUS.inProgress }),
+      task({ title: "Elsewhere", priority: "urgent" }),
+    ];
+    const board = build(tasks, { kind: "all" }, ctx(), statuses, none, plain, {
+      ...EMPTY_FILTER,
+      status_ids: [STATUS.inProgress],
+      priorities: ["urgent"],
+    });
+    expect(board.columns.map((c) => c.status.id)).toEqual([STATUS.inProgress]);
+    expect(titles(board.lanes[0]?.cells[STATUS.inProgress])).toEqual(["Urgent"]);
+  });
+
   it("flags a column over its WIP limit", () => {
     const limited = statuses.map((s) => (s.id === STATUS.inProgress ? { ...s, wip_limit: 1 } : s));
     const tasks = [
@@ -133,7 +183,7 @@ describe("buildBoard", () => {
       task({ status_id: STATUS.inProgress }),
       task({ status_id: STATUS.todo }),
     ];
-    const board = buildBoard(tasks, { kind: "all" }, ctx({}, limited), limited, none, plain);
+    const board = build(tasks, { kind: "all" }, ctx({}, limited), limited, none, plain);
     const col = (id: string) => board.columns.find((c) => c.status.id === id);
     expect(col(STATUS.inProgress)).toMatchObject({ count: 2, overLimit: true });
     expect(col(STATUS.todo)).toMatchObject({ count: 1, overLimit: false });
@@ -170,7 +220,7 @@ describe("ranksForDrop", () => {
 
 describe("adjacentStatus", () => {
   it("steps through the shown columns and stops at the edges", () => {
-    const board = buildBoard([], { kind: "all" }, ctx(), statuses, none, plain);
+    const board = build([], { kind: "all" }, ctx(), statuses, none, plain);
     expect(adjacentStatus(board.columns, STATUS.todo, 1)).toBe(STATUS.inProgress);
     expect(adjacentStatus(board.columns, STATUS.backlog, -1)).toBeNull();
     expect(adjacentStatus(board.columns, STATUS.done, 1)).toBeNull();

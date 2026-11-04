@@ -46,6 +46,7 @@ class FakeCore implements Api {
       projects: [],
       epics: [],
       tags: [],
+      views: [],
       ...partial,
     });
   }
@@ -236,6 +237,7 @@ describe("history and events", () => {
       projects: [],
       epics: [],
       tags: [],
+      views: [],
     };
     await store.getState().undo();
     expect(Object.keys(store.getState().tasks)).toEqual([restored.id]);

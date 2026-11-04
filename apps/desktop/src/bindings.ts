@@ -75,6 +75,7 @@ export type Changes_Deserialize = {
 	projects: Project_Deserialize[],
 	epics: Epic_Deserialize[],
 	tags: Tag_Deserialize[],
+	views: View_Deserialize[],
 };
 
 /**
@@ -89,6 +90,7 @@ export type Changes_Serialize = {
 	projects: Project_Serialize[],
 	epics: Epic_Serialize[],
 	tags: Tag_Serialize[],
+	views: View_Serialize[],
 };
 
 /**  A user action. Several commands sent together form one undoable batch. */
@@ -117,7 +119,7 @@ export type Command_Deserialize = { type: "create_task"; task: NewTask_Deseriali
 /**  Detaches its tasks, then deletes the epic. */
 { type: "delete_epic"; id: string } | { type: "create_tag"; tag: NewTag_Deserialize } | { type: "update_tag"; id: string; changes: TagChange_Deserialize[] } | 
 /**  Removes the tag from every task, then deletes it. */
-{ type: "delete_tag"; id: string };
+{ type: "delete_tag"; id: string } | { type: "create_view"; view: NewView_Deserialize } | { type: "update_view"; id: string; changes: ViewChange_Deserialize[] } | { type: "delete_view"; id: string };
 
 /**  A user action. Several commands sent together form one undoable batch. */
 export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize } | { type: "update_task"; id: string; changes: TaskChange_Serialize[] } | 
@@ -135,10 +137,20 @@ export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize }
 /**  Detaches its tasks, then deletes the epic. */
 { type: "delete_epic"; id: string } | { type: "create_tag"; tag: NewTag_Serialize } | { type: "update_tag"; id: string; changes: TagChange_Serialize[] } | 
 /**  Removes the tag from every task, then deletes it. */
-{ type: "delete_tag"; id: string };
+{ type: "delete_tag"; id: string } | { type: "create_view"; view: NewView_Serialize } | { type: "update_view"; id: string; changes: ViewChange_Serialize[] } | { type: "delete_view"; id: string };
+
+export type DueFilter = 
+/**  Before today and still open. */
+"overdue" | 
+/**  Today or earlier. */
+"today" | 
+/**  Within the next 7 days, or earlier. */
+"week" | 
+/**  No due date. */
+"none";
 
 /**  Kinds of entity front ends get back in [`crate::Changes`] and events. */
-export type EntityKind = "task" | "project" | "epic" | "tag";
+export type EntityKind = "task" | "project" | "epic" | "tag" | "view";
 
 export type EntityRef = {
 	kind: EntityKind,
@@ -192,6 +204,11 @@ export type FieldChange = {
 	before: string,
 	after: string,
 };
+
+/**  List grouping (the board always has status columns). */
+export type GroupBy = "status" | "project" | "epic" | "priority" | "due";
+
+export type Layout = "list" | "board";
 
 export type NewEpic = NewEpic_Serialize | NewEpic_Deserialize;
 
@@ -298,6 +315,22 @@ export type NewTask_Serialize = {
 	tag_ids: string[],
 };
 
+export type NewView = NewView_Serialize | NewView_Deserialize;
+
+export type NewView_Deserialize = {
+	id?: string | null,
+	name: string,
+	spec: ViewSpec_Deserialize,
+	rank?: string | null,
+};
+
+export type NewView_Serialize = {
+	id: string | null,
+	name: string,
+	spec: ViewSpec_Serialize,
+	rank: string | null,
+};
+
 /**  Four levels; stored as 0 (urgent) to 3 (low). */
 export type Priority = "urgent" | "high" | "normal" | "low";
 
@@ -348,7 +381,7 @@ export type Snapshot_Deserialize = {
 	epics: Epic_Deserialize[],
 	statuses: Status_Deserialize[],
 	tags: Tag_Deserialize[],
-	views: View[],
+	views: View_Deserialize[],
 };
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
@@ -358,8 +391,12 @@ export type Snapshot_Serialize = {
 	epics: Epic_Serialize[],
 	statuses: Status_Serialize[],
 	tags: Tag_Serialize[],
-	views: View[],
+	views: View_Serialize[],
 };
+
+export type SortBy = 
+/**  Today, overdue, priority, due date, then manual rank. */
+"default" | "manual" | "due" | "priority" | "created" | "updated";
 
 /**  A workflow column. */
 export type Status = Status_Serialize | Status_Deserialize;
@@ -389,6 +426,8 @@ export type Status_Serialize = {
 
 /**  Emitted after every committed batch, whoever wrote it. */
 export type StoreChanged = Changed;
+
+export type Swimlane = "none" | "project" | "epic" | "priority";
 
 export type Tag = Tag_Serialize | Tag_Deserialize;
 
@@ -485,12 +524,110 @@ export type Task_Serialize = {
 	deleted_at: number | null,
 };
 
-/**  A saved board or list. `spec` is defined in M4. */
-export type View = {
+/**  A saved board or list: a name plus a [`ViewSpec`]. */
+export type View = View_Serialize | View_Deserialize;
+
+export type ViewChange = ViewChange_Serialize | ViewChange_Deserialize;
+
+export type ViewChange_Deserialize = ({ name: string }) & { rank?: never; spec?: never } | ({ spec: ViewSpec_Deserialize }) & { name?: never; rank?: never } | ({ rank: string }) & { name?: never; spec?: never };
+
+export type ViewChange_Serialize = ({ name: string }) & { rank?: never; spec?: never } | ({ spec: ViewSpec_Serialize }) & { name?: never; rank?: never } | ({ rank: string }) & { name?: never; spec?: never };
+
+/**
+ *  Narrows the scope. Empty lists match everything; a task must match every non-empty
+ *  list (any value within a list).
+ */
+export type ViewFilter = ViewFilter_Serialize | ViewFilter_Deserialize;
+
+/**
+ *  Narrows the scope. Empty lists match everything; a task must match every non-empty
+ *  list (any value within a list).
+ */
+export type ViewFilter_Deserialize = {
+	status_ids?: string[],
+	priorities?: Priority[],
+	project_ids?: string[],
+	epic_ids?: string[],
+	/**  Tasks carrying any of these tags. */
+	tag_ids?: string[],
+	due?: DueFilter | null,
+};
+
+/**
+ *  Narrows the scope. Empty lists match everything; a task must match every non-empty
+ *  list (any value within a list).
+ */
+export type ViewFilter_Serialize = {
+	status_ids: string[],
+	priorities: Priority[],
+	project_ids: string[],
+	epic_ids: string[],
+	/**  Tasks carrying any of these tags. */
+	tag_ids: string[],
+	due: DueFilter | null,
+};
+
+/**  The base set of tasks, the same keys as the built-in routes. */
+export type ViewScope = { kind: "inbox" } | { kind: "today" } | { kind: "all" } | { kind: "project"; id: string } | { kind: "epic"; id: string } | { kind: "tag"; id: string };
+
+/**
+ *  What a view shows and how. Stored as JSON in `views.spec`; every field but `scope`
+ *  has a default, so older specs keep loading when fields are added.
+ */
+export type ViewSpec = ViewSpec_Serialize | ViewSpec_Deserialize;
+
+/**
+ *  What a view shows and how. Stored as JSON in `views.spec`; every field but `scope`
+ *  has a default, so older specs keep loading when fields are added.
+ */
+export type ViewSpec_Deserialize = {
+	version: number,
+	scope: ViewScope,
+	filter?: ViewFilter_Deserialize,
+	group_by?: GroupBy,
+	sort?: SortBy,
+	layout?: Layout,
+	swimlane?: Swimlane,
+	show_subtasks?: boolean,
+	show_cancelled?: boolean,
+};
+
+/**
+ *  What a view shows and how. Stored as JSON in `views.spec`; every field but `scope`
+ *  has a default, so older specs keep loading when fields are added.
+ */
+export type ViewSpec_Serialize = {
+	version: number,
+	scope: ViewScope,
+	filter: ViewFilter_Serialize,
+	group_by: GroupBy,
+	sort: SortBy,
+	layout: Layout,
+	swimlane: Swimlane,
+	show_subtasks: boolean,
+	show_cancelled: boolean,
+};
+
+/**  A saved board or list: a name plus a [`ViewSpec`]. */
+export type View_Deserialize = {
 	id: string,
 	name: string,
-	spec: string,
+	spec: ViewSpec_Deserialize,
 	rank: string,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**  A saved board or list: a name plus a [`ViewSpec`]. */
+export type View_Serialize = {
+	id: string,
+	name: string,
+	spec: ViewSpec_Serialize,
+	rank: string,
+	created_at: number,
+	updated_at: number,
+	deleted_at: number | null,
 };
 
 /* Tauri Specta runtime */

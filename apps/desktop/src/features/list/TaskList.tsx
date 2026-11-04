@@ -8,7 +8,7 @@ interface Props extends RowHandlers, RowLookups {
   rows: Row[];
   selectedId: string | null;
   collapsedTasks: ReadonlySet<string>;
-  onToggleGroup(statusId: string): void;
+  onToggleGroup(groupKey: string): void;
 }
 
 const ROW_HEIGHT = 36;
@@ -24,7 +24,7 @@ export function TaskList({ rows, selectedId, collapsedTasks, onToggleGroup, ...r
     getItemKey: (i) => {
       const row = rows[i];
       if (!row) return i;
-      return row.type === "group" ? `g:${row.status.id}` : `t:${row.task.id}`;
+      return row.type === "group" ? `g:${row.group.key}` : `t:${row.task.id}`;
     },
     overscan: 12,
   });
@@ -50,12 +50,12 @@ export function TaskList({ rows, selectedId, collapsedTasks, onToggleGroup, ...r
               {row.type === "group" ? (
                 <button
                   type="button"
-                  onClick={() => onToggleGroup(row.status.id)}
+                  onClick={() => onToggleGroup(row.group.key)}
                   className="flex h-8 w-full items-center gap-2 bg-neutral-50 px-3 text-left text-xs font-semibold text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400"
                 >
                   <span className="w-3">{row.collapsed ? "▸" : "▾"}</span>
-                  <Dot color={row.status.color} />
-                  {row.status.name}
+                  <Dot color={row.group.color} />
+                  {row.group.label}
                   <span className="font-normal text-neutral-400">{row.count}</span>
                 </button>
               ) : (

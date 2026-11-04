@@ -6,9 +6,10 @@ import {
   type RouterHistory,
   redirect,
 } from "@tanstack/react-router";
+import { EpicPage } from "./features/organize/EpicPage";
+import { ProjectPage } from "./features/organize/ProjectPage";
 import { Layout } from "./features/shell/Layout";
-import { ViewPage } from "./features/shell/ViewPage";
-import { isoDate } from "./lib/dates";
+import { SavedViewPage, ViewPage } from "./features/shell/ViewPage";
 import { useStoreState } from "./store/context";
 
 export type AppSearch = { task?: string };
@@ -31,21 +32,19 @@ const indexRoute = createRoute({
 const inboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "inbox",
-  component: () => <ViewPage view={{ kind: "inbox" }} title="Inbox" defaults={{}} />,
+  component: () => <ViewPage scope={{ kind: "inbox" }} title="Inbox" />,
 });
 
 const todayRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "today",
-  component: () => (
-    <ViewPage view={{ kind: "today" }} title="Today" defaults={{ today_on: isoDate() }} />
-  ),
+  component: () => <ViewPage scope={{ kind: "today" }} title="Today" />,
 });
 
 const allRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "all",
-  component: () => <ViewPage view={{ kind: "all" }} title="All tasks" defaults={{}} />,
+  component: () => <ViewPage scope={{ kind: "all" }} title="All tasks" />,
 });
 
 const projectRoute = createRoute({
@@ -55,14 +54,7 @@ const projectRoute = createRoute({
     const { projectId } = projectRoute.useParams();
     const project = useStoreState((s) => s.projects[projectId]);
     if (!project) return <Missing what="Project" />;
-    return (
-      <ViewPage
-        key={projectId}
-        view={{ kind: "project", id: projectId }}
-        title={project.name}
-        defaults={{ project_id: projectId }}
-      />
-    );
+    return <ProjectPage key={projectId} project={project} />;
   },
 });
 
@@ -73,14 +65,30 @@ const epicRoute = createRoute({
     const { epicId } = epicRoute.useParams();
     const epic = useStoreState((s) => s.epics[epicId]);
     if (!epic) return <Missing what="Epic" />;
-    return (
-      <ViewPage
-        key={epicId}
-        view={{ kind: "epic", id: epicId }}
-        title={epic.name}
-        defaults={{ epic_id: epicId }}
-      />
-    );
+    return <EpicPage key={epicId} epic={epic} />;
+  },
+});
+
+const tagRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "tag/$tagId",
+  component: function TagView() {
+    const { tagId } = tagRoute.useParams();
+    const tag = useStoreState((s) => s.tags[tagId]);
+    if (!tag) return <Missing what="Tag" />;
+    return <ViewPage key={tagId} scope={{ kind: "tag", id: tagId }} title={`#${tag.name}`} />;
+  },
+});
+
+const savedViewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "view/$viewId",
+  component: function SavedView() {
+    const { viewId } = savedViewRoute.useParams();
+    const view = useStoreState((s) => s.views[viewId]);
+    if (!view) return <Missing what="View" />;
+    // Remount when the stored view changes (save, rename, undo) so the draft starts from it.
+    return <SavedViewPage key={`${view.id}:${view.updated_at}`} view={view} />;
   },
 });
 
@@ -95,6 +103,8 @@ const routeTree = rootRoute.addChildren([
   allRoute,
   projectRoute,
   epicRoute,
+  tagRoute,
+  savedViewRoute,
 ]);
 
 export function createAppRouter(history?: RouterHistory) {

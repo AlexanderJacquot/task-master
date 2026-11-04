@@ -6,7 +6,9 @@ use serde_json::{Map, Value, json};
 
 use crate::clock::{check_date, check_id, new_id};
 use crate::error::{Error, Result};
-use crate::model::{EpicState, Id, IsoDate, Priority, StatusCategory, Task};
+use crate::model::{
+    EpicState, Id, IsoDate, Priority, StatusCategory, Task, VIEW_SPEC_VERSION, ViewScope, ViewSpec,
+};
 use crate::ops::{Batch, Change, Entity, OpKind};
 use crate::{query, rank};
 
@@ -77,6 +79,16 @@ pub enum Command {
     },
     /// Removes the tag from every task, then deletes it.
     DeleteTag {
+        id: Id,
+    },
+    CreateView {
+        view: NewView,
+    },
+    UpdateView {
+        id: Id,
+        changes: Vec<ViewChange>,
+    },
+    DeleteView {
         id: Id,
     },
 }
@@ -185,6 +197,24 @@ pub struct NewTag {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewView {
+    pub id: Option<Id>,
+    pub name: String,
+    pub spec: ViewSpec,
+    pub rank: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum ViewChange {
+    Name(String),
+    Spec(ViewSpec),
+    Rank(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum TagChange {
     Name(String),
@@ -217,6 +247,9 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
         Command::CreateTag { tag } => create_tag(b, tag),
         Command::UpdateTag { id, changes } => update_tag(b, &id, changes),
         Command::DeleteTag { id } => delete_tag(b, &id),
+        Command::CreateView { view } => create_view(b, view),
+        Command::UpdateView { id, changes } => update_view(b, &id, changes),
+        Command::DeleteView { id } => delete_view(b, &id),
     }
 }
 
@@ -849,6 +882,117 @@ fn delete_tag(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
 
 // ---------------------------------------------------------------------------------------
 // Helpers
+
+// ---------------------------------------------------------------------------------------
+// Saved views
+
+/// Checks the version and that the scope and filters name live entities and statuses.
+/// Stored as JSON text; the ops log keeps that text, so undo restores it byte for byte.
+fn view_spec_json(b: &Batch<'_, '_>, spec: &ViewSpec) -> Result<String> {
+    if spec.version != VIEW_SPEC_VERSION {
+        return Err(Error::invalid(format!(
+            "view spec version {} is not supported (expected {VIEW_SPEC_VERSION})",
+            spec.version
+        )));
+    }
+    match &spec.scope {
+        ViewScope::Inbox | ViewScope::Today | ViewScope::All => {}
+        ViewScope::Project { id } => drop(live_project(b, id)?),
+        ViewScope::Epic { id } => drop(live_epic(b, id)?),
+        ViewScope::Tag { id } => drop(live_tag(b, id)?),
+    }
+    let f = &spec.filter;
+    for id in &f.status_ids {
+        query::status(b.tx, id)?;
+    }
+    for id in &f.project_ids {
+        live_project(b, id)?;
+    }
+    for id in &f.epic_ids {
+        live_epic(b, id)?;
+    }
+    for id in &f.tag_ids {
+        live_tag(b, id)?;
+    }
+    Ok(serde_json::to_string(spec)?)
+}
+
+fn create_view(b: &mut Batch<'_, '_>, n: NewView) -> Result<()> {
+    let id = client_id(n.id)?;
+    let name = non_empty("name", &n.name)?;
+    let spec = view_spec_json(b, &n.spec)?;
+    let rank = match n.rank {
+        Some(r) => {
+            rank::validate(&r)?;
+            r
+        }
+        None => {
+            let last: Option<String> = b.tx.query_row(
+                "SELECT MAX(rank) FROM views WHERE deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )?;
+            rank::key_between(last.as_deref(), None)?
+        }
+    };
+    b.apply(Change::new(
+        Entity::View,
+        &id,
+        OpKind::Create,
+        json!({
+            "name": name,
+            "spec": spec,
+            "rank": rank,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn update_view(b: &mut Batch<'_, '_>, id: &str, changes: Vec<ViewChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_view needs at least one change"));
+    }
+    live_view(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            ViewChange::Name(n) => ("name", json!(non_empty("name", &n)?)),
+            ViewChange::Spec(spec) => ("spec", json!(view_spec_json(b, &spec)?)),
+            ViewChange::Rank(r) => {
+                rank::validate(&r)?;
+                ("rank", json!(r))
+            }
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::View,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_view(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_view(b, id)?;
+    b.apply(Change::new(
+        Entity::View,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+fn live_view(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::View> {
+    let view = query::view(b.tx, id)?;
+    if view.deleted_at.is_some() {
+        return Err(Error::not_found("view", id));
+    }
+    Ok(view)
+}
 
 fn client_id(id: Option<Id>) -> Result<Id> {
     match id {

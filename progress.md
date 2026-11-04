@@ -4,8 +4,8 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M3 Kanban**, branch `m3-kanban` (from `main`, which has M2): done, pending review and a
-hands-on check in the real window. Next up: **M4 Organization**.
+**M4 Organization**, branch `m4-organization` (stacked on `m3-kanban`): done, pending review
+and a hands-on check. Next up: **M5 Speed**.
 
 ## Done
 
@@ -25,6 +25,28 @@ hands-on check in the real window. Next up: **M4 Organization**.
   `pnpm --filter desktop tauri icon src-tauri/app-icon.png`).
 
 Verified locally on Linux: all checks pass; release build produces a 2.9 MiB `.deb`.
+
+### M4 Organization (2026-11-04)
+
+- Core: migration `0002_views.sql` (timestamps + soft delete on `views`); typed, versioned
+  `ViewSpec` (scope, filter, group_by, sort, layout, swimlane, toggles) exported to TS;
+  `create_view` / `update_view` / `delete_view` with ops and undo; views in `Changes`.
+- `lib/views.ts`: one spec-driven path for every view: tag scope, filters (status,
+  priority, project, epic, tags, due), list grouping (status, project, epic, priority, due
+  buckets), sorts (smart, manual, due, priority, newest, recently updated). `buildBoard`
+  takes the same spec; a status filter limits the columns.
+- Saved views: `/view/:id`, sidebar section, "Save as view" from any page, filter bar,
+  draft edits with Save/Revert, rename (double-click), delete. Built-in views keep their
+  display choices per machine (`useViewPrefs`, reads M3 keys).
+- Tag views: `/tag/:id` from the sidebar; capture in a project/epic/tag/Today view sets it.
+- Projects: page header with rename, color, area move, archive/unarchive, delete; sidebar
+  archived section and drag to reorder siblings (post-drop link navigation cancelled).
+- Epics: page with state, target date, home project, description and progress; done and
+  dropped epics collapsed in the sidebar.
+- Tests: 44 Rust (+5: view roundtrips, ordering, validation, UI JSON with defaults,
+  migrating a v1 DB) and 97 Vitest (filters, grouping, sorting, board filters, project and
+  epic actions, saved view and tag view UI flows).
+- Decisions: `docs/adr/005-saved-views.md`. No new dependencies.
 
 ### M3 Kanban (2026-11-04)
 
@@ -106,6 +128,8 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 ## Not yet verified
 
 - M2 UI by hand in the real window (`pnpm dev`): layout, dark mode, CodeMirror, popover.
+- M4 by hand: saved view save/revert/reopen, filter bar popovers, project drag in the
+  sidebar, archive/delete flows, epic fields, dark mode.
 - M3 board by hand: pointer drag feel (jsdom cannot test it), shaking a card between columns
   (the update-depth loop fix, ADR 004), drag between lanes, dark mode,
   and scrolling on WebKitGTK with a seeded DB:
@@ -115,21 +139,24 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Window opens on **Windows** and **macOS** (M0 "done when" asks for Windows). No CI for them yet.
 - First run of the Forgejo workflow (runner image, apt access, cache action).
 
-## Next: M4 Organization
+## Next: M5 Speed
 
-Branch `m4-organization`. Plan row: projects tree with areas, epics view with progress, tags,
-saved views (filter, group, sort, layout, swimlanes), Inbox and Today. Done when every view
-in plan section 6 exists and a saved view reopens identically. Saved views replace the
-`localStorage` layout prefs from M3. Break into tasks at the start of the session.
+Branch `m5-speed`. Plan row: quick capture window + global hotkey, inline syntax parser
+(`#tag @Project !high ^fri +epic:X`, in the core `parse` module, with snapshot tests),
+command palette (`Ctrl+K`), shortcuts, FTS search UI, Plan my day. Done when capturing a
+fully tagged task takes under 3 s from any app. New dependencies to propose: the Tauri
+global-shortcut plugin (and a snapshot-test crate such as `insta` for the parser).
 
 ## Later
 
 - Markdown preview: needs a renderer dependency (`marked` + `DOMPurify` or `react-markdown`).
 - List view multi-select and bulk actions (plan section 6), via one `execute` batch.
-- Tag views (click a tag in the sidebar), project rename/archive/delete UI, epic edit UI (M4).
 
 - Core: writer thread + reader pool if the M6 perf test needs it (ADR 002).
-- Core: status commands (M6), view commands and specs (M4), undo across restarts.
+- Core: status commands (M6), undo across restarts.
+- Core: compile `ViewSpec` to SQL for the CLI and MCP adapters (plan section 5).
+- Sidebar: drag a project into another area (today: the project page's Area menu); keyboard
+  reordering of projects; reorder saved views.
 - Bump `rusqlite` to 0.41 once `rusqlite_migration` supports it.
 - CSP in `tauri.conf.json` is a strict baseline; revisit when adding the markdown editor.
 - Replace the placeholder icon.

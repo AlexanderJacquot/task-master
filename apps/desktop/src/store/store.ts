@@ -4,7 +4,17 @@
 
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { Api } from "../lib/api";
-import type { Changes, Command, Epic, Project, Snapshot, Status, Tag, Task } from "../lib/types";
+import type {
+  Changes,
+  Command,
+  Epic,
+  Project,
+  Snapshot,
+  Status,
+  Tag,
+  Task,
+  View,
+} from "../lib/types";
 
 type ById<T> = Record<string, T>;
 
@@ -13,14 +23,16 @@ export interface Entities {
   projects: ById<Project>;
   epics: ById<Epic>;
   tags: ById<Tag>;
+  /** Saved views. */
+  views: ById<View>;
   /** Workflow order. */
   statuses: Status[];
 }
 
 /** Local edits shown before the core confirms them. */
 export interface Optimistic {
-  upsert?: { tasks?: Task[]; projects?: Project[]; epics?: Epic[]; tags?: Tag[] };
-  remove?: { tasks?: string[] };
+  upsert?: { tasks?: Task[]; projects?: Project[]; epics?: Epic[]; tags?: Tag[]; views?: View[] };
+  remove?: { tasks?: string[]; projects?: string[]; epics?: string[]; views?: string[] };
 }
 
 export interface TaskStoreState extends Entities {
@@ -41,8 +53,8 @@ export interface TaskStoreState extends Entities {
 
 export type TaskStore = StoreApi<TaskStoreState>;
 
-type Kind = "tasks" | "projects" | "epics" | "tags";
-const KINDS: Kind[] = ["tasks", "projects", "epics", "tags"];
+type Kind = "tasks" | "projects" | "epics" | "tags" | "views";
+const KINDS: Kind[] = ["tasks", "projects", "epics", "tags", "views"];
 
 function byId<T extends { id: string }>(list: T[]): ById<T> {
   return Object.fromEntries(list.map((item) => [item.id, item]));
@@ -54,6 +66,7 @@ function fromSnapshot(snapshot: Snapshot): Entities {
     projects: byId(snapshot.projects),
     epics: byId(snapshot.epics),
     tags: byId(snapshot.tags),
+    views: byId(snapshot.views),
     statuses: snapshot.statuses,
   };
 }
@@ -126,6 +139,7 @@ export function createTaskStore(api: Api): TaskStore {
       projects: {},
       epics: {},
       tags: {},
+      views: {},
       statuses: [],
       ready: false,
       loadError: null,
@@ -149,7 +163,8 @@ export function createTaskStore(api: Api): TaskStore {
             const next: Partial<Entities> = {};
             for (const kind of KINDS) {
               const upserts = (optimistic.upsert?.[kind] ?? []) as Array<{ id: string }>;
-              const removals = kind === "tasks" ? (optimistic.remove?.tasks ?? []) : [];
+              const removals =
+                (optimistic.remove as Record<string, string[] | undefined>)?.[kind] ?? [];
               if (!upserts.length && !removals.length) continue;
               const map = { ...s[kind] } as ById<unknown>;
               for (const entity of upserts) {

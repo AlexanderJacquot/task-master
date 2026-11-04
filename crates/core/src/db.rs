@@ -9,7 +9,10 @@ use crate::clock::{new_id, now_ms};
 use crate::error::Result;
 
 /// Embedded migrations, applied in order at startup. Never edit a shipped one: add a new file.
-const MIGRATIONS: &[M<'static>] = &[M::up(include_str!("../migrations/0001_init.sql"))];
+const MIGRATIONS: &[M<'static>] = &[
+    M::up(include_str!("../migrations/0001_init.sql")),
+    M::up(include_str!("../migrations/0002_views.sql")),
+];
 
 pub(crate) fn migrations() -> Migrations<'static> {
     Migrations::from_slice(MIGRATIONS)

@@ -1038,3 +1038,196 @@ fn fifty_random_drags_match_a_reference_model() {
     }
     assert_eq!(s.snapshot().unwrap(), initial);
 }
+
+// ---------------------------------------------------------------------------------------
+// Saved views (M4)
+
+fn spec(scope: ViewScope) -> ViewSpec {
+    ViewSpec {
+        version: VIEW_SPEC_VERSION,
+        scope,
+        filter: ViewFilter::default(),
+        group_by: GroupBy::Status,
+        sort: SortBy::Default,
+        layout: Layout::List,
+        swimlane: Swimlane::None,
+        show_subtasks: false,
+        show_cancelled: false,
+    }
+}
+
+fn add_view(s: &mut Store, name: &str, spec: ViewSpec) -> View {
+    let changes = s
+        .execute(Command::CreateView {
+            view: NewView {
+                id: None,
+                name: name.into(),
+                spec,
+                rank: None,
+            },
+        })
+        .unwrap();
+    changes.views.into_iter().next().unwrap()
+}
+
+#[test]
+fn view_commands_roundtrip_and_keep_the_spec_exactly() {
+    let mut s = store();
+    let project = add_project(&mut s, "Homelab", None);
+    let tag = add_tag(&mut s, "deep");
+    let mut board = spec(ViewScope::Project {
+        id: project.id.clone(),
+    });
+    board.filter = ViewFilter {
+        status_ids: vec![TODO.into(), IN_PROGRESS.into()],
+        priorities: vec![Priority::Urgent, Priority::High],
+        tag_ids: vec![tag.id.clone()],
+        due: Some(DueFilter::Week),
+        ..ViewFilter::default()
+    };
+    board.layout = Layout::Board;
+    board.swimlane = Swimlane::Priority;
+    board.show_subtasks = true;
+
+    let created = roundtrip(
+        &mut s,
+        Command::CreateView {
+            view: NewView {
+                id: Some(new_id()),
+                name: "Homelab board".into(),
+                spec: board.clone(),
+                rank: None,
+            },
+        },
+    );
+    let view = created.views[0].clone();
+    uuid_v7(&view.id);
+    assert_eq!(view.spec, board);
+    assert_eq!(s.snapshot().unwrap().views, vec![view.clone()]);
+
+    let mut list = board.clone();
+    list.layout = Layout::List;
+    list.group_by = GroupBy::Due;
+    list.sort = SortBy::Updated;
+    let updated = roundtrip(
+        &mut s,
+        Command::UpdateView {
+            id: view.id.clone(),
+            changes: vec![
+                ViewChange::Name("Homelab list".into()),
+                ViewChange::Spec(list.clone()),
+            ],
+        },
+    );
+    assert_eq!(updated.views[0].name, "Homelab list");
+    assert_eq!(updated.views[0].spec, list);
+
+    roundtrip(
+        &mut s,
+        Command::DeleteView {
+            id: view.id.clone(),
+        },
+    );
+    assert!(s.snapshot().unwrap().views.is_empty());
+    s.undo().unwrap();
+    assert_eq!(s.snapshot().unwrap().views[0].spec, list);
+}
+
+#[test]
+fn views_are_ranked_in_creation_order() {
+    let mut s = store();
+    let a = add_view(&mut s, "A", spec(ViewScope::All));
+    let b = add_view(&mut s, "B", spec(ViewScope::Today));
+    assert!(a.rank < b.rank);
+    let names: Vec<_> = s
+        .snapshot()
+        .unwrap()
+        .views
+        .into_iter()
+        .map(|v| v.name)
+        .collect();
+    assert_eq!(names, ["A", "B"]);
+}
+
+#[test]
+fn view_specs_are_validated() {
+    let mut s = store();
+    let create = |spec: ViewSpec, name: &str| Command::CreateView {
+        view: NewView {
+            id: None,
+            name: name.into(),
+            spec,
+            rank: None,
+        },
+    };
+    let mut future = spec(ViewScope::All);
+    future.version = VIEW_SPEC_VERSION + 1;
+    assert!(invalid(s.execute(create(future, "Future"))).contains("version"));
+    assert!(invalid(s.execute(create(spec(ViewScope::All), "  "))).contains("name"));
+
+    let missing = spec(ViewScope::Project { id: new_id() });
+    assert!(matches!(
+        s.execute(create(missing, "Gone")),
+        Err(Error::NotFound { .. })
+    ));
+    let mut bad_status = spec(ViewScope::All);
+    bad_status.filter.status_ids = vec![new_id()];
+    assert!(matches!(
+        s.execute(create(bad_status, "Bad")),
+        Err(Error::NotFound { .. })
+    ));
+
+    let tag = add_tag(&mut s, "old");
+    s.execute(Command::DeleteTag { id: tag.id.clone() })
+        .unwrap();
+    let deleted_tag = spec(ViewScope::Tag { id: tag.id });
+    assert!(matches!(
+        s.execute(create(deleted_tag, "Deleted tag")),
+        Err(Error::NotFound { .. })
+    ));
+    assert!(s.snapshot().unwrap().views.is_empty());
+}
+
+#[test]
+fn view_commands_parse_from_the_ui_json_shape_with_defaults() {
+    let mut s = store();
+    let tag = add_tag(&mut s, "quick");
+    let json = serde_json::json!([{
+        "type": "create_view",
+        "view": {
+            "name": "Quick wins",
+            "spec": { "version": 1, "scope": { "kind": "tag", "id": tag.id },
+                      "filter": { "priorities": ["high"], "due": "overdue" } }
+        }
+    }]);
+    let commands: Vec<Command> = serde_json::from_value(json).unwrap();
+    let changes = s.execute_all(commands).unwrap();
+    let view = &changes.views[0];
+    assert_eq!(view.spec.scope, ViewScope::Tag { id: tag.id.clone() });
+    assert_eq!(view.spec.filter.priorities, vec![Priority::High]);
+    assert_eq!(view.spec.filter.due, Some(DueFilter::Overdue));
+    assert_eq!(view.spec.layout, Layout::List);
+    assert_eq!(view.spec.group_by, GroupBy::Status);
+
+    let wire = serde_json::to_value(s.snapshot().unwrap()).unwrap();
+    assert_eq!(wire["views"][0]["spec"]["scope"]["kind"], "tag");
+    assert_eq!(wire["views"][0]["spec"]["layout"], "list");
+}
+
+#[test]
+fn a_version_1_database_migrates_to_soft_deletable_views() {
+    let dir = TempDir::new();
+    let path = dir.0.join("v1.sqlite");
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(include_str!("../migrations/0001_init.sql"))
+            .unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+    }
+    let mut s = Store::open(&path).unwrap();
+    let backups = std::fs::read_dir(dir.0.join("backups")).unwrap().count();
+    assert_eq!(backups, 1, "backed up before 0002");
+    let view = add_view(&mut s, "All", spec(ViewScope::All));
+    s.execute(Command::DeleteView { id: view.id }).unwrap();
+    assert!(s.snapshot().unwrap().views.is_empty());
+}

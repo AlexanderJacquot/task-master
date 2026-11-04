@@ -31,7 +31,15 @@ describe("tauriApi", () => {
   });
 
   it("passes commands through and returns the core's data", async () => {
-    const changes = { batch_id: "b", op_seq: 1, tasks: [], projects: [], epics: [], tags: [] };
+    const changes = {
+      batch_id: "b",
+      op_seq: 1,
+      tasks: [],
+      projects: [],
+      epics: [],
+      tags: [],
+      views: [],
+    };
     tauri.reply = () => Promise.resolve(changes);
     const cmd = { type: "delete_task", id: "t" } as const;
 

@@ -1,46 +1,71 @@
 import { useCallback, useState } from "react";
-import type { Swimlane } from "../../lib/board";
-import type { ViewKey } from "../../lib/views";
+import type { ViewScope, ViewSpec } from "../../lib/types";
+import { EMPTY_FILTER } from "../../lib/views";
 
-export interface ViewPrefs {
-  layout: "list" | "board";
-  swimlane: Swimlane;
-  showSubtasks: boolean;
-  showCancelled: boolean;
-}
+/** Everything in a spec but its version and scope: what the header and filter bar edit. */
+export type ViewDisplay = Omit<ViewSpec, "version" | "scope">;
 
-export const DEFAULT_PREFS: ViewPrefs = {
+export const DEFAULT_DISPLAY: ViewDisplay = {
+  filter: EMPTY_FILTER,
+  group_by: "status",
+  sort: "default",
   layout: "list",
   swimlane: "none",
-  showSubtasks: false,
-  showCancelled: false,
+  show_subtasks: false,
+  show_cancelled: false,
 };
 
-export function viewId(view: ViewKey): string {
-  return "id" in view ? `${view.kind}:${view.id}` : view.kind;
+export const SPEC_VERSION = 1;
+
+export function specOf(scope: ViewScope, display: ViewDisplay): ViewSpec {
+  return { version: SPEC_VERSION, scope, ...display };
+}
+
+export function displayOf(spec: ViewSpec): ViewDisplay {
+  const { version: _version, scope: _scope, ...display } = spec;
+  return display;
+}
+
+export function viewId(scope: ViewScope): string {
+  return "id" in scope ? `${scope.kind}:${scope.id}` : scope.kind;
 }
 
 const storageKey = (id: string) => `task-master.view.${id}`;
 
-function load(id: string): ViewPrefs {
+function load(id: string): ViewDisplay {
   try {
     const raw = localStorage.getItem(storageKey(id));
-    if (raw) return { ...DEFAULT_PREFS, ...(JSON.parse(raw) as Partial<ViewPrefs>) };
+    if (!raw) return DEFAULT_DISPLAY;
+    const stored = JSON.parse(raw) as Partial<ViewDisplay> & {
+      // M3 stored camelCase toggles.
+      showSubtasks?: boolean;
+      showCancelled?: boolean;
+    };
+    const { showSubtasks, showCancelled, ...rest } = stored;
+    return {
+      ...DEFAULT_DISPLAY,
+      ...(showSubtasks !== undefined && { show_subtasks: showSubtasks }),
+      ...(showCancelled !== undefined && { show_cancelled: showCancelled }),
+      ...rest,
+      filter: { ...EMPTY_FILTER, ...rest.filter },
+    };
   } catch {
     // Storage unavailable or corrupt: fall back to defaults.
+    return DEFAULT_DISPLAY;
   }
-  return DEFAULT_PREFS;
 }
 
 /**
- * Per-view display choices (list or board, swimlanes, toggles), remembered on this machine.
- * Saved views with their own layout come in M4; until then this is a local convenience.
+ * Display choices for a built-in view (Inbox, Today, a project...), remembered on this
+ * machine. Saved views keep theirs in the database instead.
  */
-export function useViewPrefs(view: ViewKey): [ViewPrefs, (patch: Partial<ViewPrefs>) => void] {
-  const id = viewId(view);
+export function useViewPrefs(
+  scope: ViewScope,
+): [ViewDisplay, (patch: Partial<ViewDisplay>) => void] {
+  const id = viewId(scope);
   const [prefs, setPrefs] = useState(() => load(id));
   const update = useCallback(
-    (patch: Partial<ViewPrefs>) => {
+    (patch: Partial<ViewDisplay>) => {
       setPrefs((prev) => {
         const next = { ...prev, ...patch };
         try {

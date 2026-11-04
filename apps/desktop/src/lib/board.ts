@@ -1,26 +1,30 @@
-// The board (plan section 6): a pure function of the store's entities + a view key, like the
+// The board (plan section 6): a pure function of the store's entities + a view spec, like the
 // list rows. Columns are statuses in workflow order, cards keep their manual rank order, and
 // optional swimlanes split every column by project, epic or priority.
 
 import { rankBetween } from "./rank";
-import type { Epic, Priority, Project, Status, Task, TaskChange } from "./types";
-import {
-  childrenByParent,
-  compareRank,
-  inView,
-  isOpen,
-  type ViewContext,
-  type ViewKey,
-} from "./views";
+import type {
+  Epic,
+  Priority,
+  Project,
+  Status,
+  Swimlane,
+  Task,
+  TaskChange,
+  ViewSpec,
+} from "./types";
+import { childrenByParent, compareRank, isOpen, matchesQuery, type ViewContext } from "./views";
 
-export type Swimlane = "none" | "project" | "epic" | "priority";
+export type { Swimlane };
 
-export interface BoardOptions {
-  swimlane: Swimlane;
-  /** Show subtasks as their own cards (hidden by default when their parent is shown). */
-  showSubtasks: boolean;
-  showCancelled: boolean;
-}
+/**
+ * The spec fields a board uses. `show_subtasks` shows subtasks as their own cards (hidden
+ * by default when their parent is on the board). A status filter limits the columns.
+ */
+export type BoardQuery = Pick<
+  ViewSpec,
+  "scope" | "filter" | "swimlane" | "show_subtasks" | "show_cancelled"
+>;
 
 export interface Card {
   task: Task;
@@ -130,19 +134,23 @@ function laneOf(task: Task, swimlane: Swimlane, lookups: BoardLookups): LaneSpec
 
 export function buildBoard(
   tasks: Iterable<Task>,
-  view: ViewKey,
+  query: BoardQuery,
   ctx: ViewContext,
   statuses: Status[],
   lookups: BoardLookups,
-  options: BoardOptions,
 ): Board {
   const all = Array.from(tasks);
   const children = childrenByParent(all);
   // Unlike the list, a card dropped on Done in the Inbox or Today stays for the day.
   const visible = new Set(
-    all.filter((t) => inView(view, t, ctx, { keepClosedToday: true })).map((t) => t.id),
+    all.filter((t) => matchesQuery(query, t, ctx, { keepClosedToday: true })).map((t) => t.id),
   );
-  const shownStatuses = statuses.filter((s) => s.category !== "cancelled" || options.showCancelled);
+  const { status_ids } = query.filter;
+  const shownStatuses = statuses.filter(
+    (s) =>
+      (s.category !== "cancelled" || query.show_cancelled || status_ids.includes(s.id)) &&
+      (!status_ids.length || status_ids.includes(s.id)),
+  );
   const shownStatusIds = new Set(shownStatuses.map((s) => s.id));
 
   const lanes = new Map<string, LaneSpec & { cells: Record<string, Card[]> }>();
@@ -150,8 +158,8 @@ export function buildBoard(
   for (const task of all) {
     if (!visible.has(task.id) || !shownStatusIds.has(task.status_id)) continue;
     const parentShown = task.parent_id !== null && visible.has(task.parent_id);
-    if (parentShown && !options.showSubtasks) continue;
-    const spec = laneOf(task, options.swimlane, lookups);
+    if (parentShown && !query.show_subtasks) continue;
+    const spec = laneOf(task, query.swimlane, lookups);
     let lane = lanes.get(spec.key);
     if (!lane) {
       lane = { ...spec, cells: {} };

@@ -193,14 +193,137 @@ pub struct Tag {
     pub deleted_at: Option<Timestamp>,
 }
 
-/// A saved board or list. `spec` is defined in M4.
+/// A saved board or list: a name plus a [`ViewSpec`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct View {
     pub id: Id,
     pub name: String,
-    pub spec: String,
+    pub spec: ViewSpec,
     pub rank: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
+/// Current [`ViewSpec::version`]. Bump it (and migrate stored specs) on a breaking change.
+pub const VIEW_SPEC_VERSION: u32 = 1;
+
+/// What a view shows and how. Stored as JSON in `views.spec`; every field but `scope`
+/// has a default, so older specs keep loading when fields are added.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ViewSpec {
+    pub version: u32,
+    pub scope: ViewScope,
+    #[serde(default)]
+    pub filter: ViewFilter,
+    #[serde(default)]
+    pub group_by: GroupBy,
+    #[serde(default)]
+    pub sort: SortBy,
+    #[serde(default)]
+    pub layout: Layout,
+    #[serde(default)]
+    pub swimlane: Swimlane,
+    #[serde(default)]
+    pub show_subtasks: bool,
+    #[serde(default)]
+    pub show_cancelled: bool,
+}
+
+/// The base set of tasks, the same keys as the built-in routes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ViewScope {
+    Inbox,
+    Today,
+    All,
+    Project { id: Id },
+    Epic { id: Id },
+    Tag { id: Id },
+}
+
+/// Narrows the scope. Empty lists match everything; a task must match every non-empty
+/// list (any value within a list).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ViewFilter {
+    #[serde(default)]
+    pub status_ids: Vec<Id>,
+    #[serde(default)]
+    pub priorities: Vec<Priority>,
+    #[serde(default)]
+    pub project_ids: Vec<Id>,
+    #[serde(default)]
+    pub epic_ids: Vec<Id>,
+    /// Tasks carrying any of these tags.
+    #[serde(default)]
+    pub tag_ids: Vec<Id>,
+    #[serde(default)]
+    pub due: Option<DueFilter>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum DueFilter {
+    /// Before today and still open.
+    Overdue,
+    /// Today or earlier.
+    Today,
+    /// Within the next 7 days, or earlier.
+    Week,
+    /// No due date.
+    None,
+}
+
+/// List grouping (the board always has status columns).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum GroupBy {
+    #[default]
+    Status,
+    Project,
+    Epic,
+    Priority,
+    Due,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SortBy {
+    /// Today, overdue, priority, due date, then manual rank.
+    #[default]
+    Default,
+    Manual,
+    Due,
+    Priority,
+    Created,
+    Updated,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum Layout {
+    #[default]
+    List,
+    Board,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum Swimlane {
+    #[default]
+    None,
+    Project,
+    Epic,
+    Priority,
 }
 
 /// Every live (non-deleted) entity, used to hydrate a front end.

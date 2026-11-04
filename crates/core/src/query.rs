@@ -16,6 +16,7 @@ const PROJECT_COLS: &str =
 const EPIC_COLS: &str = "id, project_id, name, description, target_date, state, rank, \
     created_at, updated_at, deleted_at";
 const TAG_COLS: &str = "id, name, color, created_at, updated_at, deleted_at";
+const VIEW_COLS: &str = "id, name, spec, rank, created_at, updated_at, deleted_at";
 
 fn bad_value(col: usize, value: String) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(
@@ -76,6 +77,22 @@ fn epic_row(r: &Row<'_>) -> rusqlite::Result<Epic> {
         created_at: r.get(7)?,
         updated_at: r.get(8)?,
         deleted_at: r.get(9)?,
+    })
+}
+
+fn view_row(r: &Row<'_>) -> rusqlite::Result<View> {
+    let spec: String = r.get(2)?;
+    let spec = serde_json::from_str(&spec).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, Box::new(e))
+    })?;
+    Ok(View {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        spec,
+        rank: r.get(3)?,
+        created_at: r.get(4)?,
+        updated_at: r.get(5)?,
+        deleted_at: r.get(6)?,
     })
 }
 
@@ -170,6 +187,13 @@ pub(crate) fn tag(conn: &Connection, id: &str) -> Result<Tag> {
         .ok_or_else(|| Error::not_found("tag", id))
 }
 
+pub(crate) fn view(conn: &Connection, id: &str) -> Result<View> {
+    let sql = format!("SELECT {VIEW_COLS} FROM views WHERE id = ?1");
+    conn.query_row(&sql, [id], view_row)
+        .optional()?
+        .ok_or_else(|| Error::not_found("view", id))
+}
+
 pub(crate) fn status(conn: &Connection, id: &str) -> Result<Status> {
     conn.query_row(
         "SELECT id, name, category, color, rank, wip_limit FROM statuses WHERE id = ?1",
@@ -219,16 +243,9 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
         )?,
         views: query(
             conn,
-            "SELECT id, name, spec, rank FROM views ORDER BY rank, id",
+            &format!("SELECT {VIEW_COLS} FROM views WHERE deleted_at IS NULL ORDER BY rank, id"),
             &[],
-            |r| {
-                Ok(View {
-                    id: r.get(0)?,
-                    name: r.get(1)?,
-                    spec: r.get(2)?,
-                    rank: r.get(3)?,
-                })
-            },
+            view_row,
         )?,
     })
 }

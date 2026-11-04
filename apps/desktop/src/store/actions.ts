@@ -3,7 +3,21 @@
 
 import { ranksForDrop } from "../lib/board";
 import { rankBetween } from "../lib/rank";
-import type { Command, Priority, Project, Status, Tag, Task, TaskChange } from "../lib/types";
+import type {
+  Command,
+  Epic,
+  EpicChange,
+  Priority,
+  Project,
+  ProjectChange,
+  Status,
+  Tag,
+  Task,
+  TaskChange,
+  View,
+  ViewChange,
+  ViewSpec,
+} from "../lib/types";
 import { uuidv7 } from "../lib/uuid";
 import { childrenByParent, compareRank, descendantIds } from "../lib/views";
 import type { TaskStore } from "./store";
@@ -17,6 +31,7 @@ export interface NewTaskInput {
   priority?: Priority;
   due_date?: string | null;
   today_on?: string | null;
+  tag_ids?: string[];
 }
 
 function firstStatus(statuses: Status[], category: Status["category"]): Status | undefined {
@@ -64,7 +79,7 @@ export async function createTask(store: TaskStore, input: NewTaskInput): Promise
     today_on: input.today_on ?? null,
     estimate_min: null,
     rank,
-    tag_ids: [],
+    tag_ids: [...new Set(input.tag_ids ?? [])].sort(),
     created_at: now,
     updated_at: now,
     completed_at: status.category === "done" ? now : null,
@@ -85,6 +100,7 @@ export async function createTask(store: TaskStore, input: NewTaskInput): Promise
           due_date: task.due_date,
           today_on: task.today_on,
           rank,
+          tag_ids: task.tag_ids,
         },
       },
     ],
@@ -345,4 +361,141 @@ export function moveCard(store: TaskStore, drop: CardDrop) {
     upserts.push(applyTaskChanges(other, [{ rank: key }], s.statuses, now));
   }
   return s.mutate(commands, { upsert: { tasks: upserts } });
+}
+
+// ---------------------------------------------------------------------------------------
+// Saved views
+
+export async function createView(
+  store: TaskStore,
+  rawName: string,
+  spec: ViewSpec,
+): Promise<string | null> {
+  const name = rawName.trim();
+  const s = store.getState();
+  if (!name) return null;
+  const now = Date.now();
+  const rank = rankBetween(
+    lastRank(Object.values(s.views), () => true),
+    null,
+  );
+  const view: View = {
+    id: uuidv7(now),
+    name,
+    spec,
+    rank,
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  };
+  const changes = await s.mutate(
+    [{ type: "create_view", view: { id: view.id, name, spec, rank } }],
+    { upsert: { views: [view] } },
+  );
+  return changes ? view.id : null;
+}
+
+export function updateView(store: TaskStore, id: string, changes: ViewChange[]) {
+  const s = store.getState();
+  const view = s.views[id];
+  if (!view || !changes.length) return Promise.resolve(null);
+  const next: View = { ...view, updated_at: Date.now() };
+  for (const change of changes) {
+    if ("name" in change && change.name !== undefined) next.name = change.name.trim();
+    else if ("spec" in change && change.spec !== undefined) next.spec = change.spec as ViewSpec;
+    else if ("rank" in change && change.rank !== undefined) next.rank = change.rank;
+  }
+  return s.mutate([{ type: "update_view", id, changes }], { upsert: { views: [next] } });
+}
+
+export function deleteView(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.views[id]) return Promise.resolve(null);
+  return s.mutate([{ type: "delete_view", id }], { remove: { views: [id] } });
+}
+
+// ---------------------------------------------------------------------------------------
+// Projects and epics
+
+export function updateProject(store: TaskStore, id: string, changes: ProjectChange[]) {
+  const s = store.getState();
+  const project = s.projects[id];
+  if (!project || !changes.length) return Promise.resolve(null);
+  const now = Date.now();
+  const next: Project = { ...project, updated_at: now };
+  for (const c of changes) {
+    if ("name" in c && c.name !== undefined) next.name = c.name.trim();
+    else if ("color" in c) next.color = c.color ?? null;
+    else if ("icon" in c) next.icon = c.icon ?? null;
+    else if ("parent_id" in c) next.parent_id = c.parent_id ?? null;
+    else if ("rank" in c && c.rank !== undefined) next.rank = c.rank;
+    else if ("archived" in c && c.archived !== undefined)
+      next.archived_at = c.archived ? (project.archived_at ?? now) : null;
+  }
+  return s.mutate([{ type: "update_project", id, changes }], { upsert: { projects: [next] } });
+}
+
+/** Refused by the core while the project holds tasks, epics or projects (shown as a toast). */
+export function deleteProject(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.projects[id]) return Promise.resolve(null);
+  return s.mutate([{ type: "delete_project", id }], { remove: { projects: [id] } });
+}
+
+/**
+ * Moves a project among its siblings (same area, or the top level), or into another area
+ * (`parentId`), landing between `before` and `after` (ids of its new neighbours).
+ */
+export function moveProject(
+  store: TaskStore,
+  id: string,
+  parentId: string | null,
+  before: string | null,
+  after: string | null,
+) {
+  const s = store.getState();
+  const project = s.projects[id];
+  if (!project) return Promise.resolve(null);
+  const rankOf = (pid: string | null) => (pid ? (s.projects[pid]?.rank ?? null) : null);
+  let low = rankOf(before);
+  let high = rankOf(after);
+  if (low !== null && high !== null && low >= high) high = null;
+  if (low === null && high === null && parentId !== project.parent_id) {
+    // Into another area with no neighbours given: append.
+    low = lastRank(Object.values(s.projects), (p) => p.parent_id === parentId && p.id !== id);
+  }
+  const rank = rankBetween(low, high);
+  const changes: ProjectChange[] = [{ rank }];
+  if (parentId !== project.parent_id) changes.unshift({ parent_id: parentId });
+  return updateProject(store, id, changes);
+}
+
+export function updateEpic(store: TaskStore, id: string, changes: EpicChange[]) {
+  const s = store.getState();
+  const epic = s.epics[id];
+  if (!epic || !changes.length) return Promise.resolve(null);
+  const next: Epic = { ...epic, updated_at: Date.now() };
+  for (const c of changes) {
+    if ("name" in c && c.name !== undefined) next.name = c.name.trim();
+    else if ("description" in c) next.description = c.description ?? null;
+    else if ("target_date" in c) next.target_date = c.target_date ?? null;
+    else if ("state" in c && c.state !== undefined) next.state = c.state;
+    else if ("project_id" in c) next.project_id = c.project_id ?? null;
+    else if ("rank" in c && c.rank !== undefined) next.rank = c.rank;
+  }
+  return s.mutate([{ type: "update_epic", id, changes }], { upsert: { epics: [next] } });
+}
+
+/** Deletes the epic; its tasks stay, without an epic (undo restores both). */
+export function deleteEpic(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.epics[id]) return Promise.resolve(null);
+  const now = Date.now();
+  const detached = Object.values(s.tasks)
+    .filter((t) => t.epic_id === id)
+    .map((t) => ({ ...t, epic_id: null, updated_at: now }));
+  return s.mutate([{ type: "delete_epic", id }], {
+    remove: { epics: [id] },
+    upsert: { tasks: detached },
+  });
 }

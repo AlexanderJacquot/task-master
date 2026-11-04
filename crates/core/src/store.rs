@@ -12,7 +12,7 @@ use crate::commands::{self, Command};
 use crate::error::Result;
 use crate::events::{Changed, EntityRef, EventBus};
 use crate::history::{self, History};
-use crate::model::{Epic, Id, Project, Snapshot, Tag, Task};
+use crate::model::{Epic, Id, Project, Snapshot, Tag, Task, View};
 use crate::ops::{Batch, EntityKind};
 use crate::{db, query};
 
@@ -28,6 +28,7 @@ pub struct Changes {
     pub projects: Vec<Project>,
     pub epics: Vec<Epic>,
     pub tags: Vec<Tag>,
+    pub views: Vec<View>,
 }
 
 impl Changes {
@@ -180,6 +181,7 @@ fn load_changes(
             EntityKind::Project => changes.projects.push(query::project(conn, id)?),
             EntityKind::Epic => changes.epics.push(query::epic(conn, id)?),
             EntityKind::Tag => changes.tags.push(query::tag(conn, id)?),
+            EntityKind::View => changes.views.push(query::view(conn, id)?),
         }
     }
     Ok(changes)

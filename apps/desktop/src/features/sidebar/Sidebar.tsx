@@ -1,11 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useMemo, useState } from "react";
-import { cx, Dot, InlineInput } from "../../components/ui";
+import { Dot, InlineInput } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
 import type { Project } from "../../lib/types";
 import { inView, isOpen, type ViewContext } from "../../lib/views";
 import { createEpic, createProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { ProjectTree } from "./ProjectTree";
 
 const itemClass =
   "flex items-center gap-2 rounded px-2 py-1 text-neutral-700 hover:bg-neutral-200/60 dark:text-neutral-300 dark:hover:bg-neutral-800";
@@ -74,8 +75,11 @@ export function Sidebar() {
   const projects = useStoreState((s) => s.projects);
   const epics = useStoreState((s) => s.epics);
   const tags = useStoreState((s) => s.tags);
+  const views = useStoreState((s) => s.views);
   const statusList = useStoreState((s) => s.statuses);
   const [adding, setAdding] = useState<"project" | "epic" | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [showFinished, setShowFinished] = useState(false);
 
   const ctx: ViewContext = useMemo(
     () => ({
@@ -124,13 +128,18 @@ export function Sidebar() {
       }));
   }, [projects]);
 
-  const epicList = useMemo(
+  const archived = useMemo(
     () =>
-      Object.values(epics)
-        .filter((e) => e.state === "active")
-        .sort((a, b) => (a.rank < b.rank ? -1 : 1)),
-    [epics],
+      Object.values(projects)
+        .filter((p) => p.archived_at !== null)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [projects],
   );
+
+  const [epicList, finishedEpics] = useMemo(() => {
+    const sorted = Object.values(epics).sort((a, b) => (a.rank < b.rank ? -1 : 1));
+    return [sorted.filter((e) => e.state === "active"), sorted.filter((e) => e.state !== "active")];
+  }, [epics]);
 
   const projectCount = (id: string, children: Project[]) =>
     (counts.perProject.get(id) ?? 0) +
@@ -149,34 +158,21 @@ export function Sidebar() {
       </div>
 
       <Section title="Projects" onAdd={() => setAdding("project")}>
-        {areas.map(({ area, children }) => (
-          <div key={area.id}>
+        <ProjectTree
+          nodes={areas}
+          renderProject={(p, children) => (
             <NavItem
               to="/project/$projectId"
-              params={{ projectId: area.id }}
-              count={projectCount(area.id, children)}
+              params={{ projectId: p.id }}
+              count={projectCount(p.id, children)}
             >
               <span className="flex items-center gap-2">
-                <Dot color={area.color} />
-                {area.name}
+                <Dot color={p.color} />
+                {p.name}
               </span>
             </NavItem>
-            {children.map((p) => (
-              <div key={p.id} className="pl-4">
-                <NavItem
-                  to="/project/$projectId"
-                  params={{ projectId: p.id }}
-                  count={counts.perProject.get(p.id)}
-                >
-                  <span className="flex items-center gap-2">
-                    <Dot color={p.color} />
-                    {p.name}
-                  </span>
-                </NavItem>
-              </div>
-            ))}
-          </div>
-        ))}
+          )}
+        />
         {adding === "project" && (
           <InlineInput
             initial=""
@@ -190,6 +186,22 @@ export function Sidebar() {
           />
         )}
         {!areas.length && adding !== "project" && <Empty>No projects yet</Empty>}
+        {archived.length > 0 && (
+          <Disclosure
+            open={showArchived}
+            onToggle={() => setShowArchived((v) => !v)}
+            label={`Archived (${archived.length})`}
+          >
+            {archived.map((p) => (
+              <NavItem key={p.id} to="/project/$projectId" params={{ projectId: p.id }}>
+                <span className="flex items-center gap-2 text-neutral-500">
+                  <Dot color={p.color} />
+                  {p.name}
+                </span>
+              </NavItem>
+            ))}
+          </Disclosure>
+        )}
       </Section>
 
       <Section title="Epics" onAdd={() => setAdding("epic")}>
@@ -224,7 +236,34 @@ export function Sidebar() {
             className="mt-1"
           />
         )}
-        {!epicList.length && adding !== "epic" && <Empty>No epics yet</Empty>}
+        {!epicList.length && adding !== "epic" && <Empty>No active epics</Empty>}
+        {finishedEpics.length > 0 && (
+          <Disclosure
+            open={showFinished}
+            onToggle={() => setShowFinished((v) => !v)}
+            label={`Done and dropped (${finishedEpics.length})`}
+          >
+            {finishedEpics.map((epic) => (
+              <NavItem key={epic.id} to="/epic/$epicId" params={{ epicId: epic.id }}>
+                <span className="text-neutral-500">
+                  {epic.state === "done" ? "✓ " : "✕ "}
+                  {epic.name}
+                </span>
+              </NavItem>
+            ))}
+          </Disclosure>
+        )}
+      </Section>
+
+      <Section title="Views">
+        {Object.values(views)
+          .sort((a, b) => (a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : 0))
+          .map((view) => (
+            <NavItem key={view.id} to="/view/$viewId" params={{ viewId: view.id }}>
+              {view.name}
+            </NavItem>
+          ))}
+        {Object.keys(views).length === 0 && <Empty>Use "Save as view" on any view</Empty>}
       </Section>
 
       {Object.keys(tags).length > 0 && (
@@ -233,15 +272,51 @@ export function Sidebar() {
             {Object.values(tags)
               .sort((a, b) => a.name.localeCompare(b.name))
               .map((tag) => (
-                <span key={tag.id} className={cx("text-xs text-neutral-600 dark:text-neutral-400")}>
+                <Link
+                  key={tag.id}
+                  to="/tag/$tagId"
+                  params={{ tagId: tag.id }}
+                  search={{}}
+                  className="rounded px-1 text-xs text-neutral-600 hover:bg-neutral-200/60 dark:text-neutral-400 dark:hover:bg-neutral-800"
+                  activeProps={{
+                    className: "bg-neutral-200 font-medium text-neutral-900 dark:bg-neutral-800",
+                  }}
+                >
                   #{tag.name}
                   {counts.perTag.get(tag.id) ? ` ${counts.perTag.get(tag.id)}` : ""}
-                </span>
+                </Link>
               ))}
           </div>
         </Section>
       )}
     </nav>
+  );
+}
+
+function Disclosure({
+  open,
+  onToggle,
+  label,
+  children,
+}: {
+  open: boolean;
+  onToggle(): void;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="mt-1">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex w-full items-center gap-1 px-2 py-0.5 text-left text-xs text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+      >
+        <span className="w-3">{open ? "▾" : "▸"}</span>
+        {label}
+      </button>
+      {open && <div className="flex flex-col gap-0.5">{children}</div>}
+    </div>
   );
 }
 

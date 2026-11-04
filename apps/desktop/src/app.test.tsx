@@ -27,6 +27,7 @@ function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
         projects: [],
         epics: [],
         tags: [],
+        views: [],
       } as Changes;
     },
     undo: async () => {
@@ -176,5 +177,74 @@ describe("the board", () => {
     await openBoard();
     fireEvent.change(screen.getByLabelText("Swimlanes"), { target: { value: "priority" } });
     expect(await screen.findByRole("region", { name: "Lane Normal" })).toBeTruthy();
+  });
+});
+
+describe("saved views", () => {
+  it("saves the current view, reopens it from the sidebar and saves edits", async () => {
+    fireEvent.click(screen.getByRole("button", { name: "board" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save as view" }));
+    const name = screen.getByPlaceholderText("Name of the new view");
+    fireEvent.change(name, { target: { value: "Triage board" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+
+    await waitFor(() => expect(fake.executed.at(-1)?.[0]).toMatchObject({ type: "create_view" }));
+    const created = fake.executed.at(-1)?.[0];
+    expect(created).toMatchObject({
+      view: {
+        name: "Triage board",
+        spec: { version: 1, scope: { kind: "inbox" }, layout: "board" },
+      },
+    });
+    expect(await screen.findByRole("button", { name: "Triage board" })).toBeTruthy();
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "Triage board" })).toBeTruthy();
+
+    // Edits are a draft until saved.
+    fireEvent.change(screen.getByLabelText("Filter by due date"), { target: { value: "overdue" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Save view" }));
+    await waitFor(() => expect(fake.executed.at(-1)?.[0]).toMatchObject({ type: "update_view" }));
+    expect(fake.executed.at(-1)?.[0]).toMatchObject({
+      changes: [{ spec: { filter: { due: "overdue" }, layout: "board" } }],
+    });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Save view" })).toBeNull());
+  });
+});
+
+describe("organization", () => {
+  it("opens a tag's view from the sidebar and captures tagged tasks there", async () => {
+    cleanup();
+    const tagged = task({ title: "Tagged one", tag_ids: ["g1"] });
+    fake = fakeApi(() => store, [existing, tagged]);
+    fake.api.snapshot = async () =>
+      snapshot({
+        tasks: [existing, tagged],
+        tags: [
+          { id: "g1", name: "quick", color: null, created_at: 1, updated_at: 1, deleted_at: null },
+        ],
+      });
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    render(
+      <StoreProvider store={store} api={fake.api}>
+        <RouterProvider
+          router={createAppRouter(createMemoryHistory({ initialEntries: ["/inbox"] }))}
+        />
+      </StoreProvider>,
+    );
+    fireEvent.click(await screen.findByRole("link", { name: /#quick/ }));
+    expect(await screen.findByRole("heading", { name: "#quick" })).toBeTruthy();
+    expect(screen.getByText("Tagged one")).toBeTruthy();
+    expect(screen.queryByText("Renew passport")).toBeNull();
+
+    const input = screen.getByPlaceholderText(/New task/);
+    fireEvent.change(input, { target: { value: "Also quick" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(fake.executed.at(-1)?.[0]).toMatchObject({
+        type: "create_task",
+        task: { title: "Also quick", tag_ids: ["g1"] },
+      }),
+    );
   });
 });
