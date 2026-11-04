@@ -4,6 +4,7 @@
 import { ranksForDrop } from "../lib/board";
 import { rankBetween } from "../lib/rank";
 import type {
+  Capture,
   Command,
   Epic,
   EpicChange,
@@ -47,7 +48,17 @@ function lastRank<T extends { rank: string }>(
   return max;
 }
 
-export async function createTask(store: TaskStore, input: NewTaskInput): Promise<string | null> {
+/** Commands and entities to send in the same batch as a new task (capture's new tags...). */
+export interface WithTask {
+  before?: Command[];
+  upsert?: { tags?: Tag[]; projects?: Project[]; epics?: Epic[] };
+}
+
+export async function createTask(
+  store: TaskStore,
+  input: NewTaskInput,
+  extra: WithTask = {},
+): Promise<string | null> {
   const s = store.getState();
   const title = input.title.trim();
   if (!title) return null;
@@ -87,6 +98,7 @@ export async function createTask(store: TaskStore, input: NewTaskInput): Promise
   };
   const changes = await store.getState().mutate(
     [
+      ...(extra.before ?? []),
       {
         type: "create_task",
         task: {
@@ -104,7 +116,7 @@ export async function createTask(store: TaskStore, input: NewTaskInput): Promise
         },
       },
     ],
-    { upsert: { tasks: [task] } },
+    { upsert: { ...extra.upsert, tasks: [task] } },
   );
   return changes ? id : null;
 }
@@ -498,4 +510,118 @@ export function deleteEpic(store: TaskStore, id: string) {
     remove: { epics: [id] },
     upsert: { tasks: detached },
   });
+}
+
+// ---------------------------------------------------------------------------------------
+// Quick capture
+
+/** What a capture still needs the user to confirm: names that match nothing yet. */
+export function missingContainers(capture: Capture): string[] {
+  const out: string[] = [];
+  if (capture.project && !capture.project.id) out.push(`project "${capture.project.name}"`);
+  if (capture.epic && !capture.epic.id) out.push(`epic "${capture.epic.name}"`);
+  return out;
+}
+
+/**
+ * Creates the task a capture line describes, as one undoable batch: unknown tags are
+ * created; an unknown project or epic is created too (the caller asks first, see
+ * `missingContainers`). Markers in the line win over the view's defaults.
+ */
+export async function captureTask(
+  store: TaskStore,
+  capture: Capture,
+  defaults: Omit<NewTaskInput, "title"> = {},
+): Promise<string | null> {
+  const s = store.getState();
+  const title = capture.title.trim();
+  if (!title) return null;
+  const now = Date.now();
+  const commands: Command[] = [];
+  const upsert: { tags: Tag[]; projects: Project[]; epics: Epic[] } = {
+    tags: [],
+    projects: [],
+    epics: [],
+  };
+
+  const tagIds = capture.tags.map((t) => {
+    if (t.id) return t.id;
+    const tag: Tag = {
+      id: uuidv7(now),
+      name: t.name,
+      color: null,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+    commands.push({ type: "create_tag", tag: { id: tag.id, name: tag.name } });
+    upsert.tags.push(tag);
+    return tag.id;
+  });
+
+  let projectId = defaults.project_id ?? null;
+  if (capture.project) {
+    projectId = capture.project.id;
+    if (!projectId) {
+      const rank = rankBetween(
+        lastRank(Object.values(s.projects), (p) => p.parent_id === null),
+        null,
+      );
+      const project: Project = {
+        id: uuidv7(now),
+        parent_id: null,
+        name: capture.project.name,
+        color: null,
+        icon: null,
+        rank,
+        archived_at: null,
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+      };
+      commands.push({
+        type: "create_project",
+        project: { id: project.id, name: project.name, parent_id: null, rank },
+      });
+      upsert.projects.push(project);
+      projectId = project.id;
+    }
+  }
+
+  let epicId = defaults.epic_id ?? null;
+  if (capture.epic) {
+    epicId = capture.epic.id;
+    if (!epicId) {
+      const rank = rankBetween(
+        lastRank(Object.values(s.epics), () => true),
+        null,
+      );
+      const epic: Epic = {
+        id: uuidv7(now),
+        project_id: null,
+        name: capture.epic.name,
+        description: null,
+        target_date: null,
+        state: "active",
+        rank,
+        created_at: now,
+        updated_at: now,
+        deleted_at: null,
+      };
+      commands.push({ type: "create_epic", epic: { id: epic.id, name: epic.name, rank } });
+      upsert.epics.push(epic);
+      epicId = epic.id;
+    }
+  }
+
+  const input: NewTaskInput = {
+    ...defaults,
+    title,
+    project_id: projectId,
+    epic_id: epicId,
+    priority: capture.priority ?? defaults.priority,
+    due_date: capture.due_date ?? defaults.due_date ?? null,
+    tag_ids: [...new Set([...(defaults.tag_ids ?? []), ...tagIds])],
+  };
+  return createTask(store, input, { before: commands, upsert });
 }

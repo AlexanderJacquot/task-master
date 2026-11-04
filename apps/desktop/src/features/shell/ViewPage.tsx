@@ -6,7 +6,6 @@ import { isoDate } from "../../lib/dates";
 import type { GroupBy, SortBy, Swimlane, TaskChange, View, ViewScope } from "../../lib/types";
 import { buildRows, type ViewContext } from "../../lib/views";
 import {
-  createTask,
   createView,
   deleteView,
   type NewTaskInput,
@@ -17,6 +16,7 @@ import {
 import { useStoreState, useTaskStore } from "../../store/context";
 import type { CardLookups } from "../board/BoardCard";
 import { BoardView } from "../board/BoardView";
+import { CaptureBox } from "../capture/CaptureBox";
 import { TaskList } from "../list/TaskList";
 import { EditableTitle } from "./EditableTitle";
 import { FilterBar } from "./FilterBar";
@@ -365,15 +365,7 @@ function ViewBody({
         tags={tags}
       />
       <div className="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-        <InlineInput
-          id={NEW_TASK_INPUT_ID}
-          initial=""
-          clearOnCommit
-          placeholder="New task… (press n)"
-          onCommit={(text) =>
-            void createTask(store, { ...captureDefaults(scope, today), title: text })
-          }
-        />
+        <CaptureBox id={NEW_TASK_INPUT_ID} defaults={captureDefaults(scope, today)} />
       </div>
       {boardModel ? (
         <BoardView

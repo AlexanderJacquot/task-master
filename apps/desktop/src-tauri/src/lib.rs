@@ -4,8 +4,9 @@
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use taskmaster_core::{Activity, Changed, Changes, Command, Id, Snapshot, Store};
-use tauri::{Manager, State};
+use taskmaster_core::{Activity, Capture, Changed, Changes, Command, Id, Snapshot, Store};
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 
 /// Path of the generated TypeScript bindings, relative to this crate.
@@ -13,6 +14,19 @@ use tauri_specta::{Builder, Event, collect_commands, collect_events};
 const BINDINGS_PATH: &str = "../src/bindings.ts";
 
 const DB_FILE: &str = "task-master.sqlite";
+
+/// Label of the small always-on-top window opened by the quick-capture hotkey
+/// (`tauri.conf.json`). It loads the same UI, which renders only the capture box there.
+const CAPTURE_WINDOW: &str = "capture";
+
+/// `Ctrl+Shift+Space` (plan section 6).
+fn capture_shortcut() -> Shortcut {
+    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space)
+}
+
+/// Sent to the capture window each time it is shown, so it clears and focuses its input.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, Event)]
+pub struct CaptureOpened;
 
 struct AppState(Mutex<Store>);
 
@@ -100,6 +114,27 @@ fn task_activity(
     with_store(&state, |s| s.task_activity(&task_id, limit))
 }
 
+/// Parses a quick-capture line and matches its names (read-only: saving goes through
+/// `execute`). `today` is the user's local date, for relative due dates.
+#[tauri::command]
+#[specta::specta]
+fn parse_capture(
+    state: State<'_, AppState>,
+    text: String,
+    today: String,
+) -> CommandResult<Capture> {
+    with_store(&state, |s| s.parse_capture(&text, &today))
+}
+
+fn show_capture(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(CAPTURE_WINDOW) {
+        let _ = window.center();
+        let _ = window.show();
+        let _ = window.set_focus();
+        let _ = CaptureOpened.emit_to(app, CAPTURE_WINDOW);
+    }
+}
+
 /// Every IPC command and event the UI can use. New ones are registered here only.
 fn specta_builder() -> Builder<tauri::Wry> {
     Builder::<tauri::Wry>::new()
@@ -110,9 +145,10 @@ fn specta_builder() -> Builder<tauri::Wry> {
             undo,
             redo,
             search,
-            task_activity
+            task_activity,
+            parse_capture
         ])
-        .events(collect_events![StoreChanged])
+        .events(collect_events![StoreChanged, CaptureOpened])
         // Timestamps (Unix ms) and op sequence numbers stay far below 2^53.
         .dangerously_cast_bigints_to_number()
 }
@@ -132,9 +168,24 @@ pub fn run() {
     export_bindings(&builder);
 
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    if event.state == ShortcutState::Pressed && *shortcut == capture_shortcut() {
+                        show_capture(app);
+                    }
+                })
+                .build(),
+        )
         .invoke_handler(builder.invoke_handler())
         .setup(move |app| {
             builder.mount_events(app);
+
+            // Not fatal: some desktops (Wayland sessions, locked-down machines) refuse
+            // global hotkeys. `n` inside the app still captures.
+            if let Err(err) = app.global_shortcut().register(capture_shortcut()) {
+                eprintln!("quick capture hotkey unavailable: {err}");
+            }
 
             let path = app.path().app_data_dir()?.join(DB_FILE);
             // Debug builds can open another database, e.g. one filled by the core's `seed`

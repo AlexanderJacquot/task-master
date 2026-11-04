@@ -16,6 +16,7 @@ tauri-build = { version = "2.5", features = [] }
 [dependencies]
 taskmaster-core = { workspace = true, features = ["specta"] }
 tauri = { version = "2.12", features = [] }
+tauri-plugin-global-shortcut = "2.4.1"
 # Release candidates: pinned exactly (plan, section 10 risks).
 specta = "=2.0.0-rc.26"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }

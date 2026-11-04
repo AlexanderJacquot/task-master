@@ -4,7 +4,7 @@ import { buildBoard } from "../lib/board";
 import { rankBetween } from "../lib/rank";
 import type { Changes, Command, Task } from "../lib/types";
 import { EMPTY_FILTER, type ViewContext } from "../lib/views";
-import { STATUS, snapshot, statuses, task } from "../test/fixtures";
+import { fakeParse, STATUS, snapshot, statuses, task } from "../test/fixtures";
 import { moveCard } from "./actions";
 import { createTaskStore, type TaskStore } from "./store";
 
@@ -31,6 +31,7 @@ function confirmingApi(getStore: () => TaskStore, tasks: Task[]) {
     redo: async () => null,
     search: async () => [],
     taskActivity: async () => [],
+    parseCapture: async (text) => fakeParse(text),
     onChanged: async () => () => {},
   };
   return { api, executed };

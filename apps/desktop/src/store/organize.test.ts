@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Api } from "../lib/api";
 import type { Changes, Command, Epic, Project, Task } from "../lib/types";
-import { project, snapshot, task } from "../test/fixtures";
+import { fakeParse, project, snapshot, task } from "../test/fixtures";
 import { deleteEpic, moveProject, updateEpic, updateProject } from "./actions";
 import { createTaskStore, type TaskStore } from "./store";
 
@@ -26,6 +26,7 @@ async function setup(data: { tasks?: Task[]; projects?: Project[]; epics?: Epic[
     redo: async () => null,
     search: async () => [],
     taskActivity: async () => [],
+    parseCapture: async (text) => fakeParse(text),
     onChanged: async () => () => {},
   };
   const store: TaskStore = createTaskStore(api);

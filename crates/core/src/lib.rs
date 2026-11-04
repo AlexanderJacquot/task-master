@@ -13,6 +13,7 @@ mod events;
 mod history;
 mod model;
 mod ops;
+mod parse;
 mod query;
 pub mod rank;
 mod store;
@@ -30,6 +31,7 @@ pub use model::{
     ViewScope, ViewSpec,
 };
 pub use ops::EntityKind;
+pub use parse::{Capture, NameMatch, Parsed, parse};
 pub use query::{Activity, FieldChange};
 pub use store::{Changes, Store};
 

@@ -21,5 +21,8 @@ specta = { version = "=2.0.0-rc.26", features = ["derive"], optional = true }
 thiserror = "2"
 uuid = { version = "1.29", features = ["v7"] }
 
+[dev-dependencies]
+insta = { version = "1.49", features = ["yaml"] }
+
 [features]
 specta = ["dep:specta"]

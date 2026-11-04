@@ -1231,3 +1231,53 @@ fn a_version_1_database_migrates_to_soft_deletable_views() {
     s.execute(Command::DeleteView { id: view.id }).unwrap();
     assert!(s.snapshot().unwrap().views.is_empty());
 }
+
+// ---------------------------------------------------------------------------------------
+// Quick capture (M5)
+
+#[test]
+fn parse_capture_matches_live_names_and_flags_unknown_ones() {
+    let mut s = store();
+    let homelab = add_project(&mut s, "Homelab", None);
+    let archived = add_project(&mut s, "Old home", None);
+    s.execute(Command::UpdateProject {
+        id: archived.id.clone(),
+        changes: vec![ProjectChange::Archived(true)],
+    })
+    .unwrap();
+    let epic = add_epic(&mut s, "Migrate homelab to IaC");
+    let tag = add_tag(&mut s, "homelab");
+
+    let c = s
+        .parse_capture(
+            "Fix DNS on watch #Homelab #new @home !high ^fri +epic:IaC",
+            "2026-11-04",
+        )
+        .unwrap();
+    assert_eq!(c.title, "Fix DNS on watch");
+    assert_eq!(
+        c.tags,
+        vec![
+            NameMatch {
+                name: "Homelab".into(),
+                id: Some(tag.id.clone())
+            },
+            NameMatch {
+                name: "new".into(),
+                id: None
+            },
+        ]
+    );
+    // "home" is a prefix of Homelab only: the archived "Old home" is not a candidate.
+    assert_eq!(c.project.unwrap().id, Some(homelab.id));
+    assert_eq!(c.epic.unwrap().id, Some(epic.id));
+    assert_eq!(c.priority, Some(Priority::High));
+    assert_eq!(c.due_date.as_deref(), Some("2026-11-06"));
+
+    let unknown = s.parse_capture("Call @Nowhere", "2026-11-04").unwrap();
+    assert_eq!(unknown.project.unwrap().id, None);
+    assert!(matches!(
+        s.parse_capture("x", "04/11/2026"),
+        Err(Error::Invalid(_))
+    ));
+}

@@ -16,10 +16,16 @@ export const commands = {
 	search: (text: string, limit: number) => typedError<string[], CommandError>(__TAURI_INVOKE("search", { text, limit })),
 	/**  A task's change history, newest first (read from the ops log). */
 	taskActivity: (taskId: string, limit: number) => typedError<Activity_Serialize[], CommandError>(__TAURI_INVOKE("task_activity", { taskId, limit })),
+	/**
+	 *  Parses a quick-capture line and matches its names (read-only: saving goes through
+	 *  `execute`). `today` is the user's local date, for relative due dates.
+	 */
+	parseCapture: (text: string, today: string) => typedError<Capture_Serialize, CommandError>(__TAURI_INVOKE("parse_capture", { text, today })),
 };
 
 /** Events */
 export const events = {
+	captureOpened: makeEvent<CaptureOpened, CaptureOpened>("capture-opened"),
 	storeChanged: makeEvent<StoreChanged, StoreChanged>("store-changed"),
 };
 
@@ -47,6 +53,43 @@ export type Activity_Serialize = {
 	/**  `create`, `update`, `delete`, `restore`, `link` (tag added) or `unlink` (tag removed). */
 	kind: string,
 	fields: FieldChange[],
+};
+
+/**
+ *  A parsed line with its names resolved, ready for the UI to preview and turn into
+ *  commands.
+ */
+export type Capture = Capture_Serialize | Capture_Deserialize;
+
+/**  Sent to the capture window each time it is shown, so it clears and focuses its input. */
+export type CaptureOpened = null;
+
+/**
+ *  A parsed line with its names resolved, ready for the UI to preview and turn into
+ *  commands.
+ */
+export type Capture_Deserialize = {
+	title: string,
+	tags: NameMatch_Deserialize[],
+	project?: NameMatch_Deserialize | null,
+	epic?: NameMatch_Deserialize | null,
+	priority?: Priority | null,
+	due_date?: string | null,
+	warnings: string[],
+};
+
+/**
+ *  A parsed line with its names resolved, ready for the UI to preview and turn into
+ *  commands.
+ */
+export type Capture_Serialize = {
+	title: string,
+	tags: NameMatch_Serialize[],
+	project: NameMatch_Serialize | null,
+	epic: NameMatch_Serialize | null,
+	priority: Priority | null,
+	due_date: string | null,
+	warnings: string[],
 };
 
 /**  Sent after a batch commits. */
@@ -209,6 +252,29 @@ export type FieldChange = {
 export type GroupBy = "status" | "project" | "epic" | "priority" | "due";
 
 export type Layout = "list" | "board";
+
+/**  A name from the line and the live entity it matched, if any. */
+export type NameMatch = NameMatch_Serialize | NameMatch_Deserialize;
+
+/**  A name from the line and the live entity it matched, if any. */
+export type NameMatch_Deserialize = {
+	name: string,
+	/**
+	 *  `None`: no live entity has this name (a tag is then created; a project or epic is
+	 *  asked about).
+	 */
+	id?: string | null,
+};
+
+/**  A name from the line and the live entity it matched, if any. */
+export type NameMatch_Serialize = {
+	name: string,
+	/**
+	 *  `None`: no live entity has this name (a tag is then created; a project or epic is
+	 *  asked about).
+	 */
+	id: string | null,
+};
 
 export type NewEpic = NewEpic_Serialize | NewEpic_Deserialize;
 

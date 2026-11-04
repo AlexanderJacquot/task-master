@@ -130,6 +130,13 @@ impl Store {
     }
 
     /// A task's change history, newest first.
+    /// Parses a quick-capture line and matches its names to live entities. `today` is the
+    /// user's local date (`YYYY-MM-DD`), which relative due dates count from.
+    pub fn parse_capture(&self, text: &str, today: &str) -> Result<crate::parse::Capture> {
+        crate::clock::check_date("today", today)?;
+        crate::parse::resolve(&self.conn, crate::parse::parse(text, today))
+    }
+
     pub fn task_activity(&self, task_id: &str, limit: u32) -> Result<Vec<query::Activity>> {
         query::task_activity(&self.conn, task_id, limit)
     }

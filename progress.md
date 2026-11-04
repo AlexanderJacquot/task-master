@@ -4,8 +4,8 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M4 Organization**, branch `m4-organization` (stacked on `m3-kanban`): done, pending review
-and a hands-on check. Next up: **M5 Speed**.
+**M5 Speed**, branch `m5-speed` (stacked on `m4-organization`): done, pending review and a
+hands-on check of the hotkey and capture window. Next up: **M6 Hardening**.
 
 ## Done
 
@@ -25,6 +25,26 @@ and a hands-on check. Next up: **M5 Speed**.
   `pnpm --filter desktop tauri icon src-tauri/app-icon.png`).
 
 Verified locally on Linux: all checks pass; release build produces a 2.9 MiB `.deb`.
+
+### M5 Speed (2026-11-04)
+
+- Core `parse` module: capture syntax (`#tag @Project +epic:X !high ^fri`, quoting,
+  relative dates) as a pure function with an `insta` snapshot; `resolve` matches names
+  (tags exact; projects and epics exact, unique prefix, unique word). `Store::parse_capture`.
+- Shell: read-only `parse_capture` IPC; `tauri-plugin-global-shortcut` with
+  `Ctrl+Shift+Space` showing a hidden, undecorated, always-on-top `capture` window
+  (`capture-opened` event); registration failure is logged, not fatal.
+- UI: `CaptureBox` everywhere (live preview chips, warnings, confirm an unknown
+  project/epic with a second Enter; markers beat view defaults); `CaptureWindow`;
+  `captureTask` builds one batch (new tags/project/epic + task).
+- Command palette (`Ctrl+K`): actions, views, projects, epics, tags, and tasks via FTS
+  search over titles and descriptions; arrows/Enter/Esc.
+- Shortcuts: `g i / g t / g a`, `?` overlay; Plan my day on Today (`?plan=1`, `1`–`9`).
+- Tests: 48 Rust (+4: parser snapshot, matching rules, capture resolution against live
+  entities; date math) and 109 Vitest (palette ranking, plan candidates, capture batches,
+  UI: preview/confirm, palette search, g-navigation, help, plan my day).
+- Decisions: `docs/adr/006-capture-and-palette.md`. New dependencies:
+  `tauri-plugin-global-shortcut` 2.4.1, `insta` 1.49 (dev).
 
 ### M4 Organization (2026-11-04)
 
@@ -128,6 +148,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 ## Not yet verified
 
 - M2 UI by hand in the real window (`pnpm dev`): layout, dark mode, CodeMirror, popover.
+- M5 by hand: `Ctrl+Shift+Space` in a native X11 session or on Windows (WSLg only sees it
+  while a WSLg window has focus), the capture window (appears centered, focused, hides on
+  blur/Esc/save), the 3 s capture goal, palette feel.
 - M4 by hand: saved view save/revert/reopen, filter bar popovers, project drag in the
   sidebar, archive/delete flows, epic fields, dark mode.
 - M3 board by hand: pointer drag feel (jsdom cannot test it), shaking a card between columns
@@ -139,13 +162,14 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Window opens on **Windows** and **macOS** (M0 "done when" asks for Windows). No CI for them yet.
 - First run of the Forgejo workflow (runner image, apt access, cache action).
 
-## Next: M5 Speed
+## Next: M6 Hardening
 
-Branch `m5-speed`. Plan row: quick capture window + global hotkey, inline syntax parser
-(`#tag @Project !high ^fri +epic:X`, in the core `parse` module, with snapshot tests),
-command palette (`Ctrl+K`), shortcuts, FTS search UI, Plan my day. Done when capturing a
-fully tagged task takes under 3 s from any app. New dependencies to propose: the Tauri
-global-shortcut plugin (and a snapshot-test crate such as `insta` for the parser).
+Branch `m6-hardening`. Plan row: daily backups (online backup API, keep 14), JSON
+export/import (versioned with the schema number), settings screen (statuses with names,
+colors, order, WIP limits; theme; data folder; backup and export), 10k-task perf test
+against the section 5 budget, installers for 3 OSes (GitHub mirror matrix, ADR 001).
+Done when the perf budget is met on the seeded DB and a fresh install works on Linux and
+Windows. Status commands land here (WIP limit editing for the board).
 
 ## Later
 
@@ -160,5 +184,9 @@ global-shortcut plugin (and a snapshot-test crate such as `insta` for the parser
 - Bump `rusqlite` to 0.41 once `rusqlite_migration` supports it.
 - CSP in `tauri.conf.json` is a strict baseline; revisit when adding the markdown editor.
 - Replace the placeholder icon.
+- Capture: a tray icon and a `--capture` flag (needs the single-instance plugin) for
+  desktops that refuse global hotkeys; configurable hotkey (settings, M6).
+- Palette: run per-view actions (toggle board/list, group by) and task actions (done,
+  move, tag) on the selected task.
 - Board: WIP limit editing (with status commands, M6); `Alt+↑/↓` to reorder within a column;
   scroll a keyboard-moved card into view when it lands below the fold.

@@ -12,11 +12,25 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "task-master",
         "width": 1280,
         "height": 800,
         "minWidth": 800,
         "minHeight": 500
+      },
+      {
+        "label": "capture",
+        "title": "Quick capture",
+        "width": 640,
+        "height": 180,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "center": true,
+        "focus": true
       }
     ],
     "security": {

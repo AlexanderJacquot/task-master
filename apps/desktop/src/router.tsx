@@ -10,15 +10,19 @@ import { EpicPage } from "./features/organize/EpicPage";
 import { ProjectPage } from "./features/organize/ProjectPage";
 import { Layout } from "./features/shell/Layout";
 import { SavedViewPage, ViewPage } from "./features/shell/ViewPage";
+import { TodayPage } from "./features/today/TodayPage";
 import { useStoreState } from "./store/context";
 
-export type AppSearch = { task?: string };
+export type AppSearch = { task?: string; plan?: "1" };
 
 const rootRoute = createRootRoute({
   component: Layout,
   // The detail panel is driven by ?task=<id> on every view.
-  validateSearch: (search: Record<string, unknown>): AppSearch =>
-    typeof search.task === "string" ? { task: search.task } : {},
+  validateSearch: (search: Record<string, unknown>): AppSearch => ({
+    ...(typeof search.task === "string" && { task: search.task }),
+    // Opens the "Plan my day" picker on the Today view.
+    ...((search.plan === "1" || search.plan === 1) && { plan: "1" as const }),
+  }),
 });
 
 const indexRoute = createRoute({
@@ -38,7 +42,7 @@ const inboxRoute = createRoute({
 const todayRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "today",
-  component: () => <ViewPage scope={{ kind: "today" }} title="Today" />,
+  component: TodayPage,
 });
 
 const allRoute = createRoute({

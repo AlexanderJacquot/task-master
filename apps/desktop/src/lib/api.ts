@@ -1,5 +1,5 @@
 import { commands, events } from "../bindings";
-import type { Activity, Changed, Changes, Command, CommandError, Snapshot } from "./types";
+import type { Activity, Capture, Changed, Changes, Command, CommandError, Snapshot } from "./types";
 
 /** A failure reported by the core (`invalid`, `not_found`, `internal`) or by Tauri itself. */
 export class ApiError extends Error {
@@ -31,6 +31,8 @@ export interface Api {
   redo(): Promise<Changes | null>;
   search(text: string, limit: number): Promise<string[]>;
   taskActivity(taskId: string, limit: number): Promise<Activity[]>;
+  /** Reads a quick-capture line (read-only). `today` is the local date. */
+  parseCapture(text: string, today: string): Promise<Capture>;
   onChanged(handler: (event: Changed) => void): Promise<() => void>;
 }
 
@@ -41,5 +43,6 @@ export const tauriApi: Api = {
   redo: () => unwrap(commands.redo()),
   search: (text, limit) => unwrap(commands.search(text, limit)),
   taskActivity: (taskId, limit) => unwrap(commands.taskActivity(taskId, limit)),
+  parseCapture: (text, today) => unwrap(commands.parseCapture(text, today)),
   onChanged: (handler) => events.storeChanged.listen((event) => handler(event.payload)),
 };

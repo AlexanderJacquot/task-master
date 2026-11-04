@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Api } from "../lib/api";
 import type { Changed, Changes, Command, Snapshot, Task } from "../lib/types";
-import { STATUS, snapshot, task } from "../test/fixtures";
+import { fakeParse, STATUS, snapshot, task } from "../test/fixtures";
 import { createTask, deleteTask, moveSubtask, setTagged, toggleDone, updateTask } from "./actions";
 import { createTaskStore, type TaskStore } from "./store";
 
@@ -26,6 +26,7 @@ class FakeCore implements Api {
   redo = async () => null;
   search = async () => [];
   taskActivity = async () => [];
+  parseCapture = async (text: string) => fakeParse(text);
   onChanged = async (handler: (e: Changed) => void) => {
     this.listener = handler;
     return () => {

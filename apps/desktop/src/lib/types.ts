@@ -2,6 +2,7 @@
 // `_Deserialize` = what Rust accepts.
 export type {
   Activity_Serialize as Activity,
+  Capture_Serialize as Capture,
   Changed,
   Changes_Serialize as Changes,
   Command_Deserialize as Command,
@@ -13,6 +14,7 @@ export type {
   FieldChange,
   GroupBy,
   Layout,
+  NameMatch_Serialize as NameMatch,
   NewTask_Deserialize as NewTask,
   Priority,
   Project_Serialize as Project,

@@ -1,4 +1,4 @@
-import type { Project, Snapshot, Status, Task } from "../lib/types";
+import type { Capture, Project, Snapshot, Status, Task } from "../lib/types";
 
 export const STATUS = {
   backlog: "00000000-0000-7000-8000-000000000001",
@@ -92,4 +92,40 @@ export function project(overrides: Partial<Project> = {}): Project {
 
 export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
   return { tasks: [], projects: [], epics: [], statuses, tags: [], views: [], ...overrides };
+}
+
+/**
+ * A small stand-in for the core's capture parser (`crates/core/src/parse.rs`): `#tag`,
+ * `@Project`, `+epic:Name`, `!priority`, matched by exact name against `snap`. The real
+ * grammar is covered by the core's snapshot tests.
+ */
+export function fakeParse(text: string, snap: Partial<Snapshot> = {}): Capture {
+  const byName = <T extends { id: string; name: string }>(list: T[] | undefined, name: string) =>
+    list?.find((x) => x.name.toLowerCase() === name.toLowerCase())?.id ?? null;
+  const capture: Capture = {
+    title: "",
+    tags: [],
+    project: null,
+    epic: null,
+    priority: null,
+    due_date: null,
+    warnings: [],
+  };
+  const title: string[] = [];
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    if (word.startsWith("#") && word.length > 1) {
+      const name = word.slice(1);
+      capture.tags.push({ name, id: byName(snap.tags, name) });
+    } else if (word.startsWith("@") && word.length > 1) {
+      const name = word.slice(1);
+      capture.project = { name, id: byName(snap.projects, name) };
+    } else if (word.startsWith("+epic:") && word.length > 6) {
+      const name = word.slice(6);
+      capture.epic = { name, id: byName(snap.epics, name) };
+    } else if (/^!(urgent|high|normal|low)$/.test(word)) {
+      capture.priority = word.slice(1) as Capture["priority"];
+    } else title.push(word);
+  }
+  capture.title = title.join(" ");
+  return capture;
 }

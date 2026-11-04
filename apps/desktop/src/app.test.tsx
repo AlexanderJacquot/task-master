@@ -7,7 +7,7 @@ import type { Changes, Command, Task } from "./lib/types";
 import { createAppRouter } from "./router";
 import { StoreProvider } from "./store/context";
 import { createTaskStore, type TaskStore } from "./store/store";
-import { STATUS, snapshot, task } from "./test/fixtures";
+import { fakeParse, STATUS, snapshot, task } from "./test/fixtures";
 
 /** A core that confirms every write with what the store optimistically showed. */
 function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
@@ -37,6 +37,7 @@ function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
     redo: async () => null,
     search: async () => [],
     taskActivity: async () => [],
+    parseCapture: async (text) => fakeParse(text),
     onChanged: async () => () => {},
   };
   return { api, executed, undos: () => undos };
@@ -246,5 +247,77 @@ describe("organization", () => {
         task: { title: "Also quick", tag_ids: ["g1"] },
       }),
     );
+  });
+});
+
+describe("speed", () => {
+  it("previews capture markers and asks before creating an unknown project", async () => {
+    const input = screen.getByPlaceholderText(/New task/);
+    fireEvent.change(input, { target: { value: "Plan trip #travel @Holidays !high" } });
+    const preview = await screen.findByTestId("capture-preview");
+    expect(within(preview).getByText(/@Holidays/).textContent).toContain("new project");
+    expect(within(preview).getByText(/#travel/)).toBeTruthy();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(fake.executed).toHaveLength(0);
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(fake.executed[0]?.map((c) => c.type)).toEqual([
+      "create_tag",
+      "create_project",
+      "create_task",
+    ]);
+    expect((input as HTMLInputElement).value).toBe("");
+  });
+
+  it("opens the palette with Ctrl+K and jumps to a task found by search", async () => {
+    fake.api.search = async () => [existing.id];
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const command = await screen.findByLabelText("Command");
+    fireEvent.change(command, { target: { value: "passport" } });
+    const results = screen.getByRole("list", { name: "Results" });
+    expect(await within(results).findByText("Renew passport")).toBeTruthy();
+    fireEvent.keyDown(command, { key: "ArrowDown" });
+    fireEvent.change(command, { target: { value: "renew" } });
+    await within(results).findByText("Renew passport");
+    fireEvent.keyDown(command, { key: "Enter" });
+    expect(await screen.findByRole("complementary", { name: "Task details" })).toBeTruthy();
+  });
+
+  it("navigates with g then a letter, and shows shortcuts on ?", async () => {
+    fireEvent.keyDown(window, { key: "g" });
+    fireEvent.keyDown(window, { key: "t" });
+    expect(await screen.findByRole("heading", { name: "Today" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "?" });
+    expect(await screen.findByRole("dialog", { name: "Keyboard shortcuts" })).toBeTruthy();
+  });
+
+  it("plans the day: number keys add suggestions to Today", async () => {
+    cleanup();
+    const urgent = task({ title: "Call the plumber", priority: "urgent" });
+    fake = fakeApi(() => store, [urgent]);
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    render(
+      <StoreProvider store={store} api={fake.api}>
+        <RouterProvider
+          router={createAppRouter(createMemoryHistory({ initialEntries: ["/today"] }))}
+        />
+      </StoreProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Plan my day" }));
+    const panel = await screen.findByRole("region", { name: "Plan my day" });
+    expect(within(panel).getByText("Call the plumber")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "1" });
+    await waitFor(() =>
+      expect(fake.executed.at(-1)?.[0]).toMatchObject({
+        type: "update_task",
+        id: urgent.id,
+        changes: [{ today_on: expect.any(String) }],
+      }),
+    );
+    expect(await within(panel).findByText(/Nothing pressing/)).toBeTruthy();
   });
 });
