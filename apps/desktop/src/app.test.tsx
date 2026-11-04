@@ -7,7 +7,7 @@ import type { Changes, Command, Task } from "./lib/types";
 import { createAppRouter } from "./router";
 import { StoreProvider } from "./store/context";
 import { createTaskStore, type TaskStore } from "./store/store";
-import { fakeParse, STATUS, snapshot, task } from "./test/fixtures";
+import { fakeParse, project, STATUS, snapshot, task } from "./test/fixtures";
 
 /** A core that confirms every write with what the store optimistically showed. */
 function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
@@ -87,6 +87,32 @@ describe("the app", () => {
       task: { title: "Call the bank" },
     });
     expect((input as HTMLInputElement).value).toBe("");
+  });
+
+  it("captures a task with the Add task button", async () => {
+    const add = screen.getByRole("button", { name: "Add task" }) as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.change(screen.getByPlaceholderText(/New task/), {
+      target: { value: "Water plants" },
+    });
+    fireEvent.click(add);
+    expect(await screen.findByText("Water plants")).toBeTruthy();
+    await waitFor(() =>
+      expect(fake.executed.at(-1)?.[0]).toMatchObject({
+        type: "create_task",
+        task: { title: "Water plants" },
+      }),
+    );
+  });
+
+  it("says so when a capture cannot be read, instead of dropping it", async () => {
+    fake.api.parseCapture = () => Promise.reject(new Error("ipc down"));
+    const input = screen.getByPlaceholderText(/New task/);
+    fireEvent.change(input, { target: { value: "Lost task" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add task" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Could not read/);
+    expect((input as HTMLInputElement).value).toBe("Lost task");
+    expect(fake.executed).toHaveLength(0);
   });
 
   it("opens the detail panel and saves field edits", async () => {
@@ -214,6 +240,31 @@ describe("saved views", () => {
 });
 
 describe("organization", () => {
+  it("renames a project from its page with the Rename button", async () => {
+    cleanup();
+    const home = project({ id: "p1", name: "Home" });
+    fake = fakeApi(() => store, [existing]);
+    fake.api.snapshot = async () => snapshot({ tasks: [existing], projects: [home] });
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    render(
+      <StoreProvider store={store} api={fake.api}>
+        <RouterProvider
+          router={createAppRouter(createMemoryHistory({ initialEntries: ["/project/p1"] }))}
+        />
+      </StoreProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Rename Home" }));
+    const input = screen.getByDisplayValue("Home");
+    expect(document.activeElement).toBe(input);
+    fireEvent.change(input, { target: { value: "House" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(fake.executed.at(-1)?.[0]).toMatchObject({ type: "update_project", id: "p1" }),
+    );
+    expect(store.getState().projects.p1?.name).toBe("House");
+  });
+
   it("opens a tag's view from the sidebar and captures tagged tasks there", async () => {
     cleanup();
     const tagged = task({ title: "Tagged one", tag_ids: ["g1"] });

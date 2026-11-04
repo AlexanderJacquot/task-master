@@ -27,6 +27,18 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 Verified locally on Linux: all checks pass; release build produces a 2.9 MiB `.deb`.
 
+### M6 feedback: discoverability (2026-11-05)
+
+Branch `m6-ux-feedback`. From the first Windows test: "no task creation button", "can't
+rename projects" (both existed, but could only be found through Enter or a double-click).
+- `CaptureBox`: an "Add task" button (becomes "Create" when confirming a new project or
+  epic); a failed parse or a markers-only line now shows an inline error instead of doing
+  nothing.
+- `EditableTitle` (project, epic and saved view pages): a single click or the ✎ Rename
+  button edits the title; the input now gets focus with its text selected (`InlineInput`
+  `autoFocus`).
+- Tests: 118 Vitest (+3: Add task button, parse failure, rename from the project page).
+
 ### M6 Hardening (2026-11-04)
 
 - Core: migration `0003_statuses.sql`; status commands (create, update incl. WIP limit,
@@ -201,6 +213,8 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 3. Then Phase 2 (folder workspaces and the `tk` CLI on the same core and parser).
 
 ## Later
+
+- Rename projects/epics/tags from the sidebar (context menu or F2), not only from the page.
 
 - Markdown preview: needs a renderer dependency (`marked` + `DOMPurify` or `react-markdown`).
 - List view multi-select and bulk actions (plan section 6), via one `execute` batch.

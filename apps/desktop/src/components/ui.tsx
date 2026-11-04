@@ -85,6 +85,7 @@ export function InlineInput({
   className,
   id,
   clearOnCommit,
+  autoFocus,
 }: {
   initial: string;
   onCommit: (value: string) => void;
@@ -93,10 +94,18 @@ export function InlineInput({
   className?: string;
   id?: string;
   clearOnCommit?: boolean;
+  /** Focus and select the text on mount (an input that replaces what was clicked). */
+  autoFocus?: boolean;
 }) {
   return (
     <input
       id={id}
+      ref={(el) => {
+        if (autoFocus && el && document.activeElement !== el) {
+          el.focus();
+          el.select();
+        }
+      }}
       defaultValue={initial}
       placeholder={placeholder}
       className={cx(

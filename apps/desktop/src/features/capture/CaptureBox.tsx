@@ -77,6 +77,7 @@ export const CaptureBox = forwardRef<
   const [text, setText] = useState("");
   const [capture, setCapture] = useState<Capture | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const seq = useRef(0);
   const today = isoDate();
 
@@ -96,8 +97,17 @@ export const CaptureBox = forwardRef<
 
   const submit = async () => {
     // Parse the exact text being saved, even if a keystroke's parse is still in flight.
+    if (!text.trim()) return;
     const result = await parse(text);
-    if (!result?.title.trim()) return;
+    if (!result) {
+      setError("Could not read this line. Try again, or check the markers.");
+      return;
+    }
+    if (!result.title.trim()) {
+      setError("The task needs a title, not only markers.");
+      return;
+    }
+    setError(null);
     const missing = missingContainers(result);
     if (missing.length && !confirming) {
       setConfirming(true);
@@ -114,40 +124,56 @@ export const CaptureBox = forwardRef<
 
   return (
     <div className={cx("flex flex-col gap-1", p.className)}>
-      <input
-        ref={ref}
-        id={p.id}
-        value={text}
-        // biome-ignore lint/a11y/noAutofocus: the capture window exists to type into
-        autoFocus={p.autoFocus}
-        aria-label="New task"
-        placeholder={p.placeholder ?? `New task… (press n)   ${CAPTURE_HINT}`}
-        className="w-full rounded border border-neutral-300 bg-white px-2 py-1 focus:border-blue-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-900"
-        onChange={(e) => {
-          setText(e.target.value);
-          setConfirming(false);
-          if (e.target.value.trim()) void parse(e.target.value);
-          else {
-            seq.current += 1;
-            setCapture(null);
-          }
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            void submit();
-          } else if (e.key === "Escape") {
-            if (confirming) {
-              e.stopPropagation();
-              setConfirming(false);
-            } else p.onEscape?.();
-          }
-        }}
-      />
+      <div className="flex gap-2">
+        <input
+          ref={ref}
+          id={p.id}
+          value={text}
+          // biome-ignore lint/a11y/noAutofocus: the capture window exists to type into
+          autoFocus={p.autoFocus}
+          aria-label="New task"
+          placeholder={p.placeholder ?? `New task… (press n)   ${CAPTURE_HINT}`}
+          className="min-w-0 flex-1 rounded border border-neutral-300 bg-white px-2 py-1 focus:border-blue-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-900"
+          onChange={(e) => {
+            setText(e.target.value);
+            setConfirming(false);
+            setError(null);
+            if (e.target.value.trim()) void parse(e.target.value);
+            else {
+              seq.current += 1;
+              setCapture(null);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void submit();
+            } else if (e.key === "Escape") {
+              if (confirming) {
+                e.stopPropagation();
+                setConfirming(false);
+              } else p.onEscape?.();
+            }
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={!text.trim()}
+          className="shrink-0 rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-default disabled:opacity-40"
+        >
+          {confirming ? "Create" : "Add task"}
+        </button>
+      </div>
       {capture && text.trim() && hasMarkers(capture) && <Preview capture={capture} today={today} />}
+      {error && (
+        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+          {error}
+        </p>
+      )}
       {confirming && missing.length > 0 && (
         <p className="text-xs text-amber-700 dark:text-amber-400" role="alert">
-          Create {missing.join(" and ")}? Enter to create, Esc to edit.
+          Create {missing.join(" and ")}? Enter or Create to confirm, Esc to edit.
         </p>
       )}
     </div>
