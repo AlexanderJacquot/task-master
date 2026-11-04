@@ -190,15 +190,15 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
   `TASK_MASTER_DB=/tmp/seed.sqlite pnpm dev`.
 
 - Window opens on **Windows** and **macOS** (M0 "done when" asks for Windows). No CI for them yet.
-- First run of the Forgejo workflow (runner image, apt access, cache action).
 
 ## Next
 
-1. Set up by hand: Garage bucket + key (docs/backups.md), GitHub repo + Forgejo push mirror
-   (docs/release.md), then tag `v0.1.0` and check the installers.
-2. Merge the milestone branches into `main` (M3 → M6 are stacked).
-3. Use the app daily for two weeks; collect issues in the app itself.
-4. Then Phase 2 (folder workspaces and the `tk` CLI on the same core and parser).
+1. Done 2026-11-04: Garage bucket + key configured; GitHub push mirror (SSH); `main`
+   fast-forwarded to M6; Forgejo CI green; `v0.1.0` tagged and its draft release built for
+   Linux, Windows and macOS (9 assets). Left: install it fresh on Linux and Windows, then
+   publish the draft.
+2. Use the app daily for two weeks; collect issues in the app itself.
+3. Then Phase 2 (folder workspaces and the `tk` CLI on the same core and parser).
 
 ## Later
 
