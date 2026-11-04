@@ -1,6 +1,7 @@
 // Views are pure functions of the store's entities + a view key (plan, section 5), so the
 // list, the board (M3) and the calendar (later) share filtering and sorting.
 
+import { isoDate } from "./dates";
 import type { Priority, Project, Status, StatusCategory, Task } from "./types";
 
 export type ViewKey =
@@ -31,16 +32,36 @@ export function isOverdue(task: Task, ctx: ViewContext): boolean {
   return task.due_date !== null && task.due_date < ctx.today && isOpen(task, ctx);
 }
 
+/** Done or cancelled on `ctx.today` (cancelled tasks have no `completed_at`). */
+export function closedToday(task: Task, ctx: ViewContext): boolean {
+  if (isOpen(task, ctx)) return false;
+  return isoDate(new Date(task.completed_at ?? task.updated_at)) === ctx.today;
+}
+
+export interface InViewOptions {
+  /**
+   * Keep tasks closed today in views that otherwise show open tasks only (Inbox, Today),
+   * so a card dropped on the board's Done column stays there until tomorrow.
+   */
+  keepClosedToday?: boolean;
+}
+
 /** Whether `task` belongs in a view, ignoring the tree. */
-export function inView(view: ViewKey, task: Task, ctx: ViewContext): boolean {
+export function inView(
+  view: ViewKey,
+  task: Task,
+  ctx: ViewContext,
+  options: InViewOptions = {},
+): boolean {
+  const open = () => isOpen(task, ctx) || (!!options.keepClosedToday && closedToday(task, ctx));
   switch (view.kind) {
     case "inbox":
-      return task.project_id === null && isOpen(task, ctx);
+      return task.project_id === null && open();
     case "today":
       // Picked for today (even once done), or due today or earlier and still open.
       return (
         task.today_on === ctx.today ||
-        (task.due_date !== null && task.due_date <= ctx.today && isOpen(task, ctx))
+        (task.due_date !== null && task.due_date <= ctx.today && open())
       );
     case "all":
       return true;

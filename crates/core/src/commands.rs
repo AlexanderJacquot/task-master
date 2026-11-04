@@ -287,6 +287,7 @@ fn create_task(b: &mut Batch<'_, '_>, n: NewTask) -> Result<()> {
             "deleted_at": null,
         }),
     ))?;
+    rebalance_if_long(b, &status.id, &rank)?;
     for tag in tag_ids {
         b.apply(Change::new(
             Entity::TaskTag,
@@ -359,13 +360,57 @@ fn update_task(b: &mut Batch<'_, '_>, id: &str, changes: Vec<TaskChange>) -> Res
         patch.insert(key.into(), value);
     }
     patch.insert("updated_at".into(), json!(b.now));
+    let status_id = patch
+        .get("status_id")
+        .and_then(Value::as_str)
+        .unwrap_or(&task.status_id)
+        .to_owned();
+    let rank = patch.get("rank").and_then(Value::as_str).map(str::to_owned);
     b.apply(Change::new(
         Entity::Task,
         id,
         OpKind::Update,
         Value::Object(patch),
     ))?;
+    if let Some(rank) = rank {
+        rebalance_if_long(b, &status_id, &rank)?;
+    }
     cascade_containers(b, &task, new_project.as_ref(), new_epic.as_ref())
+}
+
+/// Rank keys longer than this trigger a rebalance of their column (plan section 10).
+pub const MAX_RANK_LEN: usize = 32;
+
+/// Rewrites every rank in the column with short evenly spaced keys, keeping the order,
+/// when `rank` (just written) is too long. Runs inside the caller's batch, so one undo
+/// reverts the move and the rebalance together. The ops carry only `rank` (no
+/// `updated_at`): bookkeeping, not an edit, so the activity feed skips them.
+fn rebalance_if_long(b: &mut Batch<'_, '_>, status_id: &str, rank: &str) -> Result<()> {
+    if rank.len() <= MAX_RANK_LEN {
+        return Ok(());
+    }
+    let column: Vec<(Id, String)> = {
+        let mut stmt = b.tx.prepare_cached(
+            "SELECT id, rank FROM tasks WHERE status_id = ?1 AND deleted_at IS NULL
+             ORDER BY rank, id",
+        )?;
+        let rows = stmt.query_map([status_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    let mut prev: Option<String> = None;
+    for (id, old) in column {
+        let key = rank::key_between(prev.as_deref(), None)?;
+        if key != old {
+            b.apply(Change::new(
+                Entity::Task,
+                &id,
+                OpKind::Update,
+                json!({ "rank": key }),
+            ))?;
+        }
+        prev = Some(key);
+    }
+    Ok(())
 }
 
 /// Moves subtasks along when a task changes project or epic: a subtask follows when its

@@ -909,3 +909,132 @@ fn task_activity_lists_meaningful_changes_newest_first() {
     assert!(activity[0].at > 0);
     assert_eq!(s.task_activity(&t.id, 1).unwrap().len(), 1);
 }
+
+// ---------------------------------------------------------------------------------------
+// Board moves and rank rebalancing (M3)
+
+/// The live task ids of a column, in board order.
+fn column(s: &Store, status_id: &str) -> Vec<Id> {
+    let mut tasks: Vec<Task> = s
+        .snapshot()
+        .unwrap()
+        .tasks
+        .into_iter()
+        .filter(|t| t.status_id == status_id)
+        .collect();
+    tasks.sort_by(|a, b| a.rank.cmp(&b.rank).then_with(|| a.id.cmp(&b.id)));
+    tasks.into_iter().map(|t| t.id).collect()
+}
+
+/// The rank a UI computes for dropping `id` at `at` in `status_id` (neighbours exclude it).
+fn drop_rank(s: &Store, id: &str, status_id: &str, at: usize) -> String {
+    let snapshot = s.snapshot().unwrap();
+    let rank_of = |tid: &str| {
+        snapshot
+            .tasks
+            .iter()
+            .find(|t| t.id == tid)
+            .unwrap()
+            .rank
+            .clone()
+    };
+    let others: Vec<Id> = column(s, status_id)
+        .into_iter()
+        .filter(|t| t != id)
+        .collect();
+    let before = at.checked_sub(1).map(|i| rank_of(&others[i]));
+    let after = others.get(at).map(|t| rank_of(t));
+    rank::key_between(before.as_deref(), after.as_deref()).unwrap()
+}
+
+#[test]
+fn long_rank_rebalances_the_column_in_the_same_undoable_batch() {
+    let mut s = store();
+    let first = add_task(&mut s, new_task("First"));
+    let last = add_task(&mut s, new_task("Last"));
+    let mut expected = vec![first.id.clone(), last.id.clone()];
+    let mut rebalanced = false;
+    // Keep dropping new cards right after `first`: the gap halves each time and keys grow.
+    for i in 0..400 {
+        let t = add_task(&mut s, new_task(&format!("Card {i}")));
+        let rank = drop_rank(&s, &t.id, TODO, 1);
+        let command = Command::MoveTask {
+            id: t.id.clone(),
+            status_id: TODO.into(),
+            rank: rank.clone(),
+        };
+        expected.retain(|id| id != &t.id);
+        expected.insert(1, t.id.clone());
+        if rank.len() > MAX_RANK_LEN {
+            let changes = roundtrip(&mut s, command);
+            assert!(
+                changes.tasks.len() > 2,
+                "rebalance returns the whole column"
+            );
+            rebalanced = true;
+        } else {
+            s.execute(command).unwrap();
+        }
+        assert_eq!(column(&s, TODO), expected, "order after drop {i}");
+        let snapshot = s.snapshot().unwrap();
+        assert!(snapshot.tasks.iter().all(|t| t.rank.len() <= MAX_RANK_LEN));
+        if rebalanced {
+            break;
+        }
+    }
+    assert!(rebalanced, "keys never grew past {MAX_RANK_LEN} chars");
+
+    // The rebalance does not show up in other cards' activity.
+    let activity = s.task_activity(&last.id, 50).unwrap();
+    assert!(activity.iter().all(|a| a.kind == "create"), "{activity:?}");
+}
+
+/// Plan M3 "done when": 50 drags in a row never reorder wrongly, and undo reverts a drag.
+#[test]
+fn fifty_random_drags_match_a_reference_model() {
+    let mut s = store();
+    let statuses = [BACKLOG, TODO, IN_PROGRESS, DONE];
+    for i in 0..12 {
+        add_task(&mut s, new_task(&format!("Task {i}")));
+    }
+    let ids = column(&s, TODO);
+    let mut model: Vec<Vec<Id>> = statuses.iter().map(|st| column(&s, st)).collect();
+    let initial = s.snapshot().unwrap();
+
+    let mut seed: u64 = 0x9e37_79b9_7f4a_7c15;
+    let mut next = move |n: usize| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        usize::try_from(seed % n as u64).unwrap()
+    };
+    let mut snapshots = vec![initial.clone()];
+    for drag in 0..50 {
+        let id = ids[next(ids.len())].clone();
+        let to = next(statuses.len());
+        for col in &mut model {
+            col.retain(|t| t != &id);
+        }
+        let at = next(model[to].len() + 1);
+        model[to].insert(at, id.clone());
+
+        let rank = drop_rank(&s, &id, statuses[to], at);
+        s.execute(Command::MoveTask {
+            id,
+            status_id: statuses[to].into(),
+            rank,
+        })
+        .unwrap();
+        for (st, col) in statuses.iter().zip(&model) {
+            assert_eq!(&column(&s, st), col, "column {st} after drag {drag}");
+        }
+        snapshots.push(s.snapshot().unwrap());
+    }
+
+    // Each undo steps back exactly one drag.
+    for expected in snapshots.iter().rev().skip(1) {
+        s.undo().unwrap().expect("a drag to undo");
+        assert_eq!(&s.snapshot().unwrap(), expected);
+    }
+    assert_eq!(s.snapshot().unwrap(), initial);
+}

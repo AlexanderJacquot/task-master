@@ -19,7 +19,8 @@ mod store;
 
 pub use clock::{new_id, now_ms};
 pub use commands::{
-    Command, EpicChange, NewEpic, NewProject, NewTag, NewTask, ProjectChange, TagChange, TaskChange,
+    Command, EpicChange, MAX_RANK_LEN, NewEpic, NewProject, NewTag, NewTask, ProjectChange,
+    TagChange, TaskChange,
 };
 pub use error::{Error, Result};
 pub use events::{Changed, EntityRef};

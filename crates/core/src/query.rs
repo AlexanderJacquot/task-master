@@ -278,7 +278,8 @@ pub struct FieldChange {
     pub after: String,
 }
 
-/// A task's history, newest first. Bookkeeping-only updates (`updated_at`) are skipped.
+/// A task's history, newest first. Bookkeeping-only updates (`updated_at`, rank
+/// rebalances) are skipped.
 pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Result<Vec<Activity>> {
     type Row = (i64, String, Option<String>, String, String, String, String);
     let rows: Vec<Row> = query(
@@ -303,6 +304,10 @@ pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Res
     for (seq, hlc, batch_id, entity, kind, patch, inverse) in rows {
         let patch: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&patch)?;
         let inverse: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&inverse)?;
+        // A rank-only update without `updated_at` is a column rebalance, not a user edit.
+        if kind == "update" && patch.len() == 1 && patch.contains_key("rank") {
+            continue;
+        }
         let fields: Vec<FieldChange> = patch
             .iter()
             .filter(|(k, _)| k.as_str() != "updated_at")

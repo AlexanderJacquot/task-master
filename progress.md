@@ -4,8 +4,8 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M2 List and detail**, branch `m2-list-detail` (stacked on `m1-data-core`): done, pending
-review and a hands-on check. Next up: **M3 Kanban**.
+**M3 Kanban**, branch `m3-kanban` (from `main`, which has M2): done, pending review and a
+hands-on check in the real window. Next up: **M4 Organization**.
 
 ## Done
 
@@ -25,6 +25,34 @@ review and a hands-on check. Next up: **M3 Kanban**.
   `pnpm --filter desktop tauri icon src-tauri/app-icon.png`).
 
 Verified locally on Linux: all checks pass; release build produces a 2.9 MiB `.deb`.
+
+### M3 Kanban (2026-11-04)
+
+- Dev machine setup (desktop, WSL2 Debian 12): rustup with the pinned toolchain, Node 24 via
+  nvm (default), pnpm 12.17.0 via `npm i -g` (corepack under nvm failed to resolve pnpm 12),
+  Tauri apt packages (`libwebkit2gtk-4.1-dev`, `libxdo-dev`, `libssl-dev`,
+  `libayatana-appindicator3-dev`, `librsvg2-dev`, `file`).
+- Core: rank rebalancing. A task rank over `MAX_RANK_LEN` (32) rewrites its status column with
+  short keys in the same batch (one undo); rebalance ops carry only `rank` and are left out
+  of `task_activity`.
+- Board (`lib/board.ts`, `features/board/`): columns per status with counts and WIP warning,
+  cards (title, priority, project color, epic, tags, subtask progress, due), manual rank
+  order, swimlanes by project/epic/priority (a drop into a lane sets that field), subtask
+  and cancelled toggles, virtualized cells, dnd-kit drag within/between cells with overlay,
+  `Alt+←/→` keyboard moves, Space for keyboard drag, Enter/click to open.
+  Inbox and Today boards keep tasks closed today, so the Done column is not always empty.
+- `ListView` became `features/shell/ViewPage.tsx`: list/board toggle and board options per
+  view, remembered in `localStorage` (`useViewPrefs`).
+- `moveCard` action: one `move_task` (or one `update_task` with the lane change); renumbers
+  the cell when the drop neighbours share a rank.
+- Perf tooling: `cargo run --release -p taskmaster-core --example seed -- <db> <n>`; debug
+  builds open `TASK_MASTER_DB` when set. `buildBoard` on 10k tasks: ~2.3 ms (no lanes),
+  ~3.5 ms (lanes), model only.
+- Tests: 83 Vitest (board model, drop ranks, 50 random drags through the store, board UI:
+  layout toggle, Alt+→, open, lanes) and 39 Rust (rebalance + undo, 50 random drags against
+  a reference model with undo of each).
+- Decisions: `docs/adr/004-board.md`. New dependencies: `@dnd-kit/core` 6.3.1,
+  `@dnd-kit/sortable` 10.0.0, `@dnd-kit/utilities` 3.2.2.
 
 ### M2 List and detail (2026-11-04)
 
@@ -78,25 +106,21 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 ## Not yet verified
 
 - M2 UI by hand in the real window (`pnpm dev`): layout, dark mode, CodeMirror, popover.
+- M3 board by hand: pointer drag feel (jsdom cannot test it), shaking a card between columns
+  (the update-depth loop fix, ADR 004), drag between lanes, dark mode,
+  and scrolling on WebKitGTK with a seeded DB:
+  `cargo run --release -p taskmaster-core --example seed -- /tmp/seed.sqlite 10000`, then
+  `TASK_MASTER_DB=/tmp/seed.sqlite pnpm dev`.
 
 - Window opens on **Windows** and **macOS** (M0 "done when" asks for Windows). No CI for them yet.
 - First run of the Forgejo workflow (runner image, apt access, cache action).
 
-## Next: M3 Kanban
+## Next: M4 Organization
 
-Branch `m3-kanban`. New dependency to propose: `@dnd-kit/core` + `@dnd-kit/sortable` (named
-in the plan).
-
-1. Board view: columns = statuses, cards (title, project color, epic, tags, priority, due,
-   subtask progress); same view keys and filters as the list (`lib/views.ts`).
-2. Drag and drop within and between columns: one `move_task` with a rank between the drop
-   neighbours; undo reverts a drag.
-3. Keyboard moves `Alt+←/→`; list/board toggle per view.
-4. Swimlanes by project, epic or priority; WIP limit warning in column headers.
-5. Subtasks hidden as cards by default, with a toggle.
-6. Rank rebalancing in the core when a key exceeds 32 chars (one transaction).
-7. Test: 50 consecutive drags never reorder wrongly (store-level and core-level).
-8. Check scrolling performance on Linux (WebKitGTK) with a seeded DB.
+Branch `m4-organization`. Plan row: projects tree with areas, epics view with progress, tags,
+saved views (filter, group, sort, layout, swimlanes), Inbox and Today. Done when every view
+in plan section 6 exists and a saved view reopens identically. Saved views replace the
+`localStorage` layout prefs from M3. Break into tasks at the start of the session.
 
 ## Later
 
@@ -105,8 +129,9 @@ in the plan).
 - Tag views (click a tag in the sidebar), project rename/archive/delete UI, epic edit UI (M4).
 
 - Core: writer thread + reader pool if the M6 perf test needs it (ADR 002).
-- Core: rank rebalancing when a key exceeds 32 chars (M3).
 - Core: status commands (M6), view commands and specs (M4), undo across restarts.
 - Bump `rusqlite` to 0.41 once `rusqlite_migration` supports it.
 - CSP in `tauri.conf.json` is a strict baseline; revisit when adding the markdown editor.
 - Replace the placeholder icon.
+- Board: WIP limit editing (with status commands, M6); `Alt+↑/↓` to reorder within a column;
+  scroll a keyboard-moved card into view when it lands below the fold.

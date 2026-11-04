@@ -1,8 +1,9 @@
 // User actions: each builds the core command(s) plus the optimistic entities to show
 // immediately. Ids and ranks are computed here and sent, so local and confirmed rows agree.
 
+import { ranksForDrop } from "../lib/board";
 import { rankBetween } from "../lib/rank";
-import type { Priority, Project, Status, Tag, Task, TaskChange } from "../lib/types";
+import type { Command, Priority, Project, Status, Tag, Task, TaskChange } from "../lib/types";
 import { uuidv7 } from "../lib/uuid";
 import { childrenByParent, compareRank, descendantIds } from "../lib/views";
 import type { TaskStore } from "./store";
@@ -289,4 +290,59 @@ export async function createEpic(store: TaskStore, rawName: string): Promise<str
     },
   });
   return changes ? id : null;
+}
+
+export interface CardDrop {
+  id: string;
+  statusId: string;
+  /** The target cell's card ids, top to bottom, the moved card included. */
+  order: string[];
+  /** What the target swimlane sets (project, epic or priority); empty without lanes. */
+  laneChanges?: TaskChange[];
+}
+
+/** True when `change` would leave the task as it is. */
+function isNoop(task: Task, change: TaskChange): boolean {
+  if ("project_id" in change) return (change.project_id ?? null) === task.project_id;
+  if ("epic_id" in change) return (change.epic_id ?? null) === task.epic_id;
+  if ("priority" in change) return change.priority === task.priority;
+  return false;
+}
+
+/**
+ * A board drop: new column, position and (with swimlanes) lane, as one undoable batch.
+ * The rank comes from the new neighbours; the core rebalances the column if it grows long.
+ */
+export function moveCard(store: TaskStore, drop: CardDrop) {
+  const s = store.getState();
+  const task = s.tasks[drop.id];
+  if (!task) return Promise.resolve(null);
+  const ranks: Record<string, string> = {};
+  for (const id of drop.order) {
+    const rank = s.tasks[id]?.rank;
+    if (rank !== undefined) ranks[id] = rank;
+  }
+  const order = drop.order.filter((id) => id in ranks);
+  const newRanks = ranksForDrop(order, drop.id, ranks);
+  const laneChanges = (drop.laneChanges ?? []).filter((c) => !isNoop(task, c));
+
+  const now = Date.now();
+  const commands: Command[] = [];
+  const upserts: Task[] = [];
+  const rank = newRanks[drop.id] as string;
+  if (laneChanges.length) {
+    const changes: TaskChange[] = [{ status_id: drop.statusId }, { rank }, ...laneChanges];
+    commands.push({ type: "update_task", id: drop.id, changes });
+    upserts.push(applyTaskChanges(task, changes, s.statuses, now));
+  } else {
+    commands.push({ type: "move_task", id: drop.id, status_id: drop.statusId, rank });
+    upserts.push(applyTaskChanges(task, [{ status_id: drop.statusId }, { rank }], s.statuses, now));
+  }
+  for (const [id, key] of Object.entries(newRanks)) {
+    const other = s.tasks[id];
+    if (id === drop.id || !other) continue;
+    commands.push({ type: "update_task", id, changes: [{ rank: key }] });
+    upserts.push(applyTaskChanges(other, [{ rank: key }], s.statuses, now));
+  }
+  return s.mutate(commands, { upsert: { tasks: upserts } });
 }

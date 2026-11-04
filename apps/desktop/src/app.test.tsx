@@ -60,7 +60,10 @@ async function renderApp(path = "/inbox") {
 }
 
 beforeEach(() => renderApp());
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 describe("the app", () => {
   it("lists inbox tasks grouped by status, with counts in the sidebar", async () => {
@@ -134,5 +137,44 @@ describe("the app", () => {
     );
     // Done tasks leave the inbox.
     await waitFor(() => expect(screen.queryByText("Renew passport")).toBeNull());
+  });
+});
+
+describe("the board", () => {
+  async function openBoard() {
+    fireEvent.click(screen.getByRole("button", { name: "board" }));
+    return screen.findByRole("list", { name: "To do" });
+  }
+
+  it("shows cards in status columns and remembers the layout per view", async () => {
+    const todo = await openBoard();
+    expect(within(todo).getByRole("button", { name: "Renew passport" })).toBeTruthy();
+    expect(screen.getByRole("list", { name: "In progress" })).toBeTruthy();
+    expect(localStorage.getItem("task-master.view.inbox")).toContain('"board"');
+  });
+
+  it("moves a focused card to the next column with Alt+→, as one move_task", async () => {
+    const todo = await openBoard();
+    const card = within(todo).getByRole("button", { name: "Renew passport" });
+    fireEvent.keyDown(card, { key: "ArrowRight", altKey: true });
+    await waitFor(() =>
+      expect(fake.executed.at(-1)).toEqual([
+        { type: "move_task", id: existing.id, status_id: STATUS.inProgress, rank: "a0" },
+      ]),
+    );
+    const inProgress = screen.getByRole("list", { name: "In progress" });
+    expect(await within(inProgress).findByRole("button", { name: "Renew passport" })).toBeTruthy();
+  });
+
+  it("opens the detail panel when a card is clicked", async () => {
+    const todo = await openBoard();
+    fireEvent.click(within(todo).getByRole("button", { name: "Renew passport" }));
+    expect(await screen.findByRole("complementary", { name: "Task details" })).toBeTruthy();
+  });
+
+  it("splits the board into lanes", async () => {
+    await openBoard();
+    fireEvent.change(screen.getByLabelText("Swimlanes"), { target: { value: "priority" } });
+    expect(await screen.findByRole("region", { name: "Lane Normal" })).toBeTruthy();
   });
 });

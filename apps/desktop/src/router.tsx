@@ -6,8 +6,8 @@ import {
   type RouterHistory,
   redirect,
 } from "@tanstack/react-router";
-import { ListView } from "./features/list/ListView";
 import { Layout } from "./features/shell/Layout";
+import { ViewPage } from "./features/shell/ViewPage";
 import { isoDate } from "./lib/dates";
 import { useStoreState } from "./store/context";
 
@@ -31,21 +31,21 @@ const indexRoute = createRoute({
 const inboxRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "inbox",
-  component: () => <ListView view={{ kind: "inbox" }} title="Inbox" defaults={{}} />,
+  component: () => <ViewPage view={{ kind: "inbox" }} title="Inbox" defaults={{}} />,
 });
 
 const todayRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "today",
   component: () => (
-    <ListView view={{ kind: "today" }} title="Today" defaults={{ today_on: isoDate() }} />
+    <ViewPage view={{ kind: "today" }} title="Today" defaults={{ today_on: isoDate() }} />
   ),
 });
 
 const allRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "all",
-  component: () => <ListView view={{ kind: "all" }} title="All tasks" defaults={{}} />,
+  component: () => <ViewPage view={{ kind: "all" }} title="All tasks" defaults={{}} />,
 });
 
 const projectRoute = createRoute({
@@ -56,7 +56,7 @@ const projectRoute = createRoute({
     const project = useStoreState((s) => s.projects[projectId]);
     if (!project) return <Missing what="Project" />;
     return (
-      <ListView
+      <ViewPage
         key={projectId}
         view={{ kind: "project", id: projectId }}
         title={project.name}
@@ -74,7 +74,7 @@ const epicRoute = createRoute({
     const epic = useStoreState((s) => s.epics[epicId]);
     if (!epic) return <Missing what="Epic" />;
     return (
-      <ListView
+      <ViewPage
         key={epicId}
         view={{ kind: "epic", id: epicId }}
         title={epic.name}

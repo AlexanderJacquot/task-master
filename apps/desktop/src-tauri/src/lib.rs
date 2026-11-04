@@ -136,7 +136,12 @@ pub fn run() {
         .setup(move |app| {
             builder.mount_events(app);
 
-            let mut store = Store::open(app.path().app_data_dir()?.join(DB_FILE))?;
+            let path = app.path().app_data_dir()?.join(DB_FILE);
+            // Debug builds can open another database, e.g. one filled by the core's `seed`
+            // example for performance checks.
+            #[cfg(debug_assertions)]
+            let path = std::env::var_os("TASK_MASTER_DB").map_or(path, Into::into);
+            let mut store = Store::open(path)?;
             let changes = store.subscribe();
             let handle = app.handle().clone();
             std::thread::Builder::new()
