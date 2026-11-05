@@ -1,6 +1,6 @@
 # ADR 017: Agent sessions (Claude Code from a task)
 
-Date: 2026-11-05 · Status: **proposed** (M16, branch `m16-agent-sessions`)
+Date: 2026-11-05 · Status: accepted (M16, branch `m16-agent-sessions`); step 1 done
 
 ## Context
 
@@ -25,17 +25,31 @@ in the same space without cluttering the user's views. Decided with the user:
 - `tasks.owner TEXT NOT NULL DEFAULT 'me' CHECK (owner IN ('me','agent'))`. Set by
   `CreateTask`; the MCP always creates `agent` tasks. `UpdateTask` can change it (adopt an
   agent task: agent → me). Synced, exported, in undo like any field.
-- `project_folders(project_id, device_id, path, runtime, updated_at)`: plan Phase 2's table,
-  paths per device. Written through `SetProjectFolder` (ops, but **not synced**: paths are
-  meaningless on another device; the sync layer skips the table).
-- `agent_sessions(id, task_id, device_id, claude_session_id, folder, runtime, prompt,
-  state, started_at, ended_at, summary, cost_usd, turns, error, created_at, updated_at,
-  deleted_at)`. `state` is `running | done | failed | cancelled | interrupted`. Rows go
-  through `CreateAgentSession` / `UpdateAgentSession` and sync, so other devices see the
-  history (read-only: only the owning device can resume or cancel). At start-up, this
-  device's `running` rows become `interrupted`.
-- `agent_notes(id, session_id, task_id, body, created_at)`: progress lines the agent writes
-  through the MCP (`add_note`). Shown in the task's activity feed and the session panel.
+- `project_folders(project_id, path, runtime, updated_at)`: plan Phase 2's folders, as
+  **device configuration** like the calendar tables (ADR 014): written directly by
+  `Store::set_project_folder`, outside `ops`, never synced, exported or undoable (a path
+  means nothing on another device, and each device has its own database, so no
+  `device_id` column). No foreign key, so an import or "replace with the server's data"
+  stays valid; `Store::project_folders` skips folders of projects that are gone.
+- `agent_sessions(id, task_id, device_id, claude_session_id, folder, runtime,
+  permission_mode, prompt, state, started_at, ended_at, summary, cost_usd_micros, turns,
+  error, timestamps, deleted_at)`. `state` is `running | done | failed | cancelled |
+  interrupted`; leaving `running` sets `ended_at`, a follow-up turn back to `running`
+  clears it. Rows go through `CreateAgentSession` / `UpdateAgentSession` /
+  `DeleteAgentSession` and sync, so other devices see the history, but the commands refuse
+  a session whose `device_id` is not this device's. Cost is stored in millionths of a
+  dollar (an integer, so entities stay `Eq` and exact).
+- **Sessions stay out of the undo stack**: the shell writes start, progress and end with
+  `Store::execute_without_undo`, so Ctrl+Z still reaches the user's last edit. Removing a
+  finished session is the user's action and goes through `execute` (undoable).
+  `Store::interrupt_running_sessions` marks this device's `running` rows `interrupted` at
+  start-up. Each start, end and note bumps the task's `updated_at`, as attachments do.
+- `agent_notes(id, session_id, task_id, body, timestamps, deleted_at)`: progress lines the
+  agent writes through the MCP (`AddAgentNote`, at most 4000 characters). Not in the
+  snapshot (they can be many): read with `Store::agent_notes(task, session?, limit)`.
+  Sessions are in the snapshot (of live tasks, like time blocks).
+- The activity feed shows `agent_start` (folder), `agent_end` (state, summary) and
+  `agent_note` (body). Export and import carry sessions and notes.
 - `core::brief(task_id) -> String`: the context brief (task, description, subtasks,
   prerequisites and dependents with their status, epic, project, tags, priority, due date,
   recent activity, previous sessions' summaries) as markdown. Snapshot-tested.

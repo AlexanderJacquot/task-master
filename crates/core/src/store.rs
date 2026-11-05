@@ -13,7 +13,10 @@ use crate::error::{Error, Result};
 use crate::events::{Changed, EntityRef, EventBus};
 use crate::files::FileStore;
 use crate::history::{self, History};
-use crate::model::{Attachment, Epic, Id, Project, Snapshot, Status, Tag, Task, TimeBlock, View};
+use crate::model::{
+    AgentNote, AgentRuntime, AgentSession, Attachment, Epic, Id, Project, ProjectFolder,
+    SessionState, Snapshot, Status, Tag, Task, TimeBlock, View,
+};
 use crate::ops::{Batch, EntityKind};
 use crate::sync::{self, Merged, OpsPage, SyncOp};
 use crate::{db, query};
@@ -34,6 +37,8 @@ pub struct Changes {
     pub statuses: Vec<Status>,
     pub attachments: Vec<Attachment>,
     pub time_blocks: Vec<TimeBlock>,
+    pub agent_sessions: Vec<AgentSession>,
+    pub agent_notes: Vec<AgentNote>,
 }
 
 impl Changes {
@@ -117,6 +122,21 @@ impl Store {
 
     /// Runs several commands atomically as one undoable batch: all apply or none do.
     pub fn execute_all(&mut self, commands: Vec<Command>) -> Result<Changes> {
+        let changes = self.run_commands(commands)?;
+        if let Some(batch_id) = &changes.batch_id {
+            self.history.record(batch_id.clone());
+        }
+        Ok(changes)
+    }
+
+    /// Runs commands atomically like [`Store::execute_all`], but keeps them out of the
+    /// undo history: bookkeeping such as an agent session starting or ending, which the
+    /// user did not do and should not undo with their own edits.
+    pub fn execute_without_undo(&mut self, commands: Vec<Command>) -> Result<Changes> {
+        self.run_commands(commands)
+    }
+
+    fn run_commands(&mut self, commands: Vec<Command>) -> Result<Changes> {
         // An attachment row must name content that is actually stored.
         for command in &commands {
             if let Command::CreateAttachment { attachment } = command
@@ -128,15 +148,98 @@ impl Store {
                 )));
             }
         }
-        let changes = self.write(|b| {
+        self.write(|b| {
             commands
                 .into_iter()
                 .try_for_each(|command| commands::run(b, command))
-        })?;
-        if let Some(batch_id) = &changes.batch_id {
-            self.history.record(batch_id.clone());
+        })
+    }
+
+    // -----------------------------------------------------------------------------------
+    // Agent sessions (docs/adr/017-agent-sessions.md)
+
+    /// Marks this device's `running` sessions `interrupted`: at start-up, no process of
+    /// a previous run survives. Not undoable.
+    pub fn interrupt_running_sessions(&mut self) -> Result<Changes> {
+        let ids: Vec<Id> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT id FROM agent_sessions
+                 WHERE device_id = ?1 AND state = 'running' AND deleted_at IS NULL ORDER BY id",
+            )?;
+            let rows = stmt.query_map([&self.device_id], |r| r.get(0))?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        self.execute_without_undo(
+            ids.into_iter()
+                .map(|id| Command::UpdateAgentSession {
+                    id,
+                    changes: vec![commands::AgentSessionChange::State(
+                        SessionState::Interrupted,
+                    )],
+                })
+                .collect(),
+        )
+    }
+
+    /// One session, deleted ones included.
+    pub fn agent_session(&self, id: &str) -> Result<AgentSession> {
+        query::agent_session(&self.conn, id)
+    }
+
+    /// The newest `limit` live notes of a task (or of one of its sessions), oldest first.
+    pub fn agent_notes(
+        &self,
+        task_id: &str,
+        session_id: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<AgentNote>> {
+        query::agent_notes(&self.conn, task_id, session_id, limit)
+    }
+
+    /// Markdown context for an agent working on a task: the task, its containers,
+    /// hierarchy, dependencies and earlier sessions (docs/adr/017).
+    pub fn agent_brief(&self, task_id: &str) -> Result<String> {
+        crate::brief::brief(&self.conn, task_id)
+    }
+
+    /// This device's working folders, by project.
+    pub fn project_folders(&self) -> Result<Vec<ProjectFolder>> {
+        query::project_folders(&self.conn)
+    }
+
+    /// Sets (or with `None`, clears) this device's folder for a project. Device
+    /// configuration: written directly, not synced, exported or undoable.
+    pub fn set_project_folder(
+        &mut self,
+        project_id: &str,
+        folder: Option<(String, AgentRuntime)>,
+    ) -> Result<()> {
+        match folder {
+            None => {
+                self.conn.execute(
+                    "DELETE FROM project_folders WHERE project_id = ?1",
+                    [project_id],
+                )?;
+            }
+            Some((path, runtime)) => {
+                let project = query::project(&self.conn, project_id)?;
+                if project.deleted_at.is_some() {
+                    return Err(Error::not_found("project", project_id));
+                }
+                let path = path.trim();
+                if path.is_empty() {
+                    return Err(Error::invalid("folder cannot be empty"));
+                }
+                self.conn.execute(
+                    "INSERT INTO project_folders (project_id, path, runtime, updated_at)
+                     VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT (project_id) DO UPDATE SET path = excluded.path,
+                       runtime = excluded.runtime, updated_at = excluded.updated_at",
+                    rusqlite::params![project_id, path, runtime.as_str(), self.now()],
+                )?;
+            }
         }
-        Ok(changes)
+        Ok(())
     }
 
     pub fn can_undo(&self) -> bool {
@@ -476,6 +579,10 @@ fn load_changes(
             EntityKind::Status => changes.statuses.push(query::status(conn, id)?),
             EntityKind::Attachment => changes.attachments.push(query::attachment(conn, id)?),
             EntityKind::TimeBlock => changes.time_blocks.push(query::time_block(conn, id)?),
+            EntityKind::AgentSession => {
+                changes.agent_sessions.push(query::agent_session(conn, id)?);
+            }
+            EntityKind::AgentNote => changes.agent_notes.push(query::agent_note(conn, id)?),
         }
     }
     Ok(changes)

@@ -7,8 +7,8 @@ use serde_json::{Map, Value, json};
 use crate::clock::{check_date, check_id, new_id};
 use crate::error::{Error, Result};
 use crate::model::{
-    BlockOutcome, EpicState, Id, IsoDate, Priority, Status, StatusCategory, Task, Timestamp,
-    VIEW_SPEC_VERSION, ViewScope, ViewSpec,
+    AgentRuntime, BlockOutcome, EpicState, Id, IsoDate, Priority, SessionState, Status,
+    StatusCategory, Task, TaskOwner, Timestamp, VIEW_SPEC_VERSION, ViewScope, ViewSpec,
 };
 use crate::ops::{Batch, Change, Entity, OpKind};
 use crate::{files, query, rank};
@@ -129,7 +129,66 @@ pub enum Command {
     DeleteTimeBlock {
         id: Id,
     },
+    /// Records a Claude Code run started on this device (docs/adr/017). Usually sent with
+    /// [`crate::Store::execute_without_undo`]: sessions are not user edits.
+    CreateAgentSession {
+        session: NewAgentSession,
+    },
+    /// Only the device that started the session may update it. Leaving `running` sets
+    /// `ended_at`; going back to `running` (a follow-up turn) clears it.
+    UpdateAgentSession {
+        id: Id,
+        changes: Vec<AgentSessionChange>,
+    },
+    /// Removes a finished session (and its notes) from the task's history.
+    DeleteAgentSession {
+        id: Id,
+    },
+    /// A progress line from the agent, on its session's task.
+    AddAgentNote {
+        note: NewAgentNote,
+    },
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewAgentSession {
+    pub id: Option<Id>,
+    pub task_id: Id,
+    /// A UUID, given to `claude --session-id`.
+    pub claude_session_id: String,
+    pub folder: String,
+    pub runtime: AgentRuntime,
+    /// One of [`PERMISSION_MODES`].
+    pub permission_mode: String,
+    #[serde(default)]
+    pub prompt: String,
+}
+
+/// Claude Code `--permission-mode` values a session may use.
+pub const PERMISSION_MODES: &[&str] = &["default", "acceptEdits", "plan", "bypassPermissions"];
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSessionChange {
+    State(SessionState),
+    Summary(Option<String>),
+    CostUsdMicros(Option<i64>),
+    Turns(Option<i64>),
+    Error(Option<String>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewAgentNote {
+    pub id: Option<Id>,
+    pub session_id: Id,
+    pub body: String,
+}
+
+/// Longest agent note, in characters.
+pub const MAX_NOTE_CHARS: usize = 4000;
 
 /// Fields for a new task. Only `title` is required; the rest have defaults.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,6 +199,8 @@ pub struct NewTask {
     pub id: Option<Id>,
     pub title: String,
     pub description: String,
+    /// `agent` for an agent's own tasks; defaults to `me`.
+    pub owner: TaskOwner,
     /// Defaults to the parent's project; `None` puts the task in the Inbox.
     pub project_id: Option<Id>,
     /// Defaults to the parent's epic.
@@ -161,6 +222,8 @@ pub struct NewTask {
 #[serde(rename_all = "snake_case")]
 pub enum TaskChange {
     DependencyIds(Vec<Id>),
+    /// Adopting an agent task: `agent` → `me`.
+    Owner(TaskOwner),
     Title(String),
     Description(String),
     Priority(Priority),
@@ -373,6 +436,10 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
         Command::CreateTimeBlock { block } => create_time_block(b, block),
         Command::UpdateTimeBlock { id, changes } => update_time_block(b, &id, changes),
         Command::DeleteTimeBlock { id } => delete_time_block(b, &id),
+        Command::CreateAgentSession { session } => create_agent_session(b, session),
+        Command::UpdateAgentSession { id, changes } => update_agent_session(b, &id, changes),
+        Command::DeleteAgentSession { id } => delete_agent_session(b, &id),
+        Command::AddAgentNote { note } => add_agent_note(b, note),
     }
 }
 
@@ -432,6 +499,7 @@ fn create_task(b: &mut Batch<'_, '_>, n: NewTask) -> Result<()> {
             "status_id": status.id,
             "title": title,
             "description": n.description,
+            "owner": n.owner.as_str(),
             "priority": n.priority.to_db(),
             "due_date": n.due_date,
             "today_on": n.today_on,
@@ -487,6 +555,7 @@ fn update_task(b: &mut Batch<'_, '_>, id: &str, changes: Vec<TaskChange>) -> Res
                 }
                 ("dependency_ids", json!(serde_json::to_string(&ids)?))
             }
+            TaskChange::Owner(o) => ("owner", json!(o.as_str())),
             TaskChange::Title(t) => ("title", json!(non_empty("title", &t)?)),
             TaskChange::Description(d) => ("description", json!(d)),
             TaskChange::Priority(p) => ("priority", json!(p.to_db())),
@@ -1490,6 +1559,181 @@ fn live_time_block(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::TimeBloc
         return Err(Error::not_found("time block", id));
     }
     Ok(block)
+}
+
+// ---------------------------------------------------------------------------------------
+// Agent sessions (docs/adr/017)
+
+fn create_agent_session(b: &mut Batch<'_, '_>, n: NewAgentSession) -> Result<()> {
+    let id = client_id(n.id)?;
+    live_task(b, &n.task_id)?;
+    check_id(&n.claude_session_id)?;
+    let folder = non_empty("folder", &n.folder)?;
+    check_permission_mode(&n.permission_mode)?;
+    let device_id = b.device_id().to_owned();
+    b.apply(Change::new(
+        Entity::AgentSession,
+        &id,
+        OpKind::Create,
+        json!({
+            "task_id": n.task_id,
+            "device_id": device_id,
+            "claude_session_id": n.claude_session_id,
+            "folder": folder,
+            "runtime": n.runtime.as_str(),
+            "permission_mode": n.permission_mode,
+            "prompt": n.prompt.trim(),
+            "state": SessionState::Running.as_str(),
+            "started_at": b.now,
+            "ended_at": null,
+            "summary": null,
+            "cost_usd_micros": null,
+            "turns": null,
+            "error": null,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))?;
+    touch_task(b, &n.task_id)
+}
+
+fn check_permission_mode(mode: &str) -> Result<()> {
+    if PERMISSION_MODES.contains(&mode) {
+        Ok(())
+    } else {
+        Err(Error::invalid(format!(
+            "unknown permission mode '{mode}' (expected one of {})",
+            PERMISSION_MODES.join(", ")
+        )))
+    }
+}
+
+fn update_agent_session(
+    b: &mut Batch<'_, '_>,
+    id: &str,
+    changes: Vec<AgentSessionChange>,
+) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid(
+            "update_agent_session needs at least one change",
+        ));
+    }
+    let session = own_session(b, id)?;
+    let mut patch = Map::new();
+    let mut ended = false;
+    for change in changes {
+        let (key, value) = match change {
+            AgentSessionChange::State(s) => {
+                let running = s == SessionState::Running;
+                if running != (session.state == SessionState::Running) {
+                    patch.insert(
+                        "ended_at".into(),
+                        if running { Value::Null } else { json!(b.now) },
+                    );
+                    ended = !running;
+                }
+                ("state", json!(s.as_str()))
+            }
+            AgentSessionChange::Summary(s) => ("summary", json!(trimmed(s))),
+            AgentSessionChange::CostUsdMicros(c) => {
+                if c.is_some_and(|c| c < 0) {
+                    return Err(Error::invalid("cost cannot be negative"));
+                }
+                ("cost_usd_micros", json!(c))
+            }
+            AgentSessionChange::Turns(t) => {
+                if t.is_some_and(|t| t < 0) {
+                    return Err(Error::invalid("turns cannot be negative"));
+                }
+                ("turns", json!(t))
+            }
+            AgentSessionChange::Error(e) => ("error", json!(trimmed(e))),
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::AgentSession,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))?;
+    if ended {
+        touch_task(b, &session.task_id)?;
+    }
+    Ok(())
+}
+
+fn delete_agent_session(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    let session = own_session(b, id)?;
+    if session.state == SessionState::Running {
+        return Err(Error::invalid("stop the session before removing it"));
+    }
+    for note_id in ids(
+        b,
+        "SELECT id FROM agent_notes WHERE session_id = ?1 AND deleted_at IS NULL",
+        id,
+    )? {
+        b.apply(Change::new(
+            Entity::AgentNote,
+            &note_id,
+            OpKind::Delete,
+            json!({ "deleted_at": b.now, "updated_at": b.now }),
+        ))?;
+    }
+    b.apply(Change::new(
+        Entity::AgentSession,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))?;
+    touch_task(b, &session.task_id)
+}
+
+fn add_agent_note(b: &mut Batch<'_, '_>, n: NewAgentNote) -> Result<()> {
+    let id = client_id(n.id)?;
+    let session = own_session(b, &n.session_id)?;
+    live_task(b, &session.task_id)?;
+    let body = non_empty("note", &n.body)?;
+    if body.chars().count() > MAX_NOTE_CHARS {
+        return Err(Error::invalid(format!(
+            "a note is limited to {MAX_NOTE_CHARS} characters"
+        )));
+    }
+    b.apply(Change::new(
+        Entity::AgentNote,
+        &id,
+        OpKind::Create,
+        json!({
+            "session_id": session.id,
+            "task_id": session.task_id,
+            "body": body,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))?;
+    touch_task(b, &session.task_id)
+}
+
+/// A live session started by this device (only its device runs and updates it).
+fn own_session(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::AgentSession> {
+    let session = query::agent_session(b.tx, id)?;
+    if session.deleted_at.is_some() {
+        return Err(Error::not_found("agent session", id));
+    }
+    if session.device_id != b.device_id() {
+        return Err(Error::invalid(
+            "this session runs on another device; only that device can change it",
+        ));
+    }
+    Ok(session)
+}
+
+/// Trims an optional text; blank becomes `None`.
+fn trimmed(value: Option<String>) -> Option<String> {
+    value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
 fn client_id(id: Option<Id>) -> Result<Id> {

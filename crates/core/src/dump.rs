@@ -31,6 +31,8 @@ pub(crate) const TABLES: &[&str] = &[
     "views",
     "attachments",
     "time_blocks",
+    "agent_sessions",
+    "agent_notes",
     "ops",
 ];
 

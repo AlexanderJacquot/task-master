@@ -5,6 +5,7 @@
 //! [`Store::execute`], which writes rows and their `ops` entries in one transaction.
 //! See `docs/plan.md`.
 
+mod brief;
 pub mod calendar;
 mod clock;
 mod commands;
@@ -24,8 +25,9 @@ mod sync;
 
 pub use clock::{new_id, now_ms, utc_date};
 pub use commands::{
-    AttachmentChange, Command, EpicChange, MAX_BLOCK_MS, MAX_RANK_LEN, NewAttachment, NewEpic,
-    NewProject, NewStatus, NewTag, NewTask, NewTimeBlock, NewView, ProjectChange, StatusChange,
+    AgentSessionChange, AttachmentChange, Command, EpicChange, MAX_BLOCK_MS, MAX_NOTE_CHARS,
+    MAX_RANK_LEN, NewAgentNote, NewAgentSession, NewAttachment, NewEpic, NewProject, NewStatus,
+    NewTag, NewTask, NewTimeBlock, NewView, PERMISSION_MODES, ProjectChange, StatusChange,
     TagChange, TaskChange, TimeBlockChange, ViewChange,
 };
 pub use dump::{EXPORT_FORMAT, ExportFile, ImportSummary};
@@ -33,8 +35,9 @@ pub use error::{Error, Result};
 pub use events::{Changed, EntityRef};
 pub use files::{FileStore, MAX_ATTACHMENT_BYTES, StoredFile, clean_file_name, is_hash, mime_for};
 pub use model::{
-    Attachment, BlockOutcome, DueFilter, Epic, EpicState, GroupBy, Id, IsoDate, Layout, Priority,
-    Project, Snapshot, SortBy, Status, StatusCategory, Swimlane, Tag, Task, TimeBlock, Timestamp,
+    AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, DueFilter, Epic, EpicState,
+    GroupBy, Id, IsoDate, Layout, Priority, Project, ProjectFolder, SessionState, Snapshot, SortBy,
+    Status, StatusCategory, Swimlane, Tag, Task, TaskOwner, TimeBlock, Timestamp,
     VIEW_SPEC_VERSION, View, ViewFilter, ViewScope, ViewSpec,
 };
 pub use ops::EntityKind;

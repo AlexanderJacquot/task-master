@@ -27,6 +27,8 @@ async function renderProject(p: Project) {
         views: [],
         attachments: [],
         time_blocks: [],
+        agent_sessions: [],
+        agent_notes: [],
         statuses: [],
       } as Changes;
     },

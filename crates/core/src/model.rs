@@ -109,6 +109,34 @@ impl EpicState {
     }
 }
 
+/// Who a task is for. Agent tasks are an agent's own bookkeeping (docs/adr/017): hidden
+/// from the user's views by default, adopted by setting the owner back to `me`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskOwner {
+    #[default]
+    Me,
+    Agent,
+}
+
+impl TaskOwner {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Me => "me",
+            Self::Agent => "agent",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "me" => Self::Me,
+            "agent" => Self::Agent,
+            _ => return None,
+        })
+    }
+}
+
 /// A unit of work. A task with `parent_id` set is a subtask.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -117,6 +145,8 @@ pub struct Task {
     #[serde(default)]
     pub dependency_ids: Vec<Id>,
     pub id: Id,
+    #[serde(default)]
+    pub owner: TaskOwner,
     /// `None` means the task is in the Inbox.
     pub project_id: Option<Id>,
     pub epic_id: Option<Id>,
@@ -272,6 +302,129 @@ pub struct TimeBlock {
     pub deleted_at: Option<Timestamp>,
 }
 
+/// How a device runs Claude Code.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentRuntime {
+    /// Directly on this operating system (macOS, Linux, or a Windows install).
+    #[default]
+    Native,
+    /// Inside a WSL distribution, from the Windows app. Folders are WSL paths.
+    Wsl,
+}
+
+impl AgentRuntime {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::Wsl => "wsl",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "native" => Self::Native,
+            "wsl" => Self::Wsl,
+            _ => return None,
+        })
+    }
+}
+
+/// Where an [`AgentSession`] is.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SessionState {
+    #[default]
+    Running,
+    /// The run ended normally (Claude finished its turn).
+    Done,
+    Failed,
+    /// Stopped by the user.
+    Cancelled,
+    /// The app quit or crashed while it ran.
+    Interrupted,
+}
+
+impl SessionState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Done => "done",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Interrupted => "interrupted",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "running" => Self::Running,
+            "done" => Self::Done,
+            "failed" => Self::Failed,
+            "cancelled" => Self::Cancelled,
+            "interrupted" => Self::Interrupted,
+            _ => return None,
+        })
+    }
+}
+
+/// A Claude Code run started from a task (docs/adr/017).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct AgentSession {
+    pub id: Id,
+    pub task_id: Id,
+    /// The device running it; only that device can update it.
+    pub device_id: String,
+    /// Claude Code's own session id (`--session-id`, then `--resume`).
+    pub claude_session_id: String,
+    /// Working directory, as the runtime sees it.
+    pub folder: String,
+    pub runtime: AgentRuntime,
+    /// Claude Code `--permission-mode`.
+    pub permission_mode: String,
+    /// The user's extra instructions (the brief itself is not stored).
+    pub prompt: String,
+    pub state: SessionState,
+    pub started_at: Timestamp,
+    /// Set when the state leaves `running`.
+    pub ended_at: Option<Timestamp>,
+    /// Claude's final message, or the agent's own summary.
+    pub summary: Option<String>,
+    /// Total cost reported by Claude Code, in millionths of a dollar.
+    pub cost_usd_micros: Option<i64>,
+    pub turns: Option<i64>,
+    pub error: Option<String>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
+/// A progress line an agent wrote during a session.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct AgentNote {
+    pub id: Id,
+    pub session_id: Id,
+    pub task_id: Id,
+    pub body: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
+/// This device's working folder for a project.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ProjectFolder {
+    pub project_id: Id,
+    pub path: String,
+    pub runtime: AgentRuntime,
+    pub updated_at: Timestamp,
+}
+
 /// A saved board or list: a name plus a [`ViewSpec`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -419,4 +572,6 @@ pub struct Snapshot {
     pub attachments: Vec<Attachment>,
     /// Time blocks of live tasks, by start.
     pub time_blocks: Vec<TimeBlock>,
+    /// Agent sessions of live tasks, every device's, by start.
+    pub agent_sessions: Vec<AgentSession>,
 }

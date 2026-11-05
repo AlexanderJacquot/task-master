@@ -33,6 +33,8 @@ async function setup(tasks: Task[], fail = false) {
         statuses: [],
         attachments: [],
         time_blocks: [],
+        agent_sessions: [],
+        agent_notes: [],
       };
     },
     undo: async () => null,

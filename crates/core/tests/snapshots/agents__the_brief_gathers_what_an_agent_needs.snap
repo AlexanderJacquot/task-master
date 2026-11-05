@@ -1,0 +1,45 @@
+---
+source: crates/core/tests/agents.rs
+expression: s.agent_brief(TASK).unwrap()
+---
+# Task: Spawn Claude sessions
+
+- Id: `0190f0a0-0000-7000-8000-000000000010`
+- Status: In progress (in_progress)
+- Priority: high
+- Due: 2026-11-20
+- Estimate: 240 min
+- Tags: #deep-work
+- Project: Code / task-master (`0190f0a0-0000-7000-8000-000000000002`)
+- Epic: AI integration (active, target 2026-12-01, `0190f0a0-0000-7000-8000-000000000003`)
+
+## Description
+
+Add `Send to Claude` on tasks.
+
+See ADR 017.
+
+## Epic description
+
+Let Claude work from tasks.
+
+## Subtasks
+
+- [ ] Stream parser (To do, agent, `0190f0a0-0000-7000-8000-000000000012`)
+- [x] Migration (Done, `0190f0a0-0000-7000-8000-000000000011`)
+
+## Prerequisites (to finish first)
+
+- [x] Design the data model (Done, `0190f0a0-0000-7000-8000-000000000013`)
+
+## Dependents (waiting on this task)
+
+- [ ] Ship v0.6 (To do, `0190f0a0-0000-7000-8000-000000000014`)
+
+## Earlier agent sessions
+
+- done in `/home/alex/Code/task-master`: Added migration 0010. Tests pass.
+
+## Agent notes
+
+- Core tables done

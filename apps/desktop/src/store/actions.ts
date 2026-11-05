@@ -88,6 +88,7 @@ export async function createTask(
   );
   const task: Task = {
     id,
+    owner: "me",
     project_id: input.project_id ?? parent?.project_id ?? null,
     epic_id: input.epic_id ?? parent?.epic_id ?? null,
     parent_id: input.parent_id ?? null,

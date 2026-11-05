@@ -91,6 +91,7 @@ export function task(overrides: Partial<Task> = {}): Task {
     status_id: STATUS.todo,
     title: `Task ${counter}`,
     description: "",
+    owner: "me",
     priority: "normal",
     due_date: null,
     today_on: null,
@@ -167,6 +168,7 @@ export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     views: [],
     attachments: [],
     time_blocks: [],
+    agent_sessions: [],
     ...overrides,
   };
 }

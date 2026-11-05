@@ -4,6 +4,12 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**M16 Agent sessions**, branch `m16-agent-sessions` (from `main`, ADR 017): "Send to
+Claude" from a task, headless Claude Code runs with a live status, an MCP server for
+agents to track their work, and agent-owned tasks hidden from the user's views. Step 1
+(core) done; next step 2, `crates/mcp` on `rmcp`. Note: migration 0010 bumps the schema,
+so the sync server must be upgraded with the desktop (replicas sync only at one version).
+
 **v0.5.0**, `main`: all current branches and the icon/UI working-tree changes are
 integrated. Server Google Calendar sync and runner handoff are implemented and validated.
 Release tagging/publication is in progress.
@@ -34,6 +40,23 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### M16 step 1: agent sessions in the core (2026-11-05)
+
+- Migration 0010: `tasks.owner` (`me | agent`), `agent_sessions`, `agent_notes`, and the
+  device-local `project_folders`. Commands `CreateAgentSession`, `UpdateAgentSession`,
+  `DeleteAgentSession`, `AddAgentNote`, `TaskChange::Owner`, `NewTask.owner`; only the
+  session's own device may change it. `Store::execute_without_undo` keeps session
+  bookkeeping out of Ctrl+Z; `interrupt_running_sessions` for start-up.
+- Sessions in the snapshot and `Changes`; notes read per task; activity entries
+  `agent_start`, `agent_end`, `agent_note`; export/import carry both tables.
+- `Store::agent_brief(task)`: markdown context (task facts, project/area, epic, subtasks,
+  prerequisites, dependents, attachments, earlier sessions, notes), two insta snapshots.
+- Tests: `crates/core/tests/agents.rs` (13). Bindings regenerated; TS fixtures and test
+  `Changes` literals gained the new fields, optimistic tasks are `owner: "me"`. The UI does
+  not use sessions yet (step 4).
+- Verified: full Rust suite, workspace Clippy (all targets, `-D warnings`), rustfmt,
+  TypeScript, Biome and all 259 frontend tests pass.
 
 ### Release 0.6.0 (2026-11-05)
 
