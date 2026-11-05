@@ -191,6 +191,54 @@ describe("the calendar", () => {
   });
 });
 
+describe("creating a task on the grid", () => {
+  // jsdom puts every column at the top of the viewport: clientY = minutes / 60 × 48 px.
+  const y = (hour: number) => hour * 48;
+
+  it("drags to set the time, then creates the task and its block in one batch", async () => {
+    await renderCalendar();
+    const column = await screen.findByTestId(`time-column-${today}`);
+    fireEvent.pointerDown(column, { button: 0, clientY: y(9) });
+    fireEvent.pointerMove(window, { clientY: y(10.75) });
+    fireEvent.pointerUp(window, { clientY: y(10.75) });
+
+    const box = await screen.findByRole("dialog", { name: "New task on the calendar" });
+    expect(within(box).getByText(/2 h/)).toBeTruthy();
+    const input = within(box).getByLabelText("New task");
+    fireEvent.change(input, { target: { value: "Gym session" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    const [create, schedule] = fake.executed[0] ?? [];
+    expect(create).toMatchObject({ type: "create_task", task: { title: "Gym session" } });
+    expect(schedule).toMatchObject({
+      type: "create_time_block",
+      block: { start_at: atMinute(today, 9 * 60), end_at: atMinute(today, 11 * 60) },
+    });
+    expect(create?.type === "create_task" && schedule?.type === "create_time_block").toBe(true);
+    if (create?.type === "create_task" && schedule?.type === "create_time_block") {
+      expect(schedule.block.task_id).toBe(create.task.id);
+    }
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "New task on the calendar" })).toBeNull(),
+    );
+    const labels = screen.getAllByTestId("time-block").map((b) => b.getAttribute("aria-label"));
+    expect(labels.some((l) => l?.startsWith("Gym session"))).toBe(true);
+  });
+
+  it("a click makes a one-hour slot, and Cancel leaves nothing behind", async () => {
+    await renderCalendar();
+    const column = await screen.findByTestId(`time-column-${today}`);
+    fireEvent.pointerDown(column, { button: 0, clientY: y(14.2) });
+    fireEvent.pointerUp(window, { clientY: y(14.2) });
+    const box = await screen.findByRole("dialog", { name: "New task on the calendar" });
+    expect(within(box).getByText(/1 h/)).toBeTruthy();
+    fireEvent.click(within(box).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByTestId("draft-block")).toBeNull());
+    expect(fake.executed).toHaveLength(0);
+  });
+});
+
 describe("events from Google Calendar", () => {
   const standup = {
     calendar_id: "me@example.com",

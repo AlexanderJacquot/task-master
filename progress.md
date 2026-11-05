@@ -31,6 +31,16 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Create tasks on the calendar (2026-11-05)
+
+Branch `calendar-create` (stacked on `task-history`). Day and week views: press on an
+empty spot of the time grid and drag to draw the time (quarter-hour snap; a plain click
+makes a one-hour block), then type the task in the box beside it (capture markers work:
+#tag !high +Project, with the same confirm before creating a project or epic). Task and
+block are one batch (`createTask`'s new `schedule`, passed through `captureTask`), so one
+undo removes both. `features/calendar/NewBlock.tsx`. Tests: calendar.test "creating a task
+on the grid". Drawing stays within one day.
+
 ### Task history: undo, diffs, restore (2026-11-05)
 
 Branch `task-history` (stacked on `remappable-shortcuts`). In a task's Activity: a quiet
@@ -473,7 +483,7 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Calendar sync: CalDAV provider (iCloud) behind the same trait; refresh token in the OS
   keychain; a push right after each change instead of the 4 s pause; show which blocks
   are synced (a small cloud mark); pick another calendar as the target.
-- Calendar: drag on empty grid to create a block (pick a task); keyboard moves of blocks;
+- Calendar: drag on empty grid to block out an *existing* task (new tasks done); keyboard moves of blocks;
   week start and working hours in Settings; Today view counting tasks with a block today;
   block list and logged time on the task page; multi-day blocks shown across days in the
   month view.

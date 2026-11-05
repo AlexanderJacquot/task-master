@@ -59,6 +59,8 @@ function lastRank<T extends { rank: string }>(
 export interface WithTask {
   before?: Command[];
   upsert?: { tags?: Tag[]; projects?: Project[]; epics?: Epic[] };
+  /** Also puts the new task on the calendar (same batch, so one undo removes both). */
+  schedule?: { start_at: number; end_at: number };
 }
 
 export async function createTask(
@@ -103,6 +105,19 @@ export async function createTask(
     completed_at: status.category === "done" ? now : null,
     deleted_at: null,
   };
+  const block: TimeBlock | null =
+    extra.schedule && extra.schedule.end_at > extra.schedule.start_at
+      ? {
+          id: uuidv7(now),
+          task_id: id,
+          start_at: extra.schedule.start_at,
+          end_at: extra.schedule.end_at,
+          outcome: "planned",
+          created_at: now,
+          updated_at: now,
+          deleted_at: null,
+        }
+      : null;
   const changes = await store.getState().mutate(
     [
       ...(extra.before ?? []),
@@ -122,8 +137,22 @@ export async function createTask(
           tag_ids: task.tag_ids,
         },
       },
+      ...(block
+        ? [
+            {
+              type: "create_time_block" as const,
+              block: {
+                id: block.id,
+                task_id: id,
+                start_at: block.start_at,
+                end_at: block.end_at,
+                outcome: "planned" as const,
+              },
+            },
+          ]
+        : []),
     ],
-    { upsert: { ...extra.upsert, tasks: [task] } },
+    { upsert: { ...extra.upsert, tasks: [task], ...(block && { time_blocks: [block] }) } },
   );
   return changes ? id : null;
 }
@@ -571,6 +600,7 @@ export async function captureTask(
   store: TaskStore,
   capture: Capture,
   defaults: Omit<NewTaskInput, "title"> = {},
+  schedule?: WithTask["schedule"],
 ): Promise<string | null> {
   const s = store.getState();
   const title = capture.title.trim();
@@ -662,7 +692,7 @@ export async function captureTask(
     due_date: capture.due_date ?? defaults.due_date ?? null,
     tag_ids: [...new Set([...(defaults.tag_ids ?? []), ...tagIds])],
   };
-  return createTask(store, input, { before: commands, upsert });
+  return createTask(store, input, { before: commands, upsert, schedule });
 }
 
 // ---------------------------------------------------------------------------------------
