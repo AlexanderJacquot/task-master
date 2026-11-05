@@ -63,6 +63,81 @@ pub struct OpsPage {
     pub more: bool,
 }
 
+// ---------------------------------------------------------------------------------------
+// Wire types shared by the server and its clients (docs/server.md).
+
+/// How a server authenticates requests.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum AuthMode {
+    /// Anyone who reaches the server (a private network).
+    #[default]
+    None,
+    /// A bearer token made on the server.
+    Token,
+    /// Sign in with an OpenID Connect provider, which gives the device a server token.
+    Oidc,
+}
+
+/// `GET /info`: what a client needs before it can sync.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct ServerInfo {
+    pub name: String,
+    pub version: String,
+    /// The database schema the server runs. Clients push only with the same one.
+    pub schema_version: u32,
+    pub auth: AuthMode,
+    pub oidc_issuer: Option<String>,
+    pub oidc_client_id: Option<String>,
+    /// The server's clock (Unix ms), so clients can correct theirs.
+    pub server_time: Timestamp,
+    pub public_url: Option<String>,
+}
+
+/// `POST /sync/push`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PushRequest {
+    pub schema_version: u32,
+    pub ops: Vec<SyncOp>,
+}
+
+/// Answer to a push.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PushResult {
+    pub applied: u32,
+    pub duplicates: u32,
+    pub skipped: u32,
+    pub repairs: u32,
+    /// The server's newest op `seq` after the push.
+    pub head: i64,
+}
+
+/// `GET /sync/pull?after=<seq>&limit=<n>`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PullPage {
+    #[serde(flatten)]
+    pub page: OpsPage,
+    /// The server's newest op `seq`.
+    pub head: i64,
+}
+
+/// `POST /auth/oidc`: trade an ID token from the provider for a device token.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OidcExchange {
+    pub id_token: String,
+    /// Shown in `token list` (e.g. the computer's name).
+    pub device_name: String,
+}
+
+/// A token issued by the server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IssuedToken {
+    pub token: String,
+    pub name: String,
+}
+
 /// What [`crate::Store::apply_remote`] did.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Merged {

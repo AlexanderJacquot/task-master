@@ -1,0 +1,38 @@
+[package]
+name = "taskmaster-server"
+description = "task-master sync server (ADR 015): one more replica of the core, serving sync to devices and (M14) the API."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "taskmaster_server"
+
+[[bin]]
+name = "task-master-server"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+taskmaster-core = { workspace = true }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio"] }
+tokio = { version = "1.54", features = ["fs", "rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+# Already in the tree through axum.
+futures-util = { version = "0.3", default-features = false }
+# OIDC ID tokens: signature, issuer, audience, expiry. Pure-Rust crypto (no C toolchain).
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["rust_crypto"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11.1"
+getrandom = "0.3.4"
+# Nightly backup upload to an S3-compatible bucket, as the desktop does (backups.rs).
+rusty-s3 = "0.10.2"
+ureq = "3.4.3"
+url = "2.5"
+
+[dev-dependencies]
+taskmaster-client = { path = "../client" }

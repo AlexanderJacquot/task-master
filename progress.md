@@ -4,7 +4,11 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M11 Sync core**, branch `m11-sync-core` (from `main`): done, pending review. First of
+**M12 Sync server**, branch `m12-sync-server` (from `main` after the post-0.4.0 merges):
+done. Next: M13 (desktop sync, stacked on this branch). Before the first image: add the
+`REGISTRY_TOKEN` secret on the Forgejo repo (docs/server.md section 9).
+
+**M11 Sync core**, branch `m11-sync-core` (from `main`): done, merged. First of
 the sync milestones in ADR 015 (M12 server, M13 desktop sync, M14 API, M15 CLI and MCP).
 Plan Phase 5 started early at the user's request. Nothing user-visible yet: the desktop
 does not sync until M13.
@@ -35,6 +39,32 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### M12 Sync server (2026-11-05)
+
+ADR 015 (implementation notes); setup `docs/server.md` (now matches the code).
+- `crates/server` (`task-master-server`): axum. Routes `/health`, `/info`, `/sync/push`
+  (schema check, 409 on mismatch), `/sync/pull` (pages of up to 1000), `/events` (SSE
+  heads, keep-alive, ends on shutdown), `/blobs/{hash}` (HEAD/GET/PUT, hash checked, 50 MB),
+  `/auth/oidc`. Auth modes none/token/oidc; scopes sync, api:read, api:write. Config from
+  `TM_*`. Hourly backup thread: daily copy in `/data/backups`, upload of the copy and
+  attachment content to S3 once each (`uploaded.txt`). CLI `serve`, `health`,
+  `token add|list|revoke`, `version`. Graceful stop on SIGTERM.
+- `crates/client` (`taskmaster_client`): `Client` and `sync()` (see the ADR).
+- Core: wire types; `Store::last_seq`, `schema_version`, `clear_for_replace` (M13 join),
+  `restart_sync`.
+- `crates/server/Dockerfile` (distroless), `.dockerignore` additions,
+  `.forgejo/workflows/server-image.yml` (homelab runner, `REGISTRY_TOKEN`).
+- Tests: server 13 integration (two devices through the server, paging, attachments,
+  tokens and scopes, schema refusal, events, clock offset, OIDC against a fake provider
+  with refusals for audience/expiry/group/issuer/signature, lost-server refill, backups
+  with a fake S3) + 5 unit; core +1 (replace). Found and fixed while testing: a fake S3
+  that answered before reading the body broke the upload pipe (test fake only).
+  Smoke run of the binary: token add/list, `/info`, 401 without a token, `health`, exit 0
+  on SIGTERM. The Docker build itself is not run here (no Docker in this WSL); the locked
+  release build of the package is (10 MB).
+- New dependencies (server only, agreed in ADR 015): axum 0.8.9, tokio 1.54,
+  jsonwebtoken 11.1 (rust_crypto), futures-util (already in the tree).
 
 ### M11 Sync core (2026-11-05)
 

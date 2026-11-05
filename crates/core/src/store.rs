@@ -323,6 +323,50 @@ impl Store {
         sync::state(&self.conn, sync::CURSOR)
     }
 
+    /// Forgets the sync position: the next round pushes every local op again and pulls
+    /// from the start. For a server that lost data (restored from a backup, or new);
+    /// it ignores what it already has.
+    pub fn restart_sync(&mut self) -> Result<()> {
+        self.conn.execute("DELETE FROM sync_state", [])?;
+        Ok(())
+    }
+
+    /// The newest op `seq` (0 when there is none): a server's head.
+    pub fn last_seq(&self) -> Result<i64> {
+        Ok(self
+            .conn
+            .query_row("SELECT COALESCE(MAX(seq), 0) FROM ops", [], |r| r.get(0))?)
+    }
+
+    /// Number of migrations applied. Replicas exchange ops only at the same version.
+    pub fn schema_version(&self) -> Result<u32> {
+        Ok(u32::try_from(db::applied_migrations(&self.conn)?).unwrap_or(u32::MAX))
+    }
+
+    /// Empties this replica before it takes the server's data ("replace with the
+    /// server's tasks"): every task, project, epic, tag, view, attachment row, time block
+    /// and op goes, and sync starts over. Statuses stay (every replica seeds the same
+    /// defaults, and the server's ops overwrite them). Not undoable: back up first.
+    pub fn clear_for_replace(&mut self) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute_batch("PRAGMA defer_foreign_keys = ON")?;
+        for table in crate::dump::TABLES.iter().rev() {
+            if *table != "statuses" {
+                tx.execute(&format!("DELETE FROM {table}"), [])?;
+            }
+        }
+        tx.execute_batch("DELETE FROM field_clocks; DELETE FROM sync_state;")?;
+        tx.commit()?;
+        crate::calendar::forget_links(&self.conn)?;
+        self.history = History::default();
+        self.events.publish(&Changed {
+            batch_id: crate::clock::new_id(),
+            op_seq: 0,
+            entities: Vec::new(),
+        });
+        Ok(())
+    }
+
     /// Applies ops from another replica (latest edit wins, per field), repairs the merged
     /// state, and moves the pull cursor to `cursor` when given, all in one transaction.
     /// Not undoable; subscribers get a change event as for a local batch.

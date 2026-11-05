@@ -9,3 +9,8 @@
 .env
 .env.*
 deploy/.env
+# Rust build output and local worktrees (the server image builds from a clean tree).
+target
+**/target
+.claude
+apps/desktop/dist

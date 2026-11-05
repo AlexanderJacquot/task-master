@@ -115,6 +115,27 @@ desktop is a public OIDC client (no secret, PKCE) with the fixed redirect
 the server backs up its database to Garage nightly and the desktop's remote backup becomes
 optional.
 
+## Implementation notes (M12)
+
+- `crates/client` (blocking, `ureq`) holds the client side: one `Client` per server and
+  `sync()`, one full round. It runs the clock offset, a server-reset check, attachment
+  uploads, pushes, pulls, the repairs' push and the downloads. The desktop worker (M13)
+  and the MCP server in remote mode (M15) use it; the server's tests run devices through it.
+- Wire types (`ServerInfo`, `AuthMode`, `PushRequest`/`PushResult`, `PullPage`,
+  `OidcExchange`, `IssuedToken`) live in the core's `sync` module, so the two sides cannot drift.
+- No `/sync/snapshot`: a new device pulls from 0. The ops log is complete, and a snapshot
+  would be a second path to keep correct until compaction needs one.
+- `/events` sends `event: head` with the newest `seq` on connect and after each push, plus
+  a keep-alive every 15 s. Clients reopen it at least every 10 minutes.
+- A server behind a device's cursor (restored, or new) makes the device forget its sync
+  position and send everything again.
+- Tokens: `tm_` + 32 random bytes, stored as SHA-256 in `server.sqlite`, apart from the
+  replicated data. An OIDC sign-in makes a `sync` token named `<user>@<device>`, so
+  signing in again from the same device replaces its token. ID tokens: asymmetric
+  algorithms only; issuer, audience, expiry and `sub` are required.
+- Image: distroless, built by `.forgejo/workflows/server-image.yml` on the homelab runner
+  (the registry is private). Pushed as `knowledgesystem/task-master-server`.
+
 ## Rejected
 
 - Server as the source of truth with thin clients: no offline use, every edit waits on

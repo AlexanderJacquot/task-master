@@ -471,6 +471,31 @@ fn import_resets_sync_and_pushes_everything_again() {
 }
 
 #[test]
+fn replacing_a_device_with_the_server_copy() {
+    let (mut a, mut b, mut server) = (store(), store(), store());
+    let id = add_task(&mut a, "on the server", None);
+    update(&mut a, &id, TaskChange::Priority(Priority::High));
+    sync(&mut a, &mut server);
+
+    // b has its own tasks, then chooses "replace with the server's tasks".
+    add_task(&mut b, "only on b", None);
+    add_tag(&mut b, "local");
+    b.clear_for_replace().unwrap();
+    assert!(live_tasks(&b).is_empty());
+    assert!(b.snapshot().unwrap().tags.is_empty());
+    assert!(!b.snapshot().unwrap().statuses.is_empty(), "statuses stay");
+    assert_eq!(b.sync_cursor().unwrap(), 0);
+    assert!(
+        b.outbox(10).unwrap().ops.is_empty(),
+        "nothing of b's is pushed"
+    );
+
+    sync(&mut b, &mut server);
+    assert_eq!(rows(&b), rows(&server));
+    assert_eq!(task(&b, &id).priority, Priority::High);
+}
+
+#[test]
 fn bad_ops_are_refused_without_changing_anything() {
     let (mut a, mut b) = (store(), store());
     add_task(&mut a, "ok", None);
