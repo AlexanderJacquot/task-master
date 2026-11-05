@@ -107,7 +107,9 @@ export function TimeGrid({
                 <span
                   className={cx(
                     "font-display text-[22px] leading-8",
-                    isToday ? "rounded-full bg-accent px-1.5 text-accent-ink" : "text-rubric",
+                    isToday
+                      ? "inline-flex size-8 items-center justify-center rounded-full bg-accent text-accent-ink"
+                      : "text-rubric",
                   )}
                 >
                   {date.getDate()}
