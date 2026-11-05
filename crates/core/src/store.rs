@@ -15,6 +15,7 @@ use crate::files::FileStore;
 use crate::history::{self, History};
 use crate::model::{Attachment, Epic, Id, Project, Snapshot, Status, Tag, Task, TimeBlock, View};
 use crate::ops::{Batch, EntityKind};
+use crate::sync::{self, Merged, OpsPage, SyncOp};
 use crate::{db, query};
 
 /// Entities changed by one batch, as they are after it (deleted ones have `deleted_at` set),
@@ -50,6 +51,8 @@ pub struct Store {
     events: EventBus,
     /// Attachment content; `attachments/` next to the database file.
     files: Option<FileStore>,
+    /// Added to the system clock (see [`Store::set_clock_offset`]).
+    clock_offset_ms: i64,
 }
 
 /// Name of the attachment folder, next to the database and inside backup folders.
@@ -92,6 +95,7 @@ impl Store {
             history: History::default(),
             events: EventBus::default(),
             files: None,
+            clock_offset_ms: 0,
         })
     }
 
@@ -282,11 +286,82 @@ impl Store {
         self.events.subscribe()
     }
 
+    // -----------------------------------------------------------------------------------
+    // Sync (docs/adr/015-sync-server.md)
+
+    /// Corrects this device's clock by `offset_ms` (the server's time minus ours), so a
+    /// wrong system clock does not decide which edit is the latest.
+    pub fn set_clock_offset(&mut self, offset_ms: i64) {
+        self.clock_offset_ms = offset_ms;
+    }
+
+    /// Current time as written into new rows and clocks.
+    fn now(&self) -> crate::model::Timestamp {
+        now_ms().saturating_add(self.clock_offset_ms)
+    }
+
+    /// Every op with `seq > after` (a server serving pulls), at most `limit`.
+    pub fn ops_after(&self, after: i64, limit: u32) -> Result<OpsPage> {
+        sync::ops_after(&self.conn, after, limit, false)
+    }
+
+    /// This replica's own ops the server does not have yet, at most `limit`. Push them,
+    /// then call [`Store::mark_pushed`] with the page's `last_seq`.
+    pub fn outbox(&self, limit: u32) -> Result<OpsPage> {
+        let pushed = sync::state(&self.conn, sync::PUSHED_SEQ)?;
+        sync::ops_after(&self.conn, pushed, limit, true)
+    }
+
+    /// Records that the server has every local op up to `seq`.
+    pub fn mark_pushed(&mut self, seq: i64) -> Result<()> {
+        let pushed = sync::state(&self.conn, sync::PUSHED_SEQ)?;
+        sync::set_state(&self.conn, sync::PUSHED_SEQ, pushed.max(seq))
+    }
+
+    /// The last server op applied here: pull from after it.
+    pub fn sync_cursor(&self) -> Result<i64> {
+        sync::state(&self.conn, sync::CURSOR)
+    }
+
+    /// Applies ops from another replica (latest edit wins, per field), repairs the merged
+    /// state, and moves the pull cursor to `cursor` when given, all in one transaction.
+    /// Not undoable; subscribers get a change event as for a local batch.
+    pub fn apply_remote(&mut self, ops: Vec<SyncOp>, cursor: Option<i64>) -> Result<Merged> {
+        let now = self.now();
+        let tx = self.conn.transaction()?;
+        // Ops can arrive before the rows they reference within one page.
+        tx.execute_batch("PRAGMA defer_foreign_keys = ON")?;
+        observe_stored_clock(&tx, &mut self.clock)?;
+        let applied = sync::apply(&tx, &mut self.clock, &self.device_id, ops, now)?;
+        if let Some(cursor) = cursor {
+            sync::set_state(&tx, sync::CURSOR, cursor)?;
+        }
+        let mut merged = applied.merged;
+        if let Some(op_seq) = applied.last_seq {
+            merged.changes = load_changes(&tx, &applied.touched, applied.batch_id.clone(), op_seq)?;
+        }
+        tx.commit()?;
+        if let Some(op_seq) = applied.last_seq {
+            self.events.publish(&Changed {
+                batch_id: applied.batch_id,
+                op_seq,
+                entities: applied
+                    .touched
+                    .into_iter()
+                    .map(|(kind, id)| EntityRef { kind, id })
+                    .collect(),
+            });
+        }
+        Ok(merged)
+    }
+
     /// Runs `f` in one transaction and batch, then reports and broadcasts what changed.
     fn write(&mut self, f: impl FnOnce(&mut Batch<'_, '_>) -> Result<()>) -> Result<Changes> {
+        let now = self.now();
         let tx = self.conn.transaction()?;
+        observe_stored_clock(&tx, &mut self.clock)?;
         let (batch_id, touched, last_seq) = {
-            let mut batch = Batch::new(&tx, &mut self.clock, &self.device_id, now_ms());
+            let mut batch = Batch::new(&tx, &mut self.clock, &self.device_id, now);
             f(&mut batch)?;
             (batch.batch_id, batch.touched, batch.last_seq)
         };
@@ -305,6 +380,16 @@ impl Store {
         });
         Ok(changes)
     }
+}
+
+/// Moves the clock past every op already stored, including ones another process (the CLI,
+/// a local MCP server) wrote to this database since this store last wrote.
+fn observe_stored_clock(tx: &rusqlite::Transaction<'_>, clock: &mut Hlc) -> Result<()> {
+    let last: Option<String> = tx.query_row("SELECT MAX(hlc) FROM ops", [], |r| r.get(0))?;
+    if let Some(last) = last {
+        clock.observe(&last);
+    }
+    Ok(())
 }
 
 fn load_changes(

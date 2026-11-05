@@ -269,8 +269,8 @@ Each later feature plugs into the core as new tables, new command variants and a
 
 **Phase 5: Sync and phone**
 
-- A small sync service (`crates/sync-server`, axum) on the homelab: devices push and pull `ops` since their last seen `seq`; merge is field-level last-writer-wins by `hlc`.
-- Access behind Tailscale or the existing reverse proxy and SSO.
+- Designed in ADR 015 (started early, at the user's request, before Phases 2 and 3): `crates/server` (axum) is one more replica of the core and also serves the API (`/api/v1`) for other software (a home dashboard, headless AI integrations). Devices push and pull `ops` asynchronously (push ~2 s after an edit, pull on a server-sent poke); merge is latest edit wins per field by `hlc`, a delete wins over a later edit, and merged states are repaired automatically. Milestones M11 (core) to M15 (CLI and MCP).
+- Auth is optional: a base URL alone, server tokens, or OIDC (Authelia at home).
 - Phone: a responsive layout first (board collapses to one column with a status switcher), shipped either as a Tauri 2 mobile build or as a PWA served by the sync service.
 
 **Later candidates**: standalone markdown notes linked to tasks, recurring tasks, Obsidian export, weekly review screen, priority scoring.

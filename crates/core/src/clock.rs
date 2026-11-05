@@ -76,11 +76,22 @@ impl Hlc {
         }
     }
 
-    fn parse(hlc: &str) -> Option<(i64, u32)> {
+    pub(crate) fn parse(hlc: &str) -> Option<(i64, u32)> {
         let mut parts = hlc.splitn(3, '-');
         let wall = parts.next()?.parse().ok()?;
         let counter = parts.next()?.parse().ok()?;
         Some((wall, counter))
+    }
+
+    /// Receive rule: moves the clock to `seen` (another replica's or another process's
+    /// timestamp) if it is ahead, so the next tick is later than it.
+    pub(crate) fn observe(&mut self, seen: &str) {
+        if let Some((wall, counter)) = Self::parse(seen)
+            && (wall, counter) > (self.wall, self.counter)
+        {
+            self.wall = wall;
+            self.counter = counter;
+        }
     }
 
     /// Next timestamp, strictly greater than every previous one from this clock.
@@ -140,6 +151,21 @@ mod tests {
         let stored = first.tick(5_000);
         let mut resumed = Hlc::new("dev".into(), Some(&stored));
         assert!(resumed.tick(1_000) > stored);
+    }
+
+    #[test]
+    fn hlc_observe_moves_past_a_later_clock_only() {
+        let mut clock = Hlc::new("a".into(), None);
+        let own = clock.tick(1_000);
+        let mut other = Hlc::new("b".into(), None);
+        let remote = other.tick(9_000);
+        clock.observe(&remote);
+        let next = clock.tick(2_000);
+        assert!(next[..19] > remote[..19], "{next} {remote}");
+        clock.observe(&own); // older: ignored
+        assert!(clock.tick(2_000) > next);
+        clock.observe("garbage");
+        assert_eq!(Hlc::parse(&remote), Some((9_000, 0)));
     }
 
     #[test]

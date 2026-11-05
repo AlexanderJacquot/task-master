@@ -20,6 +20,7 @@ mod parse;
 mod query;
 pub mod rank;
 mod store;
+mod sync;
 
 pub use clock::{new_id, now_ms, utc_date};
 pub use commands::{
@@ -40,6 +41,7 @@ pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};
 pub use query::{Activity, FieldChange};
 pub use store::{ATTACHMENTS_DIR, Changes, Store};
+pub use sync::{Merged, OpsPage, SyncOp};
 
 /// Crate version, reported to adapters for diagnostics.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

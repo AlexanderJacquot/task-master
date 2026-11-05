@@ -19,7 +19,7 @@ pub(crate) type Patch = Map<String, Value>;
 
 /// Binds a JSON patch value as a plain SQL value. (rusqlite's own impl stores strings
 /// JSON-encoded, quotes included, which would break equality and foreign keys.)
-struct Sql<'a>(&'a Value);
+pub(crate) struct Sql<'a>(pub &'a Value);
 
 impl ToSql for Sql<'_> {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
@@ -96,7 +96,7 @@ impl Entity {
         })
     }
 
-    fn table(self) -> &'static str {
+    pub(crate) fn table(self) -> &'static str {
         match self {
             Self::Task => "tasks",
             Self::Project => "projects",
@@ -111,7 +111,7 @@ impl Entity {
     }
 
     /// Columns an op may write. Patch keys are checked against this before building SQL.
-    fn columns(self) -> &'static [&'static str] {
+    pub(crate) fn columns(self) -> &'static [&'static str] {
         match self {
             Self::Task => &[
                 "id",
@@ -208,7 +208,7 @@ impl Entity {
         }
     }
 
-    fn kind(self) -> EntityKind {
+    pub(crate) fn kind(self) -> EntityKind {
         match self {
             Self::Task | Self::TaskTag => EntityKind::Task,
             Self::Project => EntityKind::Project,
@@ -399,13 +399,17 @@ impl<'t, 'c> Batch<'t, 'c> {
             }
         };
 
+        let hlc = self.clock.tick(self.now);
+        for field in clock_fields(entity, &patch) {
+            bump_clock(self.tx, entity, &entity_id, field, &hlc)?;
+        }
         self.tx.execute(
             "INSERT INTO ops (op_id, device_id, hlc, entity, entity_id, kind, patch, inverse, batch_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             rusqlite::params![
                 new_id(),
                 self.device_id,
-                self.clock.tick(self.now),
+                hlc,
                 entity.as_str(),
                 entity_id,
                 kind.as_str(),
@@ -422,30 +426,87 @@ impl<'t, 'c> Batch<'t, 'c> {
     /// Current values of the patched columns: the op's inverse.
     fn read_fields(&self, entity: Entity, id: &str, patch: &Patch) -> Result<Patch> {
         let cols: Vec<&str> = patch.keys().map(String::as_str).collect();
-        let sql = format!(
-            "SELECT {} FROM {} WHERE id = ?1",
-            cols.join(", "),
-            entity.table()
-        );
-        let row = self
-            .tx
-            .query_row(&sql, [id], |r| {
-                let mut out = Patch::new();
-                for (i, col) in cols.iter().enumerate() {
-                    let value = match r.get_ref(i)? {
-                        ValueRef::Null => Value::Null,
-                        ValueRef::Integer(n) => json!(n),
-                        ValueRef::Real(f) => json!(f),
-                        ValueRef::Text(t) => Value::String(String::from_utf8_lossy(t).into()),
-                        ValueRef::Blob(_) => Value::Null,
-                    };
-                    out.insert((*col).to_owned(), value);
-                }
-                Ok(out)
-            })
-            .optional()?;
-        row.ok_or_else(|| Error::not_found(entity.as_str(), id))
+        read_row(self.tx, entity, id, &cols)?.ok_or_else(|| Error::not_found(entity.as_str(), id))
     }
+}
+
+/// Values of `cols` in a row (an empty patch when `cols` is empty), or `None` when the row
+/// does not exist.
+pub(crate) fn read_row(
+    tx: &Transaction<'_>,
+    entity: Entity,
+    id: &str,
+    cols: &[&str],
+) -> Result<Option<Patch>> {
+    let list = if cols.is_empty() {
+        "1".to_owned()
+    } else {
+        cols.join(", ")
+    };
+    let sql = format!("SELECT {list} FROM {} WHERE id = ?1", entity.table());
+    let row = tx
+        .query_row(&sql, [id], |r| {
+            let mut out = Patch::new();
+            for (i, col) in cols.iter().enumerate() {
+                let value = match r.get_ref(i)? {
+                    ValueRef::Null => Value::Null,
+                    ValueRef::Integer(n) => json!(n),
+                    ValueRef::Real(f) => json!(f),
+                    ValueRef::Text(t) => Value::String(String::from_utf8_lossy(t).into()),
+                    ValueRef::Blob(_) => Value::Null,
+                };
+                out.insert((*col).to_owned(), value);
+            }
+            Ok(out)
+        })
+        .optional()?;
+    Ok(row)
+}
+
+/// The fields an op writes, as `field_clocks` names them: the patch keys, or the tag id
+/// for a tag link (each task-tag pair is one field).
+pub(crate) fn clock_fields(entity: Entity, patch: &Patch) -> Vec<&str> {
+    if entity == Entity::TaskTag {
+        patch
+            .get("tag_id")
+            .and_then(Value::as_str)
+            .into_iter()
+            .collect()
+    } else {
+        patch.keys().map(String::as_str).collect()
+    }
+}
+
+/// HLC of the latest write to a field, if any.
+pub(crate) fn field_clock(
+    tx: &Transaction<'_>,
+    entity: Entity,
+    id: &str,
+    field: &str,
+) -> Result<Option<String>> {
+    Ok(tx
+        .prepare_cached(
+            "SELECT hlc FROM field_clocks WHERE entity = ?1 AND entity_id = ?2 AND field = ?3",
+        )?
+        .query_row([entity.as_str(), id, field], |r| r.get(0))
+        .optional()?)
+}
+
+/// Records a write to a field, keeping the newest HLC.
+pub(crate) fn bump_clock(
+    tx: &Transaction<'_>,
+    entity: Entity,
+    id: &str,
+    field: &str,
+    hlc: &str,
+) -> Result<()> {
+    tx.prepare_cached(
+        "INSERT INTO field_clocks (entity, entity_id, field, hlc) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT (entity, entity_id, field) DO UPDATE SET hlc = excluded.hlc
+         WHERE excluded.hlc > field_clocks.hlc",
+    )?
+    .execute([entity.as_str(), id, field, hlc])?;
+    Ok(())
 }
 
 /// A stored op, read back for undo and redo.

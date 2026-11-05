@@ -4,6 +4,11 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**M11 Sync core**, branch `m11-sync-core` (from `main`): done, pending review. First of
+the sync milestones in ADR 015 (M12 server, M13 desktop sync, M14 API, M15 CLI and MCP).
+Plan Phase 5 started early at the user's request. Nothing user-visible yet: the desktop
+does not sync until M13.
+
 **M10 Google Calendar sync**, branch `m10-google-calendar`: merged to `main` with M9 and
 released as **v0.4.0** (2026-11-05). Next: the user creates their OAuth client
 (`docs/google-calendar.md`) and tries it in the real app; see "Not yet verified".
@@ -30,6 +35,35 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### M11 Sync core (2026-11-05)
+
+ADR `docs/adr/015-sync-server.md`. Agreed first with the user: one server that is a core
+replica and the API; the desktop stays local-first and syncs asynchronously; CLI on the
+local DB; MCP local by default, remote API optional; calendar sync on the desktop by
+default, movable to the server; auth optional (base URL only, tokens, or OIDC);
+**latest edit wins, per field, never a conflict prompt; a delete wins over a later edit;
+multi-field rules repaired automatically**.
+- Migration `0007_sync.sql`: `field_clocks` (HLC of the last write per field, tag links
+  per task-tag pair; backfilled from `ops`), `ops.received`, index `ops_hlc`,
+  `sync_state` (pushed seq, pull cursor).
+- Op engine records field clocks on every local write. HLC receive rule
+  (`Hlc::observe`); every write transaction first observes `MAX(ops.hlc)` (the CLI and a
+  local MCP will share the database and device id). `Store::set_clock_offset` for clock
+  skew (fed from the server time in M13).
+- `sync` module: `SyncOp`, `OpsPage`, `Merged`; `Store::outbox` / `mark_pushed`,
+  `ops_after` (server side), `sync_cursor`, `apply_remote` (one transaction, deferred
+  foreign keys, dedupe by `op_id`, only newer fields written, inverse computed locally,
+  change event). Repairs as local ops, deterministic: subtree of a deleted task, parent
+  cycles (latest move kept), projects nested two levels, things in deleted projects or
+  epics moved out, tasks on deleted statuses, `completed_at` follows status, same-name
+  tags merged into the first-created one with their links.
+- Import rebuilds field clocks, marks every op for a new push and clears `sync_state`.
+- Tests: Rust +19 (18 in `tests/sync.rs` incl. a seeded random test of 3 devices with
+  skewed clocks converging over 25 seeds, and the rules checked afterwards; 1 HLC unit).
+  Mutation checks: making incoming ops always win fails 8 sync tests, disabling repairs
+  fails 6. Perf budgets (10k tasks) still pass. Vitest unchanged (190).
+- No new dependencies.
 
 ### M10 Google Calendar sync (2026-11-05)
 
@@ -419,6 +453,12 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 3. Then Phase 2 (folder workspaces and the `tk` CLI on the same core and parser).
 
 ## Later
+
+- Sync (M13): order equal ranks by id in `src/lib/views.ts` (two devices can pick the
+  same rank); desktop reload on `PRAGMA data_version` for outside writers; ops
+  compaction with the 30-day purge; `apply_remote` skips (and counts) ops for rows it
+  never saw, which a server relaying in order never sends; surface `skipped` if it ever
+  shows up.
 
 - Calendar sync: CalDAV provider (iCloud) behind the same trait; refresh token in the OS
   keychain; a push right after each change instead of the 4 s pause; show which blocks

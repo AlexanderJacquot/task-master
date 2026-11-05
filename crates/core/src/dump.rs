@@ -236,6 +236,10 @@ pub(crate) fn import(
             "the export has {broken} broken reference(s); nothing was imported"
         )));
     }
+    // Sync bookkeeping: clocks come from the imported ops; every op is pushed again (the
+    // server ignores the ones it has) and pulls start over.
+    tx.execute_batch(crate::sync::REBUILD_CLOCKS)?;
+    tx.execute_batch("UPDATE ops SET received = 0; DELETE FROM sync_state;")?;
     tx.commit()?;
     Ok(summary)
 }
