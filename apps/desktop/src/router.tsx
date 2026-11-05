@@ -20,7 +20,7 @@ import { TaskPage } from "./features/task-detail/TaskDetail";
 import { TodayPage } from "./features/today/TodayPage";
 import { useStoreState } from "./store/context";
 
-export type AppSearch = { task?: string; plan?: "1" };
+export type AppSearch = { task?: string; plan?: "1"; focus?: "description" };
 
 const rootRoute = createRootRoute({
   component: Layout,
@@ -29,6 +29,8 @@ const rootRoute = createRootRoute({
     ...(typeof search.task === "string" && { task: search.task }),
     // Opens the "Plan my day" picker on the Today view.
     ...((search.plan === "1" || search.plan === 1) && { plan: "1" as const }),
+    // The task page opens with the cursor in the description (a task just created).
+    ...(search.focus === "description" && { focus: "description" as const }),
   }),
 });
 
@@ -137,7 +139,8 @@ const taskRoute = createRoute({
   path: "task/$taskId",
   component: function TaskView() {
     const { taskId } = taskRoute.useParams();
-    return <TaskPage key={taskId} taskId={taskId} />;
+    const { focus } = taskRoute.useSearch();
+    return <TaskPage key={taskId} taskId={taskId} focusDescription={focus === "description"} />;
   },
 });
 

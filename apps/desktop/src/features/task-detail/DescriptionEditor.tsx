@@ -64,9 +64,12 @@ export function DescriptionEditor({
   attachments,
   actions,
   upload,
+  autoFocus = false,
 }: {
   value: string;
   onSave: (text: string) => void;
+  /** Start in the editor with the cursor at the end (a task just created). */
+  autoFocus?: boolean;
   /** `page`: the full task page, larger type and no frame. */
   size?: "panel" | "page";
   attachments: Record<string, Attachment>;
@@ -74,7 +77,7 @@ export function DescriptionEditor({
   /** Absent: pasting files does nothing special. */
   upload?: Uploader;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(autoFocus);
   const [uploading, setUploading] = useState(0);
   const host = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLDivElement>(null);
@@ -173,6 +176,7 @@ export function DescriptionEditor({
       }),
     });
     view.current = editor;
+    editor.dispatch({ selection: { anchor: editor.state.doc.length } });
     editor.focus();
     return () => {
       commit(editor.state.doc.toString());

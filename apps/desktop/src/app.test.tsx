@@ -539,6 +539,75 @@ describe("redesign", () => {
     const row = await screen.findByRole("button", { name: "Renew passport" });
     fireEvent.keyDown(row, { key: "Enter", shiftKey: true });
     await waitFor(() => expect(router.state.location.pathname).toBe(`/task/${existing.id}`));
+    // Only a task just created opens with the cursor in its description.
+    const description = await screen.findByRole("region", { name: "Description" });
+    expect(description.contains(document.activeElement)).toBe(false);
+  });
+
+  it("puts the cursor in the description of a task added with Shift+Enter", async () => {
+    const router = await renderWith("/inbox");
+    const input = await screen.findByRole("textbox", { name: "New task" });
+    fireEvent.change(input, { target: { value: "Draft the brief" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/task\//));
+    const description = await screen.findByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement?.classList.contains("cm-content")).toBe(true);
+  });
+
+  it("opens a task added from the top row in the side panel, ready to describe", async () => {
+    const router = await renderWith("/inbox");
+    const input = await screen.findByRole("textbox", { name: "New task" });
+    fireEvent.change(input, { target: { value: "Book the venue" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    const panel = await screen.findByRole("complementary", { name: "Task details" });
+    expect((within(panel).getByLabelText("Title") as HTMLTextAreaElement).value).toBe(
+      "Book the venue",
+    );
+    expect(router.state.location.pathname).toBe("/inbox");
+    const description = within(panel).getByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
+
+    // The next task opened from the list does not take the cursor.
+    fireEvent.click(screen.getByRole("button", { name: "Renew passport" }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ task: existing.id }));
+    const next = await screen.findByRole("complementary", { name: "Task details" });
+    expect(
+      within(next).getByRole("region", { name: "Description" }).contains(document.activeElement),
+    ).toBe(false);
+  });
+
+  it("keeps the panel closed when Settings turns that off", async () => {
+    const router = await renderWith("/settings");
+    const box = await screen.findByRole("checkbox", { name: /top row in the side panel/ });
+    expect((box as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(box);
+    expect(localStorage.getItem("task-master.capture.open-in-panel")).toBe("0");
+
+    await router.navigate({ to: "/inbox" });
+    const input = await screen.findByRole("textbox", { name: "New task" });
+    fireEvent.change(input, { target: { value: "Water the plants" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(fake.executed.at(-1)?.[0]).toMatchObject({
+        type: "create_task",
+        task: { title: "Water the plants" },
+      }),
+    );
+    expect(screen.queryByRole("complementary", { name: "Task details" })).toBeNull();
+    expect(router.state.location.search).toEqual({});
+  });
+
+  it("does the same from the New task dialog", async () => {
+    await renderWith("/inbox");
+    await screen.findByRole("heading", { name: "Inbox" });
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "New task" });
+    const input = within(dialog).getByRole("textbox", { name: "New task" });
+    fireEvent.change(input, { target: { value: "Call the bank" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    const description = await screen.findByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
   });
 
   it("adds a task from the sidebar's New task button into the current project", async () => {

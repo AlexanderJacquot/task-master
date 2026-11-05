@@ -64,8 +64,20 @@ function useProjectOptions(task: Task | undefined) {
   }, [projects, task?.project_id]);
 }
 
-/** Every editable part of a task, laid out for the side panel or the full page. */
-function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
+/**
+ * Every editable part of a task, laid out for the side panel or the full page (also used
+ * by the expanded quick-capture window).
+ */
+export function TaskEditor({
+  task,
+  variant,
+  focusDescription = false,
+}: {
+  task: Task;
+  variant: Variant;
+  /** Opens with the cursor in the description (a task just created). */
+  focusDescription?: boolean;
+}) {
   const store = useTaskStore();
   const statuses = useStoreState((s) => s.statuses);
   const epics = useStoreState((s) => s.epics);
@@ -278,6 +290,7 @@ function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
           attachments={attachmentsById}
           actions={files.actions}
           upload={files.uploader}
+          autoFocus={focusDescription}
         />
       </section>
       {/* The page follows the mockup: subtasks right under the text, files after. */}
@@ -302,7 +315,14 @@ function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
 }
 
 /** Right-hand panel for one task, opened with `?task=<id>`. Every field saves on change. */
-export function TaskDetail({ taskId }: { taskId: string }) {
+export function TaskDetail({
+  taskId,
+  focusDescription = false,
+}: {
+  taskId: string;
+  /** Opens with the cursor in the description (a task just created). */
+  focusDescription?: boolean;
+}) {
   const store = useTaskStore();
   const task = useStoreState((s) => s.tasks[taskId]);
   const parent = useStoreState((s) => (task?.parent_id ? s.tasks[task.parent_id] : undefined));
@@ -367,14 +387,20 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         </IconButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
-        <TaskEditor task={task} variant="panel" />
+        <TaskEditor task={task} variant="panel" focusDescription={focusDescription} />
       </div>
     </aside>
   );
 }
 
 /** The full task page (`/task/:id`): a wide sheet for writing. */
-export function TaskPage({ taskId }: { taskId: string }) {
+export function TaskPage({
+  taskId,
+  focusDescription = false,
+}: {
+  taskId: string;
+  focusDescription?: boolean;
+}) {
   const store = useTaskStore();
   const navigate = useNavigate();
   const task = useStoreState((s) => s.tasks[taskId]);
@@ -451,7 +477,12 @@ export function TaskPage({ taskId }: { taskId: string }) {
       </div>
       <div className="tex-canvas min-h-0 flex-1 overflow-y-auto px-6 py-8">
         <article className="tex-sheet mx-auto max-w-[820px] rounded-xl border border-line bg-raised px-10 py-11 shadow-xl shadow-black/10 sm:px-14">
-          <TaskEditor key={task.id} task={task} variant="page" />
+          <TaskEditor
+            key={task.id}
+            task={task}
+            variant="page"
+            focusDescription={focusDescription}
+          />
         </article>
       </div>
     </div>

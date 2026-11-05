@@ -5,6 +5,7 @@ import { KeyList } from "../../components/Keys";
 import { Kbd } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
 import { FIXED_SHORTCUTS, SHORTCUT_DEFS, useKeymap } from "../../lib/keymap";
+import type { AppSearch } from "../../router";
 import type { NewTaskInput } from "../../store/actions";
 import { useStoreState } from "../../store/context";
 import { CaptureBox } from "../capture/CaptureBox";
@@ -48,7 +49,7 @@ function loadCollapsed(): boolean {
 export function Layout() {
   const ready = useStoreState((s) => s.ready);
   const loadError = useStoreState((s) => s.loadError);
-  const { task } = useSearch({ strict: false }) as { task?: string };
+  const { task, focus } = useSearch({ strict: false }) as AppSearch;
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const openTask = useOpenTask();
   const navigate = useNavigate();
@@ -132,7 +133,9 @@ export function Layout() {
         <main className="flex min-w-0 flex-1 flex-col">
           <Outlet />
         </main>
-        {task && !onTaskPage && <TaskDetail key={task} taskId={task} />}
+        {task && !onTaskPage && (
+          <TaskDetail key={task} taskId={task} focusDescription={focus === "description"} />
+        )}
         <ErrorToast />
         <CommandPalette open={palette} onOpenChange={setPalette} />
         <ShortcutHelp open={help} onOpenChange={setHelp} />
@@ -140,7 +143,11 @@ export function Layout() {
           defaults={newTask}
           onClose={() => setNewTask(null)}
           onOpenTask={(id) =>
-            void navigate({ to: "/task/$taskId", params: { taskId: id }, search: {} })
+            void navigate({
+              to: "/task/$taskId",
+              params: { taskId: id },
+              search: { focus: "description" },
+            })
           }
         />
       </Framed>

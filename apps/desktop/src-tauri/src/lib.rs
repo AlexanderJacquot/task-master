@@ -528,8 +528,14 @@ fn default_data_dir(app: &AppHandle) -> tauri::Result<PathBuf> {
     app.path().app_data_dir()
 }
 
+/// Logical size of the capture window when it opens (as in `tauri.conf.json`). Shift+Enter
+/// there grows it into a task editor (`CaptureWindow.tsx`), so each opening starts small.
+const CAPTURE_SIZE: (f64, f64) = (660.0, 230.0);
+
 fn show_capture(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(CAPTURE_WINDOW) {
+        let _ = window.set_resizable(false);
+        let _ = window.set_size(tauri::LogicalSize::new(CAPTURE_SIZE.0, CAPTURE_SIZE.1));
         let _ = window.center();
         let _ = window.show();
         let _ = window.set_focus();

@@ -83,6 +83,27 @@ ADR 015 (implementation notes); setup `docs/server.md` (now matches the code).
   release build of the package is (10 MB).
 - New dependencies (server only, agreed in ADR 015): axum 0.8.9, tokio 1.54,
   jsonwebtoken 11.1 (rust_crypto), futures-util (already in the tree).
+### Quick capture grows into the editor (2026-11-05)
+
+Branch `worktree-capture-expand` (from `main`). In the `Ctrl+Shift+Space` window,
+Shift+Enter saves the task and grows the window (900x720, within 90% of the screen,
+resizable) into the full task editor (`TaskEditor`, page layout): title, properties,
+description, subtasks, files, activity. Opening a subtask switches the editor to it
+(`OpenTaskContext` replaces navigation where there is no router). While editing, the
+window stays open on blur (so file pickers work); Esc leaves the current field, then
+closes; Done and X close. The shell resets the window to 660x230 on every hotkey
+opening. Window permissions added: `set-size`, `set-resizable`, `center`. Tests:
+`captureWindow.test.tsx` (+3, injected `CaptureControls` like the title bar's). No new
+dependencies.
+- A task just created with Shift+Enter opens with the cursor in its description, from
+  the capture window, a view's capture row or the New task dialog (`?focus=description`
+  on the task page; `DescriptionEditor` `autoFocus`). Opening an existing task does not.
+  Starting an edit now puts the cursor at the end of the text (was the start). Tests:
+  app.test +2, the capture window test checks it, and the row test checks it does not.
+- A task added from a view's top row (plain Enter) opens in the side panel with the
+  cursor in its description. Settings → Adding tasks turns it off (per machine,
+  `lib/capturePrefs.ts`, on by default). `useOpenTask` drops `focus` so the next task
+  opened does not take the cursor. Tests: app.test +2.
 
 ### M11 Sync core (2026-11-05)
 
@@ -558,7 +579,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
   up (docs/release.md); fresh install on Linux and Windows (M6 "done when").
 - M5 by hand: `Ctrl+Shift+Space` in a native X11 session or on Windows (WSLg only sees it
   while a WSLg window has focus), the capture window (appears centered, focused, hides on
-  blur/Esc/save), the 3 s capture goal, palette feel.
+  blur/Esc/save), the 3 s capture goal, palette feel. Shift+Enter there: the window
+  grows and re-centers (WebKitGTK and WebView2, HiDPI), stays put while a file picker is
+  open, and opens small again next time.
 - M4 by hand: saved view save/revert/reopen, filter bar popovers, project drag in the
   sidebar, archive/delete flows, epic fields, dark mode.
 - M3 board by hand: pointer drag feel (jsdom cannot test it), shaking a card between columns
@@ -586,6 +609,8 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Calendar sync: CalDAV provider (iCloud) behind the same trait; refresh token in the OS
   keychain; a push right after each change instead of the 4 s pause; show which blocks
   are synced (a small cloud mark); pick another calendar as the target.
+- Quick capture editor: an "Open in Task Master" button (show the main window on the
+  task page; needs an event to the main window); Ctrl+Z inside the capture window.
 - Calendar: drag on empty grid to block out an _existing_ task (new tasks done); keyboard moves of blocks;
   week start and working hours in Settings; Today view counting tasks with a block today;
   block list and logged time on the task page; multi-day blocks shown across days in the

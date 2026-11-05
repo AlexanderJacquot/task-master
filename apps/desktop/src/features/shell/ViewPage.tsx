@@ -4,6 +4,7 @@ import { Popover } from "radix-ui";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { Button, cx, FOCUS, InlineInput, Select } from "../../components/ui";
 import { buildBoard } from "../../lib/board";
+import { loadOpenInPanel } from "../../lib/capturePrefs";
 import { isoDate } from "../../lib/dates";
 import type { GroupBy, SortBy, Swimlane, TaskChange, View, ViewScope } from "../../lib/types";
 import { buildRows, filterIsEmpty, type ViewContext } from "../../lib/views";
@@ -415,7 +416,21 @@ function ViewBody({
           placeholder={`Add a task${typeof title === "string" ? ` to ${title}` : ""}…   ${CAPTURE_HINT}`}
           onCaptured={(id, how) => {
             if (how.open)
-              void navigate({ to: "/task/$taskId", params: { taskId: id }, search: {} });
+              void navigate({
+                to: "/task/$taskId",
+                params: { taskId: id },
+                search: { focus: "description" },
+              });
+            // Settings → Adding tasks: the new task opens in the side panel, ready to write.
+            else if (loadOpenInPanel())
+              void navigate({
+                to: ".",
+                search: (prev: Record<string, unknown>) => ({
+                  ...prev,
+                  task: id,
+                  focus: "description" as const,
+                }),
+              });
           }}
         />
       </div>
