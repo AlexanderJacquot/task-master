@@ -5,6 +5,7 @@ import { cx, IconButton, MENU, MENU_DANGER, MENU_ITEM, Select } from "../../comp
 import type { Project } from "../../lib/types";
 import { deleteProject, moveProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { ProjectFolderButton } from "../agents/ProjectFolderButton";
 import { EditableTitle } from "../shell/EditableTitle";
 import { ViewPage } from "../shell/ViewPage";
 import { firstGrapheme, PROJECT_ICONS, ProjectMark } from "./ProjectMark";
@@ -122,6 +123,7 @@ export function ProjectPage({ project }: { project: Project }) {
       }
       actions={
         <>
+          <ProjectFolderButton projectId={project.id} />
           <ColorPicker project={project} />
           {!isArea && (
             <Select

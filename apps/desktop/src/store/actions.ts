@@ -171,6 +171,7 @@ export function applyTaskChanges(
   for (const change of changes) {
     if ("dependency_ids" in change && change.dependency_ids !== undefined)
       next.dependency_ids = [...new Set(change.dependency_ids)].sort();
+    else if ("owner" in change && change.owner !== undefined) next.owner = change.owner;
     else if ("title" in change && change.title !== undefined) next.title = change.title.trim();
     else if ("description" in change && change.description !== undefined)
       next.description = change.description;
@@ -908,6 +909,27 @@ export function setBlockOutcome(store: TaskStore, id: string, outcome: BlockOutc
       time_blocks: [{ ...block, outcome, updated_at: now }],
       ...(task && { tasks: [{ ...task, updated_at: now }] }),
     },
+  });
+}
+
+// ---------------------------------------------------------------------------------------
+// Agent sessions (ADR 017). Runs start and end through the shell (`api.agents`); these are
+// the user's own edits, so they are undoable.
+
+/** Makes an agent's task the user's own, so it shows in their views. */
+export function adoptTask(store: TaskStore, id: string) {
+  return updateTask(store, id, [{ owner: "me" }]);
+}
+
+/** Removes an ended session (and its notes) from the task's history. */
+export function removeAgentSession(store: TaskStore, id: string) {
+  const s = store.getState();
+  const session = s.agent_sessions[id];
+  if (!session || session.state === "running") return Promise.resolve(null);
+  const task = s.tasks[session.task_id];
+  return s.mutate([{ type: "delete_agent_session", id }], {
+    remove: { agent_sessions: [id] },
+    ...(task && { upsert: { tasks: [{ ...task, updated_at: Date.now() }] } }),
   });
 }
 

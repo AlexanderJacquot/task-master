@@ -1623,6 +1623,8 @@ export type ViewSpec_Deserialize = {
 	swimlane?: Swimlane,
 	show_subtasks?: boolean,
 	show_cancelled?: boolean,
+	/**  Agents' own tasks (ADR 017) are hidden unless set. */
+	show_agent_tasks?: boolean,
 };
 
 /**
@@ -1639,6 +1641,8 @@ export type ViewSpec_Serialize = {
 	swimlane: Swimlane,
 	show_subtasks: boolean,
 	show_cancelled: boolean,
+	/**  Agents' own tasks (ADR 017) are hidden unless set. */
+	show_agent_tasks: boolean,
 };
 
 /**  A saved board or list: a name plus a [`ViewSpec`]. */

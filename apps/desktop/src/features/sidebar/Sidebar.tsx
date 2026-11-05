@@ -4,6 +4,7 @@ import {
   ArchiveRestore,
   ArrowDownCircle,
   Bookmark,
+  Bot,
   CalendarDays,
   ChartNoAxesCombined,
   ChevronDown,
@@ -391,6 +392,9 @@ export function Sidebar({
   const tags = useStoreState((s) => s.tags);
   const views = useStoreState((s) => s.views);
   const statusList = useStoreState((s) => s.statuses);
+  const runningAgents = useStoreState(
+    (s) => Object.values(s.agent_sessions).filter((a) => a.state === "running").length,
+  );
   const [adding, setAdding] = useState<"project" | "epic" | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const order = useProjectOrder();
@@ -411,6 +415,8 @@ export function Sidebar({
     const perEpic = new Map<string, { done: number; total: number }>();
     const perTag = new Map<string, number>();
     for (const t of all) {
+      // Agents' own tasks stay out of the user's counts (ADR 017).
+      if (t.owner === "agent") continue;
       if (t.project_id && open(t))
         perProject.set(t.project_id, (perProject.get(t.project_id) ?? 0) + 1);
       if (t.epic_id && ctx.statuses[t.status_id]?.category !== "cancelled") {
@@ -510,6 +516,9 @@ export function Sidebar({
         <RailLink to="/lineage" label="Lineage">
           <GitBranch size={18} />
         </RailLink>
+        <RailLink to="/agents" label="Agents">
+          <Bot size={18} className={cx(runningAgents > 0 && "animate-pulse text-accent")} />
+        </RailLink>
         <RailLink to="/metrics" label="Metrics">
           <ChartNoAxesCombined size={18} />
         </RailLink>
@@ -603,6 +612,14 @@ export function Sidebar({
         </NavItem>
         <NavItem to="/lineage" icon={<GitBranch size={17} className="shrink-0" />}>
           Lineage
+        </NavItem>
+        <NavItem
+          to="/agents"
+          count={runningAgents || undefined}
+          title={runningAgents ? `${runningAgents} running` : undefined}
+          icon={<Bot size={17} className={cx("shrink-0", runningAgents > 0 && "text-accent")} />}
+        >
+          Agents
         </NavItem>
         <NavItem to="/metrics" icon={<ChartNoAxesCombined size={17} className="shrink-0" />}>
           Metrics

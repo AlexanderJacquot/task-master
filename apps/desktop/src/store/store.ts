@@ -5,6 +5,7 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { Api } from "../lib/api";
 import type {
+  AgentSession,
   Attachment,
   Changes,
   Command,
@@ -33,6 +34,8 @@ export interface Entities {
   attachments: ById<Attachment>;
   /** Calendar blocks of live tasks. */
   time_blocks: ById<TimeBlock>;
+  /** Claude Code sessions of live tasks, every device's (ADR 017). */
+  agent_sessions: ById<AgentSession>;
 }
 
 /** Local edits shown before the core confirms them. */
@@ -46,6 +49,7 @@ export interface Optimistic {
     statuses?: Status[];
     attachments?: Attachment[];
     time_blocks?: TimeBlock[];
+    agent_sessions?: AgentSession[];
   };
   remove?: {
     tasks?: string[];
@@ -56,10 +60,13 @@ export interface Optimistic {
     statuses?: string[];
     attachments?: string[];
     time_blocks?: string[];
+    agent_sessions?: string[];
   };
 }
 
 export interface TaskStoreState extends Entities {
+  /** What each running session of this device is doing now, by session id. */
+  agentActivity: Record<string, string>;
   ready: boolean;
   loadError: string | null;
   /** Last failed write, shown as a toast. */
@@ -71,8 +78,10 @@ export interface TaskStoreState extends Entities {
   undo(): Promise<void>;
   redo(): Promise<void>;
   dismissError(): void;
-  /** Starts listening for writes made elsewhere (CLI, MCP later). Returns an unsubscribe. */
+  /** Starts listening for writes made elsewhere (CLI, MCP) and for agent activity. */
   connect(): Promise<() => void>;
+  /** Applies entities written outside `execute` (an agent session the shell recorded). */
+  record(changes: Changes | null): void;
 }
 
 export type TaskStore = StoreApi<TaskStoreState>;
@@ -85,7 +94,8 @@ type Kind =
   | "views"
   | "statuses"
   | "attachments"
-  | "time_blocks";
+  | "time_blocks"
+  | "agent_sessions";
 const KINDS: Kind[] = [
   "tasks",
   "projects",
@@ -95,6 +105,7 @@ const KINDS: Kind[] = [
   "statuses",
   "attachments",
   "time_blocks",
+  "agent_sessions",
 ];
 
 /** Statuses are kept as an array in workflow order; every other kind as a map by id. */
@@ -124,6 +135,7 @@ function fromSnapshot(snapshot: Snapshot): Entities {
     statuses: snapshot.statuses,
     attachments: byId(snapshot.attachments),
     time_blocks: byId(snapshot.time_blocks),
+    agent_sessions: byId(snapshot.agent_sessions),
   };
 }
 
@@ -199,6 +211,8 @@ export function createTaskStore(api: Api): TaskStore {
       statuses: [],
       attachments: {},
       time_blocks: {},
+      agent_sessions: {},
+      agentActivity: {},
       ready: false,
       loadError: null,
       lastError: null,
@@ -285,12 +299,42 @@ export function createTaskStore(api: Api): TaskStore {
 
       dismissError: () => set({ lastError: null }),
 
-      connect: () =>
-        api.onChanged((event) => {
+      async connect() {
+        const stopChanges = await api.onChanged((event) => {
           if (get().pending === 0 && ownBatches.delete(event.batch_id)) return;
           unseenBatches.add(event.batch_id);
           settle();
-        }),
+        });
+        const agents = api.agents;
+        if (!agents) return stopChanges;
+        // Activity is live state of this device's runs, never stored in the database.
+        const stopActivity = await agents.onActivity(({ session_id, activity }) => {
+          set((s) => {
+            const next = { ...s.agentActivity };
+            if (activity === null) delete next[session_id];
+            else next[session_id] = activity;
+            return { agentActivity: next };
+          });
+        });
+        try {
+          const live = await agents.live();
+          set((s) => {
+            const next = { ...s.agentActivity };
+            for (const { session_id, activity } of live) {
+              if (activity !== null) next[session_id] ??= activity;
+            }
+            return { agentActivity: next };
+          });
+        } catch {
+          // No live runs to show; updates still arrive through the event.
+        }
+        return () => {
+          stopChanges();
+          stopActivity();
+        };
+      },
+
+      record,
     };
   });
 

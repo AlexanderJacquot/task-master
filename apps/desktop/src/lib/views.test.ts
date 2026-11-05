@@ -20,6 +20,7 @@ function q(scope: ViewScope, extra: Partial<ViewQuery> = {}): ViewQuery {
     group_by: "status",
     sort: "default",
     show_cancelled: false,
+    show_agent_tasks: false,
     ...extra,
   };
 }

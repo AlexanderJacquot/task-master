@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Bot, Check } from "lucide-react";
 import { useMemo } from "react";
 import { Checkbox, cx, InlineInput } from "../../components/ui";
 import type { Task } from "../../lib/types";
@@ -123,6 +123,13 @@ export function SubtaskList({
                 isDone(child) && "text-ink-3 line-through",
               )}
             >
+              {child.owner === "agent" && (
+                <Bot
+                  size={13}
+                  className="mr-1 inline align-[-2px] text-accent"
+                  aria-label="Agent task"
+                />
+              )}
               {child.title}
             </button>
             <span className="invisible flex gap-1 text-xs text-neutral-500 group-hover:visible">

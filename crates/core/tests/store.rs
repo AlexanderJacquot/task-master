@@ -1064,6 +1064,7 @@ fn spec(scope: ViewScope) -> ViewSpec {
         swimlane: Swimlane::None,
         show_subtasks: false,
         show_cancelled: false,
+        show_agent_tasks: false,
     }
 }
 

@@ -403,6 +403,15 @@ function ViewBody({
                     className="accent-accent"
                   />
                 </label>
+                <label className="flex items-center justify-between gap-2 text-ink-2">
+                  Show agent tasks
+                  <input
+                    type="checkbox"
+                    checked={display.show_agent_tasks}
+                    onChange={(e) => setDisplay({ show_agent_tasks: e.target.checked })}
+                    className="accent-accent"
+                  />
+                </label>
                 <div className="h-px bg-line" />
                 {savingAs ? (
                   <InlineInput

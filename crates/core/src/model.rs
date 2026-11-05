@@ -462,6 +462,9 @@ pub struct ViewSpec {
     pub show_subtasks: bool,
     #[serde(default)]
     pub show_cancelled: bool,
+    /// Agents' own tasks (ADR 017) are hidden unless set.
+    #[serde(default)]
+    pub show_agent_tasks: bool,
 }
 
 /// The base set of tasks, the same keys as the built-in routes.

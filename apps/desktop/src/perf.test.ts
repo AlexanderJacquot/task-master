@@ -46,6 +46,7 @@ describe.skipIf(!env?.PERF)("10k-task budget", () => {
     scope: { kind: "all" as const },
     filter: EMPTY_FILTER,
     show_cancelled: false,
+    show_agent_tasks: false,
   };
 
   it("rebuilds a filtered board with swimlanes within budget", () => {

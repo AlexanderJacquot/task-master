@@ -13,6 +13,7 @@ export const DEFAULT_DISPLAY: ViewDisplay = {
   swimlane: "none",
   show_subtasks: false,
   show_cancelled: false,
+  show_agent_tasks: false,
 };
 
 export const SPEC_VERSION = 1;

@@ -3,6 +3,7 @@ import { memo } from "react";
 import { Chip, cx, Dot, PRIORITY_PILL } from "../../components/ui";
 import { daysFrom, formatDue, isoDate } from "../../lib/dates";
 import type { Epic, Project, Status, Tag, Task } from "../../lib/types";
+import { SessionChip } from "../agents/SessionChip";
 import { EpicMark } from "../organize/EpicMark";
 
 /** Height of a card plus the gap below it; fixed so columns virtualize without measuring. */
@@ -76,6 +77,7 @@ export const CardFace = memo(function CardFace(p: Props) {
             <span className="truncate">{epic.name}</span>
           </span>
         )}
+        <SessionChip taskId={task.id} className="max-w-36 shrink-0" />
         <span className="flex min-w-0 flex-1 gap-1 overflow-hidden">
           {tags.map((tag) => (
             <Chip key={tag.id}>#{tag.name}</Chip>
