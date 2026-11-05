@@ -9,10 +9,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::clock::{Hlc, now_ms};
 use crate::commands::{self, Command};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::events::{Changed, EntityRef, EventBus};
+use crate::files::FileStore;
 use crate::history::{self, History};
-use crate::model::{Epic, Id, Project, Snapshot, Status, Tag, Task, View};
+use crate::model::{Attachment, Epic, Id, Project, Snapshot, Status, Tag, Task, View};
 use crate::ops::{Batch, EntityKind};
 use crate::{db, query};
 
@@ -30,6 +31,7 @@ pub struct Changes {
     pub tags: Vec<Tag>,
     pub views: Vec<View>,
     pub statuses: Vec<Status>,
+    pub attachments: Vec<Attachment>,
 }
 
 impl Changes {
@@ -45,12 +47,33 @@ pub struct Store {
     clock: Hlc,
     history: History,
     events: EventBus,
+    /// Attachment content; `attachments/` next to the database file.
+    files: Option<FileStore>,
 }
+
+/// Name of the attachment folder, next to the database and inside backup folders.
+pub const ATTACHMENTS_DIR: &str = "attachments";
 
 impl Store {
     /// Opens or creates the database at `path`, migrating it (after a backup) if needed.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
-        Self::from_connection(db::open_file(path.as_ref())?)
+        let path = path.as_ref();
+        let store = Self::from_connection(db::open_file(path)?)?;
+        let dir = path.parent().unwrap_or_else(|| Path::new("."));
+        Ok(store.with_files(dir.join(ATTACHMENTS_DIR)))
+    }
+
+    /// Keeps attachment content in `dir` (an in-memory store has none until set).
+    pub fn with_files(mut self, dir: impl Into<std::path::PathBuf>) -> Self {
+        self.files = Some(FileStore::new(dir));
+        self
+    }
+
+    /// The attachment content folder.
+    pub fn files(&self) -> Result<&FileStore> {
+        self.files
+            .as_ref()
+            .ok_or_else(|| Error::invalid("this store has no attachment folder"))
     }
 
     /// A throwaway database, for tests.
@@ -67,6 +90,7 @@ impl Store {
             clock,
             history: History::default(),
             events: EventBus::default(),
+            files: None,
         })
     }
 
@@ -81,6 +105,17 @@ impl Store {
 
     /// Runs several commands atomically as one undoable batch: all apply or none do.
     pub fn execute_all(&mut self, commands: Vec<Command>) -> Result<Changes> {
+        // An attachment row must name content that is actually stored.
+        for command in &commands {
+            if let Command::CreateAttachment { attachment } = command
+                && !self.files()?.contains(&attachment.hash)
+            {
+                return Err(Error::invalid(format!(
+                    "no stored file has hash {}; store it before attaching it",
+                    attachment.hash
+                )));
+            }
+        }
         let changes = self.write(|b| {
             commands
                 .into_iter()
@@ -130,7 +165,39 @@ impl Store {
         query::search(&self.conn, text, limit)
     }
 
-    /// A task's change history, newest first.
+    /// One attachment (deleted ones included), e.g. to serve or open its file.
+    pub fn attachment(&self, id: &str) -> Result<Attachment> {
+        query::attachment(&self.conn, id)
+    }
+
+    /// Where an attachment's content is on disk.
+    pub fn attachment_path(&self, id: &str) -> Result<std::path::PathBuf> {
+        let attachment = self.attachment(id)?;
+        let path = self.files()?.path(&attachment.hash)?;
+        if !path.is_file() {
+            return Err(Error::not_found("attachment file", attachment.hash));
+        }
+        Ok(path)
+    }
+
+    /// Hashes named by live attachments whose content is missing (e.g. after importing
+    /// an export without its attachment folder).
+    pub fn missing_files(&self) -> Result<Vec<String>> {
+        let files = self.files()?;
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT hash FROM attachments WHERE deleted_at IS NULL ORDER BY hash",
+        )?;
+        let hashes = stmt.query_map([], |r| r.get::<_, String>(0))?;
+        let mut missing = Vec::new();
+        for hash in hashes {
+            let hash = hash?;
+            if !files.contains(&hash) {
+                missing.push(hash);
+            }
+        }
+        Ok(missing)
+    }
+
     /// Writes a consistent copy of the database to `target` (replacing it).
     pub fn backup_to(&self, target: impl AsRef<Path>) -> Result<()> {
         crate::dump::backup_to(&self.conn, target.as_ref())
@@ -138,13 +205,32 @@ impl Store {
 
     /// Today's rotating backup in `dir` (`daily-YYYY-MM-DD.sqlite`), keeping the newest
     /// `keep`. Returns the new file, or `None` when today's already exists.
+    ///
+    /// Attachment content is mirrored into `dir/attachments/` on every call (only new
+    /// files are copied; files never change). Mirrored files are not rotated out, so any
+    /// kept database finds the files it names.
     pub fn daily_backup(
         &self,
         dir: impl AsRef<Path>,
         today: &str,
         keep: usize,
     ) -> Result<Option<std::path::PathBuf>> {
-        crate::dump::daily_backup(&self.conn, dir.as_ref(), today, keep)
+        let dir = dir.as_ref();
+        let created = crate::dump::daily_backup(&self.conn, dir, today, keep)?;
+        if let Some(files) = &self.files {
+            files.copy_missing_to(dir.join(ATTACHMENTS_DIR))?;
+        }
+        Ok(created)
+    }
+
+    /// Copies every attachment file into `dir` (an export's attachment folder).
+    pub fn export_files_to(&self, dir: impl AsRef<Path>) -> Result<u32> {
+        self.files()?.copy_missing_to(dir)
+    }
+
+    /// Takes in the attachment files of an export folder (checked against their hashes).
+    pub fn import_files_from(&self, dir: impl AsRef<Path>) -> Result<u32> {
+        self.files()?.import_from(dir)
     }
 
     /// Every user table as JSON, versioned with the schema.
@@ -156,7 +242,10 @@ impl Store {
     /// (take a backup first). Subscribers get a change event so they re-read everything.
     pub fn import(&mut self, file: &crate::dump::ExportFile) -> Result<crate::dump::ImportSummary> {
         let version = db::applied_migrations(&self.conn)?;
-        let summary = crate::dump::import(&mut self.conn, file, version)?;
+        let mut summary = crate::dump::import(&mut self.conn, file, version)?;
+        if self.files.is_some() {
+            summary.missing_files = u32::try_from(self.missing_files()?.len()).unwrap_or(u32::MAX);
+        }
         self.history = History::default();
         self.clock = Hlc::new(self.device_id.clone(), db::last_hlc(&self.conn)?.as_deref());
         let op_seq: i64 =
@@ -230,6 +319,7 @@ fn load_changes(
             EntityKind::Tag => changes.tags.push(query::tag(conn, id)?),
             EntityKind::View => changes.views.push(query::view(conn, id)?),
             EntityKind::Status => changes.statuses.push(query::status(conn, id)?),
+            EntityKind::Attachment => changes.attachments.push(query::attachment(conn, id)?),
         }
     }
     Ok(changes)

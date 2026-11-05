@@ -20,6 +20,7 @@ async function setup(fail = false) {
         epics: [],
         tags: [],
         views: [],
+        attachments: [],
         statuses: [],
       } as Changes);
     },

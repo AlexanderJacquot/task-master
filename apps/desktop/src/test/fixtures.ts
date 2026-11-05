@@ -1,4 +1,4 @@
-import type { Capture, Project, Snapshot, Status, Task } from "../lib/types";
+import type { Attachment, Capture, Project, Snapshot, Status, Task } from "../lib/types";
 
 export const STATUS = {
   backlog: "00000000-0000-7000-8000-000000000001",
@@ -122,8 +122,34 @@ export function project(overrides: Partial<Project> = {}): Project {
   };
 }
 
+/** Attachment ids are uuids: descriptions only resolve `attachment:<uuid>` links. */
+export function attachment(overrides: Partial<Attachment> = {}): Attachment {
+  counter += 1;
+  return {
+    id: `0192f0c4-0000-7000-8000-${String(counter).padStart(12, "0")}`,
+    task_id: "t0",
+    hash: "a".repeat(64),
+    name: `file-${counter}.png`,
+    mime: "image/png",
+    size: 1234,
+    created_at: counter,
+    updated_at: counter,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
 export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
-  return { tasks: [], projects: [], epics: [], statuses, tags: [], views: [], ...overrides };
+  return {
+    tasks: [],
+    projects: [],
+    epics: [],
+    statuses,
+    tags: [],
+    views: [],
+    attachments: [],
+    ...overrides,
+  };
 }
 
 /**

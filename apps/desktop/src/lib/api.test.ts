@@ -39,6 +39,7 @@ describe("tauriApi", () => {
       epics: [],
       tags: [],
       views: [],
+      attachments: [],
     };
     tauri.reply = () => Promise.resolve(changes);
     const cmd = { type: "delete_task", id: "t" } as const;

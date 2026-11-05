@@ -4,9 +4,17 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M7 Redesign**, branch `m7-redesign` (stacked on `m6-ux-feedback`): done, including in-app
-updates (version 0.2.0). Next: release 0.2.0, install it by hand once on Windows, then
-check the redesign in both themes and that 0.2.1 arrives through the update button.
+**M8 Attachments**, branch `m8-attachments` (from `main`): markdown preview, pasted
+images and file attachments, the Windows title bar and the parchment rubric colors.
+Merged to `main` and released as **v0.3.0** (2026-11-05). Next: install the update on
+Windows (Settings → About and updates) and run the hands-on checks below.
+
+**Windows title bar** (same working tree, ADR 012): the main window is frameless on
+Windows and the app draws its own title bar. Done, pending a check on Windows.
+
+**M7 Redesign**: done, including in-app updates (version 0.2.0). Left: install 0.2.0 by
+hand once on Windows, then check the redesign in both themes and that 0.2.1 arrives
+through the update button.
 
 ### Previous
 
@@ -15,6 +23,58 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### Parchment rubric red restored (2026-11-05)
+
+User: the red accents from the mockup were missing on tasks. The app used one neutral ink
+for headings in both themes and Tailwind's stock red/orange for priorities.
+- New theme variables `--tm-rubric` (headings: #8b2e1f on parchment, #d4d4da in the dark,
+  as in the mockups), `--tm-urgent`, `--tm-high` (mockup tones per theme); Tailwind colors
+  `rubric`, `urgent`, `high`.
+- Rubric on list group headers, board column and lane headers, the sidebar's Projects
+  label, the full page's Subtasks and Attachments labels, and description headings.
+  Priority text and pills use the urgent/high tones.
+
+### Windows title bar (2026-11-05)
+
+ADR `docs/adr/012-windows-title-bar.md`. The user's choice over recoloring the system bar.
+- `tauri.windows.conf.json`: main window `decorations: false`, `shadow: true` (a shell
+  test keeps its window list equal to `tauri.conf.json` otherwise).
+- `TitleBar` (32 px): sidebar-colored part as wide as the sidebar (open or rail), canvas
+  elsewhere, deep drag region (Aero Snap, double-click maximizes), Windows-style
+  minimize / maximize-restore / close (Segoe glyphs, red close, dims unfocused); also on
+  the loading and error screens. `SIDEBAR_WIDTH` shared with the sidebar.
+- Window permissions for dragging, minimize, maximize, close.
+- Fix: closing the main window quits (the hidden capture window kept the process alive).
+- Tests: Vitest 153 (+4 title bar), Rust +1 (config drift). Linux smoke run unchanged.
+
+### M8 Markdown preview and attachments (2026-11-05)
+
+ADR `docs/adr/011-attachments-and-markdown.md`. Agreed first: rendered by default, click
+to edit; 50 MB per file.
+- Core: migration `0004_attachments.sql`; `Attachment` in the snapshot and `Changes`;
+  `create_attachment` / `update_attachment` (rename) / `delete_attachment` with ops, undo
+  and task `updated_at`; activity entries `attach` / `detach` / `rename_attachment`.
+  `FileStore` (`files.rs`): content by SHA-256 in `attachments/` beside the DB, streamed
+  writes, size limit, mirror to backups, checked import; `clean_file_name`, `mime_for`.
+  Daily backups mirror files; export/import carry them (`ImportSummary.missing_files`).
+- Shell: `store_file`, `store_data` (base64), `open_attachment`, `save_attachment`,
+  `open_url`; `tm:` protocol (async) serving files by attachment id; CSP `img-src`;
+  remote backup uploads files once (`attachments-uploaded.txt`); export writes
+  `<name>-attachments/`. `tauri-plugin-opener` (Rust only).
+- UI: `MarkdownView` (GFM, attachment images and file links, external links via
+  `open_url`, clickable checklists, no raw HTML, no remote images), `DescriptionEditor`
+  rendered by default (click / pencil to edit, Esc or blur saves), paste and drop of files
+  into the editor, `AttachmentList` (thumbnails, open, save a copy, insert in
+  description, rename, remove, Attach file, drop target), `useFileDrop` (OS drops via
+  Tauri, routed to `[data-file-drop]`), `.tm-prose` styles for both themes. `Api.files`
+  is optional, so existing test fakes are unchanged.
+- Tests: Rust +13 (8 attachment integration tests, 5 file store); Vitest 149 (+17:
+  helpers, attachment actions, task page: rendering, checklist, click to edit, paste,
+  OS drop on list and description, dialog pick, activity).
+- Smoke run of the debug app on a fresh DB: starts, migrates to v4, no errors.
+- New dependencies: `sha2` 0.11.1, `base64` 0.23.1, `tauri-plugin-opener` 2.7.2,
+  `react-markdown` 10.1.0, `remark-gfm` 4.0.1.
 
 ### M0 Scaffold (2026-11-04)
 
@@ -239,6 +299,14 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Not yet verified
 
+- Windows title bar on Windows: drag, double-click, Aero Snap, resize from every edge,
+  shadow, maximized size (taskbar not covered), buttons in both themes, unfocused dimming,
+  the strip lining up with the sidebar (open and rail), close quits the process.
+- M8 by hand in the real window: paste a screenshot (Windows Snipping Tool, Linux), drop
+  a PDF from the file manager onto the description and onto Attachments (drop position
+  on HiDPI screens), images through `tm:` on Windows (`http://tm.localhost`), open and
+  save a copy, links open in the browser, prose styles in both themes, a backup folder
+  with `attachments/`, the remote upload of files, export + import on another machine.
 - M2 UI by hand in the real window (`pnpm dev`): layout, dark mode, CodeMirror, popover.
 - M6 by hand: Settings in the real window; dialogs (export, import, data folder + restart);
   a remote upload to Garage after creating the bucket/key (docs/backups.md); dark/light
@@ -273,7 +341,6 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Optional sans body font (one variable, `--font-sans`).
 - Board: Shift+Enter on a card to open the full page.
 
-- Markdown preview: needs a renderer dependency (`marked` + `DOMPurify` or `react-markdown`).
 - List view multi-select and bulk actions (plan section 6), via one `execute` batch.
 
 - Core: writer thread + reader pool if the M6 perf test needs it (ADR 002).
@@ -282,7 +349,12 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Sidebar: drag a project into another area (today: the project page's Area menu); keyboard
   reordering of projects; reorder saved views.
 - Bump `rusqlite` to 0.41 once `rusqlite_migration` supports it.
-- Purge soft-deleted rows after 30 days (plan section 3), designed with sync (ops expiry).
+- Purge soft-deleted rows after 30 days (plan section 3), designed with sync (ops expiry);
+  also delete attachment files no row uses any more (and their backup mirror copies).
+- Windows title bar: snap layout flyout on the maximize button (WM_NCHITTEST); macOS
+  overlay title bar.
+- Attachments: preview a PDF or image in the app (lightbox) instead of the default app;
+  attach from the capture window; resize pasted images.
 - Secret key in the OS keychain instead of `config.json`; signed installers.
 - Board: WIP limits are now editable (M6); quick in-board column add/rename could follow.
 - CSP in `tauri.conf.json` is a strict baseline; revisit when adding the markdown editor.

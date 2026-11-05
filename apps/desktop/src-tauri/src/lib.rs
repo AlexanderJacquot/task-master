@@ -10,12 +10,16 @@ mod config;
 use backups::BackupStatus;
 use config::{AppConfig, ConfigView, RemoteInput, RemoteView};
 
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use taskmaster_core::{
     Activity, Capture, Changed, Changes, Command, ExportFile, Id, ImportSummary, Snapshot, Store,
+    clean_file_name, mime_for,
 };
+use tauri::http::{Request, Response, StatusCode, header};
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_opener::OpenerExt;
 use tauri_specta::{Builder, Event, collect_commands, collect_events};
 
 /// Path of the generated TypeScript bindings, relative to this crate.
@@ -28,6 +32,7 @@ const CONFIG_FILE: &str = "config.json";
 /// Label of the small always-on-top window opened by the quick-capture hotkey
 /// (`tauri.conf.json`). It loads the same UI, which renders only the capture box there.
 const CAPTURE_WINDOW: &str = "capture";
+const MAIN_WINDOW: &str = "main";
 
 /// `Ctrl+Shift+Space` (plan section 6).
 fn capture_shortcut() -> Shortcut {
@@ -158,6 +163,171 @@ fn parse_capture(
 }
 
 // ---------------------------------------------------------------------------------------
+// Attachments (ADR 011): content goes in by hash here, then a `create_attachment` command
+// through `execute` records it on a task. The UI reads files through the `tm:` protocol.
+
+/// A file stored in the attachment folder, ready to be attached with `create_attachment`.
+#[derive(Debug, Serialize, specta::Type)]
+pub struct StoredUpload {
+    pub hash: String,
+    pub size: i64,
+    /// Cleaned file name.
+    pub name: String,
+    pub mime: String,
+}
+
+fn files_dir(state: &AppState) -> CommandResult<taskmaster_core::FileStore> {
+    with_store_ref(state, |s| s.files().cloned())
+}
+
+fn with_store_ref<T>(
+    state: &AppState,
+    f: impl FnOnce(&Store) -> taskmaster_core::Result<T>,
+) -> CommandResult<T> {
+    let store = state
+        .store
+        .lock()
+        .map_err(|_| internal("store lock poisoned"))?;
+    f(&store).map_err(Into::into)
+}
+
+/// Stores a file from disk (picked in a dialog or dropped on the window). The store lock
+/// is not held while copying.
+#[tauri::command]
+#[specta::specta]
+fn store_file(state: State<'_, AppState>, path: String) -> CommandResult<StoredUpload> {
+    let files = files_dir(&state)?;
+    let stored = files.put_file(&path)?;
+    let name = clean_file_name(
+        &std::path::Path::new(&path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    );
+    Ok(StoredUpload {
+        hash: stored.hash,
+        size: stored.size,
+        mime: mime_for(&name).to_owned(),
+        name,
+    })
+}
+
+/// Stores pasted content (base64), e.g. a screenshot from the clipboard. `mime` is what
+/// the clipboard reported; empty means unknown.
+#[tauri::command]
+#[specta::specta]
+fn store_data(
+    state: State<'_, AppState>,
+    name: String,
+    mime: String,
+    base64: String,
+) -> CommandResult<StoredUpload> {
+    if base64.len() as i64 > taskmaster_core::MAX_ATTACHMENT_BYTES / 3 * 4 + 4 {
+        return Err(invalid(format!(
+            "attachments are limited to {} MB",
+            taskmaster_core::MAX_ATTACHMENT_BYTES / 1_048_576
+        )));
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(base64.as_bytes())
+        .map_err(|e| invalid(format!("the pasted data is not valid base64: {e}")))?;
+    let files = files_dir(&state)?;
+    let stored = files.put_bytes(&bytes)?;
+    let name = clean_file_name(&name);
+    let mime = if mime.contains('/') {
+        mime
+    } else {
+        mime_for(&name).to_owned()
+    };
+    Ok(StoredUpload {
+        hash: stored.hash,
+        size: stored.size,
+        name,
+        mime,
+    })
+}
+
+/// A copy of the attachment under its own name in a temporary folder, so other apps
+/// recognize the type and edits there never touch the stored content.
+fn named_copy(state: &AppState, id: &str) -> CommandResult<PathBuf> {
+    let (source, name) = with_store_ref(state, |s| {
+        Ok((s.attachment_path(id)?, s.attachment(id)?.name))
+    })?;
+    let dir = std::env::temp_dir().join("task-master").join(id);
+    std::fs::create_dir_all(&dir).map_err(|e| internal(e.to_string()))?;
+    let target = dir.join(clean_file_name(&name));
+    std::fs::copy(&source, &target).map_err(|e| internal(format!("cannot copy: {e}")))?;
+    Ok(target)
+}
+
+/// Opens the attachment with the system's default app for its type.
+#[tauri::command]
+#[specta::specta]
+fn open_attachment(app: AppHandle, state: State<'_, AppState>, id: Id) -> CommandResult<()> {
+    let path = named_copy(&state, &id)?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|e| internal(format!("cannot open the file: {e}")))
+}
+
+/// Opens a link from a task description in the default browser or mail app. Only
+/// `http`, `https` and `mailto` links: the description is user text, not trusted code.
+#[tauri::command]
+#[specta::specta]
+fn open_url(app: AppHandle, url: String) -> CommandResult<()> {
+    let parsed = url::Url::parse(&url).map_err(|e| invalid(format!("not a link: {e}")))?;
+    if !matches!(parsed.scheme(), "http" | "https" | "mailto") {
+        return Err(invalid(format!(
+            "{}: links are not opened",
+            parsed.scheme()
+        )));
+    }
+    app.opener()
+        .open_url(parsed.as_str(), None::<&str>)
+        .map_err(|e| internal(format!("cannot open the link: {e}")))
+}
+
+/// Saves a copy of the attachment to `path` (chosen in a save dialog).
+#[tauri::command]
+#[specta::specta]
+fn save_attachment(state: State<'_, AppState>, id: Id, path: String) -> CommandResult<()> {
+    let source = with_store_ref(&state, |s| s.attachment_path(&id))?;
+    std::fs::copy(&source, &path)
+        .map(|_| ())
+        .map_err(|e| internal(format!("cannot write {path}: {e}")))
+}
+
+/// Serves attachment content to the UI: `tm://localhost/<attachment id>` (on Windows
+/// `http://tm.localhost/<id>`). Only ids of attachments resolve, never paths.
+fn serve_attachment(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
+    let empty = |status: StatusCode| {
+        Response::builder()
+            .status(status)
+            .body(Vec::new())
+            .unwrap_or_default()
+    };
+    let id = request.uri().path().trim_start_matches('/');
+    let Some(state) = app.try_state::<AppState>() else {
+        return empty(StatusCode::SERVICE_UNAVAILABLE);
+    };
+    let found = with_store_ref(&state, |s| Ok((s.attachment(id)?, s.attachment_path(id)?)));
+    let Ok((attachment, path)) = found else {
+        return empty(StatusCode::NOT_FOUND);
+    };
+    let Ok(body) = std::fs::read(&path) else {
+        return empty(StatusCode::NOT_FOUND);
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, attachment.mime)
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        // An id always names the same content.
+        .header(header::CACHE_CONTROL, "max-age=31536000, immutable")
+        .body(body)
+        .unwrap_or_else(|_| empty(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+// ---------------------------------------------------------------------------------------
 // Settings: data folder, backups, export and import
 
 fn config_view(state: &AppState) -> CommandResult<ConfigView> {
@@ -239,12 +409,16 @@ fn backup_now(state: State<'_, AppState>) -> CommandResult<BackupStatus> {
 /// One cycle: local daily backup, then (if enabled) upload of the newest one. The store
 /// lock is released before the network call.
 fn backup_cycle(state: &AppState, force_upload: bool) {
-    let (newest, device_id) = {
+    let (newest, device_id, files) = {
         let (Ok(store), Ok(mut status)) = (state.store.lock(), state.backup.lock()) else {
             return;
         };
         let newest = backups::local_cycle(&store, &state.data_dir, &mut status);
-        (newest, store.device_id().to_owned())
+        (
+            newest,
+            store.device_id().to_owned(),
+            store.files().ok().cloned(),
+        )
     };
     let remote = state
         .config
@@ -255,19 +429,41 @@ fn backup_cycle(state: &AppState, force_upload: bool) {
     if let (Some(remote), Some(file)) = (remote, newest) {
         let mut status = state.backup.lock().map(|s| s.clone()).unwrap_or_default();
         backups::upload(&remote, &device_id, &file, &mut status, force_upload);
+        if let (Some(files), None) = (&files, &status.remote_error) {
+            let dir = backups::backup_dir(&state.data_dir);
+            backups::upload_files(&remote, files, &dir, &mut status);
+        }
         if let Ok(mut shared) = state.backup.lock() {
             *shared = status;
         }
     }
 }
 
-/// Writes every user table to a JSON file.
+/// The attachment folder that goes with an export file: `tasks.json` → `tasks-attachments/`.
+fn export_files_dir(path: &str) -> PathBuf {
+    let path = std::path::Path::new(path);
+    let stem = path
+        .file_stem()
+        .map_or_else(|| "export".into(), |s| s.to_string_lossy());
+    path.with_file_name(format!("{stem}-attachments"))
+}
+
+/// Writes every user table to a JSON file, and the attachment files to a folder beside it.
 #[tauri::command]
 #[specta::specta]
 fn export_to(state: State<'_, AppState>, path: String) -> CommandResult<()> {
     let file = with_store(&state, |s| s.export())?;
     let text = serde_json::to_string_pretty(&file).map_err(|e| internal(e.to_string()))?;
-    std::fs::write(&path, text).map_err(|e| internal(format!("cannot write {path}: {e}")))
+    std::fs::write(&path, text).map_err(|e| internal(format!("cannot write {path}: {e}")))?;
+    let has_files = file
+        .tables
+        .get("attachments")
+        .and_then(|t| t.as_array())
+        .is_some_and(|rows| !rows.is_empty());
+    if has_files {
+        with_store(&state, |s| s.export_files_to(export_files_dir(&path)))?;
+    }
+    Ok(())
 }
 
 /// Replaces all data with an export file, after saving a backup of the current data.
@@ -280,8 +476,12 @@ fn import_from(state: State<'_, AppState>, path: String) -> CommandResult<Import
         .map_err(|e| invalid(format!("not a task-master export file: {e}")))?;
     let backup = backups::backup_dir(&state.data_dir)
         .join(format!("pre-import-{}.sqlite", taskmaster_core::now_ms()));
+    let files_dir = export_files_dir(&path);
     with_store(&state, |s| {
         s.backup_to(&backup)?;
+        if files_dir.is_dir() {
+            s.import_files_from(&files_dir)?;
+        }
         s.import(&file)
     })
 }
@@ -351,7 +551,12 @@ fn specta_builder() -> Builder<tauri::Wry> {
             backup_now,
             export_to,
             import_from,
-            set_data_dir
+            set_data_dir,
+            store_file,
+            store_data,
+            open_attachment,
+            save_attachment,
+            open_url
         ])
         .events(collect_events![StoreChanged, CaptureOpened])
         // Timestamps (Unix ms) and op sequence numbers stay far below 2^53.
@@ -374,6 +579,13 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Opens attachments in their default app (from Rust only; no JS permission).
+        .plugin(tauri_plugin_opener::init())
+        // File reads happen off the main thread so a large image never stalls the UI.
+        .register_asynchronous_uri_scheme_protocol("tm", |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            std::thread::spawn(move || responder.respond(serve_attachment(&app, &request)));
+        })
         // In-app updates (ADR 009): signed releases from GitHub, then a relaunch.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -387,6 +599,13 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(builder.invoke_handler())
+        // Closing the main window quits, even though the hidden capture window still
+        // exists (otherwise the app would linger without a window or a way to quit).
+        .on_window_event(|window, event| {
+            if window.label() == MAIN_WINDOW && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().exit(0);
+            }
+        })
         .setup(move |app| {
             builder.mount_events(app);
 
@@ -445,6 +664,22 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    /// `tauri.windows.conf.json` replaces the whole window list (JSON merge patch), so it
+    /// must match `tauri.conf.json` except for the frameless main window (ADR 012).
+    #[test]
+    fn windows_config_only_drops_the_main_frame() {
+        let read = |name: &str| -> serde_json::Value {
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/").to_owned() + name;
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        let base = read("tauri.conf.json")["app"]["windows"].clone();
+        let mut windows = read("tauri.windows.conf.json")["app"]["windows"].clone();
+        let main = windows[0].as_object_mut().unwrap();
+        assert_eq!(main.remove("decorations"), Some(serde_json::json!(false)));
+        assert_eq!(main.remove("shadow"), Some(serde_json::json!(true)));
+        assert_eq!(windows, base);
+    }
+
     /// Regenerates `bindings.ts`. CI runs this and fails if the file changed.
     #[test]
     fn export_bindings() {

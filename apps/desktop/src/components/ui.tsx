@@ -14,16 +14,16 @@ export const PRIORITIES: Array<{ value: Priority; label: string }> = [
 ];
 
 export const PRIORITY_STYLE: Record<Priority, string> = {
-  urgent: "text-red-700 dark:text-red-400",
-  high: "text-orange-700 dark:text-orange-400",
+  urgent: "text-urgent",
+  high: "text-high",
   normal: "text-ink-3",
   low: "text-ink-3",
 };
 
 /** Tinted pill backgrounds for urgent and high priority. */
 export const PRIORITY_PILL: Record<Priority, string> = {
-  urgent: "bg-red-700/12 text-red-800 dark:bg-red-400/15 dark:text-red-300",
-  high: "bg-orange-700/12 text-orange-800 dark:bg-orange-400/15 dark:text-orange-300",
+  urgent: "bg-urgent/14 text-urgent",
+  high: "bg-high/14 text-high",
   normal: "bg-hover text-ink-2",
   low: "bg-hover text-ink-3",
 };

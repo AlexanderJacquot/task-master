@@ -196,6 +196,25 @@ pub struct Tag {
     pub deleted_at: Option<Timestamp>,
 }
 
+/// A file attached to a task. The content is stored by hash outside the database (see
+/// [`crate::FileStore`]); several rows may share one file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct Attachment {
+    pub id: Id,
+    pub task_id: Id,
+    /// SHA-256 of the content, lowercase hex.
+    pub hash: String,
+    /// File name, without any folder.
+    pub name: String,
+    pub mime: String,
+    /// Bytes.
+    pub size: i64,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
 /// A saved board or list: a name plus a [`ViewSpec`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -339,4 +358,6 @@ pub struct Snapshot {
     pub statuses: Vec<Status>,
     pub tags: Vec<Tag>,
     pub views: Vec<View>,
+    /// Attachments of live tasks.
+    pub attachments: Vec<Attachment>,
 }

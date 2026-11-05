@@ -34,6 +34,9 @@ import { useShell } from "../shell/shellContext";
 import { ProjectTree } from "./ProjectTree";
 import { useProjectOrder } from "./useProjectOrder";
 
+/** Sidebar widths in px, open and folded to a rail (the Windows title bar matches them). */
+export const SIDEBAR_WIDTH = { open: 264, rail: 60 } as const;
+
 const rowClass =
   "group flex min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-[5px] text-ink-2 transition-colors hover:bg-hover hover:text-ink";
 const activeClass = "bg-selected text-ink";
@@ -390,7 +393,8 @@ export function Sidebar({
     return (
       <nav
         aria-label="Sidebar"
-        className="tex-sidebar flex w-[60px] shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-line bg-sidebar py-4"
+        style={{ width: SIDEBAR_WIDTH.rail }}
+        className="tex-sidebar flex shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-line bg-sidebar py-4"
       >
         <IconButton label="Expand sidebar" onClick={onToggleCollapsed} className="mb-1 size-8">
           <PanelLeftOpen size={17} />
@@ -443,7 +447,8 @@ export function Sidebar({
   return (
     <nav
       aria-label="Sidebar"
-      className="tex-sidebar flex w-[264px] shrink-0 flex-col overflow-y-auto border-r border-line bg-sidebar px-3 pt-4 pb-3"
+      style={{ width: SIDEBAR_WIDTH.open }}
+      className="tex-sidebar flex shrink-0 flex-col overflow-y-auto border-r border-line bg-sidebar px-3 pt-4 pb-3"
     >
       <div className="flex items-center gap-2 px-2 pb-3">
         <span className="flex-1 font-display text-[21px] tracking-wide text-accent">
@@ -502,7 +507,7 @@ export function Sidebar({
 
       <section className="mt-5">
         <div className="group/section flex items-center justify-between px-2.5 pb-1.5">
-          <span className="font-display text-[14px] tracking-wide text-ink-2">Projects</span>
+          <span className="font-display text-[14px] tracking-wide text-rubric">Projects</span>
           <IconButton label="New project" onClick={() => setAdding("project")} className="size-6">
             <Plus size={14} />
           </IconButton>

@@ -20,6 +20,7 @@ async function setup(data: { tasks?: Task[]; projects?: Project[]; epics?: Epic[
         epics: [],
         tags: [],
         views: [],
+        attachments: [],
         statuses: [],
       } as Changes;
     },

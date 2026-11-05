@@ -46,6 +46,16 @@ function describe(entry: Activity, lookup: Lookup): string[] {
       return ["Deleted"];
     case "restore":
       return ["Restored"];
+    case "attach":
+    case "detach":
+    case "rename_attachment": {
+      const field = entry.fields[0];
+      const name = (field && (JSON.parse(field.after) as string | null)) ?? "a file";
+      if (entry.kind === "attach") return [`Attached ${name}`];
+      if (entry.kind === "detach") return [`Removed the attachment ${name}`];
+      const before = (field && (JSON.parse(field.before) as string | null)) ?? "a file";
+      return [`Renamed the attachment ${before} → ${name}`];
+    }
     case "link":
     case "unlink": {
       const tagId = JSON.parse(entry.fields[0]?.after ?? "null") as string | null;

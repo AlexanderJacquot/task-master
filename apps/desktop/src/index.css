@@ -30,6 +30,11 @@
   --color-accent-hover: var(--tm-accent-hover);
   --color-accent-ink: var(--tm-accent-ink);
   --color-danger: var(--tm-danger);
+  /* Section and group headings: rubric red on parchment, bright ink in the dark. */
+  --color-rubric: var(--tm-rubric);
+  /* Priority tones (text; pills tint their background with the same color). */
+  --color-urgent: var(--tm-urgent);
+  --color-high: var(--tm-high);
   --color-white: var(--tm-white);
 
   --color-neutral-50: var(--tm-n-50);
@@ -75,6 +80,9 @@
   --tm-accent-hover: #74261a;
   --tm-accent-ink: #f8f1e1;
   --tm-danger: #a3301f;
+  --tm-rubric: #8b2e1f;
+  --tm-urgent: #a3301f;
+  --tm-high: #a8521c;
   --tm-white: #fbf6ea;
 
   --tm-n-50: #f8f0df;
@@ -120,6 +128,9 @@
   --tm-accent-hover: #e6b660;
   --tm-accent-ink: #1a1408;
   --tm-danger: #f2857a;
+  --tm-rubric: #d4d4da;
+  --tm-urgent: #f2857a;
+  --tm-high: #f0a868;
   --tm-white: #f5f5f7;
 
   --tm-n-50: #f5f5f7;
@@ -210,4 +221,136 @@ body {
 /* Native date inputs: keep the picker icon legible in dark mode. */
 input[type="date"]::-webkit-calendar-picker-indicator {
   @apply dark:invert;
+}
+
+/* Rendered task descriptions (MarkdownView). Colors come from the theme variables, so
+   both themes follow; sizes are relative to the container's font size. */
+.tm-prose {
+  color: var(--tm-ink);
+  overflow-wrap: anywhere;
+}
+.tm-prose > :first-child {
+  margin-top: 0;
+}
+.tm-prose > :last-child {
+  margin-bottom: 0;
+}
+.tm-prose :where(p, ul, ol, blockquote, pre, table, hr) {
+  margin: 0.6em 0;
+}
+.tm-prose :where(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  margin: 1em 0 0.4em;
+  color: var(--tm-rubric);
+}
+.tm-prose h1 {
+  font-size: 1.6em;
+}
+.tm-prose h2 {
+  font-size: 1.35em;
+}
+.tm-prose h3 {
+  font-size: 1.15em;
+}
+.tm-prose :where(h4, h5, h6) {
+  font-size: 1em;
+  color: var(--tm-ink-2);
+}
+.tm-prose a {
+  color: var(--tm-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tm-prose a:hover {
+  color: var(--tm-accent-hover);
+}
+.tm-prose :where(ul, ol) {
+  padding-left: 1.4em;
+}
+.tm-prose ul {
+  list-style: disc;
+}
+.tm-prose ol {
+  list-style: decimal;
+}
+.tm-prose li {
+  margin: 0.15em 0;
+}
+.tm-prose li::marker {
+  color: var(--tm-ink-3);
+}
+.tm-prose li.task-list-item {
+  list-style: none;
+  margin-left: -1.3em;
+}
+.tm-prose li.task-list-item > input[type="checkbox"] {
+  accent-color: var(--tm-accent);
+  margin-right: 0.45em;
+  vertical-align: -0.1em;
+  cursor: pointer;
+}
+.tm-prose li.task-list-item > input[type="checkbox"]:disabled {
+  cursor: default;
+}
+.tm-prose li.task-list-item:has(> input:checked) {
+  color: var(--tm-ink-3);
+  text-decoration: line-through;
+}
+.tm-prose blockquote {
+  border-left: 3px solid var(--tm-line-strong);
+  padding-left: 0.9em;
+  color: var(--tm-ink-2);
+  font-style: italic;
+}
+.tm-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--tm-hover);
+  border: 1px solid var(--tm-line);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
+}
+.tm-prose pre {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  line-height: 1.5;
+  background: var(--tm-hover);
+  border: 1px solid var(--tm-line);
+  border-radius: 8px;
+  padding: 0.7em 0.9em;
+  overflow-x: auto;
+}
+.tm-prose pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 1em;
+}
+.tm-prose hr {
+  border: 0;
+  border-top: 1px solid var(--tm-line-strong);
+}
+.tm-prose table {
+  border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: 0.92em;
+}
+.tm-prose :where(th, td) {
+  border: 1px solid var(--tm-line-strong);
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+.tm-prose th {
+  background: var(--tm-hover);
+  font-weight: 600;
+}
+.tm-prose :where(strong, b) {
+  font-weight: 650;
+}
+.tm-prose del {
+  color: var(--tm-ink-3);
 }

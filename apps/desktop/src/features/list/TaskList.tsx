@@ -59,7 +59,7 @@ export function TaskList({ rows, selectedId, collapsedTasks, onToggleGroup, ...r
                     {row.collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
                   </span>
                   <Dot color={row.group.color} className="mb-[5px]" />
-                  <span className="font-display text-[15px] tracking-wide text-ink-2">
+                  <span className="font-display text-[15px] tracking-wide text-rubric">
                     {row.group.label}
                   </span>
                   <span className="mb-px text-[12.5px] text-ink-3 tabular-nums">{row.count}</span>

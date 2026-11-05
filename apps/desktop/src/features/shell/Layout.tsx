@@ -7,11 +7,13 @@ import type { NewTaskInput } from "../../store/actions";
 import { useStoreState } from "../../store/context";
 import { CaptureBox } from "../capture/CaptureBox";
 import { CommandPalette } from "../palette/CommandPalette";
-import { Sidebar } from "../sidebar/Sidebar";
+import { SIDEBAR_WIDTH, Sidebar } from "../sidebar/Sidebar";
 import { useProjectOrder } from "../sidebar/useProjectOrder";
 import { TaskDetail } from "../task-detail/TaskDetail";
 import { ErrorToast } from "./ErrorToast";
 import { type ShellActions, ShellContext } from "./shellContext";
+import { TitleBar, tauriWindowControls, usesCustomTitleBar } from "./TitleBar";
+import { useFileDrop } from "./useFileDrop";
 import { useOpenTask } from "./useOpenTask";
 import { SHORTCUTS, useShortcuts } from "./useShortcuts";
 
@@ -81,6 +83,9 @@ export function Layout() {
     [openNewTask],
   );
 
+  // Windows: the frameless main window draws its own title bar (ADR 012).
+  const windowControls = useMemo(() => (usesCustomTitleBar() ? tauriWindowControls() : null), []);
+  useFileDrop();
   useShortcuts({
     closeDetail: () => {
       if (onTaskPage) router.history.back();
@@ -96,14 +101,27 @@ export function Layout() {
     go: (to) => void navigate({ to, search: {} }),
   });
 
+  const titleBar = (sidebarWidth: number) =>
+    windowControls && <TitleBar controls={windowControls} sidebarWidth={sidebarWidth} />;
+
   if (loadError) {
-    return <Centered>Could not open the task database: {loadError}</Centered>;
+    return (
+      <Framed titleBar={titleBar(0)}>
+        <Centered>Could not open the task database: {loadError}</Centered>
+      </Framed>
+    );
   }
-  if (!ready) return <Centered>Loading…</Centered>;
+  if (!ready) {
+    return (
+      <Framed titleBar={titleBar(0)}>
+        <Centered>Loading…</Centered>
+      </Framed>
+    );
+  }
 
   return (
     <ShellContext.Provider value={shell}>
-      <div className="tex-canvas flex h-full overflow-hidden bg-canvas">
+      <Framed titleBar={titleBar(collapsed ? SIDEBAR_WIDTH.rail : SIDEBAR_WIDTH.open)}>
         <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
         <main className="flex min-w-0 flex-1 flex-col">
           <Outlet />
@@ -119,7 +137,7 @@ export function Layout() {
             void navigate({ to: "/task/$taskId", params: { taskId: id }, search: {} })
           }
         />
-      </div>
+      </Framed>
     </ShellContext.Provider>
   );
 }
@@ -203,9 +221,19 @@ function ShortcutHelp({
   );
 }
 
+/** The window's content under the optional title bar. */
+function Framed({ titleBar, children }: { titleBar: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="tex-canvas flex h-full flex-col overflow-hidden bg-canvas">
+      {titleBar}
+      <div className="flex min-h-0 flex-1 overflow-hidden">{children}</div>
+    </div>
+  );
+}
+
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center bg-canvas p-8 text-ink-3">
+    <div className="flex h-full flex-1 items-center justify-center bg-canvas p-8 text-ink-3">
       {children}
     </div>
   );

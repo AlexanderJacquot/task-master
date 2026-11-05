@@ -2,6 +2,8 @@
 // `_Deserialize` = what Rust accepts.
 export type {
   Activity_Serialize as Activity,
+  Attachment_Serialize as Attachment,
+  AttachmentChange,
   BackupStatus_Serialize as BackupStatus,
   Capture_Serialize as Capture,
   Changed,
@@ -18,6 +20,7 @@ export type {
   ImportSummary,
   Layout,
   NameMatch_Serialize as NameMatch,
+  NewAttachment_Deserialize as NewAttachment,
   NewTask_Deserialize as NewTask,
   Priority,
   Project_Serialize as Project,
@@ -28,6 +31,7 @@ export type {
   Status_Serialize as Status,
   StatusCategory,
   StatusChange_Deserialize as StatusChange,
+  StoredUpload,
   Swimlane,
   Tag_Serialize as Tag,
   Task_Serialize as Task,

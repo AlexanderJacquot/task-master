@@ -247,7 +247,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
             {board.columns.map((column) => (
               <div key={column.status.id} className="flex w-[17.5rem] items-center gap-2 px-2.5">
                 <Dot color={column.status.color} />
-                <span className="font-display text-[15px] tracking-wide text-ink-2">
+                <span className="font-display text-[15px] tracking-wide text-rubric">
                   {column.status.name}
                 </span>
                 <span
@@ -271,7 +271,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
               className={cx("flex flex-col", !lanes && "min-h-0 flex-1")}
             >
               {lanes && (
-                <h2 className="flex items-center gap-2 px-9 pt-4 pb-1.5 font-display text-[15px] tracking-wide text-ink-2">
+                <h2 className="flex items-center gap-2 px-9 pt-4 pb-1.5 font-display text-[15px] tracking-wide text-rubric">
                   {lane.color !== null && <Dot color={lane.color} />}
                   {lane.label}
                 </h2>

@@ -29,6 +29,7 @@ function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
         epics: [],
         tags: [],
         views: [],
+        attachments: [],
         statuses: [],
       } as Changes;
     },

@@ -256,7 +256,7 @@ function Data() {
 
       <Section
         title="Backups"
-        hint="A copy of the database is made every day (the last 14 are kept), and before every import."
+        hint="A copy of the database is made every day (the last 14 are kept), and before every import. Attached files are copied into the backup folder's attachments/ as they are added."
       >
         <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
           <dt className="text-neutral-500">Folder</dt>
@@ -294,7 +294,7 @@ function Data() {
 
       <Section
         title="Export and import"
-        hint="Export writes everything to a JSON file. Import replaces all current data with a file's content: a backup is taken first, and it cannot be undone."
+        hint="Export writes everything to a JSON file, and attached files to a folder beside it (name-attachments). Import replaces all current data with a file's content (and takes in that folder when it is there): a backup is taken first, and it cannot be undone."
       >
         <div className="flex flex-wrap items-center gap-2">
           <HeaderButton
@@ -337,7 +337,10 @@ function Data() {
                     const path = confirmImport;
                     setConfirmImport(null);
                     const s = await settingsApi.importFrom(path);
-                    return `Imported ${s.tasks} tasks, ${s.projects} projects, ${s.epics} epics, ${s.tags} tags and ${s.views} views.`;
+                    const missing = s.missing_files
+                      ? ` ${s.missing_files} attached file(s) were not found: copy the "-attachments" folder next to the export file and import again.`
+                      : "";
+                    return `Imported ${s.tasks} tasks, ${s.projects} projects, ${s.epics} epics, ${s.tags} tags, ${s.views} views and ${s.attachments} attachments.${missing}`;
                   })
                 }
               >

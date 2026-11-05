@@ -30,7 +30,7 @@ export const commands = {
 	backupStatus: () => typedError<BackupStatus_Serialize, CommandError>(__TAURI_INVOKE("backup_status")),
 	/**  Runs a backup cycle now (today's backup if missing) and uploads the newest backup. */
 	backupNow: () => typedError<BackupStatus_Serialize, CommandError>(__TAURI_INVOKE("backup_now")),
-	/**  Writes every user table to a JSON file. */
+	/**  Writes every user table to a JSON file, and the attachment files to a folder beside it. */
 	exportTo: (path: string) => typedError<null, CommandError>(__TAURI_INVOKE("export_to", { path })),
 	/**  Replaces all data with an export file, after saving a backup of the current data. */
 	importFrom: (path: string) => typedError<ImportSummary, CommandError>(__TAURI_INVOKE("import_from", { path })),
@@ -39,6 +39,25 @@ export const commands = {
 	 *  existing database there is used as is; otherwise the current one is copied over.
 	 */
 	setDataDir: (path: string | null) => typedError<null, CommandError>(__TAURI_INVOKE("set_data_dir", { path })),
+	/**
+	 *  Stores a file from disk (picked in a dialog or dropped on the window). The store lock
+	 *  is not held while copying.
+	 */
+	storeFile: (path: string) => typedError<StoredUpload, CommandError>(__TAURI_INVOKE("store_file", { path })),
+	/**
+	 *  Stores pasted content (base64), e.g. a screenshot from the clipboard. `mime` is what
+	 *  the clipboard reported; empty means unknown.
+	 */
+	storeData: (name: string, mime: string, base64: string) => typedError<StoredUpload, CommandError>(__TAURI_INVOKE("store_data", { name, mime, base64 })),
+	/**  Opens the attachment with the system's default app for its type. */
+	openAttachment: (id: string) => typedError<null, CommandError>(__TAURI_INVOKE("open_attachment", { id })),
+	/**  Saves a copy of the attachment to `path` (chosen in a save dialog). */
+	saveAttachment: (id: string, path: string) => typedError<null, CommandError>(__TAURI_INVOKE("save_attachment", { id, path })),
+	/**
+	 *  Opens a link from a task description in the default browser or mail app. Only
+	 *  `http`, `https` and `mailto` links: the description is user text, not trusted code.
+	 */
+	openUrl: (url: string) => typedError<null, CommandError>(__TAURI_INVOKE("open_url", { url })),
 };
 
 /** Events */
@@ -57,7 +76,10 @@ export type Activity_Deserialize = {
 	/**  When it happened (wall-clock part of the HLC), Unix ms. */
 	at: number,
 	batch_id?: string | null,
-	/**  `create`, `update`, `delete`, `restore`, `link` (tag added) or `unlink` (tag removed). */
+	/**
+	 *  `create`, `update`, `delete`, `restore`, `link` (tag added), `unlink` (tag removed),
+	 *  or for attachments `attach`, `detach` and `rename_attachment` (field `name`).
+	 */
 	kind: string,
 	fields: FieldChange[],
 };
@@ -68,9 +90,58 @@ export type Activity_Serialize = {
 	/**  When it happened (wall-clock part of the HLC), Unix ms. */
 	at: number,
 	batch_id: string | null,
-	/**  `create`, `update`, `delete`, `restore`, `link` (tag added) or `unlink` (tag removed). */
+	/**
+	 *  `create`, `update`, `delete`, `restore`, `link` (tag added), `unlink` (tag removed),
+	 *  or for attachments `attach`, `detach` and `rename_attachment` (field `name`).
+	 */
 	kind: string,
 	fields: FieldChange[],
+};
+
+/**
+ *  A file attached to a task. The content is stored by hash outside the database (see
+ *  [`crate::FileStore`]); several rows may share one file.
+ */
+export type Attachment = Attachment_Serialize | Attachment_Deserialize;
+
+export type AttachmentChange = { name: string };
+
+/**
+ *  A file attached to a task. The content is stored by hash outside the database (see
+ *  [`crate::FileStore`]); several rows may share one file.
+ */
+export type Attachment_Deserialize = {
+	id: string,
+	task_id: string,
+	/**  SHA-256 of the content, lowercase hex. */
+	hash: string,
+	/**  File name, without any folder. */
+	name: string,
+	mime: string,
+	/**  Bytes. */
+	size: number,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**
+ *  A file attached to a task. The content is stored by hash outside the database (see
+ *  [`crate::FileStore`]); several rows may share one file.
+ */
+export type Attachment_Serialize = {
+	id: string,
+	task_id: string,
+	/**  SHA-256 of the content, lowercase hex. */
+	hash: string,
+	/**  File name, without any folder. */
+	name: string,
+	mime: string,
+	/**  Bytes. */
+	size: number,
+	created_at: number,
+	updated_at: number,
+	deleted_at: number | null,
 };
 
 /**  Shown in settings. */
@@ -169,6 +240,7 @@ export type Changes_Deserialize = {
 	tags: Tag_Deserialize[],
 	views: View_Deserialize[],
 	statuses: Status_Deserialize[],
+	attachments: Attachment_Deserialize[],
 };
 
 /**
@@ -185,6 +257,7 @@ export type Changes_Serialize = {
 	tags: Tag_Serialize[],
 	views: View_Serialize[],
 	statuses: Status_Serialize[],
+	attachments: Attachment_Serialize[],
 };
 
 /**  A user action. Several commands sent together form one undoable batch. */
@@ -217,7 +290,11 @@ export type Command_Deserialize = { type: "create_task"; task: NewTask_Deseriali
 /**  A workflow column (settings). */
 { type: "create_status"; status: NewStatus_Deserialize } | { type: "update_status"; id: string; changes: StatusChange_Deserialize[] } | 
 /**  Refused while tasks are in it, or when it is the last `todo` or `done` column. */
-{ type: "delete_status"; id: string } | { type: "create_view"; view: NewView_Deserialize } | { type: "update_view"; id: string; changes: ViewChange_Deserialize[] } | { type: "delete_view"; id: string };
+{ type: "delete_status"; id: string } | { type: "create_view"; view: NewView_Deserialize } | { type: "update_view"; id: string; changes: ViewChange_Deserialize[] } | { type: "delete_view"; id: string } | 
+/**  Records a file already stored by hash (see `FileStore`) as attached to a task. */
+{ type: "create_attachment"; attachment: NewAttachment_Deserialize } | { type: "update_attachment"; id: string; changes: AttachmentChange[] } | 
+/**  Detaches the file. Its content stays stored, so undo brings it back. */
+{ type: "delete_attachment"; id: string };
 
 /**  A user action. Several commands sent together form one undoable batch. */
 export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize } | { type: "update_task"; id: string; changes: TaskChange_Serialize[] } | 
@@ -239,7 +316,11 @@ export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize }
 /**  A workflow column (settings). */
 { type: "create_status"; status: NewStatus_Serialize } | { type: "update_status"; id: string; changes: StatusChange_Serialize[] } | 
 /**  Refused while tasks are in it, or when it is the last `todo` or `done` column. */
-{ type: "delete_status"; id: string } | { type: "create_view"; view: NewView_Serialize } | { type: "update_view"; id: string; changes: ViewChange_Serialize[] } | { type: "delete_view"; id: string };
+{ type: "delete_status"; id: string } | { type: "create_view"; view: NewView_Serialize } | { type: "update_view"; id: string; changes: ViewChange_Serialize[] } | { type: "delete_view"; id: string } | 
+/**  Records a file already stored by hash (see `FileStore`) as attached to a task. */
+{ type: "create_attachment"; attachment: NewAttachment_Serialize } | { type: "update_attachment"; id: string; changes: AttachmentChange[] } | 
+/**  Detaches the file. Its content stays stored, so undo brings it back. */
+{ type: "delete_attachment"; id: string };
 
 /**  What the settings screen shows: never the secret itself. */
 export type ConfigView = ConfigView_Serialize | ConfigView_Deserialize;
@@ -273,7 +354,7 @@ export type DueFilter =
 "none";
 
 /**  Kinds of entity front ends get back in [`crate::Changes`] and events. */
-export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status";
+export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment";
 
 export type EntityRef = {
 	kind: EntityKind,
@@ -338,6 +419,9 @@ export type ImportSummary = {
 	epics: number,
 	tags: number,
 	views: number,
+	attachments: number,
+	/**  Attachments whose file was not found (an export copied without its folder). */
+	missing_files: number,
 };
 
 export type Layout = "list" | "board";
@@ -363,6 +447,32 @@ export type NameMatch_Serialize = {
 	 *  asked about).
 	 */
 	id: string | null,
+};
+
+export type NewAttachment = NewAttachment_Serialize | NewAttachment_Deserialize;
+
+export type NewAttachment_Deserialize = {
+	id?: string | null,
+	task_id: string,
+	/**  From `FileStore::put_*`. */
+	hash: string,
+	/**  Folders are stripped. */
+	name: string,
+	/**  Guessed from the name when absent. */
+	mime?: string | null,
+	size: number,
+};
+
+export type NewAttachment_Serialize = {
+	id: string | null,
+	task_id: string,
+	/**  From `FileStore::put_*`. */
+	hash: string,
+	/**  Folders are stripped. */
+	name: string,
+	/**  Guessed from the name when absent. */
+	mime: string | null,
+	size: number,
 };
 
 export type NewEpic = NewEpic_Serialize | NewEpic_Deserialize;
@@ -578,6 +688,8 @@ export type Snapshot_Deserialize = {
 	statuses: Status_Deserialize[],
 	tags: Tag_Deserialize[],
 	views: View_Deserialize[],
+	/**  Attachments of live tasks. */
+	attachments: Attachment_Deserialize[],
 };
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
@@ -588,6 +700,8 @@ export type Snapshot_Serialize = {
 	statuses: Status_Serialize[],
 	tags: Tag_Serialize[],
 	views: View_Serialize[],
+	/**  Attachments of live tasks. */
+	attachments: Attachment_Serialize[],
 };
 
 export type SortBy = 
@@ -642,6 +756,15 @@ export type Status_Serialize = {
 
 /**  Emitted after every committed batch, whoever wrote it. */
 export type StoreChanged = Changed;
+
+/**  A file stored in the attachment folder, ready to be attached with `create_attachment`. */
+export type StoredUpload = {
+	hash: string,
+	size: number,
+	/**  Cleaned file name. */
+	name: string,
+	mime: string,
+};
 
 export type Swimlane = "none" | "project" | "epic" | "priority";
 

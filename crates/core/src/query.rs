@@ -6,7 +6,8 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter, types::ToSq
 
 use crate::error::{Error, Result};
 use crate::model::{
-    Epic, EpicState, Id, Priority, Project, Snapshot, Status, StatusCategory, Tag, Task, View,
+    Attachment, Epic, EpicState, Id, Priority, Project, Snapshot, Status, StatusCategory, Tag,
+    Task, View,
 };
 
 const TASK_COLS: &str = "id, project_id, epic_id, parent_id, status_id, title, description, \
@@ -19,6 +20,8 @@ const TAG_COLS: &str = "id, name, color, created_at, updated_at, deleted_at";
 const STATUS_COLS: &str =
     "id, name, category, color, rank, wip_limit, created_at, updated_at, deleted_at";
 const VIEW_COLS: &str = "id, name, spec, rank, created_at, updated_at, deleted_at";
+const ATTACHMENT_COLS: &str =
+    "id, task_id, hash, name, mime, size, created_at, updated_at, deleted_at";
 
 fn bad_value(col: usize, value: String) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(
@@ -106,6 +109,20 @@ fn tag_row(r: &Row<'_>) -> rusqlite::Result<Tag> {
         created_at: r.get(3)?,
         updated_at: r.get(4)?,
         deleted_at: r.get(5)?,
+    })
+}
+
+fn attachment_row(r: &Row<'_>) -> rusqlite::Result<Attachment> {
+    Ok(Attachment {
+        id: r.get(0)?,
+        task_id: r.get(1)?,
+        hash: r.get(2)?,
+        name: r.get(3)?,
+        mime: r.get(4)?,
+        size: r.get(5)?,
+        created_at: r.get(6)?,
+        updated_at: r.get(7)?,
+        deleted_at: r.get(8)?,
     })
 }
 
@@ -209,6 +226,17 @@ pub(crate) fn status(conn: &Connection, id: &str) -> Result<Status> {
     .ok_or_else(|| Error::not_found("status", id))
 }
 
+/// Any attachment, including soft-deleted ones.
+pub(crate) fn attachment(conn: &Connection, id: &str) -> Result<Attachment> {
+    conn.query_row(
+        &format!("SELECT {ATTACHMENT_COLS} FROM attachments WHERE id = ?1"),
+        [id],
+        attachment_row,
+    )
+    .optional()?
+    .ok_or_else(|| Error::not_found("attachment", id))
+}
+
 /// Every live entity, in display order (rank, then id).
 pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
     let mut tasks = query(
@@ -254,6 +282,17 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
             &[],
             view_row,
         )?,
+        // A deleted task keeps its attachment rows, so undoing the delete restores them.
+        attachments: query(
+            conn,
+            "SELECT a.id, a.task_id, a.hash, a.name, a.mime, a.size, a.created_at,
+                    a.updated_at, a.deleted_at
+             FROM attachments a JOIN tasks t ON t.id = a.task_id
+             WHERE a.deleted_at IS NULL AND t.deleted_at IS NULL
+             ORDER BY a.created_at, a.id",
+            &[],
+            attachment_row,
+        )?,
     })
 }
 
@@ -288,7 +327,8 @@ pub struct Activity {
     /// When it happened (wall-clock part of the HLC), Unix ms.
     pub at: crate::model::Timestamp,
     pub batch_id: Option<Id>,
-    /// `create`, `update`, `delete`, `restore`, `link` (tag added) or `unlink` (tag removed).
+    /// `create`, `update`, `delete`, `restore`, `link` (tag added), `unlink` (tag removed),
+    /// or for attachments `attach`, `detach` and `rename_attachment` (field `name`).
     pub kind: String,
     pub fields: Vec<FieldChange>,
 }
@@ -302,14 +342,25 @@ pub struct FieldChange {
     pub after: String,
 }
 
-/// A task's history, newest first. Bookkeeping-only updates (`updated_at`, rank
-/// rebalances) are skipped.
+/// A task's history, newest first, including its attachments. Bookkeeping-only updates
+/// (`updated_at`, rank rebalances) are skipped.
 pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Result<Vec<Activity>> {
-    type Row = (i64, String, Option<String>, String, String, String, String);
+    type Row = (
+        i64,
+        String,
+        Option<String>,
+        String,
+        String,
+        String,
+        String,
+        String,
+    );
     let rows: Vec<Row> = query(
         conn,
-        "SELECT seq, hlc, batch_id, entity, kind, patch, inverse FROM ops
-         WHERE entity IN ('task', 'task_tag') AND entity_id = ?1
+        "SELECT seq, hlc, batch_id, entity, entity_id, kind, patch, inverse FROM ops
+         WHERE (entity IN ('task', 'task_tag') AND entity_id = ?1)
+            OR (entity = 'attachment'
+                AND entity_id IN (SELECT id FROM attachments WHERE task_id = ?1))
          ORDER BY seq DESC LIMIT ?2",
         &[&task_id, &(limit * 2)],
         |r| {
@@ -321,37 +372,46 @@ pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Res
                 r.get(4)?,
                 r.get(5)?,
                 r.get(6)?,
+                r.get(7)?,
             ))
         },
     )?;
     let mut out = Vec::new();
-    for (seq, hlc, batch_id, entity, kind, patch, inverse) in rows {
+    for (seq, hlc, batch_id, entity, entity_id, kind, patch, inverse) in rows {
         let patch: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&patch)?;
         let inverse: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&inverse)?;
-        // A rank-only update without `updated_at` is a column rebalance, not a user edit.
-        if kind == "update" && patch.len() == 1 && patch.contains_key("rank") {
-            continue;
-        }
-        let fields: Vec<FieldChange> = patch
-            .iter()
-            .filter(|(k, _)| k.as_str() != "updated_at")
-            .filter(|_| kind != "create" || entity == "task_tag")
-            .map(|(k, after)| FieldChange {
-                field: k.clone(),
-                before: if entity == "task_tag" {
-                    "null".to_owned()
-                } else {
-                    inverse
-                        .get(k)
-                        .unwrap_or(&serde_json::Value::Null)
-                        .to_string()
-                },
-                after: after.to_string(),
-            })
-            .collect();
-        if fields.is_empty() && kind == "update" {
-            continue;
-        }
+        let (kind, fields) = if entity == "attachment" {
+            match attachment_entry(conn, &entity_id, &kind, &patch, &inverse)? {
+                Some(entry) => entry,
+                None => continue,
+            }
+        } else {
+            // A rank-only update without `updated_at` is a column rebalance, not a user edit.
+            if kind == "update" && patch.len() == 1 && patch.contains_key("rank") {
+                continue;
+            }
+            let fields: Vec<FieldChange> = patch
+                .iter()
+                .filter(|(k, _)| k.as_str() != "updated_at")
+                .filter(|_| kind != "create" || entity == "task_tag")
+                .map(|(k, after)| FieldChange {
+                    field: k.clone(),
+                    before: if entity == "task_tag" {
+                        "null".to_owned()
+                    } else {
+                        inverse
+                            .get(k)
+                            .unwrap_or(&serde_json::Value::Null)
+                            .to_string()
+                    },
+                    after: after.to_string(),
+                })
+                .collect();
+            if fields.is_empty() && kind == "update" {
+                continue;
+            }
+            (kind, fields)
+        };
         out.push(Activity {
             seq,
             at: hlc
@@ -368,4 +428,38 @@ pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Res
         }
     }
     Ok(out)
+}
+
+/// An attachment op as an activity entry: `attach` (created or restored), `detach`, or
+/// `rename_attachment`, with a `name` field.
+fn attachment_entry(
+    conn: &Connection,
+    id: &str,
+    kind: &str,
+    patch: &serde_json::Map<String, serde_json::Value>,
+    inverse: &serde_json::Map<String, serde_json::Value>,
+) -> Result<Option<(String, Vec<FieldChange>)>> {
+    let name = serde_json::Value::String(attachment(conn, id)?.name);
+    let null = serde_json::Value::Null;
+    let (kind, before, after) = match kind {
+        "create" | "restore" => ("attach", &null, patch.get("name").unwrap_or(&name)),
+        "delete" => ("detach", &null, &name),
+        "update" => match patch.get("name") {
+            Some(after) => (
+                "rename_attachment",
+                inverse.get("name").unwrap_or(&null),
+                after,
+            ),
+            None => return Ok(None),
+        },
+        _ => return Ok(None),
+    };
+    Ok(Some((
+        kind.to_owned(),
+        vec![FieldChange {
+            field: "name".to_owned(),
+            before: before.to_string(),
+            after: after.to_string(),
+        }],
+    )))
 }

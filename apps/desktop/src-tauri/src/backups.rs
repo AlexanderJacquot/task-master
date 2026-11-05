@@ -2,12 +2,14 @@
 //! (Garage in the homelab). Uploading is one-way and best effort: when the bucket is not
 //! reachable (off the LAN, server down), the next cycle tries again.
 
+use std::collections::HashSet;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusty_s3::{Bucket, Credentials, S3Action, UrlStyle};
 use serde::{Deserialize, Serialize};
-use taskmaster_core::{Store, now_ms, utc_date};
+use taskmaster_core::{FileStore, Store, now_ms, utc_date};
 
 use crate::config::RemoteBackup;
 
@@ -141,6 +143,63 @@ pub fn upload(
     }
 }
 
+/// Local record of the attachment files already in the bucket, one hash per line.
+const UPLOADED_FILES: &str = "attachments-uploaded.txt";
+
+fn file_key(remote: &RemoteBackup, hash: &str) -> String {
+    // Content-addressed, so devices share them instead of each storing its own copy.
+    if remote.prefix.is_empty() {
+        format!("attachments/{hash}")
+    } else {
+        format!("{}/attachments/{hash}", remote.prefix)
+    }
+}
+
+/// Uploads the attachment files not uploaded yet (ADR 011). Stops at the first failure;
+/// the next cycle resumes where it stopped.
+pub fn upload_files(
+    remote: &RemoteBackup,
+    files: &FileStore,
+    backup_dir: &Path,
+    status: &mut BackupStatus,
+) {
+    let record = backup_dir.join(UPLOADED_FILES);
+    let done: HashSet<String> = std::fs::read_to_string(&record)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let hashes = match files.hashes() {
+        Ok(h) => h,
+        Err(e) => {
+            status.remote_error = Some(format!("cannot list attachments: {e}"));
+            return;
+        }
+    };
+    for hash in hashes.into_iter().filter(|h| !done.contains(h)) {
+        let result = files
+            .path(&hash)
+            .map_err(|e| e.to_string())
+            .and_then(|path| std::fs::read(&path).map_err(|e| format!("cannot read {hash}: {e}")))
+            .and_then(|body| put(remote, &file_key(remote, &hash), &body))
+            .and_then(|()| {
+                std::fs::create_dir_all(backup_dir)
+                    .and_then(|()| {
+                        let mut f = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open(&record)?;
+                        writeln!(f, "{hash}")
+                    })
+                    .map_err(|e| format!("cannot record the upload of {hash}: {e}"))
+            });
+        if let Err(err) = result {
+            status.remote_error = Some(format!("attachment upload: {err}"));
+            return;
+        }
+    }
+}
+
 /// Checks the settings by writing a small probe object.
 pub fn test_remote(remote: &RemoteBackup, device_id: &str) -> Result<(), String> {
     let key = object_key(remote, device_id, "probe.txt");
@@ -161,6 +220,11 @@ mod tests {
         assert_eq!(
             object_key(&remote, "dev1", "daily-2026-11-04.sqlite"),
             "task-master/dev1/daily-2026-11-04.sqlite"
+        );
+        assert_eq!(
+            file_key(&remote, "abc"),
+            "task-master/attachments/abc",
+            "shared by every device"
         );
         remote.prefix.clear();
         assert_eq!(object_key(&remote, "dev1", "x"), "dev1/x");

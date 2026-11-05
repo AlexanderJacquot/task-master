@@ -11,6 +11,7 @@ mod db;
 mod dump;
 mod error;
 mod events;
+mod files;
 mod history;
 mod model;
 mod ops;
@@ -21,21 +22,23 @@ mod store;
 
 pub use clock::{new_id, now_ms, utc_date};
 pub use commands::{
-    Command, EpicChange, MAX_RANK_LEN, NewEpic, NewProject, NewStatus, NewTag, NewTask, NewView,
-    ProjectChange, StatusChange, TagChange, TaskChange, ViewChange,
+    AttachmentChange, Command, EpicChange, MAX_RANK_LEN, NewAttachment, NewEpic, NewProject,
+    NewStatus, NewTag, NewTask, NewView, ProjectChange, StatusChange, TagChange, TaskChange,
+    ViewChange,
 };
 pub use dump::{EXPORT_FORMAT, ExportFile, ImportSummary};
 pub use error::{Error, Result};
 pub use events::{Changed, EntityRef};
+pub use files::{FileStore, MAX_ATTACHMENT_BYTES, StoredFile, clean_file_name, is_hash, mime_for};
 pub use model::{
-    DueFilter, Epic, EpicState, GroupBy, Id, IsoDate, Layout, Priority, Project, Snapshot, SortBy,
-    Status, StatusCategory, Swimlane, Tag, Task, Timestamp, VIEW_SPEC_VERSION, View, ViewFilter,
-    ViewScope, ViewSpec,
+    Attachment, DueFilter, Epic, EpicState, GroupBy, Id, IsoDate, Layout, Priority, Project,
+    Snapshot, SortBy, Status, StatusCategory, Swimlane, Tag, Task, Timestamp, VIEW_SPEC_VERSION,
+    View, ViewFilter, ViewScope, ViewSpec,
 };
 pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};
 pub use query::{Activity, FieldChange};
-pub use store::{Changes, Store};
+pub use store::{ATTACHMENTS_DIR, Changes, Store};
 
 /// Crate version, reported to adapters for diagnostics.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

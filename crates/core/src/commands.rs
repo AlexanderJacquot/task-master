@@ -11,7 +11,7 @@ use crate::model::{
     ViewSpec,
 };
 use crate::ops::{Batch, Change, Entity, OpKind};
-use crate::{query, rank};
+use crate::{files, query, rank};
 
 /// A user action. Several commands sent together form one undoable batch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,6 +102,18 @@ pub enum Command {
         changes: Vec<ViewChange>,
     },
     DeleteView {
+        id: Id,
+    },
+    /// Records a file already stored by hash (see `FileStore`) as attached to a task.
+    CreateAttachment {
+        attachment: NewAttachment,
+    },
+    UpdateAttachment {
+        id: Id,
+        changes: Vec<AttachmentChange>,
+    },
+    /// Detaches the file. Its content stays stored, so undo brings it back.
+    DeleteAttachment {
         id: Id,
     },
 }
@@ -252,6 +264,27 @@ pub enum ViewChange {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewAttachment {
+    pub id: Option<Id>,
+    pub task_id: Id,
+    /// From `FileStore::put_*`.
+    pub hash: String,
+    /// Folders are stripped.
+    pub name: String,
+    /// Guessed from the name when absent.
+    pub mime: Option<String>,
+    pub size: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum AttachmentChange {
+    Name(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum TagChange {
     Name(String),
@@ -290,6 +323,9 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
         Command::CreateView { view } => create_view(b, view),
         Command::UpdateView { id, changes } => update_view(b, &id, changes),
         Command::DeleteView { id } => delete_view(b, &id),
+        Command::CreateAttachment { attachment } => create_attachment(b, attachment),
+        Command::UpdateAttachment { id, changes } => update_attachment(b, &id, changes),
+        Command::DeleteAttachment { id } => delete_attachment(b, &id),
     }
 }
 
@@ -1190,6 +1226,106 @@ fn live_view(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::View> {
         return Err(Error::not_found("view", id));
     }
     Ok(view)
+}
+
+// ---------------------------------------------------------------------------------------
+// Attachments
+
+fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
+    let id = client_id(n.id)?;
+    live_task(b, &n.task_id)?;
+    if !files::is_hash(&n.hash) {
+        return Err(Error::invalid(format!("'{}' is not a file hash", n.hash)));
+    }
+    if !(0..=files::MAX_ATTACHMENT_BYTES).contains(&n.size) {
+        return Err(Error::invalid(format!(
+            "attachments are limited to {} MB",
+            files::MAX_ATTACHMENT_BYTES / 1_048_576
+        )));
+    }
+    let name = files::clean_file_name(&n.name);
+    let mime = match n.mime.as_deref().map(str::trim) {
+        Some(m) if !m.is_empty() && m.contains('/') && !m.chars().any(char::is_whitespace) => {
+            m.to_ascii_lowercase()
+        }
+        _ => files::mime_for(&name).to_owned(),
+    };
+    b.apply(Change::new(
+        Entity::Attachment,
+        &id,
+        OpKind::Create,
+        json!({
+            "task_id": n.task_id,
+            "hash": n.hash,
+            "name": name,
+            "mime": mime,
+            "size": n.size,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))?;
+    touch_task(b, &n.task_id)
+}
+
+/// Bumps the task's `updated_at`, as tag changes do, so views of it refresh.
+fn touch_task(b: &mut Batch<'_, '_>, task_id: &str) -> Result<()> {
+    b.apply(Change::new(
+        Entity::Task,
+        task_id,
+        OpKind::Update,
+        json!({ "updated_at": b.now }),
+    ))
+}
+
+fn update_attachment(
+    b: &mut Batch<'_, '_>,
+    id: &str,
+    changes: Vec<AttachmentChange>,
+) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid(
+            "update_attachment needs at least one change",
+        ));
+    }
+    let task_id = live_attachment(b, id)?.task_id;
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            AttachmentChange::Name(n) => (
+                "name",
+                json!(files::clean_file_name(&non_empty("name", &n)?)),
+            ),
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Attachment,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))?;
+    touch_task(b, &task_id)
+}
+
+fn delete_attachment(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    let task_id = live_attachment(b, id)?.task_id;
+    b.apply(Change::new(
+        Entity::Attachment,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))?;
+    touch_task(b, &task_id)
+}
+
+fn live_attachment(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Attachment> {
+    let attachment = query::attachment(b.tx, id)?;
+    if attachment.deleted_at.is_some() {
+        return Err(Error::not_found("attachment", id));
+    }
+    Ok(attachment)
 }
 
 fn client_id(id: Option<Id>) -> Result<Id> {

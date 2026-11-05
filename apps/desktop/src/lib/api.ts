@@ -1,5 +1,16 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { commands, events } from "../bindings";
-import type { Activity, Capture, Changed, Changes, Command, CommandError, Snapshot } from "./types";
+import type {
+  Activity,
+  Capture,
+  Changed,
+  Changes,
+  Command,
+  CommandError,
+  Snapshot,
+  StoredUpload,
+} from "./types";
 
 /** A failure reported by the core (`invalid`, `not_found`, `internal`) or by Tauri itself. */
 export class ApiError extends Error {
@@ -34,7 +45,53 @@ export interface Api {
   /** Reads a quick-capture line (read-only). `today` is the local date. */
   parseCapture(text: string, today: string): Promise<Capture>;
   onChanged(handler: (event: Changed) => void): Promise<() => void>;
+  /** Attachments and links; absent where there is no file system (some tests). */
+  files?: FilesApi;
 }
+
+/**
+ * Attachment content and the OS around it (ADR 011). Storing content is not a data edit:
+ * the attachment row is then created through `execute`.
+ */
+export interface FilesApi {
+  /** Copies a file from disk into the attachment folder. */
+  storeFile(path: string): Promise<StoredUpload>;
+  /** Stores pasted bytes (base64). */
+  storeData(name: string, mime: string, base64: string): Promise<StoredUpload>;
+  /** Opens the attachment in its default app. */
+  open(id: string): Promise<void>;
+  /** Asks where to save a copy, then writes it. Resolves false when cancelled. */
+  saveCopy(id: string, name: string): Promise<boolean>;
+  /** Opens an http(s)/mailto link outside the app. */
+  openUrl(url: string): Promise<void>;
+  /** Asks for files to attach; empty when cancelled. */
+  pickFiles(): Promise<string[]>;
+  /** URL the webview loads the attachment from. */
+  url(id: string): string;
+}
+
+export const tauriFiles: FilesApi = {
+  storeFile: (path) => unwrap(commands.storeFile(path)),
+  storeData: (name, mime, base64) => unwrap(commands.storeData(name, mime, base64)),
+  open: async (id) => {
+    await unwrap(commands.openAttachment(id));
+  },
+  saveCopy: async (id, name) => {
+    const path = await save({ defaultPath: name });
+    if (!path) return false;
+    await unwrap(commands.saveAttachment(id, path));
+    return true;
+  },
+  openUrl: async (url) => {
+    await unwrap(commands.openUrl(url));
+  },
+  pickFiles: async () => {
+    const picked = await open({ multiple: true, directory: false });
+    if (!picked) return [];
+    return Array.isArray(picked) ? picked : [picked];
+  },
+  url: (id) => convertFileSrc(id, "tm"),
+};
 
 export const tauriApi: Api = {
   snapshot: () => unwrap(commands.snapshot()),
@@ -45,4 +102,5 @@ export const tauriApi: Api = {
   taskActivity: (taskId, limit) => unwrap(commands.taskActivity(taskId, limit)),
   parseCapture: (text, today) => unwrap(commands.parseCapture(text, today)),
   onChanged: (handler) => events.storeChanged.listen((event) => handler(event.payload)),
+  files: tauriFiles,
 };

@@ -10,7 +10,9 @@ The full plan is in docs/plan.md. Architecture decisions are in docs/adr/.
 - IDs are UUIDv7. Ordering uses fractional rank strings. Deletes are soft.
 - Timestamps: Unix ms UTC. Calendar dates: ISO YYYY-MM-DD strings.
 - IPC surface stays small: data edits only through execute; reads (snapshot, search,
-  task_activity, parse_capture) and settings/backup/export/import commands (ADR 007).
+  task_activity, parse_capture), settings/backup/export/import commands (ADR 007), and
+  attachment content in/out (store_file, store_data, open/save_attachment, open_url; the
+  `tm:` protocol serves files by attachment id; ADR 011).
 - apps/desktop/src/bindings.ts is generated. Never edit it by hand.
 
 ## Frontend

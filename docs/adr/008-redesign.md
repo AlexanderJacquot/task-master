@@ -25,6 +25,9 @@ and the `blue-*` scale (only ever used as the accent) to the accent ramp.
 - **Parchment** (the light theme, stored as `light`): warm vellum (#f3eada), brown-black
   ink (#2b2116), rubric red accent (#8b2e1f). Texture is CSS only (`tex-canvas`,
   `tex-sidebar`, `tex-sheet`: radial vignettes and faint repeating grain), no image.
+- Headings (list groups, board columns, section labels, description headings) use
+  `--tm-rubric`: rubric red on parchment, bright ink in the dark, as in the mockups.
+  Priorities use `--tm-urgent` and `--tm-high`, tuned per theme (added 2026-11-05).
 - "Follow the system" switches between the two. The `dark` class mechanism is unchanged.
 
 **Typefaces (bundled, offline).** MedievalSharp for titles, section headers and primary

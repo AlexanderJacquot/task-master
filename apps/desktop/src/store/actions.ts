@@ -4,6 +4,7 @@
 import { ranksForDrop } from "../lib/board";
 import { rankBetween } from "../lib/rank";
 import type {
+  Attachment,
   Capture,
   Command,
   Epic,
@@ -13,6 +14,7 @@ import type {
   ProjectChange,
   Status,
   StatusChange,
+  StoredUpload,
   Tag,
   Task,
   TaskChange,
@@ -688,4 +690,66 @@ export function deleteStatus(store: TaskStore, id: string) {
   const s = store.getState();
   if (!s.statuses.some((st) => st.id === id)) return Promise.resolve(null);
   return s.mutate([{ type: "delete_status", id }], { remove: { statuses: [id] } });
+}
+
+// ---------------------------------------------------------------------------------------
+// Attachments (ADR 011). The content is stored first (`FilesApi.store*`); these record it.
+
+/**
+ * Attaches stored files to a task in one undoable batch. Resolves to the new attachments
+ * (empty when the core refused them).
+ */
+export async function attachFiles(
+  store: TaskStore,
+  taskId: string,
+  uploads: StoredUpload[],
+): Promise<Attachment[]> {
+  const s = store.getState();
+  const task = s.tasks[taskId];
+  if (!task || !uploads.length) return [];
+  const now = Date.now();
+  const attachments: Attachment[] = uploads.map((u, i) => ({
+    id: uuidv7(now + i),
+    task_id: taskId,
+    hash: u.hash,
+    name: u.name,
+    mime: u.mime,
+    size: u.size,
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  }));
+  const changes = await s.mutate(
+    attachments.map((a) => ({
+      type: "create_attachment" as const,
+      attachment: {
+        id: a.id,
+        task_id: taskId,
+        hash: a.hash,
+        name: a.name,
+        mime: a.mime,
+        size: a.size,
+      },
+    })),
+    { upsert: { attachments, tasks: [{ ...task, updated_at: now }] } },
+  );
+  if (!changes) return [];
+  const confirmed = store.getState().attachments;
+  return attachments.map((a) => confirmed[a.id] ?? a);
+}
+
+export function renameAttachment(store: TaskStore, id: string, rawName: string) {
+  const s = store.getState();
+  const attachment = s.attachments[id];
+  const name = rawName.trim();
+  if (!attachment || !name || name === attachment.name) return Promise.resolve(null);
+  return s.mutate([{ type: "update_attachment", id, changes: [{ name }] }], {
+    upsert: { attachments: [{ ...attachment, name, updated_at: Date.now() }] },
+  });
+}
+
+export function deleteAttachment(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.attachments[id]) return Promise.resolve(null);
+  return s.mutate([{ type: "delete_attachment", id }], { remove: { attachments: [id] } });
 }

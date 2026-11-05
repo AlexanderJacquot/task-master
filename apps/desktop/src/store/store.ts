@@ -5,6 +5,7 @@
 import { createStore, type StoreApi } from "zustand/vanilla";
 import type { Api } from "../lib/api";
 import type {
+  Attachment,
   Changes,
   Command,
   Epic,
@@ -27,6 +28,8 @@ export interface Entities {
   views: ById<View>;
   /** Workflow order. */
   statuses: Status[];
+  /** Files attached to live tasks. */
+  attachments: ById<Attachment>;
 }
 
 /** Local edits shown before the core confirms them. */
@@ -38,6 +41,7 @@ export interface Optimistic {
     tags?: Tag[];
     views?: View[];
     statuses?: Status[];
+    attachments?: Attachment[];
   };
   remove?: {
     tasks?: string[];
@@ -45,6 +49,7 @@ export interface Optimistic {
     epics?: string[];
     views?: string[];
     statuses?: string[];
+    attachments?: string[];
   };
 }
 
@@ -66,8 +71,8 @@ export interface TaskStoreState extends Entities {
 
 export type TaskStore = StoreApi<TaskStoreState>;
 
-type Kind = "tasks" | "projects" | "epics" | "tags" | "views" | "statuses";
-const KINDS: Kind[] = ["tasks", "projects", "epics", "tags", "views", "statuses"];
+type Kind = "tasks" | "projects" | "epics" | "tags" | "views" | "statuses" | "attachments";
+const KINDS: Kind[] = ["tasks", "projects", "epics", "tags", "views", "statuses", "attachments"];
 
 /** Statuses are kept as an array in workflow order; every other kind as a map by id. */
 function mapOf(state: Entities, kind: Kind): ById<{ id: string }> {
@@ -94,6 +99,7 @@ function fromSnapshot(snapshot: Snapshot): Entities {
     tags: byId(snapshot.tags),
     views: byId(snapshot.views),
     statuses: snapshot.statuses,
+    attachments: byId(snapshot.attachments),
   };
 }
 
@@ -167,6 +173,7 @@ export function createTaskStore(api: Api): TaskStore {
       tags: {},
       views: {},
       statuses: [],
+      attachments: {},
       ready: false,
       loadError: null,
       lastError: null,

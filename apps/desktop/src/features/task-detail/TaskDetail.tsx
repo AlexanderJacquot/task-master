@@ -31,9 +31,11 @@ import { deleteTask, setParent, toggleDone, updateTask } from "../../store/actio
 import { useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
 import { ActivityFeed } from "./ActivityFeed";
+import { AttachmentList } from "./AttachmentList";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { SubtaskList } from "./SubtaskList";
 import { TagPicker } from "./TagPicker";
+import { useTaskAttachments, useTaskFiles } from "./useTaskFiles";
 
 type Variant = "panel" | "page";
 
@@ -100,6 +102,9 @@ function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
   const epics = useStoreState((s) => s.epics);
   const parent = useStoreState((s) => (task.parent_id ? s.tasks[task.parent_id] : undefined));
   const projectOptions = useProjectOptions(task);
+  const files = useTaskFiles(task.id);
+  const attachments = useTaskAttachments(task.id);
+  const attachmentsById = useStoreState((s) => s.attachments);
   const today = isoDate();
   const change = (changes: TaskChange[]) => void updateTask(store, task.id, changes);
   const pickedToday = task.today_on === today;
@@ -388,10 +393,22 @@ function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
           value={task.description}
           onSave={(description) => change([{ description }])}
           size={variant}
+          attachments={attachmentsById}
+          actions={files.actions}
+          upload={files.uploader}
         />
       </section>
+      <AttachmentList
+        attachments={attachments}
+        files={files}
+        page={page}
+        onInsert={(markdown) => {
+          const text = task.description.replace(/\s+$/, "");
+          change([{ description: text ? `${text}\n\n${markdown}` : markdown }]);
+        }}
+      />
       <section aria-label="Subtasks" className={page ? "pl-10" : undefined}>
-        <SectionLabel className={cx("mb-1.5 block", page && "text-[17px] text-accent")}>
+        <SectionLabel className={cx("mb-1.5 block", page && "text-[17px] text-rubric")}>
           Subtasks
         </SectionLabel>
         <SubtaskList parent={task} />

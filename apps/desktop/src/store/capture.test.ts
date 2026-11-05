@@ -29,6 +29,7 @@ async function setup() {
         epics: [],
         tags: [],
         views: [],
+        attachments: [],
         statuses: [],
       } as Changes;
     },

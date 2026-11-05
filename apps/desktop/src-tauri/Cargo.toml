@@ -18,6 +18,7 @@ taskmaster-core = { workspace = true, features = ["specta"] }
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8.3"
 tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-opener = "2.7.2"
 tauri-plugin-process = "2.4.0"
 tauri-plugin-updater = "2.14.0"
 # Remote backup to an S3-compatible store (Garage): request signing + a small HTTP client.
@@ -25,6 +26,8 @@ rusty-s3 = "0.10.2"
 ureq = "3.4.3"
 url = "2.5"
 serde_json = "1"
+# Pasted attachment content arrives base64-encoded (ADR 011); already in the tree.
+base64 = "0.23.1"
 # Release candidates: pinned exactly (plan, section 10 risks).
 specta = "=2.0.0-rc.26"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
