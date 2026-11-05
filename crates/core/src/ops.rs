@@ -114,6 +114,7 @@ impl Entity {
     pub(crate) fn columns(self) -> &'static [&'static str] {
         match self {
             Self::Task => &[
+                "dependency_ids",
                 "id",
                 "project_id",
                 "epic_id",
@@ -144,6 +145,8 @@ impl Entity {
                 "deleted_at",
             ],
             Self::Epic => &[
+                "color",
+                "icon",
                 "id",
                 "project_id",
                 "name",

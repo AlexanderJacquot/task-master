@@ -748,3 +748,34 @@ fn outside_writes_notify_subscribers_once() {
     assert!(events.try_recv().is_err());
     assert_eq!(desktop.snapshot().unwrap().tasks[0].title, "from the CLI");
 }
+
+#[test]
+fn dependencies_sync_and_survive_task_delete_restore() {
+    let mut a = store();
+    let mut b = store();
+    let mut server = store();
+    let prerequisite = add_task(&mut a, "Plan", None);
+    let dependent = add_task(&mut a, "Build", None);
+    update(
+        &mut a,
+        &dependent,
+        TaskChange::DependencyIds(vec![prerequisite.clone()]),
+    );
+    settle(&mut [&mut a, &mut b], &mut server);
+    assert_eq!(
+        task(&b, &dependent).dependency_ids,
+        vec![prerequisite.clone()]
+    );
+    a.execute(Command::DeleteTask {
+        id: prerequisite.clone(),
+    })
+    .unwrap();
+    settle(&mut [&mut a, &mut b], &mut server);
+    assert_eq!(
+        task(&b, &dependent).dependency_ids,
+        vec![prerequisite.clone()]
+    );
+    a.undo().unwrap();
+    settle(&mut [&mut a, &mut b], &mut server);
+    assert_eq!(task(&b, &dependent).dependency_ids, vec![prerequisite]);
+}

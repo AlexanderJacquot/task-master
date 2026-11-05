@@ -99,6 +99,7 @@ export async function createTask(
     today_on: input.today_on ?? null,
     estimate_min: null,
     rank,
+    dependency_ids: [],
     tag_ids: [...new Set(input.tag_ids ?? [])].sort(),
     created_at: now,
     updated_at: now,
@@ -167,7 +168,9 @@ export function applyTaskChanges(
   const next: Task = { ...task, updated_at: now };
   const categoryOf = (id: string) => statuses.find((s) => s.id === id)?.category;
   for (const change of changes) {
-    if ("title" in change && change.title !== undefined) next.title = change.title.trim();
+    if ("dependency_ids" in change && change.dependency_ids !== undefined)
+      next.dependency_ids = [...new Set(change.dependency_ids)].sort();
+    else if ("title" in change && change.title !== undefined) next.title = change.title.trim();
     else if ("description" in change && change.description !== undefined)
       next.description = change.description;
     else if ("priority" in change && change.priority !== undefined) next.priority = change.priority;
@@ -377,6 +380,8 @@ export async function createEpic(store: TaskStore, rawName: string): Promise<str
           description: null,
           target_date: null,
           state: "active",
+          color: null,
+          icon: null,
           rank,
           created_at: now,
           updated_at: now,
@@ -557,6 +562,8 @@ export function updateEpic(store: TaskStore, id: string, changes: EpicChange[]) 
   const next: Epic = { ...epic, updated_at: Date.now() };
   for (const c of changes) {
     if ("name" in c && c.name !== undefined) next.name = c.name.trim();
+    else if ("color" in c) next.color = c.color ?? null;
+    else if ("icon" in c) next.icon = c.icon ?? null;
     else if ("description" in c) next.description = c.description ?? null;
     else if ("target_date" in c) next.target_date = c.target_date ?? null;
     else if ("state" in c && c.state !== undefined) next.state = c.state;
@@ -672,6 +679,8 @@ export async function captureTask(
         description: null,
         target_date: null,
         state: "active",
+        color: null,
+        icon: null,
         rank,
         created_at: now,
         updated_at: now,

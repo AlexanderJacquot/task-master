@@ -427,12 +427,23 @@ fn epic_commands_roundtrip_and_delete_detaches_tasks() {
         Command::UpdateEpic {
             id: id.clone(),
             changes: vec![
+                EpicChange::Color(Some("#ef4444".into())),
+                EpicChange::Icon(Some("star".into())),
                 EpicChange::State(EpicState::Done),
                 EpicChange::Description(Some("All hosts".into())),
                 EpicChange::ProjectId(None),
             ],
         },
     );
+    let updated = s
+        .snapshot()
+        .unwrap()
+        .epics
+        .into_iter()
+        .find(|e| e.id == id)
+        .unwrap();
+    assert_eq!(updated.color.as_deref(), Some("#ef4444"));
+    assert_eq!(updated.icon.as_deref(), Some("star"));
     let t = add_task(
         &mut s,
         NewTask {
@@ -1533,4 +1544,61 @@ fn daily_backups_rotate_and_open_as_databases() {
 
     let copy = Store::open(backups.join("daily-2026-10-16.sqlite")).unwrap();
     assert_eq!(copy.snapshot().unwrap(), s.snapshot().unwrap());
+}
+
+#[test]
+fn dependency_chains_branch_join_and_undo() {
+    let mut s = store();
+    let a = add_task(&mut s, new_task("Plan"));
+    let b = add_task(&mut s, new_task("Build"));
+    let c = add_task(&mut s, new_task("Document"));
+    let d = add_task(&mut s, new_task("Ship"));
+    let set = |id: &str, deps: Vec<String>| Command::UpdateTask {
+        id: id.into(),
+        changes: vec![TaskChange::DependencyIds(deps)],
+    };
+    s.execute(set(&b.id, vec![a.id.clone(), a.id.clone()]))
+        .unwrap();
+    s.execute(set(&c.id, vec![a.id.clone()])).unwrap();
+    s.execute(set(&d.id, vec![b.id.clone(), c.id.clone()]))
+        .unwrap();
+    assert_eq!(task(&s, &b.id).dependency_ids, vec![a.id.clone()]);
+    assert_eq!(task(&s, &d.id).dependency_ids.len(), 2);
+    assert!(s.execute(set(&a.id, vec![d.id.clone()])).is_err());
+    assert!(s.execute(set(&a.id, vec![a.id.clone()])).is_err());
+    assert!(s.execute(set(&a.id, vec!["missing".into()])).is_err());
+    assert!(task(&s, &a.id).dependency_ids.is_empty());
+    s.undo().unwrap();
+    assert!(task(&s, &d.id).dependency_ids.is_empty());
+    s.redo().unwrap();
+    assert_eq!(task(&s, &d.id).dependency_ids.len(), 2);
+    s.execute(set(&d.id, vec![c.id.clone()])).unwrap();
+    assert_eq!(task(&s, &d.id).dependency_ids, vec![c.id]);
+    // Export/import preserves dependency data and the migration default covers old tasks.
+    let exported = s.export().unwrap();
+    let mut imported = store();
+    imported.import(&exported).unwrap();
+    assert_eq!(task(&imported, &b.id).dependency_ids, vec![a.id]);
+}
+
+#[test]
+fn dependency_batch_rejects_cycles_atomically() {
+    let mut s = store();
+    let a = add_task(&mut s, new_task("A"));
+    let b = add_task(&mut s, new_task("B"));
+    assert!(
+        s.execute_all(vec![
+            Command::UpdateTask {
+                id: a.id.clone(),
+                changes: vec![TaskChange::DependencyIds(vec![b.id.clone()])]
+            },
+            Command::UpdateTask {
+                id: b.id.clone(),
+                changes: vec![TaskChange::DependencyIds(vec![a.id.clone()])]
+            },
+        ])
+        .is_err()
+    );
+    assert!(task(&s, &a.id).dependency_ids.is_empty());
+    assert!(task(&s, &b.id).dependency_ids.is_empty());
 }

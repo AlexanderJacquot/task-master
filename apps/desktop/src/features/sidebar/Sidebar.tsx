@@ -8,7 +8,7 @@ import {
   ChartNoAxesCombined,
   ChevronDown,
   ChevronRight,
-  Diamond,
+  GitBranch,
   Hash,
   Layers,
   MoreHorizontal,
@@ -45,6 +45,7 @@ import { useUpdates } from "../../lib/updater";
 import { inView, isOpen, type ViewContext } from "../../lib/views";
 import { createEpic, createProject, deleteProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import { PROJECT_COLORS } from "../organize/projectColors";
 import { TagMenu } from "../organize/TagMenu";
@@ -505,6 +506,9 @@ export function Sidebar({
         <RailLink to="/all" label="All tasks">
           <Layers size={18} />
         </RailLink>
+        <RailLink to="/lineage" label="Lineage">
+          <GitBranch size={18} />
+        </RailLink>
         <RailLink to="/metrics" label="Metrics">
           <ChartNoAxesCombined size={18} />
         </RailLink>
@@ -596,6 +600,9 @@ export function Sidebar({
         <NavItem to="/all" icon={<Layers size={17} className="shrink-0" />}>
           All tasks
         </NavItem>
+        <NavItem to="/lineage" icon={<GitBranch size={17} className="shrink-0" />}>
+          Lineage
+        </NavItem>
         <NavItem to="/metrics" icon={<ChartNoAxesCombined size={17} className="shrink-0" />}>
           Metrics
         </NavItem>
@@ -678,7 +685,7 @@ export function Sidebar({
               key={epic.id}
               to="/epic/$epicId"
               params={{ epicId: epic.id }}
-              icon={<Diamond size={13} className="shrink-0 text-violet-700 dark:text-violet-300" />}
+              icon={<EpicMark epic={epic} />}
               title={`${progress.done} of ${progress.total} done`}
             >
               <span className="flex items-center gap-2">
@@ -700,7 +707,7 @@ export function Sidebar({
             key={epic.id}
             to="/epic/$epicId"
             params={{ epicId: epic.id }}
-            icon={<Diamond size={13} className="shrink-0 text-ink-3" />}
+            icon={<EpicMark epic={epic} />}
           >
             <span className="text-ink-3">
               {epic.name} · {epic.state}

@@ -101,13 +101,13 @@ export function TimeGrid({
                   FOCUS,
                 )}
               >
-                <span className="text-[12px] tracking-wide text-ink-3 uppercase">
+                <span className="text-[14px] tracking-wide text-rubric uppercase">
                   {date.toLocaleDateString(undefined, { weekday: "short" })}
                 </span>
                 <span
                   className={cx(
-                    "font-display text-[19px] leading-7",
-                    isToday ? "rounded-full bg-accent px-1.5 text-accent-ink" : "text-ink",
+                    "font-display text-[22px] leading-8",
+                    isToday ? "rounded-full bg-accent px-1.5 text-accent-ink" : "text-rubric",
                   )}
                 >
                   {date.getDate()}

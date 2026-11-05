@@ -160,6 +160,7 @@ pub struct NewTask {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum TaskChange {
+    DependencyIds(Vec<Id>),
     Title(String),
     Description(String),
     Priority(Priority),
@@ -205,6 +206,8 @@ pub enum ProjectChange {
 pub struct NewEpic {
     pub id: Option<Id>,
     pub name: String,
+    pub color: Option<String>,
+    pub icon: Option<String>,
     pub project_id: Option<Id>,
     pub description: Option<String>,
     pub target_date: Option<IsoDate>,
@@ -215,6 +218,8 @@ pub struct NewEpic {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
 pub enum EpicChange {
+    Color(Option<String>),
+    Icon(Option<String>),
     Name(String),
     Description(Option<String>),
     TargetDate(Option<IsoDate>),
@@ -460,6 +465,28 @@ fn update_task(b: &mut Batch<'_, '_>, id: &str, changes: Vec<TaskChange>) -> Res
     let mut new_epic = None;
     for change in changes {
         let (key, value) = match change {
+            TaskChange::DependencyIds(mut ids) => {
+                ids.sort();
+                ids.dedup();
+                for dependency in &ids {
+                    if !task.dependency_ids.contains(dependency) {
+                        live_task(b, dependency)?;
+                    }
+                    let cycle: bool = b.tx.query_row(
+                        "WITH RECURSIVE ancestors(id) AS (
+                            SELECT ?1 UNION
+                            SELECT j.value FROM tasks t, json_each(t.dependency_ids) j
+                            JOIN ancestors a ON t.id = a.id
+                        ) SELECT EXISTS(SELECT 1 FROM ancestors WHERE id = ?2)",
+                        rusqlite::params![dependency, id],
+                        |r| r.get(0),
+                    )?;
+                    if cycle {
+                        return Err(Error::invalid("Dependencies cannot form a circular chain"));
+                    }
+                }
+                ("dependency_ids", json!(serde_json::to_string(&ids)?))
+            }
             TaskChange::Title(t) => ("title", json!(non_empty("title", &t)?)),
             TaskChange::Description(d) => ("description", json!(d)),
             TaskChange::Priority(p) => ("priority", json!(p.to_db())),
@@ -842,6 +869,8 @@ fn create_epic(b: &mut Batch<'_, '_>, n: NewEpic) -> Result<()> {
         json!({
             "project_id": n.project_id,
             "name": name,
+            "color": n.color,
+            "icon": n.icon,
             "description": n.description,
             "target_date": n.target_date,
             "state": EpicState::Active.as_str(),
@@ -861,6 +890,8 @@ fn update_epic(b: &mut Batch<'_, '_>, id: &str, changes: Vec<EpicChange>) -> Res
     let mut patch = Map::new();
     for change in changes {
         let (key, value) = match change {
+            EpicChange::Color(c) => ("color", json!(c)),
+            EpicChange::Icon(i) => ("icon", json!(i)),
             EpicChange::Name(n) => ("name", json!(non_empty("name", &n)?)),
             EpicChange::Description(d) => ("description", json!(d)),
             EpicChange::TargetDate(d) => {

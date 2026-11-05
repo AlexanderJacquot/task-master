@@ -558,9 +558,9 @@ export type Epic = Epic_Serialize | Epic_Deserialize;
 
 export type EpicChange = EpicChange_Serialize | EpicChange_Deserialize;
 
-export type EpicChange_Deserialize = ({ name: string }) & { description?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ description?: string | null }) & { name?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ target_date?: string | null }) & { description?: never; name?: never; project_id?: never; rank?: never; state?: never } | ({ state: EpicState }) & { description?: never; name?: never; project_id?: never; rank?: never; target_date?: never } | ({ project_id?: string | null }) & { description?: never; name?: never; rank?: never; state?: never; target_date?: never } | ({ rank: string }) & { description?: never; name?: never; project_id?: never; state?: never; target_date?: never };
+export type EpicChange_Deserialize = ({ color?: string | null }) & { description?: never; icon?: never; name?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ icon?: string | null }) & { color?: never; description?: never; name?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ name: string }) & { color?: never; description?: never; icon?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ description?: string | null }) & { color?: never; icon?: never; name?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ target_date?: string | null }) & { color?: never; description?: never; icon?: never; name?: never; project_id?: never; rank?: never; state?: never } | ({ state: EpicState }) & { color?: never; description?: never; icon?: never; name?: never; project_id?: never; rank?: never; target_date?: never } | ({ project_id?: string | null }) & { color?: never; description?: never; icon?: never; name?: never; rank?: never; state?: never; target_date?: never } | ({ rank: string }) & { color?: never; description?: never; icon?: never; name?: never; project_id?: never; state?: never; target_date?: never };
 
-export type EpicChange_Serialize = ({ name: string }) & { description?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ description: string | null }) & { name?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ target_date: string | null }) & { description?: never; name?: never; project_id?: never; rank?: never; state?: never } | ({ state: EpicState }) & { description?: never; name?: never; project_id?: never; rank?: never; target_date?: never } | ({ project_id: string | null }) & { description?: never; name?: never; rank?: never; state?: never; target_date?: never } | ({ rank: string }) & { description?: never; name?: never; project_id?: never; state?: never; target_date?: never };
+export type EpicChange_Serialize = ({ color: string | null }) & { description?: never; icon?: never; name?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ icon: string | null }) & { color?: never; description?: never; name?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ name: string }) & { color?: never; description?: never; icon?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ description: string | null }) & { color?: never; icon?: never; name?: never; project_id?: never; rank?: never; state?: never; target_date?: never } | ({ target_date: string | null }) & { color?: never; description?: never; icon?: never; name?: never; project_id?: never; rank?: never; state?: never } | ({ state: EpicState }) & { color?: never; description?: never; icon?: never; name?: never; project_id?: never; rank?: never; target_date?: never } | ({ project_id: string | null }) & { color?: never; description?: never; icon?: never; name?: never; rank?: never; state?: never; target_date?: never } | ({ rank: string }) & { color?: never; description?: never; icon?: never; name?: never; project_id?: never; state?: never; target_date?: never };
 
 export type EpicState = "active" | "done" | "dropped";
 
@@ -570,6 +570,8 @@ export type Epic_Deserialize = {
 	/**  Optional home project. */
 	project_id?: string | null,
 	name: string,
+	color?: string | null,
+	icon?: string | null,
 	description?: string | null,
 	target_date?: string | null,
 	state: EpicState,
@@ -585,6 +587,8 @@ export type Epic_Serialize = {
 	/**  Optional home project. */
 	project_id: string | null,
 	name: string,
+	color: string | null,
+	icon: string | null,
 	description: string | null,
 	target_date: string | null,
 	state: EpicState,
@@ -689,6 +693,8 @@ export type NewEpic = NewEpic_Serialize | NewEpic_Deserialize;
 export type NewEpic_Deserialize = {
 	id?: string | null,
 	name?: string,
+	color?: string | null,
+	icon?: string | null,
 	project_id?: string | null,
 	description?: string | null,
 	target_date?: string | null,
@@ -698,6 +704,8 @@ export type NewEpic_Deserialize = {
 export type NewEpic_Serialize = {
 	id: string | null,
 	name: string,
+	color: string | null,
+	icon: string | null,
 	project_id: string | null,
 	description: string | null,
 	target_date: string | null,
@@ -1114,20 +1122,22 @@ export type Task = Task_Serialize | Task_Deserialize;
 
 export type TaskChange = TaskChange_Serialize | TaskChange_Deserialize;
 
-export type TaskChange_Deserialize = ({ title: string }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; today_on?: never } | ({ description: string }) & { due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ priority: Priority }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ due_date?: string | null }) & { description?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ today_on?: string | null }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never } | ({ estimate_min?: number | null }) & { description?: never; due_date?: never; epic_id?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | 
+export type TaskChange_Deserialize = ({ dependency_ids: string[] }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ title: string }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; today_on?: never } | ({ description: string }) & { dependency_ids?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ priority: Priority }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ due_date?: string | null }) & { dependency_ids?: never; description?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ today_on?: string | null }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never } | ({ estimate_min?: number | null }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | 
 /**  Subtasks that shared the old project follow. */
-({ project_id?: string | null }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | 
+({ project_id?: string | null }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | 
 /**  Subtasks that shared the old epic follow. */
-({ epic_id?: string | null }) & { description?: never; due_date?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ status_id: string }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; title?: never; today_on?: never } | ({ rank: string }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; status_id?: never; title?: never; today_on?: never };
+({ epic_id?: string | null }) & { dependency_ids?: never; description?: never; due_date?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ status_id: string }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; title?: never; today_on?: never } | ({ rank: string }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; status_id?: never; title?: never; today_on?: never };
 
-export type TaskChange_Serialize = ({ title: string }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; today_on?: never } | ({ description: string }) & { due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ priority: Priority }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ due_date: string | null }) & { description?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ today_on: string | null }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never } | ({ estimate_min: number | null }) & { description?: never; due_date?: never; epic_id?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | 
+export type TaskChange_Serialize = ({ dependency_ids: string[] }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ title: string }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; today_on?: never } | ({ description: string }) & { dependency_ids?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ priority: Priority }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ due_date: string | null }) & { dependency_ids?: never; description?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ today_on: string | null }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never } | ({ estimate_min: number | null }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | 
 /**  Subtasks that shared the old project follow. */
-({ project_id: string | null }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | 
+({ project_id: string | null }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | 
 /**  Subtasks that shared the old epic follow. */
-({ epic_id: string | null }) & { description?: never; due_date?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ status_id: string }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; title?: never; today_on?: never } | ({ rank: string }) & { description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; status_id?: never; title?: never; today_on?: never };
+({ epic_id: string | null }) & { dependency_ids?: never; description?: never; due_date?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; status_id?: never; title?: never; today_on?: never } | ({ status_id: string }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; rank?: never; title?: never; today_on?: never } | ({ rank: string }) & { dependency_ids?: never; description?: never; due_date?: never; epic_id?: never; estimate_min?: never; priority?: never; project_id?: never; status_id?: never; title?: never; today_on?: never };
 
 /**  A unit of work. A task with `parent_id` set is a subtask. */
 export type Task_Deserialize = {
+	/**  Prerequisites of this task, independent of subtask hierarchy. */
+	dependency_ids?: string[],
 	id: string,
 	/**  `None` means the task is in the Inbox. */
 	project_id?: string | null,
@@ -1153,6 +1163,8 @@ export type Task_Deserialize = {
 
 /**  A unit of work. A task with `parent_id` set is a subtask. */
 export type Task_Serialize = {
+	/**  Prerequisites of this task, independent of subtask hierarchy. */
+	dependency_ids: string[],
 	id: string,
 	/**  `None` means the task is in the Inbox. */
 	project_id: string | null,

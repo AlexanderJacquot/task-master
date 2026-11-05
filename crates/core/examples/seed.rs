@@ -76,6 +76,8 @@ fn main() -> taskmaster_core::Result<()> {
             epic: NewEpic {
                 id: Some(id.clone()),
                 name: format!("Epic {}", i + 1),
+                color: None,
+                icon: None,
                 project_id: None,
                 description: None,
                 target_date: None,

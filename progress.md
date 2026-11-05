@@ -35,6 +35,56 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Task dependency lineage (2026-11-05)
+
+- Added Lineage to the expanded sidebar and collapsed rail. The graph shows task
+  prerequisites flowing left to right through chains, branches and joins, with project
+  and connected-task filters, zoom, scroll, selection and task-detail access.
+- Select a task to add/search/remove prerequisites or dependents, or use “Connect on
+  graph” and choose its dependent. Edits use the existing optimistic command path and
+  undo/redo. Visible graph nodes and long relationship lists are virtualized.
+- Migration 0009 adds dependency IDs to tasks; updates validate live endpoints and
+  reject self-links and cycles atomically in core. Dependencies persist through
+  export/import and sync; deleting a prerequisite preserves its link for undo/restore.
+- Covered graph layout, editing, branches/joins, cycle prevention, failed-save rollback,
+  core undo/redo, export/import and sync with automated tests. Full Rust suite, Clippy,
+  TypeScript, Biome, all 247 frontend tests and the Vite production build pass. Native
+  desktop visual and pointer checks remain manual.
+
+### All tasks search row (2026-11-05)
+
+- Split the All tasks creation row equally with a title/description search field and
+  Search button on wide windows; stack the controls on smaller windows. Search filters
+  list and board results through the existing core search, respects view filters, and
+  clears back to all tasks. Added loading, empty and error states and stale-response guards.
+- Interaction tests cover submission, clearing, board filtering, failures and stale responses.
+- Verified: 243 frontend tests passed; TypeScript, Biome and diff checks passed.
+
+### Sidebar description drop caps (2026-11-05)
+
+- Applied the full task page’s rubric drop caps to rendered descriptions in the right
+  sidebar, scaled to its existing text size. Editing still uses the plain markdown editor.
+
+### Board resize handle visibility (2026-11-05)
+
+- Gave column resize handles a persistent subtle rubric red accent, stronger on hover
+  and keyboard focus, so the drag target is visible before interacting.
+
+### Calendar date typography (2026-11-05)
+
+- Slightly enlarged weekday labels and date numbers in day/week and month views;
+  used the existing rubric red for weekdays and regular dates. Today keeps its filled
+  accent highlight and dates outside the current month remain muted.
+
+### Epic appearance (2026-11-05)
+
+- Added persistent epic color and shape choices on the epic page, shown in the sidebar,
+  page title, board cards and task epic selector. Default remains the violet diamond.
+- Added migration 0008 and command fields with undo/redo and sync support; regenerated
+  bindings. UI interaction and core roundtrip tests cover appearance updates.
+- Verified: 240 frontend tests passed, full Rust test suite passed, TypeScript,
+  Biome and Clippy passed.
+
 ### Complete v0.5.0 and server Calendar (2026-11-05)
 
 - Merged `worktree-capture-expand` (three commits); every local and fetched remote

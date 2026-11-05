@@ -17,6 +17,8 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0005_time_blocks.sql")),
     M::up(include_str!("../migrations/0006_calendar_sync.sql")),
     M::up(include_str!("../migrations/0007_sync.sql")),
+    M::up(include_str!("../migrations/0008_epic_appearance.sql")),
+    M::up(include_str!("../migrations/0009_task_dependencies.sql")),
 ];
 
 pub(crate) fn migrations() -> Migrations<'static> {

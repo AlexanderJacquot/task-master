@@ -45,7 +45,7 @@ export function MonthGrid({
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="grid grid-cols-7 border-b border-line">
         {weekdays.map((name) => (
-          <div key={name} className="px-2 py-1.5 text-[12px] tracking-wide text-ink-3 uppercase">
+          <div key={name} className="px-2 py-1.5 text-[14px] tracking-wide text-rubric uppercase">
             {name}
           </div>
         ))}
@@ -129,11 +129,11 @@ function MonthCell({
         onClick={() => onPickDay(iso)}
         aria-label={`Open ${date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`}
         className={cx(
-          "self-start rounded-full px-1.5 text-[13px] leading-6 tabular-nums hover:bg-hover",
+          "self-start rounded-full px-1.5 text-[15px] leading-7 tabular-nums hover:bg-hover",
           iso === today
             ? "bg-accent text-accent-ink hover:bg-accent-hover"
             : inMonth
-              ? "text-ink"
+              ? "text-rubric"
               : "text-ink-3",
           FOCUS,
         )}

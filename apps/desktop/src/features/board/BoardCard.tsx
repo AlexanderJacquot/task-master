@@ -1,8 +1,9 @@
-import { Clock, Diamond, ListChecks } from "lucide-react";
+import { Clock, ListChecks } from "lucide-react";
 import { memo } from "react";
 import { Chip, cx, Dot, PRIORITY_PILL } from "../../components/ui";
 import { daysFrom, formatDue, isoDate } from "../../lib/dates";
 import type { Epic, Project, Status, Tag, Task } from "../../lib/types";
+import { EpicMark } from "../organize/EpicMark";
 
 /** Height of a card plus the gap below it; fixed so columns virtualize without measuring. */
 export const CARD_SLOT = 98;
@@ -71,7 +72,7 @@ export const CardFace = memo(function CardFace(p: Props) {
         )}
         {epic && (
           <span className="flex max-w-24 shrink-0 items-center gap-1 truncate text-violet-800 dark:text-violet-300">
-            <Diamond size={10} className="shrink-0" />
+            <EpicMark epic={epic} size={10} />
             <span className="truncate">{epic.name}</span>
           </span>
         )}

@@ -97,6 +97,7 @@ export function task(overrides: Partial<Task> = {}): Task {
     estimate_min: null,
     rank: `a${counter}`,
     tag_ids: [],
+    dependency_ids: [],
     created_at: 1,
     updated_at: 1,
     completed_at: null,

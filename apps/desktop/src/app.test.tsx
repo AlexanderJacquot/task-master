@@ -649,3 +649,68 @@ describe("redesign", () => {
     expect(fake.executed.at(-1)?.[0]).toMatchObject({ type: "update_project", id: "pa" });
   });
 });
+
+describe("All tasks search", () => {
+  it("ignores an older search response after the search is cleared", async () => {
+    await renderWith("/all");
+    const input = await screen.findByRole("searchbox", { name: "Search all tasks" });
+    let resolveSearch: (ids: string[]) => void = () => {};
+    fake.api.search = () =>
+      new Promise<string[]>((resolve) => {
+        resolveSearch = resolve;
+      });
+    fireEvent.change(input, { target: { value: "missing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() => expect(screen.queryAllByText("Searching…").length).toBeGreaterThan(0));
+    fireEvent.change(input, { target: { value: "" } });
+    await act(async () => {
+      resolveSearch([]);
+    });
+    expect(screen.getByRole("button", { name: "Renew passport" })).toBeTruthy();
+    expect(screen.queryByText("No matching tasks.")).toBeNull();
+  });
+
+  it("searches from the split top row and clears back to all tasks", async () => {
+    await renderWith("/all");
+    await screen.findByRole("heading", { name: "All tasks" });
+    expect(screen.getByRole("textbox", { name: "New task" })).toBeTruthy();
+    const input = screen.getByRole("searchbox", { name: "Search all tasks" });
+    const calls: string[] = [];
+    fake.api.search = async (text) => {
+      calls.push(text);
+      return text === "passport" ? [existing.id] : [];
+    };
+    fireEvent.change(input, { target: { value: "passport" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByText("1 matching task");
+    expect(calls).toContain("passport");
+    expect(screen.getByRole("button", { name: "Renew passport" })).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: "missing" } });
+    fireEvent.submit(screen.getByRole("form", { name: "Search all tasks" }));
+    await screen.findByText("No matching tasks.");
+    expect(screen.queryByRole("button", { name: "Renew passport" })).toBeNull();
+    fireEvent.change(input, { target: { value: "" } });
+    await screen.findByRole("button", { name: "Renew passport" });
+  });
+
+  it("filters board cards and reports search failures", async () => {
+    await renderWith("/all");
+    await screen.findByRole("heading", { name: "All tasks" });
+    fireEvent.click(screen.getByRole("button", { name: "board" }));
+    const input = screen.getByRole("searchbox", { name: "Search all tasks" });
+    fake.api.search = async () => [];
+    fireEvent.change(input, { target: { value: "missing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByText("0 matching tasks");
+    expect(screen.queryByRole("button", { name: "Renew passport" })).toBeNull();
+    fake.api.search = async () => {
+      throw new Error("Unavailable");
+    };
+    fireEvent.change(input, { target: { value: "failure" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByText("Could not search tasks. Clear the search and try again.");
+    fireEvent.change(input, { target: { value: "" } });
+    await screen.findByRole("button", { name: "Renew passport" });
+  });
+});

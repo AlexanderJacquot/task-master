@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { Select } from "../../components/ui";
+import { Dot, Select } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
 import type { Epic, EpicState } from "../../lib/types";
 import { categoryOf } from "../../lib/views";
@@ -8,7 +8,9 @@ import { deleteEpic, updateEpic } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { EditableTitle } from "../shell/EditableTitle";
 import { HeaderButton, ViewPage } from "../shell/ViewPage";
+import { EPIC_SHAPES, EpicMark } from "./EpicMark";
 import { ProjectMark } from "./ProjectMark";
+import { PROJECT_COLORS } from "./projectColors";
 
 const STATES: Array<{ value: EpicState; label: string }> = [
   { value: "active", label: "Active" },
@@ -44,6 +46,31 @@ function EpicDetails({ epic }: { epic: Epic }) {
   return (
     <div className="flex flex-col gap-2 px-10 pb-3 text-[13px]">
       <div className="flex flex-wrap items-center gap-3 text-ink-2">
+        <Select
+          aria-label="Epic color"
+          value={epic.color ?? ""}
+          onValueChange={(color) => void updateEpic(store, epic.id, [{ color: color || null }])}
+          options={[
+            { value: "", label: "Default color" },
+            ...PROJECT_COLORS.map((color) => ({
+              value: color,
+              label: color,
+              icon: <Dot color={color} />,
+            })),
+          ]}
+        />
+        <Select
+          aria-label="Epic icon shape"
+          value={epic.icon ?? "diamond"}
+          onValueChange={(icon) =>
+            void updateEpic(store, epic.id, [{ icon: icon === "diamond" ? null : icon }])
+          }
+          options={Object.entries(EPIC_SHAPES).map(([value, Shape]) => ({
+            value,
+            label: value.charAt(0).toUpperCase() + value.slice(1),
+            icon: <Shape size={13} />,
+          }))}
+        />
         <Select
           aria-label="Epic state"
           value={epic.state}
@@ -113,11 +140,14 @@ export function EpicPage({ epic }: { epic: Epic }) {
     <ViewPage
       scope={{ kind: "epic", id: epic.id }}
       title={
-        <EditableTitle
-          value={epic.name}
-          placeholder="Epic name"
-          onRename={(name) => void updateEpic(store, epic.id, [{ name }])}
-        />
+        <span className="flex min-w-0 items-center gap-2">
+          <EpicMark epic={epic} size={24} />
+          <EditableTitle
+            value={epic.name}
+            placeholder="Epic name"
+            onRename={(name) => void updateEpic(store, epic.id, [{ name }])}
+          />
+        </span>
       }
       details={<EpicDetails key={epic.id} epic={epic} />}
       actions={

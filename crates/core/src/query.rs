@@ -11,11 +11,11 @@ use crate::model::{
 };
 
 const TASK_COLS: &str = "id, project_id, epic_id, parent_id, status_id, title, description, \
-    priority, due_date, today_on, estimate_min, rank, created_at, updated_at, completed_at, deleted_at";
+    priority, due_date, today_on, estimate_min, rank, created_at, updated_at, completed_at, deleted_at, dependency_ids";
 const PROJECT_COLS: &str =
     "id, parent_id, name, color, icon, rank, archived_at, created_at, updated_at, deleted_at";
 const EPIC_COLS: &str = "id, project_id, name, description, target_date, state, rank, \
-    created_at, updated_at, deleted_at";
+    created_at, updated_at, deleted_at, color, icon";
 const TAG_COLS: &str = "id, name, color, created_at, updated_at, deleted_at";
 const STATUS_COLS: &str =
     "id, name, category, color, rank, wip_limit, created_at, updated_at, deleted_at";
@@ -36,7 +36,11 @@ fn bad_value(col: usize, value: String) -> rusqlite::Error {
 
 fn task_row(r: &Row<'_>) -> rusqlite::Result<Task> {
     let priority: i64 = r.get(7)?;
+    let dependencies: String = r.get(16)?;
     Ok(Task {
+        dependency_ids: serde_json::from_str(&dependencies).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
+        })?,
         id: r.get(0)?,
         project_id: r.get(1)?,
         epic_id: r.get(2)?,
@@ -75,6 +79,8 @@ fn project_row(r: &Row<'_>) -> rusqlite::Result<Project> {
 fn epic_row(r: &Row<'_>) -> rusqlite::Result<Epic> {
     let state: String = r.get(5)?;
     Ok(Epic {
+        color: r.get(10)?,
+        icon: r.get(11)?,
         id: r.get(0)?,
         project_id: r.get(1)?,
         name: r.get(2)?,

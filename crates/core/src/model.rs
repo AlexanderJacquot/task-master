@@ -113,6 +113,9 @@ impl EpicState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct Task {
+    /// Prerequisites of this task, independent of subtask hierarchy.
+    #[serde(default)]
+    pub dependency_ids: Vec<Id>,
     pub id: Id,
     /// `None` means the task is in the Inbox.
     pub project_id: Option<Id>,
@@ -160,6 +163,10 @@ pub struct Epic {
     /// Optional home project.
     pub project_id: Option<Id>,
     pub name: String,
+    #[serde(default)]
+    pub color: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
     pub description: Option<String>,
     pub target_date: Option<IsoDate>,
     pub state: EpicState,

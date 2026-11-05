@@ -218,7 +218,10 @@ export function DescriptionEditor({
         ...actions,
         toggleTask: (line, checked) => commit(toggleTaskItem(saved.current, line, checked)),
       }}
-      className={page ? "tm-dropcap text-[17px] leading-[1.75]" : "text-[14px] leading-[1.55]"}
+      className={cx(
+        "tm-dropcap",
+        page ? "text-[17px] leading-[1.75]" : "text-[14px] leading-[1.55]",
+      )}
     />
   ) : (
     <p className="text-ink-3 italic">

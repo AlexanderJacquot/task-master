@@ -13,6 +13,7 @@ import {
 } from "../../components/ui";
 import { daysFrom, formatDueLong } from "../../lib/dates";
 import type { Epic, Status, Task, TaskChange } from "../../lib/types";
+import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import { GHOST, OVERLAY, PILL, SET } from "./pill";
 import { TagPicker } from "./TagPicker";
@@ -263,12 +264,12 @@ export function PropertyPills({
           key="epic"
           ariaLabel="Epic"
           label={epic?.name ?? "Epic"}
-          icon={<Diamond size={11} className={epic ? "fill-current" : undefined} />}
+          icon={epic ? <EpicMark epic={epic} size={11} /> : <Diamond size={11} />}
           value={task.epic_id ?? ""}
           onChange={(id) => change([{ epic_id: id || null }])}
           options={[
             { value: "", label: "No epic" },
-            ...epics.map((e) => ({ value: e.id, label: e.name })),
+            ...epics.map((e) => ({ value: e.id, label: e.name, icon: <EpicMark epic={e} /> })),
           ]}
           className={
             epic

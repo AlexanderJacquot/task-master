@@ -1,7 +1,7 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Bookmark, Columns3, Filter, List, SlidersHorizontal } from "lucide-react";
+import { Bookmark, Columns3, Filter, List, Search, SlidersHorizontal } from "lucide-react";
 import { Popover } from "radix-ui";
-import { type ReactNode, useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { Button, cx, FOCUS, InlineInput, Select } from "../../components/ui";
 import { buildBoard } from "../../lib/board";
 import { loadOpenInPanel } from "../../lib/capturePrefs";
@@ -16,7 +16,7 @@ import {
   updateTask,
   updateView,
 } from "../../store/actions";
-import { useStoreState, useTaskStore } from "../../store/context";
+import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import type { CardLookups } from "../board/BoardCard";
 import { BoardView } from "../board/BoardView";
 import { CAPTURE_HINT, CaptureBox } from "../capture/CaptureBox";
@@ -204,6 +204,12 @@ function ViewBody({
 }) {
   const store = useTaskStore();
   const navigate = useNavigate();
+  const api = useApi();
+  const [searchText, setSearchText] = useState("");
+  const [query, setQuery] = useState("");
+  const [searchIds, setSearchIds] = useState<Set<string> | null>(null);
+  const [searchError, setSearchError] = useState(false);
+  const [searching, setSearching] = useState(false);
   const tasks = useStoreState((s) => s.tasks);
   const projects = useStoreState((s) => s.projects);
   const epics = useStoreState((s) => s.epics);
@@ -235,17 +241,50 @@ function ViewBody({
     [today, statuses, projects, epics],
   );
   const spec = useMemo(() => specOf(stableScope, display), [stableScope, display]);
+  const searchingAll = scope.kind === "all" && !!query;
+  useEffect(() => {
+    if (!searchingAll) {
+      setSearchIds(null);
+      setSearchError(false);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    setSearchError(false);
+    api.search(query, Math.max(1, Object.keys(tasks).length)).then(
+      (ids) => {
+        if (!cancelled) {
+          setSearchIds(new Set(ids));
+          setSearching(false);
+        }
+      },
+      () => {
+        if (!cancelled) {
+          setSearchIds(new Set());
+          setSearchError(true);
+          setSearching(false);
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [api, query, searchingAll, tasks]);
+  const visibleTasks = useMemo(
+    () => Object.values(tasks).filter((task) => !searchingAll || searchIds?.has(task.id)),
+    [tasks, searchingAll, searchIds],
+  );
   const rows = useMemo(
     () =>
       board
         ? []
-        : buildRows(Object.values(tasks), spec, ctx, statuses, { collapsedGroups, collapsedTasks }),
-    [board, tasks, spec, ctx, statuses, collapsedGroups, collapsedTasks],
+        : buildRows(visibleTasks, spec, ctx, statuses, { collapsedGroups, collapsedTasks }),
+    [board, visibleTasks, spec, ctx, statuses, collapsedGroups, collapsedTasks],
   );
   const boardModel = useMemo(
-    () =>
-      board ? buildBoard(Object.values(tasks), spec, ctx, statuses, { projects, epics }) : null,
-    [board, tasks, spec, ctx, statuses, projects, epics],
+    () => (board ? buildBoard(visibleTasks, spec, ctx, statuses, { projects, epics }) : null),
+    [board, visibleTasks, spec, ctx, statuses, projects, epics],
   );
   const lookups: CardLookups = useMemo(
     () => ({ statuses, projects, epics, tags, today, showProject }),
@@ -409,7 +448,12 @@ function ViewBody({
           tags={tags}
         />
       )}
-      <div className="px-10 pt-1 pb-2">
+      <div
+        className={cx(
+          "grid items-start gap-3 px-10 pt-1 pb-2",
+          scope.kind === "all" && "lg:grid-cols-2",
+        )}
+      >
         <CaptureBox
           id={NEW_TASK_INPUT_ID}
           defaults={captureDefaults(scope, today)}
@@ -433,6 +477,46 @@ function ViewBody({
               });
           }}
         />
+        {scope.kind === "all" && (
+          <form
+            aria-label="Search all tasks"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setQuery(searchText.trim());
+            }}
+            className="flex flex-col gap-1.5"
+          >
+            <div className="flex items-center gap-3 rounded-[10px] border border-line-strong px-3.5 py-1.5 focus-within:border-accent focus-within:bg-raised/60">
+              <Search size={16} className="shrink-0 text-rubric" aria-hidden />
+              <input
+                type="search"
+                aria-label="Search all tasks"
+                placeholder="Search task titles and descriptions…"
+                value={searchText}
+                onChange={(event) => {
+                  setSearchText(event.target.value);
+                  if (!event.target.value.trim()) setQuery("");
+                }}
+                className="min-w-0 flex-1 bg-transparent py-0.5 text-ink placeholder:text-ink-3 focus:outline-none"
+              />
+              <Button size="sm" type="submit">
+                Search
+              </Button>
+            </div>
+            <div aria-live="polite" className="px-1 text-xs text-ink-3">
+              {searching
+                ? "Searching…"
+                : searchingAll && !searchError
+                  ? `${taskCount} matching ${taskCount === 1 ? "task" : "tasks"}`
+                  : null}
+            </div>
+            {searchError && (
+              <p role="alert" className="px-1 text-xs text-danger">
+                Could not search tasks. Clear the search and try again.
+              </p>
+            )}
+          </form>
+        )}
       </div>
       {boardModel ? (
         <BoardView
@@ -443,7 +527,15 @@ function ViewBody({
         />
       ) : rows.length === 0 ? (
         <p className="p-10 text-center font-display text-lg text-ink-3">
-          {scope.kind === "inbox" ? "Inbox zero. Nothing to triage." : "No tasks here yet."}
+          {searchingAll
+            ? searching
+              ? "Searching…"
+              : searchError
+                ? "Search unavailable."
+                : "No matching tasks."
+            : scope.kind === "inbox"
+              ? "Inbox zero. Nothing to triage."
+              : "No tasks here yet."}
         </p>
       ) : (
         <TaskList

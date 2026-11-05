@@ -141,6 +141,8 @@ describe("buildBoard", () => {
       description: null,
       target_date: null,
       state: "active",
+      color: null,
+      icon: null,
       rank: "a0",
       created_at: 1,
       updated_at: 1,

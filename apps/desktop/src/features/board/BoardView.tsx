@@ -450,7 +450,7 @@ function ResizeHandle({
       aria-valuemax={MAX_COLUMN_WIDTH}
       tabIndex={0}
       title="Drag to resize, double-click to reset"
-      className="absolute inset-y-0 -right-[11px] w-2 cursor-col-resize touch-none rounded-full outline-none hover:bg-accent/40 focus-visible:bg-accent/60"
+      className="absolute inset-y-0 -right-[11px] w-2 cursor-col-resize touch-none rounded-full bg-rubric/20 outline-none transition-colors hover:bg-rubric/40 focus-visible:bg-rubric/60"
       onPointerDown={(e) => {
         e.preventDefault();
         e.currentTarget.setPointerCapture?.(e.pointerId);
