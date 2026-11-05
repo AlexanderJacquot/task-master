@@ -1,0 +1,72 @@
+# Lint, test and build on every branch push and PR (ADR 010). Runs on the public GitHub
+# mirror, where Actions minutes are free; version tags are left to release.yml.
+
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v6.1.0
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file pkg-config libssl-dev \
+            libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # rustup reads the pinned toolchain from rust-toolchain.toml.
+      - name: Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: swatinem/rust-cache@v2.9.2
+
+      # pnpm version comes from `packageManager` in package.json.
+      - uses: pnpm/action-setup@v6.1.0
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rust format
+        run: cargo fmt --all --check
+
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace --locked
+
+      # The export_bindings test regenerates bindings.ts; it must match the committed copy.
+      - name: Bindings up to date
+        run: git diff --exit-code -- apps/desktop/src/bindings.ts
+
+      - name: TS lint and format
+        run: pnpm biome ci .
+
+      - name: TS typecheck
+        run: pnpm typecheck
+
+      - name: TS tests
+        run: pnpm test
+
+      # Unsigned: update bundles are only made by release.yml (ADR 009).
+      - name: Tauri build
+        run: pnpm --filter desktop tauri build --bundles deb

@@ -33,6 +33,13 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 Verified locally on Linux: all checks pass; release build produces a 2.9 MiB `.deb`.
 
+### M7 CI on GitHub (2026-11-05)
+
+ADR `docs/adr/010-ci-on-github.md`. The Forgejo checks moved to `.github/workflows/ci.yml`
+(every branch push and PR, tags left to release.yml); `.forgejo/workflows/ci.yml` is a
+manual-only stub that must stay (otherwise Forgejo runs the GitHub workflows). GitHub repo
+made public for updates; v0.2.0 tagged and released from `main`.
+
 ### M7 In-app updates and build info (2026-11-05)
 
 ADR `docs/adr/009-in-app-updates.md`; release steps in `docs/release.md`.

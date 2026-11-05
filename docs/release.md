@@ -1,8 +1,8 @@
 # Releases and installers
 
-The Forgejo workflow (`.forgejo/workflows/ci.yml`) checks every push and builds a Linux
-`.deb`. Installers for all three OSes are built on GitHub, which has Windows and macOS
-runners, through a push mirror of this repo.
+Everything runs on GitHub, through a public push mirror of this Forgejo repo (ADR 010):
+`.github/workflows/ci.yml` checks every push and builds a Linux `.deb`; `release.yml` builds
+the installers for all three OSes and the signed update files on version tags.
 
 ## One-time setup (by hand)
 
@@ -13,8 +13,8 @@ runners, through a push mirror of this repo.
    URL makes Forgejo push over HTTPS and fail with "could not read Username"), sync on
    push. Add the public key Forgejo shows as a GitHub deploy key with write access.
 
-Forgejo then forwards branches and tags. GitHub runs `.github/workflows/release.yml`
-(Forgejo ignores that folder while `.forgejo/workflows` exists).
+Forgejo then forwards branches and tags. GitHub runs `.github/workflows/` (Forgejo ignores
+that folder while `.forgejo/workflows` exists, which is why its manual-only stub stays).
 
 3. Update signing (done 2026-11-05): `pnpm --filter desktop exec tauri signer generate -w
    ~/.tauri/task-master.key -p <password> --ci`, public key in `tauri.conf.json` →

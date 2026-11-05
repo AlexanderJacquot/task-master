@@ -35,6 +35,8 @@ The full plan is in docs/plan.md. Architecture decisions are in docs/adr/.
 
 ## CI
 
-- The repo lives on Forgejo. `.forgejo/workflows/ci.yml` runs lint, tests and a
-  Linux Tauri build. Installers for 3 OSes: `.github/workflows/release.yml` on a GitHub
-  push mirror (docs/release.md, ADR 007).
+- The repo lives on Forgejo, push-mirrored to a public GitHub repo where all workflows run
+  (ADR 010): `.github/workflows/ci.yml` (lint, tests, Linux Tauri build on every push) and
+  `release.yml` (installers for 3 OSes and signed in-app updates on `v*` tags; docs/release.md,
+  ADR 009). Keep `.forgejo/workflows/ci.yml` as the manual-only stub: removing it makes
+  Forgejo run the GitHub workflows.
