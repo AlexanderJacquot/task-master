@@ -394,12 +394,22 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* Drop cap on the full task page: the first letter of an opening paragraph, in the
    display face and rubric color, two lines tall. Only on the rendered view (the editor
-   measures lines, so it never gets one). */
-.tm-dropcap > p:first-child::first-letter {
+   measures lines, so it never gets one). Each heading opens a new one: full size under
+   a top-level heading, smaller under the lower ones. */
+.tm-dropcap > p:first-child::first-letter,
+.tm-dropcap > :where(h1, h2, h3, h4, h5, h6) + p::first-letter {
   float: left;
   font-family: var(--font-display);
   color: var(--tm-rubric);
   font-size: 3.35em;
   line-height: 0.85;
   padding: 0.06em 0.08em 0 0;
+}
+.tm-dropcap > :where(h2, h3, h4, h5, h6) + p::first-letter {
+  font-size: 2.4em;
+  padding-top: 0.08em;
+}
+/* A heading never sits beside the previous section's drop cap. */
+.tm-dropcap > :where(h1, h2, h3, h4, h5, h6) {
+  clear: left;
 }

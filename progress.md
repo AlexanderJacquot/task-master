@@ -137,6 +137,12 @@ Branch `worktree-board-columns` (from `main`). ADR 004 addendum.
   resize and lanes). Checked in a browser with a fake core: drag-resize to 536 px gives
   two lanes, a drag onto the Waiting strip lands on top.
 
+### Drop caps under headings (2026-11-05)
+
+Branch `worktree-dropcap-headings`. On the task page the first paragraph after each
+heading now gets a drop cap too: full size at the start and under `h1`, smaller (2.4em)
+under `h2`–`h6`; headings clear the previous cap. CSS only (`index.css`).
+
 ### M10 Google Calendar sync (2026-11-05)
 
 ADR `docs/adr/014-google-calendar-sync.md`; setup guide `docs/google-calendar.md`. Agreed
