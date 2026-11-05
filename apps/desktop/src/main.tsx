@@ -3,7 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
-import { CaptureWindow } from "./features/capture/CaptureWindow";
+import { CaptureWindow, tauriCaptureControls } from "./features/capture/CaptureWindow";
 import { tauriApi } from "./lib/api";
 import { applyTheme, loadTheme } from "./lib/theme";
 import { createUpdateStore, tauriUpdates, UpdateProvider } from "./lib/updater";
@@ -36,7 +36,11 @@ createRoot(root).render(
   <StrictMode>
     <StoreProvider store={store} api={tauriApi}>
       <UpdateProvider value={updates}>
-        {isCapture ? <CaptureWindow /> : <RouterProvider router={createAppRouter()} />}
+        {isCapture ? (
+          <CaptureWindow controls={tauriCaptureControls()} />
+        ) : (
+          <RouterProvider router={createAppRouter()} />
+        )}
       </UpdateProvider>
     </StoreProvider>
   </StrictMode>,

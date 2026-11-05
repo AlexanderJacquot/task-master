@@ -14,7 +14,7 @@ export const NEW_TASK_INPUT_ID = "new-task-input";
 /** How long the first key of a sequence ("G" of "G I") waits for the second. */
 const SEQUENCE_MS = 1000;
 
-function isEditable(target: EventTarget | null): boolean {
+export function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return (
     target.isContentEditable ||

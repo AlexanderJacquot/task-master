@@ -36,6 +36,19 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Quick capture grows into the editor (2026-11-05)
+
+Branch `worktree-capture-expand` (from `main`). In the `Ctrl+Shift+Space` window,
+Shift+Enter saves the task and grows the window (900x720, within 90% of the screen,
+resizable) into the full task editor (`TaskEditor`, page layout): title, properties,
+description, subtasks, files, activity. Opening a subtask switches the editor to it
+(`OpenTaskContext` replaces navigation where there is no router). While editing, the
+window stays open on blur (so file pickers work); Esc leaves the current field, then
+closes; Done and X close. The shell resets the window to 660x230 on every hotkey
+opening. Window permissions added: `set-size`, `set-resizable`, `center`. Tests:
+`captureWindow.test.tsx` (+3, injected `CaptureControls` like the title bar's). No new
+dependencies.
+
 ### M11 Sync core (2026-11-05)
 
 ADR `docs/adr/015-sync-server.md`. Agreed first with the user: one server that is a core
@@ -510,7 +523,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
   up (docs/release.md); fresh install on Linux and Windows (M6 "done when").
 - M5 by hand: `Ctrl+Shift+Space` in a native X11 session or on Windows (WSLg only sees it
   while a WSLg window has focus), the capture window (appears centered, focused, hides on
-  blur/Esc/save), the 3 s capture goal, palette feel.
+  blur/Esc/save), the 3 s capture goal, palette feel. Shift+Enter there: the window
+  grows and re-centers (WebKitGTK and WebView2, HiDPI), stays put while a file picker is
+  open, and opens small again next time.
 - M4 by hand: saved view save/revert/reopen, filter bar popovers, project drag in the
   sidebar, archive/delete flows, epic fields, dark mode.
 - M3 board by hand: pointer drag feel (jsdom cannot test it), shaking a card between columns
@@ -544,7 +559,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Calendar sync: CalDAV provider (iCloud) behind the same trait; refresh token in the OS
   keychain; a push right after each change instead of the 4 s pause; show which blocks
   are synced (a small cloud mark); pick another calendar as the target.
-- Calendar: drag on empty grid to block out an *existing* task (new tasks done); keyboard moves of blocks;
+- Quick capture editor: an "Open in Task Master" button (show the main window on the
+  task page; needs an event to the main window); Ctrl+Z inside the capture window.
+- Calendar: drag on empty grid to block out an _existing_ task (new tasks done); keyboard moves of blocks;
   week start and working hours in Settings; Today view counting tasks with a block today;
   block list and logged time on the task page; multi-day blocks shown across days in the
   month view.

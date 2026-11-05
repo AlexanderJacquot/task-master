@@ -64,8 +64,11 @@ function useProjectOptions(task: Task | undefined) {
   }, [projects, task?.project_id]);
 }
 
-/** Every editable part of a task, laid out for the side panel or the full page. */
-function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
+/**
+ * Every editable part of a task, laid out for the side panel or the full page (also used
+ * by the expanded quick-capture window).
+ */
+export function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
   const store = useTaskStore();
   const statuses = useStoreState((s) => s.statuses);
   const epics = useStoreState((s) => s.epics);
