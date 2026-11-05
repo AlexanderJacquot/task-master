@@ -75,6 +75,30 @@ export const commands = {
 	calendarSyncNow: () => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("calendar_sync_now")),
 	/**  Events of the shown calendars in a range (read-only). */
 	calendarEvents: (range: EventRange) => typedError<CalendarEvent_Serialize[], CommandError>(__TAURI_INVOKE("calendar_events", { range })),
+	syncStatus: () => __TAURI_INVOKE<SyncStatus_Serialize>("sync_status"),
+	/**
+	 *  Saves the server address after reading its `/info` (what it needs to connect). A
+	 *  server that needs no auth is checked right away.
+	 */
+	syncConnect: (url: string) => typedError<SyncStatus_Serialize, CommandError>(__TAURI_INVOKE("sync_connect", { url })),
+	/**  Saves a token made on the server (`task-master-server token add`), after checking it. */
+	syncSetToken: (token: string) => typedError<SyncStatus_Serialize, CommandError>(__TAURI_INVOKE("sync_set_token", { token })),
+	/**
+	 *  Signs in with the server's OpenID provider in the browser (up to 5 minutes), then
+	 *  trades the ID token for this device's server token.
+	 */
+	syncSignIn: () => typedError<SyncStatus_Serialize, CommandError>(__TAURI_INVOKE("sync_sign_in")),
+	/**
+	 *  Starts syncing. `Replace` first backs up this device's data (in `backups/`), then
+	 *  empties it so the server's data comes in alone.
+	 */
+	syncJoin: (mode: JoinMode) => typedError<SyncStatus_Serialize, CommandError>(__TAURI_INVOKE("sync_join", { mode })),
+	syncNow: () => __TAURI_INVOKE<SyncStatus_Serialize>("sync_now"),
+	/**
+	 *  Stops syncing and forgets the server and its token. Local data stays; joining again
+	 *  later sends everything again (the server ignores what it has).
+	 */
+	syncDisconnect: () => typedError<SyncStatus_Serialize, CommandError>(__TAURI_INVOKE("sync_disconnect")),
 };
 
 /** Events */
@@ -82,6 +106,7 @@ export const events = {
 	calendarSynced: makeEvent<CalendarSynced_Serialize, CalendarSynced_Deserialize>("calendar-synced"),
 	captureOpened: makeEvent<CaptureOpened, CaptureOpened>("capture-opened"),
 	storeChanged: makeEvent<StoreChanged, StoreChanged>("store-changed"),
+	syncChanged: makeEvent<SyncChanged_Serialize, SyncChanged_Deserialize>("sync-changed"),
 };
 
 /* Types */
@@ -165,6 +190,15 @@ export type Attachment_Serialize = {
 	updated_at: number,
 	deleted_at: number | null,
 };
+
+/**  How a server authenticates requests. */
+export type AuthMode = 
+/**  Anyone who reaches the server (a private network). */
+"none" | 
+/**  A bearer token made on the server. */
+"token" | 
+/**  Sign in with an OpenID Connect provider, which gives the device a server token. */
+"oidc";
 
 /**  Shown in settings. */
 export type BackupStatus = BackupStatus_Serialize | BackupStatus_Deserialize;
@@ -583,6 +617,13 @@ export type ImportSummary = {
 	missing_files: number,
 };
 
+/**  How a device starts syncing. */
+export type JoinMode = 
+/**  Keep this device's data and add the server's (also: the first device uploads). */
+"merge" | 
+/**  Back up this device's data, empty it, then take the server's. */
+"replace";
+
 export type Layout = "list" | "board";
 
 /**  A name from the line and the live entity it matched, if any. */
@@ -955,6 +996,15 @@ export type StoredUpload = {
 
 export type Swimlane = "none" | "project" | "epic" | "priority";
 
+/**  Sent when a round starts and ends, and when the account changes. */
+export type SyncChanged = SyncChanged_Serialize | SyncChanged_Deserialize;
+
+/**  Sent when a round starts and ends, and when the account changes. */
+export type SyncChanged_Deserialize = SyncStatus_Deserialize;
+
+/**  Sent when a round starts and ends, and when the account changes. */
+export type SyncChanged_Serialize = SyncStatus_Serialize;
+
 /**  What one sync did. */
 export type SyncReport = {
 	/**  Events created, updated and deleted in the target calendar. */
@@ -965,6 +1015,61 @@ export type SyncReport = {
 	pulled: number,
 	/**  Events kept from shown calendars. */
 	events: number,
+};
+
+/**  What Settings → Sync shows. */
+export type SyncStatus = SyncStatus_Serialize | SyncStatus_Deserialize;
+
+/**  What Settings → Sync shows. */
+export type SyncStatus_Deserialize = {
+	/**  A server address is saved. */
+	configured: boolean,
+	url: string,
+	device_name: string,
+	/**  What the server asked for when last contacted. */
+	auth?: AuthMode | null,
+	/**  A token is saved. */
+	signed_in: boolean,
+	/**  Whether the server held no data when this device connected (first device). */
+	server_empty?: boolean | null,
+	/**  This device chose how to start (merge or replace) and syncs. */
+	joined: boolean,
+	syncing: boolean,
+	last_sync_at?: number | null,
+	last_error?: string | null,
+	last_pushed: number,
+	last_pulled: number,
+	clock_offset_ms: number,
+	/**  The device clock is more than a minute off (sync corrects for it). */
+	clock_warning: boolean,
+	/**  Local changes not on the server yet (counted up to 1000). */
+	pending: number,
+};
+
+/**  What Settings → Sync shows. */
+export type SyncStatus_Serialize = {
+	/**  A server address is saved. */
+	configured: boolean,
+	url: string,
+	device_name: string,
+	/**  What the server asked for when last contacted. */
+	auth: AuthMode | null,
+	/**  A token is saved. */
+	signed_in: boolean,
+	/**  Whether the server held no data when this device connected (first device). */
+	server_empty: boolean | null,
+	/**  This device chose how to start (merge or replace) and syncs. */
+	joined: boolean,
+	syncing: boolean,
+	last_sync_at: number | null,
+	last_error: string | null,
+	last_pushed: number,
+	last_pulled: number,
+	clock_offset_ms: number,
+	/**  The device clock is more than a minute off (sync corrects for it). */
+	clock_warning: boolean,
+	/**  Local changes not on the server yet (counted up to 1000). */
+	pending: number,
 };
 
 export type Tag = Tag_Serialize | Tag_Deserialize;

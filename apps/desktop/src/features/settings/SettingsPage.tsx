@@ -19,6 +19,7 @@ import { HeaderButton } from "../shell/ViewPage";
 import { About } from "./About";
 import { CalendarSettings } from "./CalendarSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
+import { SyncSettings } from "./SyncSettings";
 
 const CATEGORIES: Array<{ value: StatusCategory; label: string }> = [
   { value: "backlog", label: "Backlog" },
@@ -489,6 +490,7 @@ export function SettingsPage() {
         <Workflow />
         <Appearance />
         <Shortcuts />
+        <SyncSettings />
         <CalendarSettings />
         <Data />
       </div>

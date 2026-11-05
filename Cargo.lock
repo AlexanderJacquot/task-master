@@ -4609,6 +4609,7 @@ dependencies = [
  "sha2 0.11.1",
  "specta",
  "specta-typescript",
+ "taskmaster-client",
  "taskmaster-core",
  "tauri",
  "tauri-build",

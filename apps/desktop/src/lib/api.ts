@@ -11,8 +11,10 @@ import type {
   Command,
   CommandError,
   EventRange,
+  JoinMode,
   Snapshot,
   StoredUpload,
+  SyncStatus,
 } from "./types";
 
 /** A failure reported by the core (`invalid`, `not_found`, `internal`) or by Tauri itself. */
@@ -52,7 +54,37 @@ export interface Api {
   files?: FilesApi;
   /** The calendar connection (ADR 014); absent in tests that do not need it. */
   calendar?: CalendarApi;
+  /** The sync server (ADR 015); absent in tests that do not need it. */
+  sync?: SyncApi;
 }
+
+/** Sync with a task-master server: connect, sign in, join, status. */
+export interface SyncApi {
+  status(): Promise<SyncStatus>;
+  /** Reads the server's `/info` and saves its address. */
+  connect(url: string): Promise<SyncStatus>;
+  /** Saves (after checking) a token made on the server. */
+  setToken(token: string): Promise<SyncStatus>;
+  /** Signs in with the server's OpenID provider in the browser (up to 5 minutes). */
+  signIn(): Promise<SyncStatus>;
+  /** Starts syncing: merge this device's data with the server's, or replace it. */
+  join(mode: JoinMode): Promise<SyncStatus>;
+  syncNow(): Promise<SyncStatus>;
+  disconnect(): Promise<SyncStatus>;
+  /** Called when a round starts and ends, and when the account changes. */
+  onChanged(handler: (status: SyncStatus) => void): Promise<() => void>;
+}
+
+export const tauriSync: SyncApi = {
+  status: () => commands.syncStatus(),
+  connect: (url) => unwrap(commands.syncConnect(url)),
+  setToken: (token) => unwrap(commands.syncSetToken(token)),
+  signIn: () => unwrap(commands.syncSignIn()),
+  join: (mode) => unwrap(commands.syncJoin(mode)),
+  syncNow: () => commands.syncNow(),
+  disconnect: () => unwrap(commands.syncDisconnect()),
+  onChanged: (handler) => events.syncChanged.listen((event) => handler(event.payload)),
+};
 
 /** Google Calendar sync: settings, status and the read-only events of shown calendars. */
 export interface CalendarApi {
@@ -132,4 +164,5 @@ export const tauriApi: Api = {
   onChanged: (handler) => events.storeChanged.listen((event) => handler(event.payload)),
   files: tauriFiles,
   calendar: tauriCalendar,
+  sync: tauriSync,
 };
