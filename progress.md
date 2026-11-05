@@ -31,6 +31,14 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Delete tags (2026-11-05)
+
+Branch `delete-tags` (stacked on `menus-ui`). `TagMenu` (features/organize) offers "Delete
+tag" with the number of tasks using it: hover ⋯ or right-click on a sidebar tag, ⋯ in the
+tag page header (leaves for the Inbox first). `deleteTag` action: optimistic removal and
+untagging; the core's `delete_tag` already untags and is one undoable batch. UI only.
+Tests: `features/organize/tagDelete.test.tsx`. Renaming tags is still open (see Later).
+
 ### Dropdowns and menus restyled (2026-11-05)
 
 Branch `menus-ui` (stacked on `project-icons`). Native `<select>` popups (gray OS list on

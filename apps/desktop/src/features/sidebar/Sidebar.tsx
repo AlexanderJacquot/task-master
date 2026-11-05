@@ -35,13 +35,14 @@ import {
   MENU_SEPARATOR,
 } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
-import type { Project } from "../../lib/types";
+import type { Project, Tag } from "../../lib/types";
 import { useUpdates } from "../../lib/updater";
 import { inView, isOpen, type ViewContext } from "../../lib/views";
 import { createEpic, createProject, deleteProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { ProjectMark } from "../organize/ProjectMark";
 import { PROJECT_COLORS } from "../organize/projectColors";
+import { TagMenu } from "../organize/TagMenu";
 import { useShell } from "../shell/shellContext";
 import { ProjectTree } from "./ProjectTree";
 import { useProjectOrder } from "./useProjectOrder";
@@ -83,6 +84,53 @@ function NavItem({
         <span className="text-[12.5px] text-ink-3 tabular-nums">{count}</span>
       )}
     </Link>
+  );
+}
+
+/** A tag in the sidebar: link, open-task count, ⋯ menu (also on right-click). */
+function TagRow({ tag, count }: { tag: Tag; count?: number }) {
+  const [menu, setMenu] = useState(false);
+  const active = useRouterState({
+    select: (r) => r.location.pathname === `/tag/${tag.id}`,
+  });
+  return (
+    <div className={cx(rowClass, "py-0 pr-1", active && activeClass)}>
+      <Link
+        to="/tag/$tagId"
+        params={{ tagId: tag.id }}
+        search={{}}
+        className={cx("flex min-w-0 flex-1 items-center gap-2.5 py-[5px]", FOCUS)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenu(true);
+        }}
+      >
+        <Hash size={14} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{tag.name}</span>
+        {count !== undefined && count > 0 && (
+          <span className="text-[12.5px] text-ink-3 tabular-nums">{count}</span>
+        )}
+      </Link>
+      <TagMenu
+        tag={tag}
+        open={menu}
+        onOpenChange={setMenu}
+        trigger={
+          <button
+            type="button"
+            aria-label={`${tag.name} actions`}
+            title="Delete tag"
+            className={cx(
+              "inline-flex size-6 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-hover hover:text-ink",
+              "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+              FOCUS,
+            )}
+          >
+            <MoreHorizontal size={15} />
+          </button>
+        }
+      />
+    </div>
   );
 }
 
@@ -659,15 +707,7 @@ export function Sidebar({
 
       <Collapsible id="tags" title="Tags" count={tagList.length}>
         {tagList.map((tag) => (
-          <NavItem
-            key={tag.id}
-            to="/tag/$tagId"
-            params={{ tagId: tag.id }}
-            icon={<Hash size={14} className="shrink-0" />}
-            count={counts.perTag.get(tag.id)}
-          >
-            {tag.name}
-          </NavItem>
+          <TagRow key={tag.id} tag={tag} count={counts.perTag.get(tag.id)} />
         ))}
         {tagList.length === 0 && (
           <p className="px-2.5 py-1 text-[12.5px] text-ink-3">Type #tag when adding a task</p>

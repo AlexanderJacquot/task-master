@@ -6,9 +6,12 @@ import {
   type RouterHistory,
   redirect,
 } from "@tanstack/react-router";
+import { MoreHorizontal } from "lucide-react";
+import { IconButton } from "./components/ui";
 import { CalendarPage } from "./features/calendar/CalendarPage";
 import { EpicPage } from "./features/organize/EpicPage";
 import { ProjectPage } from "./features/organize/ProjectPage";
+import { TagMenu } from "./features/organize/TagMenu";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { Layout } from "./features/shell/Layout";
 import { SavedViewPage, ViewPage } from "./features/shell/ViewPage";
@@ -89,7 +92,24 @@ const tagRoute = createRoute({
     const { tagId } = tagRoute.useParams();
     const tag = useStoreState((s) => s.tags[tagId]);
     if (!tag) return <Missing what="Tag" />;
-    return <ViewPage key={tagId} scope={{ kind: "tag", id: tagId }} title={`#${tag.name}`} />;
+    return (
+      <ViewPage
+        key={tagId}
+        scope={{ kind: "tag", id: tagId }}
+        title={`#${tag.name}`}
+        actions={
+          <TagMenu
+            tag={tag}
+            align="end"
+            trigger={
+              <IconButton label="More tag actions">
+                <MoreHorizontal size={16} />
+              </IconButton>
+            }
+          />
+        }
+      />
+    );
   },
 });
 

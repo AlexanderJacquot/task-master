@@ -51,6 +51,7 @@ export interface Optimistic {
     tasks?: string[];
     projects?: string[];
     epics?: string[];
+    tags?: string[];
     views?: string[];
     statuses?: string[];
     attachments?: string[];

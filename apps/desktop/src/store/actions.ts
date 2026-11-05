@@ -234,6 +234,20 @@ export function setTagged(store: TaskStore, taskId: string, tagId: string, tagge
   });
 }
 
+/** Deletes a tag; the core takes it off every task in the same undoable batch. */
+export function deleteTag(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.tags[id]) return Promise.resolve(null);
+  const now = Date.now();
+  const untagged = Object.values(s.tasks)
+    .filter((t) => t.tag_ids.includes(id))
+    .map((t) => ({ ...t, tag_ids: t.tag_ids.filter((x) => x !== id), updated_at: now }));
+  return s.mutate([{ type: "delete_tag", id }], {
+    remove: { tags: [id] },
+    upsert: { tasks: untagged },
+  });
+}
+
 /** Creates a tag and adds it to a task in one undoable batch. */
 export async function createTagOnTask(store: TaskStore, taskId: string, rawName: string) {
   const name = rawName.trim().replace(/^#/, "");
