@@ -210,6 +210,47 @@ describe("the board", () => {
     fireEvent.change(await screen.findByLabelText("Swimlanes"), { target: { value: "priority" } });
     expect(await screen.findByRole("region", { name: "Lane Normal" })).toBeTruthy();
   });
+
+  it("collapses a column to a strip, remembers it, and expands it again", async () => {
+    await openBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Waiting" }));
+    expect(screen.queryByRole("list", { name: "Waiting" })).toBeNull();
+    expect(localStorage.getItem("task-master.board.columns")).toContain('"collapsed":true');
+    // The other columns stay open.
+    expect(screen.getByRole("list", { name: "To do" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Expand Waiting" }));
+    expect(await screen.findByRole("list", { name: "Waiting" })).toBeTruthy();
+    expect(localStorage.getItem("task-master.board.columns")).toBe("{}");
+  });
+
+  it("moves a card into a collapsed column with Alt+→, on top", async () => {
+    const todo = await openBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse In progress" }));
+    const card = within(todo).getByRole("button", { name: "Renew passport" });
+    fireEvent.keyDown(card, { key: "ArrowRight", altKey: true });
+    await waitFor(() =>
+      expect(fake.executed.at(-1)).toEqual([
+        { type: "move_task", id: existing.id, status_id: STATUS.inProgress, rank: "a0" },
+      ]),
+    );
+    expect(within(todo).queryByRole("button", { name: "Renew passport" })).toBeNull();
+  });
+
+  it("resizes a column and lays cards side by side once it is wide", async () => {
+    const todo = await openBoard();
+    expect(todo.dataset.lanes).toBe("1");
+    const handle = screen.getByRole("separator", { name: "Resize To do" });
+    expect(handle.getAttribute("aria-valuenow")).toBe("280");
+    fireEvent.keyDown(handle, { key: "ArrowRight", shiftKey: true });
+    expect(handle.getAttribute("aria-valuenow")).toBe("344");
+    fireEvent.keyDown(handle, { key: "End" });
+    expect(screen.getByRole("list", { name: "To do" }).dataset.lanes).toBe("3");
+    expect(within(todo).getByRole("button", { name: "Renew passport" })).toBeTruthy();
+    expect(localStorage.getItem("task-master.board.columns")).toContain('"width":960');
+    fireEvent.doubleClick(handle);
+    expect(handle.getAttribute("aria-valuenow")).toBe("280");
+    expect(localStorage.getItem("task-master.board.columns")).toBe("{}");
+  });
 });
 
 describe("saved views", () => {

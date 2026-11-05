@@ -31,6 +31,18 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Board: collapsible and resizable columns (2026-11-05)
+
+Branch `worktree-board-columns` (from `main`). ADR 004 addendum.
+- `features/board/useBoardColumns.ts`: collapsed flag and width per status in
+  `localStorage`, shared by every board; `lanesFor` (2 lanes from 512 px, 3 from 768 px).
+- `BoardView`: collapse button and resize handle (drag, keyboard, double-click reset) in
+  each header; collapsed columns become strips that still take drops (card goes on top);
+  cells place cards side by side in wide columns; the drag overlay keeps the card's width.
+- Tests: Vitest 196 (+6: prefs helpers; collapse/expand, Alt+→ into a collapsed column,
+  resize and lanes). Checked in a browser with a fake core: drag-resize to 536 px gives
+  two lanes, a drag onto the Waiting strip lands on top.
+
 ### M10 Google Calendar sync (2026-11-05)
 
 ADR `docs/adr/014-google-calendar-sync.md`; setup guide `docs/google-calendar.md`. Agreed
@@ -431,6 +443,7 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Drop cap on the full task page's description (needs care with CodeMirror measuring).
 - Optional sans body font (one variable, `--font-sans`).
 - Board: Shift+Enter on a card to open the full page.
+- Board: column widths and collapsed columns per saved view (today: per machine, all boards).
 
 - List view multi-select and bulk actions (plan section 6), via one `execute` batch.
 

@@ -18,6 +18,7 @@ import {
 } from "@dnd-kit/core";
 import {
   arrayMove,
+  rectSortingStrategy,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
@@ -25,12 +26,30 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { type KeyboardEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+  type KeyboardEvent,
+  memo,
+  type PointerEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { cx, Dot } from "../../components/ui";
-import { adjacentStatus, type Board, type Card, type Lane } from "../../lib/board";
+import { adjacentStatus, type Board, type Card, type Column, type Lane } from "../../lib/board";
 import { moveCard } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
 import { CARD_SLOT, CardFace, type CardLookups } from "./BoardCard";
+import {
+  type BoardColumns,
+  COLLAPSED_WIDTH,
+  lanesFor,
+  MAX_COLUMN_WIDTH,
+  MIN_COLUMN_WIDTH,
+  useBoardColumns,
+} from "./useBoardColumns";
 
 interface Props {
   board: Board;
@@ -43,6 +62,8 @@ interface Props {
 type Cells = Record<string, string[]>;
 
 const SEP = "|";
+/** Gap between cards side by side in a wide column. */
+const LANE_GAP = 8;
 const cellId = (lane: Lane, statusId: string) => `${lane.key}${SEP}${statusId}`;
 
 function cellsOf(board: Board): Cells {
@@ -64,10 +85,13 @@ function sameOrder(a: string[] | undefined, b: string[] | undefined): boolean {
 /**
  * Columns per status, optionally split into swimlanes. Cards drag within and between cells
  * (dnd-kit); a drop is one `move_task` with a rank between the new neighbours. A focused
- * card moves to the previous or next column with `Alt+←/→`.
+ * card moves to the previous or next column with `Alt+←/→`. Columns can be collapsed to a
+ * strip (still a drop target) and resized; a wide column lays its cards out side by side.
  */
 export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   const store = useTaskStore();
+  const columns = useBoardColumns();
+  const [overlayWidth, setOverlayWidth] = useState<number | null>(null);
   const cards = useMemo(() => {
     const map = new Map<string, Card>();
     for (const lane of board.lanes) {
@@ -157,6 +181,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
 
   const onDragStart = ({ active }: DragStartEvent) => {
     lastOverId.current = null;
+    setOverlayWidth(active.rect.current.initial?.width ?? null);
     setActiveId(String(active.id));
     setDragCells(boardCells);
   };
@@ -198,6 +223,10 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
     const newIndex = order.indexOf(String(over.id));
     if (oldIndex >= 0 && newIndex >= 0 && oldIndex !== newIndex) {
       order = arrayMove(order, oldIndex, newIndex);
+    }
+    // Dropped on a collapsed column: on top, where it shows once the column is expanded.
+    if (columns.isCollapsed(to.split(SEP)[1] as string)) {
+      order = [id, ...order.filter((other) => other !== id)];
     }
     const origin = findCell(id, boardCells);
     if (origin === to && sameOrder(order, boardCells[to])) return;
@@ -245,23 +274,12 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
         <div className={cx("flex min-w-max flex-col", !lanes && "flex-1")}>
           <div className="sticky top-0 z-10 flex gap-3.5 bg-canvas px-7 pt-2 pb-2">
             {board.columns.map((column) => (
-              <div key={column.status.id} className="flex w-[17.5rem] items-center gap-2 px-2.5">
-                <Dot color={column.status.color} />
-                <span className="font-display text-[15px] tracking-wide text-rubric">
-                  {column.status.name}
-                </span>
-                <span
-                  className={cx(
-                    "text-[12.5px] tabular-nums",
-                    column.overLimit ? "rounded-md bg-danger/15 px-1.5 text-danger" : "text-ink-3",
-                  )}
-                  title={column.overLimit ? "Over the WIP limit" : undefined}
-                >
-                  {column.status.wip_limit !== null
-                    ? `${column.count}/${column.status.wip_limit}`
-                    : column.count}
-                </span>
-              </div>
+              <ColumnHeader
+                key={column.status.id}
+                column={column}
+                columns={columns}
+                expandHere={lanes}
+              />
             ))}
           </div>
           {board.lanes.map((lane) => (
@@ -279,12 +297,25 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
               <div className={cx("flex gap-3.5 px-7 pb-4", !lanes && "min-h-0 flex-1")}>
                 {board.columns.map((column) => {
                   const id = cellId(lane, column.status.id);
+                  if (columns.isCollapsed(column.status.id)) {
+                    return (
+                      <CollapsedCell
+                        key={id}
+                        id={id}
+                        column={column}
+                        count={(cells[id] ?? []).length}
+                        inLane={lanes}
+                        onExpand={() => columns.setCollapsed(column.status.id, false)}
+                      />
+                    );
+                  }
                   return (
                     <BoardCell
                       key={id}
                       id={id}
                       label={lanes ? `${column.status.name}, ${lane.label}` : column.status.name}
                       ids={cells[id] ?? []}
+                      width={columns.widthOf(column.status.id)}
                       cards={cards}
                       bounded={lanes}
                       activeId={activeId}
@@ -302,7 +333,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
       </div>
       <DragOverlay>
         {active && (
-          <div className="w-[17.5rem]">
+          <div style={{ width: overlayWidth ?? undefined }}>
             <CardFace
               {...lookups}
               task={active.task}
@@ -317,10 +348,201 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   );
 }
 
+function ColumnCount({ column }: { column: Column }) {
+  return (
+    <span
+      className={cx(
+        "text-[12.5px] tabular-nums",
+        column.overLimit ? "rounded-md bg-danger/15 px-1.5 text-danger" : "text-ink-3",
+      )}
+      title={column.overLimit ? "Over the WIP limit" : undefined}
+    >
+      {column.status.wip_limit !== null
+        ? `${column.count}/${column.status.wip_limit}`
+        : column.count}
+    </span>
+  );
+}
+
+/**
+ * A column's sticky header: name, count, a collapse button and a resize handle on its right
+ * edge. Collapsed, it keeps the strip's width; with swimlanes it holds the expand button
+ * (without lanes, the strip below is the button).
+ */
+function ColumnHeader({
+  column,
+  columns,
+  expandHere,
+}: {
+  column: Column;
+  columns: BoardColumns;
+  expandHere: boolean;
+}) {
+  const { id, name } = column.status;
+  if (columns.isCollapsed(id)) {
+    return (
+      <div className="flex shrink-0 items-center justify-center" style={{ width: COLLAPSED_WIDTH }}>
+        {expandHere ? (
+          <button
+            type="button"
+            aria-label={`Expand ${name}`}
+            title={`Expand ${name}`}
+            onClick={() => columns.setCollapsed(id, false)}
+            className="flex items-center gap-1 rounded-md px-1 py-0.5 text-ink-3 hover:bg-hover hover:text-ink"
+          >
+            <Dot color={column.status.color} />
+            <ChevronsRight size={14} />
+          </button>
+        ) : (
+          <Dot color={column.status.color} />
+        )}
+      </div>
+    );
+  }
+  const width = columns.widthOf(id);
+  return (
+    <div className="group relative flex shrink-0 items-center gap-2 px-2.5" style={{ width }}>
+      <Dot color={column.status.color} />
+      <span className="truncate font-display text-[15px] tracking-wide text-rubric">{name}</span>
+      <ColumnCount column={column} />
+      <button
+        type="button"
+        aria-label={`Collapse ${name}`}
+        title={`Collapse ${name}`}
+        onClick={() => columns.setCollapsed(id, true)}
+        className="ml-auto rounded-md p-0.5 text-ink-3 opacity-0 hover:bg-hover hover:text-ink focus-visible:opacity-100 group-hover:opacity-100"
+      >
+        <ChevronsLeft size={14} />
+      </button>
+      <ResizeHandle label={name} width={width} onResize={(w) => columns.setWidth(id, w)} />
+    </div>
+  );
+}
+
+/**
+ * Drag to resize a column, double-click to reset; when focused, ←/→ step by 16 px (Shift:
+ * 64), Home and End jump to the limits. Sits in the gap to the right of the column.
+ */
+function ResizeHandle({
+  label,
+  width,
+  onResize,
+}: {
+  label: string;
+  width: number;
+  onResize(width: number | null): void;
+}) {
+  const start = useRef<{ x: number; width: number } | null>(null);
+  const end = (e: PointerEvent<HTMLDivElement>) => {
+    start.current = null;
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+  };
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a focusable splitter (WAI-ARIA separator); <hr> cannot take focus
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize ${label}`}
+      aria-valuenow={width}
+      aria-valuemin={MIN_COLUMN_WIDTH}
+      aria-valuemax={MAX_COLUMN_WIDTH}
+      tabIndex={0}
+      title="Drag to resize, double-click to reset"
+      className="absolute inset-y-0 -right-[11px] w-2 cursor-col-resize touch-none rounded-full outline-none hover:bg-accent/40 focus-visible:bg-accent/60"
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        start.current = { x: e.clientX, width };
+      }}
+      onPointerMove={(e) => {
+        if (start.current) onResize(start.current.width + e.clientX - start.current.x);
+      }}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onDoubleClick={() => onResize(null)}
+      onKeyDown={(e) => {
+        const step = e.shiftKey ? 64 : 16;
+        const next =
+          e.key === "ArrowLeft"
+            ? width - step
+            : e.key === "ArrowRight"
+              ? width + step
+              : e.key === "Home"
+                ? MIN_COLUMN_WIDTH
+                : e.key === "End"
+                  ? MAX_COLUMN_WIDTH
+                  : null;
+        if (next === null) return;
+        e.preventDefault();
+        onResize(next);
+      }}
+    />
+  );
+}
+
+/**
+ * A collapsed column (or lane × column): a narrow strip that still takes drops. Without
+ * swimlanes it shows the column's name and count and expands on click; in a lane, only the
+ * lane's count (the header holds the expand button).
+ */
+function CollapsedCell({
+  id,
+  column,
+  count,
+  inLane,
+  onExpand,
+}: {
+  id: string;
+  column: Column;
+  count: number;
+  inLane: boolean;
+  onExpand(): void;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  const className = cx(
+    "flex shrink-0 flex-col items-center gap-2 rounded-[14px] border border-line bg-hover/60 py-3",
+    inLane ? "min-h-16" : "min-h-0",
+    isOver && "ring-2 ring-accent/60",
+  );
+  if (inLane) {
+    return (
+      <div
+        ref={setNodeRef}
+        className={className}
+        style={{ width: COLLAPSED_WIDTH }}
+        title={`${column.status.name} (collapsed)`}
+      >
+        <span className="text-[12.5px] text-ink-3 tabular-nums">{count}</span>
+      </div>
+    );
+  }
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      aria-label={`Expand ${column.status.name}`}
+      title={`Expand ${column.status.name}`}
+      onClick={onExpand}
+      className={cx(className, "text-ink-3 hover:border-line-strong hover:text-ink")}
+      style={{ width: COLLAPSED_WIDTH }}
+    >
+      <ChevronsRight size={14} />
+      <span className="font-display text-[15px] tracking-wide text-rubric [writing-mode:vertical-rl]">
+        {column.status.name}
+      </span>
+      <ColumnCount column={column} />
+    </button>
+  );
+}
+
 interface CellProps {
   id: string;
   label: string;
   ids: string[];
+  /** Column width in px; a wide column places cards side by side (`lanesFor`). */
+  width: number;
   cards: Map<string, Card>;
   /** In a swimlane: a capped height with its own scroll. Otherwise the full column. */
   bounded: boolean;
@@ -331,54 +553,71 @@ interface CellProps {
   lookups: CardLookups;
 }
 
-/** One column (or lane × column): a drop target with a virtualized, sortable card list. */
+/**
+ * One column (or lane × column): a drop target with a virtualized, sortable card list.
+ * Rows are virtualized; a row holds one card per lane, in rank order left to right.
+ */
 function BoardCell(p: CellProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const { setNodeRef, isOver } = useDroppable({ id: p.id });
+  const lanes = lanesFor(p.width);
   const virtualizer = useVirtualizer({
-    count: p.ids.length,
+    count: Math.ceil(p.ids.length / lanes),
     getScrollElement: () => scrollRef.current,
     estimateSize: () => CARD_SLOT,
-    getItemKey: (i) => p.ids[i] ?? i,
+    getItemKey: (row) => `${lanes}:${p.ids[row * lanes] ?? row}`,
     overscan: 6,
   });
 
   return (
-    <SortableContext id={p.id} items={p.ids} strategy={verticalListSortingStrategy}>
+    <SortableContext
+      id={p.id}
+      items={p.ids}
+      strategy={lanes > 1 ? rectSortingStrategy : verticalListSortingStrategy}
+    >
       <div
         ref={(el) => {
           scrollRef.current = el;
           setNodeRef(el);
         }}
         className={cx(
-          "w-[17.5rem] shrink-0 overflow-y-auto rounded-[14px] border border-line bg-hover/60 p-2",
+          "shrink-0 overflow-y-auto rounded-[14px] border border-line bg-hover/60 p-2",
           p.bounded ? "max-h-[28rem] min-h-16" : "min-h-0",
           isOver && "ring-2 ring-accent/60",
         )}
+        style={{ width: p.width }}
       >
         <ul
           aria-label={p.label}
+          data-lanes={lanes}
           style={{ height: virtualizer.getTotalSize(), position: "relative" }}
         >
-          {virtualizer.getVirtualItems().map((item) => {
-            const card = p.cards.get(p.ids[item.index] as string);
-            if (!card) return null;
-            return (
-              <li
-                key={item.key}
-                style={{ position: "absolute", top: item.start, left: 0, right: 0 }}
-              >
-                <SortableCard
-                  card={card}
-                  placeholder={card.task.id === p.activeId}
-                  selected={card.task.id === p.selectedId}
-                  onOpen={p.onOpen}
-                  onCardKey={p.onCardKey}
-                  lookups={p.lookups}
-                />
-              </li>
-            );
-          })}
+          {virtualizer.getVirtualItems().flatMap((row) =>
+            p.ids.slice(row.index * lanes, (row.index + 1) * lanes).map((cardId, lane) => {
+              const card = p.cards.get(cardId);
+              if (!card) return null;
+              return (
+                <li
+                  key={cardId}
+                  style={{
+                    position: "absolute",
+                    top: row.start,
+                    left: `calc((100% + ${LANE_GAP}px) * ${lane} / ${lanes})`,
+                    width: `calc((100% - ${LANE_GAP * (lanes - 1)}px) / ${lanes})`,
+                  }}
+                >
+                  <SortableCard
+                    card={card}
+                    placeholder={card.task.id === p.activeId}
+                    selected={card.task.id === p.selectedId}
+                    onOpen={p.onOpen}
+                    onCardKey={p.onCardKey}
+                    lookups={p.lookups}
+                  />
+                </li>
+              );
+            }),
+          )}
         </ul>
       </div>
     </SortableContext>
