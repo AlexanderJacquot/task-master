@@ -27,7 +27,8 @@ the app daily for two weeks before Phase 2 (plan section 10).
 ### Task page matched to the mockup (2026-11-05)
 
 User, with a screenshot of 0.3.0 next to the mockup: the full task page still did not
-look like the design. Branch `worktree-mockup-parity` (from `main`).
+look like the design. Branch `worktree-mockup-parity` (from `main`), merged to `main` and
+released as **v0.3.1** (2026-11-05).
 - Canvas and sidebar texture: vertical fibre only. The crossing near-horizontal grain
   read as graph paper on Windows.
 - `PropertyPills` (page only): set properties as tinted pills without icons, the status
