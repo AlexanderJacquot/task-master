@@ -60,6 +60,8 @@ export const commands = {
 	openUrl: (url: string) => typedError<null, CommandError>(__TAURI_INVOKE("open_url", { url })),
 	/**  The calendar connection and the account's calendars. */
 	calendarStatus: () => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("calendar_status")),
+	/**  Moves runner ownership while both workers are stopped. Credentials never enter ops. */
+	setCalendarRunner: (runner: CalendarRunner) => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("set_calendar_runner", { runner })),
 	/**
 	 *  Signs in to Google in the browser with the user's OAuth client, then syncs. An empty
 	 *  secret keeps the stored one. Waits for the sign-in (up to 5 minutes).
@@ -273,6 +275,9 @@ export type CalendarEvent_Serialize = {
 	color: string | null,
 };
 
+/**  Where the Google Calendar worker runs. Stored outside the replicated data. */
+export type CalendarRunner = "this_device" | "server";
+
 /**  A calendar of the connected account, as settings show it. */
 export type CalendarSource = CalendarSource_Serialize | CalendarSource_Deserialize;
 
@@ -309,6 +314,8 @@ export type CalendarStatus = CalendarStatus_Serialize | CalendarStatus_Deseriali
 export type CalendarStatus_Deserialize = {
 	/**  An OAuth client is saved. */
 	configured: boolean,
+	runner: CalendarRunner,
+	can_set_runner: boolean,
 	client_id: string,
 	/**  Signed in (a refresh token is saved). */
 	connected: boolean,
@@ -323,6 +330,8 @@ export type CalendarStatus_Deserialize = {
 export type CalendarStatus_Serialize = {
 	/**  An OAuth client is saved. */
 	configured: boolean,
+	runner: CalendarRunner,
+	can_set_runner: boolean,
 	client_id: string,
 	/**  Signed in (a refresh token is saved). */
 	connected: boolean,

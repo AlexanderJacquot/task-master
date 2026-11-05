@@ -4,13 +4,9 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**v0.5.0 release preparation**, branch `release/0.5.0`: M11 is on main;
-M12 and M13 are integrated in the isolated release worktree. Review fixes and local release
-validation are complete; no version tag has been published. The original checkout's uncommitted icon/UI work is excluded.
-
-M11 core, M12 server and M13 desktop device sync are implemented. **Calendar runner
-transfer to the server is still open**; Calendar runs on one desktop in this release.
-Before publishing the server image, configure the registry credentials (docs/server.md).
+**v0.5.0**, `main`: all current branches and the icon/UI working-tree changes are
+integrated. Server Google Calendar sync and runner handoff are implemented and validated.
+Release tagging/publication is in progress.
 
 **M10 Google Calendar sync**, branch `m10-google-calendar`: merged to `main` with M9 and
 released as **v0.4.0** (2026-11-05). Next: the user creates their OAuth client
@@ -38,6 +34,27 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### Complete v0.5.0 and server Calendar (2026-11-05)
+
+- Merged `worktree-capture-expand` (three commits); every local and fetched remote
+  branch is now an ancestor of main. All other registered worktrees were clean.
+- Committed application artwork, asset generators and illustrated UI icons; fixed SVG
+  titles in both source and generators. Ignore nested tooling worktrees in Git/Biome.
+- Shared Google provider in `crates/client::google`; server worker, authenticated runner
+  and cache endpoints, durable credentials/ownership, exclusive renewed device leases.
+- Settings → Calendar switches This device / Server, transfers credentials, waits for
+  in-flight rounds, relinks existing events and shows the server's status/calendars.
+- Account changes serialize with Calendar; disconnecting task sync pauses Google locally.
+- Regression tests: handoff in both directions without duplicate events; Google edits
+  reaching a second desktop; shown server events; persistence/0600; authorization and
+  secret-free status; denied lease blocks token requests; active round blocks handoff.
+- Validation: 141 Rust tests and 239 UI tests; all-target Clippy, formatting, typecheck,
+  Biome, frontend production build, server release build and Linux debug `.deb` pass.
+- Configured Forgejo `REGISTRY_TOKEN` with a new package-write-only token; GitHub
+  update signing secrets are present. v0.5.0 tagging and remote publication follow.
+- Live Google sign-in still needs the user's OAuth account; regression tests use the
+  real sync HTTP server and a deterministic fake Calendar provider.
 
 ### M13 desktop sync and v0.5.0 review (2026-11-05)
 
@@ -603,8 +620,8 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
-- Sync: Calendar runner transfer and lease on the server (ADR 015); op compaction
-  together with the 30-day purge. Device sync and outside-writer reload are implemented.
+- Sync: op compaction together with the 30-day purge. Device sync, outside-writer
+  reload, server Calendar and its runner handoff are implemented.
 
 - Calendar sync: CalDAV provider (iCloud) behind the same trait; refresh token in the OS
   keychain; a push right after each change instead of the 4 s pause; show which blocks

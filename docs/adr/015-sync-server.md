@@ -149,9 +149,30 @@ optional.
   pushes are not acknowledged; skipped pulls roll back and retain their cursor.
 - Replacement uses a fresh replica's default statuses before replaying the server log.
 - The desktop polls `PRAGMA data_version` every two seconds for outside writers.
-- Calendar runner transfer and the server lease are **not implemented in v0.5.0**.
-  Calendar stays on one desktop; server execution is a follow-up. Op compaction and
-  the 30-day purge remain deferred together.
+- The Google provider and installed-app OAuth helpers live in `crates/client::google`,
+  reused by the shell and server (existing dependencies only). Calendar commands,
+  event mapping, repair and relinking stay in the core.
+- Authenticated `/calendar/status`, `/calendar/runner`, `/calendar/lease`,
+  `/calendar/sync`, `/calendar/shown` and `/calendar/events` manage the runner and its
+  local cache. Sync-token scope is required. Status responses never contain credentials;
+  an explicit transfer to a desktop returns the Google credentials.
+- The server persists selection, credentials and desktop leases in `calendar.json`
+  (0600, atomic write, outside ops). Credentials remain there after a transfer back so
+  a lost HTTP reply can be retried. It is not part of daily DB/S3 backups.
+- A server round holds a handoff mutex across Google requests. A desktop holds its own
+  mutex during a round/transfer and renews an exclusive five-minute lease before every
+  Google request (request timeout is at most 60 seconds, including token refresh).
+  Offline/denied lease fails closed. Handoffs refuse an active lease of another device;
+  this prevents an already-connected second desktop from running concurrently.
+- Moving to Server durably pauses the desktop first, flushes task ops, then transfers
+  credentials. Moving back waits for the server round, claims the desktop lease, saves
+  credentials and relinks. A failed transfer leaves workers paused rather than duplicated.
+- Server Calendar runs after startup, shortly after pushes, every five minutes and on
+  demand. Pulled changes announce the new ops head over SSE. Shown calendars/events
+  remain on their runner; the shell proxies reads and preferences while Server is chosen.
+- Disconnecting task sync pauses its local Calendar worker. Reconnecting Google explicitly
+  enables standalone sync again. Server day-boundary calculations use UTC.
+- Op compaction and the 30-day purge remain deferred together.
 
 ## Rejected
 

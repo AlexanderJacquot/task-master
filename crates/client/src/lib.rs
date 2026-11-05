@@ -5,6 +5,8 @@
 //! what is new, push the repairs that produced, download missing attachment content.
 //! The store is locked only between network calls, so the app keeps writing meanwhile.
 
+pub mod google;
+
 use std::fmt;
 use std::io::{BufRead, BufReader};
 use std::sync::{Mutex, MutexGuard, PoisonError};
@@ -210,6 +212,59 @@ impl Client {
                 device_name: device_name.to_owned(),
             },
         )
+    }
+
+    pub fn calendar_status(&self) -> Result<taskmaster_core::calendar::RunnerStatus> {
+        self.get_json("/calendar/status")
+    }
+
+    pub fn calendar_runner(
+        &self,
+        request: &taskmaster_core::calendar::RunnerRequest,
+    ) -> Result<taskmaster_core::calendar::RunnerTransfer> {
+        self.post_json("/calendar/runner", request)
+    }
+
+    pub fn calendar_lease(&self, device_id: &str, release: bool) -> Result<bool> {
+        self.post_json(
+            "/calendar/lease",
+            &taskmaster_core::calendar::CalendarLease {
+                device_id: device_id.into(),
+                release,
+            },
+        )
+    }
+
+    pub fn calendar_sync(&self) -> Result<taskmaster_core::calendar::RunnerStatus> {
+        self.post_json("/calendar/sync", &())
+    }
+
+    pub fn calendar_shown(
+        &self,
+        calendar_id: &str,
+        shown: bool,
+    ) -> Result<taskmaster_core::calendar::RunnerStatus> {
+        self.post_json(
+            "/calendar/shown",
+            &taskmaster_core::calendar::CalendarShown {
+                calendar_id: calendar_id.into(),
+                shown,
+            },
+        )
+    }
+
+    pub fn calendar_events(
+        &self,
+        range: &taskmaster_core::calendar::EventRange,
+    ) -> Result<Vec<taskmaster_core::calendar::CalendarEvent>> {
+        let mut url = url::Url::parse(&self.url("/calendar/events"))
+            .map_err(|e| Error::Protocol(e.to_string()))?;
+        url.query_pairs_mut()
+            .append_pair("from", &range.from.to_string())
+            .append_pair("to", &range.to.to_string())
+            .append_pair("from_date", &range.from_date)
+            .append_pair("to_date", &range.to_date);
+        Self::read_json(self.check(self.auth(self.agent.get(url.as_str())).call())?)
     }
 
     /// Follows `GET /events`: calls `on_head` with the server's newest op `seq` when it

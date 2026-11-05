@@ -6,7 +6,7 @@ const paths = JSON.parse(await readFile(new URL("paths.json", root), "utf8"));
 for (const [name, d] of Object.entries(paths)) {
   await writeFile(
     new URL(`${name}.svg`, root),
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>\n`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><title>${name}</title><path d="${d}"/></svg>\n`,
   );
 }
 
@@ -29,14 +29,14 @@ const labels = {
   "due-date": "Due Date",
   settings: "Settings",
 };
-let proof = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="900" viewBox="0 0 1000 900"><rect width="1000" height="900" fill="#F9F2E3"/><g font-family="Georgia,serif"><text x="40" y="48" fill="#39291D" font-size="30">Task Master · Asset Library</text><text x="40" y="79" fill="#6E5A44" font-size="15">Five original path icons · 24 × 24 grid · 1.75 rounded strokes · currentColor</text>`;
+let proof = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="900" viewBox="0 0 1000 900"><title>Task Master asset library</title><rect width="1000" height="900" fill="#F9F2E3"/><g font-family="Georgia,serif"><text x="40" y="48" fill="#39291D" font-size="30">Task Master · Asset Library</text><text x="40" y="79" fill="#6E5A44" font-size="15">Five original path icons · 24 × 24 grid · 1.75 rounded strokes · currentColor</text>`;
 for (const theme of themes) {
   proof += `<rect x="24" y="${theme.y}" width="952" height="210" rx="16" fill="${theme.bg}"/><text x="44" y="${theme.y + 30}" fill="${theme.muted}" font-size="12" letter-spacing="2">${theme.label}</text>`;
   for (const [index, [name, d]] of Object.entries(paths).entries()) {
     const x = 92 + index * 186;
     proof += `<text x="${x}" y="${theme.y + 65}" fill="${theme.ink}" text-anchor="middle" font-size="17">${labels[name]}</text>`;
     for (const [row, size] of [16, 24, 32].entries()) {
-      proof += `<svg x="${x - size / 2}" y="${theme.y + 82 + row * 38}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${theme.ink}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;
+      proof += `<svg x="${x - size / 2}" y="${theme.y + 82 + row * 38}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${theme.ink}" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><title>${name}</title><path d="${d}"/></svg>`;
     }
   }
 }

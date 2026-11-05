@@ -6,7 +6,8 @@ a headless AI integration) is planned for M14. Design: `docs/adr/015-sync-server
 
 > **Status.** The server is built (M12): image, auth modes, sync, backups and tokens as
 > described here. Settings → Sync connects the desktop in v0.5.0 (M13). Calendar
-> execution remains on the desktop. The API for other software (`/api/v1`) is M14.
+> execution can run on this server or one leased desktop. The API for other software
+> (`/api/v1`) is M14.
 
 ## 1. How it fits together
 
@@ -219,9 +220,32 @@ Open Settings → Sync and enter the URL, `https://tasks.solarnexus.space`. Then
 - On every other device, choose **Replace with the server's tasks** (a backup is taken
   first) or **Merge**. Merging keeps both sets.
 
-Calendar sync runs on the desktop in v0.5.0. Connect Google Calendar on only one
-desktop to avoid competing runners. Moving the calendar runner to the server is planned;
-there is no "Runs on: Server" option in this release.
+Calendar starts on the desktop. To keep syncing while the desktop is closed:
+
+1. Join the sync server, then connect Google in Settings → Calendar as usual.
+2. Choose **Runs on → Server**. The desktop pushes pending edits, stops its local
+   Calendar worker, and transfers the OAuth client and refresh token to the server.
+3. The server reuses the existing task-master calendar and relinks events by their
+   stored keys. It syncs every five minutes, shortly after a device push, or on **Sync now**.
+4. To move back, choose **This device**. The server finishes its active round before
+   returning the credentials and giving this desktop the exclusive lease.
+
+The server stores credentials and ownership in `/data/calendar.json` (0600), outside
+replicated ops, exports, API status and logs. Keep the `/data` volume persistent. The
+file is not included in the daily database or S3 backups; back it up separately with
+restricted access, or reconnect Google after losing the volume.
+
+A desktop joined to a sync server renews a five-minute exclusive lease before every
+Google request and releases it after its round. An unreachable server or denied lease
+stops Google requests; local task editing still works offline. A transfer waits for a
+server round, and refuses while another desktop holds a live lease. If a device crashes,
+wait five minutes and retry. After disconnecting task sync, Google is paused on that
+desktop; explicitly reconnect Google to run it standalone again.
+
+Shown calendars and their cached events live on the chosen runner. While the server runs
+Calendar, the desktop reads them from the server; Google edits to blocks and day plans
+are ordinary commands and reach all devices through task sync. Calendar preferences
+are refreshed when changing runners. Server day-boundary calculations use UTC.
 
 ## 7. Backups and restore
 

@@ -17,6 +17,7 @@ function message(err: unknown): string {
 export function CalendarSettings() {
   const api = useApi().calendar;
   const files = useApi().files;
+  const setRunner = api?.setRunner;
   const [status, setStatus] = useState<CalendarStatus | null>(null);
   const [clientId, setClientId] = useState("");
   const [secret, setSecret] = useState("");
@@ -64,6 +65,27 @@ export function CalendarSettings() {
       title="Calendar"
       hint="Two-way sync with Google Calendar: your time blocks and day plans go to a calendar named “task-master” in your account (moving or deleting them there comes back here), and the calendars you pick below show in the Calendar view, read-only."
     >
+      {status?.connected && status.can_set_runner && setRunner && (
+        <fieldset className="flex items-center gap-3" disabled={waiting}>
+          <legend className="text-xs text-ink-3">Runs on</legend>
+          {(["this_device", "server"] as const).map((runner) => (
+            <Button
+              key={runner}
+              size="sm"
+              variant={status.runner === runner ? "primary" : "ghost"}
+              onClick={() => {
+                setWaiting(true);
+                void run(() => setRunner(runner)).finally(() => setWaiting(false));
+              }}
+            >
+              {runner === "server" ? "Server" : "This device"}
+            </Button>
+          ))}
+          <span className="text-xs text-ink-3">
+            Moving to the server transfers your Google credentials.
+          </span>
+        </fieldset>
+      )}
       {status?.connected ? (
         <>
           <p className="text-sm text-ink-2" role="status">
@@ -117,7 +139,12 @@ export function CalendarSettings() {
             <Button size="sm" onClick={() => void run(() => api.syncNow())}>
               Sync now
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => void run(() => api.disconnect())}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={status.runner === "server" || waiting}
+              onClick={() => void run(() => api.disconnect())}
+            >
               Disconnect
             </Button>
           </div>

@@ -6,6 +6,7 @@
 
 pub mod auth;
 pub mod backup;
+pub mod calendar;
 pub mod config;
 
 use std::convert::Infallible;
@@ -42,6 +43,7 @@ pub struct AppState {
     pub config: Config,
     pub store: Mutex<Store>,
     pub tokens: Tokens,
+    pub calendar: calendar::Runtime,
     oidc: Option<Oidc>,
     /// The newest op `seq`, announced to `/events` listeners after every push.
     heads: broadcast::Sender<i64>,
@@ -54,7 +56,9 @@ impl AppState {
             .map_err(|e| format!("cannot create {}: {e}", config.data_dir.display()))?;
         let store = Store::open(config.data_dir.join(DATA_FILE)).map_err(|e| e.to_string())?;
         let tokens = Tokens::open(&config.data_dir.join(TOKENS_FILE)).map_err(|e| e.to_string())?;
-        Ok(Self::new(config, store, tokens))
+        let state = Self::new(config, store, tokens);
+        state.calendar.load(&state)?;
+        Ok(state)
     }
 
     pub fn new(config: Config, store: Store, tokens: Tokens) -> Arc<Self> {
@@ -71,6 +75,7 @@ impl AppState {
             config,
             store: Mutex::new(store),
             tokens,
+            calendar: calendar::Runtime::default(),
             oidc,
             heads,
         })
@@ -86,6 +91,7 @@ impl AppState {
 }
 
 /// An error answer: `{"error": "..."}` with a status.
+#[derive(Debug)]
 pub struct ApiError(StatusCode, String);
 
 impl ApiError {
@@ -165,6 +171,12 @@ pub fn router(state: Arc<AppState>) -> Router {
                 .put(put_blob)
                 .layer(DefaultBodyLimit::max(blob_limit)),
         )
+        .route("/calendar/status", get(calendar::get_status))
+        .route("/calendar/runner", post(calendar::transfer))
+        .route("/calendar/lease", post(calendar::lease))
+        .route("/calendar/sync", post(calendar::sync_now))
+        .route("/calendar/shown", post(calendar::shown))
+        .route("/calendar/events", get(calendar::events))
         .route("/auth/oidc", post(oidc_exchange))
         .with_state(state)
 }
@@ -220,6 +232,7 @@ async fn push(
     })
     .await?;
     let _ = state.heads.send(result.head);
+    state.calendar.kick();
     Ok(Json(result))
 }
 
@@ -383,6 +396,7 @@ async fn oidc_exchange(
 
 /// Serves until Ctrl+C or SIGTERM.
 pub async fn serve(state: Arc<AppState>) -> Result<(), String> {
+    calendar::spawn(state.clone());
     let listener = tokio::net::TcpListener::bind(&state.config.listen)
         .await
         .map_err(|e| format!("cannot listen on {}: {e}", state.config.listen))?;

@@ -4576,10 +4576,14 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 name = "taskmaster-client"
 version = "0.5.0"
 dependencies = [
+ "base64 0.23.1",
+ "getrandom 0.3.4",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "taskmaster-core",
  "ureq",
+ "url",
 ]
 
 [[package]]

@@ -103,8 +103,8 @@ fn two_devices_sync_through_the_server() {
     let report = sync(&client, &a).unwrap();
     assert!(report.pushed > 0);
     add_task(&b, "from b");
-    sync(&client, &b).unwrap();
-    sync(&client, &a).unwrap();
+    taskmaster_client::sync(&client, &b).unwrap();
+    taskmaster_client::sync(&client, &a).unwrap();
 
     assert_eq!(titles(&a), ["from a", "from b"]);
     assert_eq!(titles(&b), ["from a", "from b"]);
@@ -147,7 +147,7 @@ fn many_ops_go_in_pages() {
     for i in 0..(taskmaster_client::PAGE + 20) {
         add_task(&a, &format!("t{i}"));
     }
-    sync(&client, &a).unwrap();
+    taskmaster_client::sync(&client, &a).unwrap();
     let report = sync(&client, &b).unwrap();
     assert!(report.pulled > taskmaster_client::PAGE);
     assert_eq!(titles(&b).len(), taskmaster_client::PAGE as usize + 20);
@@ -530,4 +530,240 @@ fn skipped_pushes_remain_pending() {
     let err = sync(&Client::new(&fake, None), &a).unwrap_err();
     assert!(matches!(err, ClientError::Protocol(_)));
     assert_eq!(a.lock().unwrap().outbox(10).unwrap().ops.len(), 1);
+}
+
+#[allow(dead_code)]
+#[path = "../../core/tests/support/calendar.rs"]
+mod calendar_fake;
+
+#[test]
+fn calendar_handoff_relinks_without_duplicates_and_google_edits_sync_back() {
+    use taskmaster_core::calendar::*;
+    let (url, state) = server(Config::default());
+    let client = Client::new(&url, None);
+    let a = device();
+    let b = device();
+    let id = add_task(&a, "calendar handoff");
+    let now = now_ms();
+    a.lock()
+        .unwrap()
+        .execute(Command::CreateTimeBlock {
+            block: NewTimeBlock {
+                id: None,
+                task_id: id,
+                start_at: now + 3_600_000,
+                end_at: now + 7_200_000,
+                outcome: None,
+            },
+        })
+        .unwrap();
+    let mut google = calendar_fake::FakeServer::with_primary();
+    taskmaster_core::calendar::sync(&a, &mut google, now, &utc_date(now)).unwrap();
+    let target = google.target();
+    let event_id = google.live(&target)[0].id.clone();
+    taskmaster_client::sync(&client, &a).unwrap();
+    let a_id = a.lock().unwrap().device_id().to_owned();
+    let credentials = GoogleCredentials {
+        client_id: "client".into(),
+        client_secret: "secret".into(),
+        refresh_token: "refresh".into(),
+    };
+    assert!(client.calendar_lease(&a_id, false).unwrap());
+    let transfer = client
+        .calendar_runner(&RunnerRequest {
+            runner: CalendarRunner::Server,
+            device_id: a_id.clone(),
+            credentials: Some(credentials.clone()),
+        })
+        .unwrap();
+    assert!(
+        transfer.credentials.is_none(),
+        "server selection never returns credentials"
+    );
+    assert!(!client.calendar_lease(&a_id, false).unwrap());
+    google.writes.clear();
+    taskmaster_server::calendar::cycle_with(&state, &mut google).unwrap();
+    assert!(
+        !google
+            .writes
+            .iter()
+            .any(|w| w.starts_with("insert") || w.starts_with("create_calendar")),
+        "handoff relinks existing events: {:?}",
+        google.writes
+    );
+    assert_eq!(google.live(&target).len(), 1);
+
+    google.user_edit(&target, &event_id, |event| {
+        event.when = Some(When::Timed {
+            start_at: now + 10_800_000,
+            end_at: now + 14_400_000,
+        })
+    });
+    taskmaster_server::calendar::cycle_with(&state, &mut google).unwrap();
+    taskmaster_client::sync(&client, &b).unwrap();
+    assert_eq!(
+        b.lock().unwrap().snapshot().unwrap().time_blocks[0].start_at,
+        now + 10_800_000
+    );
+    assert!(client.calendar_status().unwrap().last_sync_at.is_some());
+    google.user_add(
+        "me@example.com",
+        "External meeting",
+        When::Timed {
+            start_at: now + 1000,
+            end_at: now + 2000,
+        },
+    );
+    client.calendar_shown("me@example.com", true).unwrap();
+    taskmaster_server::calendar::cycle_with(&state, &mut google).unwrap();
+    let visible = client
+        .calendar_events(&EventRange {
+            from: now,
+            to: now + 86_400_000,
+            from_date: utc_date(now),
+            to_date: utc_date(now + 86_400_000),
+        })
+        .unwrap();
+    assert!(
+        visible
+            .iter()
+            .any(|event| event.title == "External meeting")
+    );
+
+    // The selection and credentials survive a server restart, with owner-only file mode.
+    let reopened = AppState::open(state.config.clone()).unwrap();
+    let reopened_client = Client::new(&spawn_app(router(reopened)), None);
+    assert_eq!(
+        reopened_client.calendar_status().unwrap().runner,
+        CalendarRunner::Server
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(state.config.data_dir.join("calendar.json"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+    let b_id = b.lock().unwrap().device_id().to_owned();
+    let transfer = client
+        .calendar_runner(&RunnerRequest {
+            runner: CalendarRunner::ThisDevice,
+            device_id: b_id.clone(),
+            credentials: None,
+        })
+        .unwrap();
+    assert!(transfer.credentials == Some(credentials));
+    assert!(client.calendar_lease(&b_id, false).unwrap());
+    assert!(!client.calendar_lease(&a_id, false).unwrap());
+    assert!(
+        client
+            .calendar_runner(&RunnerRequest {
+                runner: CalendarRunner::Server,
+                device_id: a_id.clone(),
+                credentials: None
+            })
+            .is_err()
+    );
+    google.writes.clear();
+    taskmaster_server::calendar::cycle_with(&state, &mut google).unwrap();
+    assert!(
+        google.writes.is_empty(),
+        "server stops after transfer to a desktop"
+    );
+    taskmaster_core::calendar::sync(&b, &mut google, now_ms(), &utc_date(now_ms())).unwrap();
+    assert_eq!(google.live(&target).len(), 1);
+    assert!(client.calendar_lease(&b_id, true).unwrap());
+    assert!(client.calendar_lease(&a_id, false).unwrap());
+}
+
+#[test]
+fn calendar_controls_require_a_sync_token_and_do_not_expose_credentials() {
+    use taskmaster_core::calendar::*;
+    let (url, state) = server(Config {
+        auth: AuthMode::Token,
+        ..Config::default()
+    });
+    let anonymous = Client::new(&url, None);
+    assert!(matches!(
+        anonymous.calendar_status(),
+        Err(ClientError::Unauthorized(_))
+    ));
+    assert!(matches!(
+        anonymous.calendar_lease("device", false),
+        Err(ClientError::Unauthorized(_))
+    ));
+    let read = state.tokens.add("read", Scope::ApiRead).unwrap();
+    assert!(Client::new(&url, Some(read)).calendar_status().is_err());
+    let token = state.tokens.add("device", Scope::Sync).unwrap();
+    let client = Client::new(&url, Some(token));
+    client
+        .calendar_runner(&RunnerRequest {
+            runner: CalendarRunner::Server,
+            device_id: "device".into(),
+            credentials: Some(GoogleCredentials {
+                client_id: "id".into(),
+                client_secret: "private-secret".into(),
+                refresh_token: "private-refresh".into(),
+            }),
+        })
+        .unwrap();
+    let status = serde_json::to_string(&client.calendar_status().unwrap()).unwrap();
+    assert!(!status.contains("private-secret") && !status.contains("private-refresh"));
+    assert!(
+        client
+            .calendar_lease("other", false)
+            .is_ok_and(|granted| !granted)
+    );
+}
+
+#[test]
+fn calendar_handoff_waits_for_the_active_google_round() {
+    use taskmaster_core::calendar::*;
+    let (url, state) = server(Config::default());
+    let client = Client::new(&url, None);
+    client
+        .calendar_runner(&RunnerRequest {
+            runner: CalendarRunner::Server,
+            device_id: "a".into(),
+            credentials: Some(GoogleCredentials {
+                client_id: "id".into(),
+                client_secret: "secret".into(),
+                refresh_token: "refresh".into(),
+            }),
+        })
+        .unwrap();
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (continue_tx, continue_rx) = std::sync::mpsc::channel();
+    let mut google = calendar_fake::FakeServer::with_primary();
+    google.before_calendars = Some(Box::new(move || {
+        started_tx.send(()).unwrap();
+        continue_rx.recv().unwrap();
+    }));
+    let running = state.clone();
+    let round = std::thread::spawn(move || {
+        taskmaster_server::calendar::cycle_with(&running, &mut google).unwrap()
+    });
+    started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let transfer = std::thread::spawn(move || {
+        let result = client.calendar_runner(&RunnerRequest {
+            runner: CalendarRunner::ThisDevice,
+            device_id: "b".into(),
+            credentials: None,
+        });
+        done_tx.send(result.is_ok()).unwrap();
+    });
+    assert!(
+        done_rx.recv_timeout(Duration::from_millis(100)).is_err(),
+        "handoff must wait for the active provider"
+    );
+    continue_tx.send(()).unwrap();
+    assert!(done_rx.recv_timeout(Duration::from_secs(5)).unwrap());
+    round.join().unwrap();
+    transfer.join().unwrap();
 }

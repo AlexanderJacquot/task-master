@@ -88,7 +88,8 @@ jobs:
             Sync tasks and attachments across devices with a self-hosted server from Settings → Sync.
             Includes offline editing, merge or backed-up replacement, token/OIDC sign-in, task metrics and stale indicators.
 
-            Google Calendar continues to run on one desktop. Server Calendar execution, the HTTP API, CLI and MCP are not included.
+            Move Google Calendar sync between desktop and server from Settings → Calendar. Existing events are reused and exclusive leases prevent competing runners.
+            Also includes the expanded quick-capture editor and new application artwork. The HTTP API, CLI and MCP remain future milestones.
 
             Installed apps (0.2.0 and later) pick this up from Settings → About and updates.
             New install: Windows setup .exe, macOS .dmg, Linux .AppImage or .deb/.rpm.

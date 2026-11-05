@@ -27,7 +27,8 @@ that folder while `.forgejo/workflows` exists, which is why its manual-only stub
 ## Cutting a release
 
 For v0.5.0, use [the release notes](releases/0.5.0.md). Validate the integrated branch
-with the same checks as CI before tagging. Calendar runner transfer remains deferred.
+with the same checks as CI before tagging. This release includes server Calendar sync
+and the remaining capture and artwork changes.
 
 1. Bump `version` in `apps/desktop/src-tauri/tauri.conf.json`, the workspace `Cargo.toml`
    and `apps/desktop/package.json` on `main`. The version must grow: the app only offers

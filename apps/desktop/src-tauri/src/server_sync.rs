@@ -337,6 +337,7 @@ pub fn sync_status(app: AppHandle) -> SyncStatus {
 #[specta::specta]
 pub fn sync_connect(app: AppHandle, url: String) -> CommandResult<SyncStatus> {
     let state = app.state::<AppState>();
+    let _calendar = lock(&state.calendar.gate);
     let _round = lock(&state.sync.round);
     let url = normalize_url(&url).map_err(invalid)?;
     let info = Client::new(&url, None).info().map_err(|e| sync_error(&e))?;
@@ -378,6 +379,7 @@ pub fn sync_connect(app: AppHandle, url: String) -> CommandResult<SyncStatus> {
 #[specta::specta]
 pub fn sync_set_token(app: AppHandle, token: String) -> CommandResult<SyncStatus> {
     let state = app.state::<AppState>();
+    let _calendar = lock(&state.calendar.gate);
     let _round = lock(&state.sync.round);
     let mut account = account(&state).ok_or_else(|| invalid("connect to a server first"))?;
     let token = token.trim().to_owned();
@@ -397,6 +399,7 @@ pub fn sync_set_token(app: AppHandle, token: String) -> CommandResult<SyncStatus
 #[specta::specta]
 pub fn sync_sign_in(app: AppHandle) -> CommandResult<SyncStatus> {
     let state = app.state::<AppState>();
+    let _calendar = lock(&state.calendar.gate);
     let _round = lock(&state.sync.round);
     let mut account = account(&state).ok_or_else(|| invalid("connect to a server first"))?;
     let client = Client::new(&account.url, None);
@@ -430,6 +433,7 @@ pub fn sync_sign_in(app: AppHandle) -> CommandResult<SyncStatus> {
 #[specta::specta]
 pub fn sync_join(app: AppHandle, mode: JoinMode) -> CommandResult<SyncStatus> {
     let state = app.state::<AppState>();
+    let _calendar = lock(&state.calendar.gate);
     let _round = lock(&state.sync.round);
     let account = account(&state).ok_or_else(|| invalid("connect to a server first"))?;
     if lock(&state.sync.run).auth != Some(AuthMode::None) && account.token.is_none() {
@@ -463,11 +467,22 @@ pub fn sync_now(state: State<'_, AppState>) -> SyncStatus {
 
 /// Stops syncing and forgets the server and its token. Local data stays; joining again
 /// later sends everything again (the server ignores what it has).
-#[tauri::command]
+#[tauri::command(async)]
 #[specta::specta]
 pub fn sync_disconnect(app: AppHandle) -> CommandResult<SyncStatus> {
     let state = app.state::<AppState>();
+    let _calendar = lock(&state.calendar.gate);
     let _round = lock(&state.sync.round);
+    // A detached desktop must not become an unleased Calendar runner.
+    {
+        let mut config = lock(&state.config);
+        if let Some(google) = &mut config.google {
+            google.runner = taskmaster_core::calendar::CalendarRunner::Server;
+        }
+        config
+            .save(&state.config_path)
+            .map_err(|e| internal(e.to_string()))?;
+    }
     save(&state, |s| *s = None)?;
     with_store(&state, |s| s.restart_sync())?;
     *lock(&state.sync.run) = Run::default();
@@ -590,6 +605,15 @@ pub fn oidc_sign_in(
         .as_str()
         .map(str::to_owned)
         .ok_or_else(|| "the provider sent no ID token (is the `openid` scope allowed?)".into())
+}
+
+pub fn sync_before_calendar(state: &AppState) -> CommandResult<()> {
+    let _round = lock(&state.sync.round);
+    let account = account(state)
+        .filter(|a| a.joined)
+        .ok_or_else(|| invalid("join a sync server first"))?;
+    taskmaster_client::sync(&client_for(&account), &state.store).map_err(|e| sync_error(&e))?;
+    Ok(())
 }
 
 #[cfg(test)]

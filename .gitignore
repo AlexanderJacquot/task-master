@@ -13,6 +13,7 @@
 .devenv/
 .direnv/
 .claude/settings.local.json
+.claude/worktrees/
 
 # Build output
 target/

@@ -41,6 +41,15 @@ What the app may do, and nothing more:
   (your primary calendar is ticked at first). They are read-only in the app.
 - Sync runs every 5 minutes, a few seconds after you change something, and on **Sync now**.
 
+## Run Calendar on your server
+
+After joining a task-master sync server, Settings → Calendar offers **Runs on: This
+device / Server**. Choosing Server transfers your OAuth client and refresh token and
+keeps syncing when the desktop is closed. Choosing This device waits for the server
+worker to finish and transfers ownership back. Existing events are relinked, not copied.
+See [server setup](server.md#6-connect-the-desktop-m13) for credential storage, leases
+and recovery. To disconnect Google, first move it back to This device.
+
 ## Troubleshooting
 
 - **"calendar sign-in needed: invalid_grant"**: the sign-in expired or was revoked (or the

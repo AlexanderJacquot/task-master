@@ -94,6 +94,7 @@ export interface CalendarApi {
   disconnect(): Promise<CalendarStatus>;
   setShown(calendarId: string, shown: boolean): Promise<CalendarStatus>;
   syncNow(): Promise<CalendarStatus>;
+  setRunner?(runner: "this_device" | "server"): Promise<CalendarStatus>;
   events(range: EventRange): Promise<CalendarEvent[]>;
   /** Called when a sync starts and ends. */
   onSynced(handler: (status: CalendarStatus) => void): Promise<() => void>;
@@ -101,6 +102,7 @@ export interface CalendarApi {
 
 export const tauriCalendar: CalendarApi = {
   status: () => unwrap(commands.calendarStatus()),
+  setRunner: (runner) => unwrap(commands.setCalendarRunner(runner)),
   connect: (clientId, clientSecret) => unwrap(commands.googleConnect(clientId, clientSecret)),
   disconnect: () => unwrap(commands.googleDisconnect()),
   setShown: (calendarId, shown) => unwrap(commands.setCalendarShown(calendarId, shown)),

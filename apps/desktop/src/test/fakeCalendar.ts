@@ -7,6 +7,8 @@ export function fakeCalendar(initial: Partial<CalendarStatus> = {}, events: Cale
   const ranges: EventRange[] = [];
   let status: CalendarStatus = {
     configured: false,
+    runner: "this_device",
+    can_set_runner: false,
     client_id: "",
     connected: false,
     syncing: false,
@@ -19,6 +21,11 @@ export function fakeCalendar(initial: Partial<CalendarStatus> = {}, events: Cale
   let listener: ((s: CalendarStatus) => void) | null = null;
   const api: CalendarApi = {
     status: async () => status,
+    setRunner: async (runner) => {
+      calls.push(`runner ${runner}`);
+      status = { ...status, runner };
+      return status;
+    },
     connect: async (clientId, secret) => {
       calls.push(`connect ${clientId} ${secret}`);
       status = { ...status, configured: true, client_id: clientId, connected: true };

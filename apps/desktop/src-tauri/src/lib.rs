@@ -569,6 +569,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             save_attachment,
             open_url,
             calendar_sync::calendar_status,
+            calendar_sync::set_calendar_runner,
             calendar_sync::google_connect,
             calendar_sync::google_disconnect,
             calendar_sync::set_calendar_shown,
@@ -640,6 +641,7 @@ pub fn run() {
                 && let Some(state) = window.app_handle().try_state::<AppState>()
             {
                 state.sync.kick();
+                state.calendar.kick();
             }
         })
         .setup(move |app| {

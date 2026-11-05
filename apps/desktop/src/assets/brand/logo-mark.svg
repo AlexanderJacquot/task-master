@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <title>Task Master</title>
   <defs>
     <linearGradient id="tile" x1="70" y1="24" x2="421" y2="488" gradientUnits="userSpaceOnUse">
       <stop stop-color="#3C3028"/><stop offset=".48" stop-color="#241D18"/><stop offset="1" stop-color="#15110F"/>

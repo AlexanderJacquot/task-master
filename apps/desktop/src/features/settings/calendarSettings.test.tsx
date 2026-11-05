@@ -109,3 +109,22 @@ describe("calendar settings", () => {
     expect(calendar.calls).toEqual(["shown work true", "sync", "disconnect"]);
   });
 });
+
+it("moves Calendar to the server and back without disconnecting Google", async () => {
+  const calendar = fakeCalendar({ configured: true, connected: true, can_set_runner: true });
+  renderWith(calendar);
+  fireEvent.click(await screen.findByRole("button", { name: "Server" }));
+  await waitFor(() => expect(calendar.calls).toEqual(["runner server"]));
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "Disconnect" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "This device" }));
+  await waitFor(() => expect(calendar.calls).toEqual(["runner server", "runner this_device"]));
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: "Disconnect" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  );
+});

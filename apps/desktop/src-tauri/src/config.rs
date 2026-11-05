@@ -28,6 +28,8 @@ pub struct GoogleAccount {
     pub client_secret: String,
     #[serde(default)]
     pub refresh_token: Option<String>,
+    #[serde(default)]
+    pub runner: taskmaster_core::calendar::CalendarRunner,
 }
 
 /// The sync server this device syncs with (ADR 015, docs/server.md).
@@ -202,6 +204,7 @@ mod tests {
                 client_id: "id.apps.googleusercontent.com".into(),
                 client_secret: "secret".into(),
                 refresh_token: Some("1//token".into()),
+                runner: Default::default(),
             }),
             sync: Some(SyncAccount {
                 url: "https://tasks.example.org".into(),

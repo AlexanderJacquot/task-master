@@ -1044,3 +1044,58 @@ mod tests {
         }
     }
 }
+
+/// Where the Google Calendar worker runs. Stored outside the replicated data.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum CalendarRunner {
+    #[default]
+    ThisDevice,
+    Server,
+}
+
+/// Credentials transferred only by an explicit, authenticated runner handoff.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoogleCredentials {
+    pub client_id: String,
+    pub client_secret: String,
+    pub refresh_token: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RunnerRequest {
+    pub runner: CalendarRunner,
+    pub device_id: String,
+    pub credentials: Option<GoogleCredentials>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RunnerStatus {
+    pub runner: CalendarRunner,
+    pub connected: bool,
+    pub syncing: bool,
+    pub last_sync_at: Option<i64>,
+    pub last_error: Option<String>,
+    pub last_report: Option<SyncReport>,
+    pub sources: Vec<CalendarSource>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RunnerTransfer {
+    pub status: RunnerStatus,
+    pub credentials: Option<GoogleCredentials>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CalendarLease {
+    pub device_id: String,
+    #[serde(default)]
+    pub release: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CalendarShown {
+    pub calendar_id: String,
+    pub shown: bool,
+}

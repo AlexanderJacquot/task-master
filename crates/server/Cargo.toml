@@ -34,5 +34,4 @@ rusty-s3 = "0.10.2"
 ureq = "3.4.3"
 url = "2.5"
 
-[dev-dependencies]
 taskmaster-client = { path = "../client" }

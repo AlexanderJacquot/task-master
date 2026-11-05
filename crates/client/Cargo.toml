@@ -17,3 +17,7 @@ taskmaster-core = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = "3.4.3"
+base64 = "0.23.1"
+sha2 = "0.11.1"
+getrandom = "0.3.4"
+url = "2.5"
