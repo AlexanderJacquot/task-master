@@ -583,3 +583,59 @@ fn the_brief_of_a_bare_task_is_short() {
         Err(Error::NotFound { .. })
     ));
 }
+
+#[test]
+fn an_agent_writing_elsewhere_keeps_the_users_undo_history() {
+    let dir = std::env::temp_dir().join(format!("tm-agent-undo-{}", new_id()));
+    let path = dir.join("tasks.sqlite");
+    let mut desktop = Store::open(&path).unwrap();
+    let mut mcp = Store::open(&path).unwrap();
+    let other = add_task(&mut desktop, titled("Other"));
+    let mine = add_task(&mut desktop, titled("Mine"));
+    desktop.refresh_external_changes().unwrap();
+
+    // The agent adds its own task and a note (which touches the session task).
+    let session = start(&mut desktop, &mine.id);
+    add_task(
+        &mut mcp,
+        NewTask {
+            owner: TaskOwner::Agent,
+            parent_id: Some(mine.id.clone()),
+            ..titled("Agent step")
+        },
+    );
+    note(&mut mcp, &session.id, "working").unwrap();
+    // A write of the desktop's own between two checks is not an outside write.
+    note(&mut desktop, &session.id, "from the desktop").unwrap();
+    assert!(desktop.refresh_external_changes().unwrap());
+    assert!(
+        desktop.can_undo(),
+        "unrelated outside writes keep the history"
+    );
+
+    // Undoing the task's creation only deletes it, so a rename does not conflict.
+    mcp.execute(Command::UpdateTask {
+        id: mine.id.clone(),
+        changes: vec![TaskChange::Title("Renamed by the agent".into())],
+    })
+    .unwrap();
+    assert!(desktop.refresh_external_changes().unwrap());
+    assert!(desktop.can_undo());
+
+    // An outside edit to a field the user's undo would write back clears the history.
+    desktop
+        .execute(Command::UpdateTask {
+            id: other.id.clone(),
+            changes: vec![TaskChange::Title("Other, renamed".into())],
+        })
+        .unwrap();
+    mcp.execute(Command::UpdateTask {
+        id: other.id.clone(),
+        changes: vec![TaskChange::Title("Changed by the agent".into())],
+    })
+    .unwrap();
+    assert!(desktop.refresh_external_changes().unwrap());
+    assert!(!desktop.can_undo(), "undo would revert the agent's edit");
+    drop((desktop, mcp));
+    let _ = std::fs::remove_dir_all(dir);
+}

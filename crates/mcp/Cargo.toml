@@ -1,0 +1,31 @@
+[package]
+name = "taskmaster-mcp"
+description = "task-master MCP server (ADR 017): stdio tools for Claude Code sessions, over the local database."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "taskmaster_mcp"
+
+[[bin]]
+name = "task-master-mcp"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+taskmaster-core = { workspace = true }
+# Official Rust MCP SDK (ADR 017).
+rmcp = { version = "3.9.0", default-features = false, features = ["macros", "server", "transport-io"] }
+# The version rmcp derives tool schemas with.
+schemars = "1.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1.54", features = ["macros", "rt", "io-std", "sync"] }
+
+[dev-dependencies]
+rmcp = { version = "3.9.0", default-features = false, features = ["client", "macros", "server"] }
+tokio = { version = "1.54", features = ["macros", "rt", "io-util"] }

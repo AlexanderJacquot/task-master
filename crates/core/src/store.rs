@@ -1,10 +1,10 @@
 //! The public entry point: one `Store` per database, owned by an adapter.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 use std::sync::mpsc::Receiver;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 
 use crate::clock::{Hlc, now_ms};
@@ -59,6 +59,10 @@ pub struct Store {
     /// Added to the system clock (see [`Store::set_clock_offset`]).
     clock_offset_ms: i64,
     data_version: i64,
+    /// The newest op `seq` already checked for outside writes.
+    seen_seq: i64,
+    /// Batches this store wrote since that check, so they are not taken for outside ones.
+    own_batches: HashSet<String>,
 }
 
 /// Name of the attachment folder, next to the database and inside backup folders.
@@ -95,7 +99,10 @@ impl Store {
         let data_version = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
         let device_id = db::device_id(&conn)?;
         let clock = Hlc::new(device_id.clone(), db::last_hlc(&conn)?.as_deref());
+        let seen_seq = conn.query_row("SELECT COALESCE(MAX(seq), 0) FROM ops", [], |r| r.get(0))?;
         Ok(Self {
+            seen_seq,
+            own_batches: HashSet::new(),
             conn,
             device_id,
             clock,
@@ -364,6 +371,8 @@ impl Store {
             summary.missing_files = u32::try_from(self.missing_files()?.len()).unwrap_or(u32::MAX);
         }
         self.history = History::default();
+        self.seen_seq = self.last_seq()?;
+        self.own_batches.clear();
         self.clock = Hlc::new(self.device_id.clone(), db::last_hlc(&self.conn)?.as_deref());
         let op_seq: i64 =
             self.conn
@@ -402,13 +411,76 @@ impl Store {
             return Ok(false);
         }
         self.data_version = version;
-        self.history = History::default();
+        let head = self.last_seq()?;
+        if self.outside_writes_conflict()? {
+            self.history = History::default();
+        }
+        self.seen_seq = head;
+        self.own_batches.clear();
         self.events.publish(&Changed {
             batch_id: crate::clock::new_id(),
-            op_seq: self.last_seq()?,
+            op_seq: head,
             entities: Vec::new(),
         });
         Ok(true)
+    }
+
+    /// Whether another process wrote, since the last check, a field that undo or redo
+    /// would write back (and so silently revert). An agent adding notes or its own tasks
+    /// leaves the user's undo history alone; an edit to the same field of a task clears it.
+    /// `updated_at` does not count: restoring it reverts nothing anyone sees.
+    fn outside_writes_conflict(&self) -> Result<bool> {
+        if self.history.is_empty() {
+            return Ok(false);
+        }
+        let outside = {
+            let mut stmt = self.conn.prepare(
+                "SELECT entity, entity_id, patch, batch_id FROM ops
+                 WHERE seq > ?1 AND received = 0",
+            )?;
+            let rows = stmt.query_map([self.seen_seq], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                ))
+            })?;
+            let mut fields = HashSet::new();
+            for row in rows {
+                let (entity, id, patch, batch) = row?;
+                if batch.is_some_and(|b| self.own_batches.contains(&b)) {
+                    continue;
+                }
+                written_fields(&mut fields, &entity, id, &patch)?;
+            }
+            fields
+        };
+        if outside.is_empty() {
+            return Ok(false);
+        }
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT entity, entity_id, inverse FROM ops WHERE batch_id = ?1")?;
+        for batch in self.history.batches() {
+            let rows = stmt.query_map([batch], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })?;
+            // Undo writes a batch's inverses (redo: the inverses of its undo batch).
+            let mut mine = HashSet::new();
+            for row in rows {
+                let (entity, id, inverse) = row?;
+                written_fields(&mut mine, &entity, id, &inverse)?;
+            }
+            if !mine.is_disjoint(&outside) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     // -----------------------------------------------------------------------------------
@@ -452,7 +524,9 @@ impl Store {
     /// from the start. For a server that lost data (restored from a backup, or new);
     /// it ignores what it already has.
     pub fn restart_sync(&mut self) -> Result<()> {
-        let tx = self.conn.transaction()?;
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         tx.execute("DELETE FROM sync_state", [])?;
         // This replica may be the only surviving copy of another device's work.
         tx.execute("UPDATE ops SET received = 0", [])?;
@@ -489,7 +563,9 @@ impl Store {
     /// Not undoable; subscribers get a change event as for a local batch.
     pub fn apply_remote(&mut self, ops: Vec<SyncOp>, cursor: Option<i64>) -> Result<Merged> {
         let now = self.now();
-        let tx = self.conn.transaction()?;
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         // Ops can arrive before the rows they reference within one page.
         tx.execute_batch("PRAGMA defer_foreign_keys = ON")?;
         observe_stored_clock(&tx, &mut self.clock)?;
@@ -507,6 +583,8 @@ impl Store {
             merged.changes = load_changes(&tx, &applied.touched, applied.batch_id.clone(), op_seq)?;
         }
         tx.commit()?;
+        // Repairs are this store's own local ops.
+        self.own_batches.insert(applied.batch_id.clone());
         if let Some(op_seq) = applied.last_seq {
             self.events.publish(&Changed {
                 batch_id: applied.batch_id,
@@ -524,7 +602,9 @@ impl Store {
     /// Runs `f` in one transaction and batch, then reports and broadcasts what changed.
     fn write(&mut self, f: impl FnOnce(&mut Batch<'_, '_>) -> Result<()>) -> Result<Changes> {
         let now = self.now();
-        let tx = self.conn.transaction()?;
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         observe_stored_clock(&tx, &mut self.clock)?;
         let (batch_id, touched, last_seq) = {
             let mut batch = Batch::new(&tx, &mut self.clock, &self.device_id, now);
@@ -536,6 +616,7 @@ impl Store {
         };
         let changes = load_changes(&tx, &touched, batch_id.clone(), op_seq)?;
         tx.commit()?;
+        self.own_batches.insert(batch_id.clone());
         self.events.publish(&Changed {
             batch_id,
             op_seq,
@@ -554,6 +635,24 @@ fn observe_stored_clock(tx: &rusqlite::Transaction<'_>, clock: &mut Hlc) -> Resu
     let last: Option<String> = tx.query_row("SELECT MAX(hlc) FROM ops", [], |r| r.get(0))?;
     if let Some(last) = last {
         clock.observe(&last);
+    }
+    Ok(())
+}
+
+/// Adds the `(row id, field)` pairs an op wrote to `out`, `updated_at` aside. Ids are
+/// UUIDs, unique across tables; a tag link counts as the field named by its tag id.
+fn written_fields(
+    out: &mut HashSet<(String, String)>,
+    entity: &str,
+    id: String,
+    patch: &str,
+) -> Result<()> {
+    let patch: serde_json::Map<String, serde_json::Value> = serde_json::from_str(patch)?;
+    let entity = crate::ops::Entity::parse(entity)?;
+    for field in crate::ops::clock_fields(entity, &patch) {
+        if field != "updated_at" {
+            out.insert((id.clone(), field.to_owned()));
+        }
     }
     Ok(())
 }

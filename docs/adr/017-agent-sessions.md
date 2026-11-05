@@ -1,6 +1,6 @@
 # ADR 017: Agent sessions (Claude Code from a task)
 
-Date: 2026-11-05 · Status: accepted (M16, branch `m16-agent-sessions`); step 1 done
+Date: 2026-11-05 · Status: accepted (M16, branch `m16-agent-sessions`); steps 1 and 2 done
 
 ## Context
 
@@ -86,14 +86,38 @@ in the same space without cluttering the user's views. Decided with the user:
 - Bundled as a Tauri `externalBin` sidecar. Under WSL, claude starts the Windows `.exe`
   through WSL interop (`/mnt/c/...`), so the database stays on the Windows side with one
   writer process model and no network.
-- The per-session `--mcp-config` file passes `TM_SESSION_ID` and `TM_TASK_ID`, so tools
-  know their session without the model having to pass ids around.
-- Tools: `get_task` (the brief, or any task), `list_tasks` (project / epic / status / owner
-  filters, compact), `search`, `create_task` (owner `agent`, defaults to the session task's
-  project, optional parent and prerequisite links), `update_task` (status, title,
-  description, priority; agent-owned tasks freely, the user's tasks only status of the
-  session task and its subtasks), `add_note`, `complete_session` (final summary).
-- **Dependency: `rmcp`** (official Rust MCP SDK) rather than a hand-written JSON-RPC loop.
+- Binary `task-master-mcp --db <path> [--session <id>]`. The per-session `--mcp-config`
+  file passes both as arguments (no environment variables, which `wsl.exe` interop does
+  not forward by default); the task comes from the session row. A missing database file
+  is an error, never a new empty database. Without `--session` it still reads, searches
+  and creates agent tasks, but notes, summaries and edits of the user's tasks are refused.
+- Tools (tool errors come back as `is_error` results the model can read, not protocol
+  errors): `get_task` (the brief; defaults to the session's task), `list_tasks` (project /
+  epic / parent / owner filters, open tasks unless `include_closed`, at most 200 rows),
+  `list_projects` (projects with areas, epics), `search`, `create_task` (owner `agent`; in
+  a session a subtask of the session's task unless `parent_id` or `top_level`; project
+  from the parent, else the session task; status by name or category; `depends_on`),
+  `update_task` (agent tasks: status, title, description or `append_description`,
+  priority, prerequisites; the user's tasks: status only, and only the session's task and
+  its subtasks at any depth), `add_note`, `complete_session` (stores the summary; the
+  session's state is still set by the shell when the run ends, which keeps the agent's
+  summary over Claude's last message).
+- Server instructions tell the agent how to track its work and which task it is on.
+- **Dependency: `rmcp` 3.9** (official Rust MCP SDK; features `server`, `macros`,
+  `transport-io`) rather than a hand-written JSON-RPC loop.
+
+### Sharing the database with the desktop (core changes for M16)
+
+- **Outside writes no longer always clear the undo history.** `refresh_external_changes`
+  now compares the fields other processes wrote (local ops not from this store's own
+  batches, `updated_at` aside) with the fields undo or redo would write back (the
+  inverses of the history's batches). Only an overlap clears the history; an agent adding
+  notes, its own tasks, or renaming a task whose creation is the user's last edit leaves
+  Ctrl+Z working. The UI still gets its reload event.
+- **Write transactions are `BEGIN IMMEDIATE`.** With two writer processes on one WAL
+  database, a deferred transaction that read first fails at once with
+  `SQLITE_BUSY_SNAPSHOT` when the other committed meanwhile; an immediate one waits on
+  the 5 s busy timeout instead.
 
 ### UI
 

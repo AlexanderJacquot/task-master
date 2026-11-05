@@ -6,8 +6,9 @@ Running log for task-master. Read at the start of every session; update at the e
 
 **M16 Agent sessions**, branch `m16-agent-sessions` (from `main`, ADR 017): "Send to
 Claude" from a task, headless Claude Code runs with a live status, an MCP server for
-agents to track their work, and agent-owned tasks hidden from the user's views. Step 1
-(core) done; next step 2, `crates/mcp` on `rmcp`. Note: migration 0010 bumps the schema,
+agents to track their work, and agent-owned tasks hidden from the user's views. Steps 1
+(core) and 2 (`crates/mcp`) done; next step 3, the desktop shell: settings, spawning
+(native and WSL), the stream parser, cancel, follow-up, open in terminal. Note: migration 0010 bumps the schema,
 so the sync server must be upgraded with the desktop (replicas sync only at one version).
 
 **v0.5.0**, `main`: all current branches and the icon/UI working-tree changes are
@@ -40,6 +41,21 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### M16 step 2: MCP server (2026-11-05)
+
+- New crate `crates/mcp` (`task-master-mcp --db <path> [--session <id>]`, rmcp 3.9, stdio)
+  with `get_task`, `list_tasks`, `list_projects`, `search`, `create_task`, `update_task`,
+  `add_note`, `complete_session`. Agent tasks are editable; the user's tasks only change
+  status, and only within the session's task and its subtasks.
+- Core: outside writes keep the undo history unless they touch a field undo would write
+  back; write transactions are `BEGIN IMMEDIATE` so the desktop and an agent writing at
+  the same moment wait instead of failing.
+- Tests: 7 end-to-end MCP tests (rmcp client over an in-memory pipe), one core test with
+  two stores on one file. Smoke: the real binary over stdio on a seeded database, and the
+  installed Claude Code (2.1.318, Haiku, `--mcp-config`) connected and called
+  `list_projects` with the right count.
+- Verified: workspace Clippy (`-D warnings`), rustfmt, 170 Rust tests. No frontend changes.
 
 ### M16 step 1: agent sessions in the core (2026-11-05)
 
