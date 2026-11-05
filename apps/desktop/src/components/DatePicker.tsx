@@ -156,7 +156,10 @@ export function DatePicker({
             event.preventDefault();
             activeDay.current?.focus();
           }}
-          className={cx(MENU, "w-72 max-w-[calc(100vw-1.5rem)] p-3")}
+          className={cx(
+            MENU,
+            "max-h-(--radix-popover-content-available-height) w-72 max-w-[calc(100vw-1.5rem)] overflow-y-auto p-3",
+          )}
         >
           <div className="mb-3 flex gap-1.5">
             {quickDates.map((item) => (

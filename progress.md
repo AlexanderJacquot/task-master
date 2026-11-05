@@ -4,9 +4,10 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**v0.5.0**, `main`: all current branches and the icon/UI working-tree changes are
-integrated. Server Google Calendar sync and runner handoff are implemented and validated.
-Release tagging/publication is in progress.
+**v0.6.0** is the latest release. `main` additionally includes the freeform Lineage
+canvas, responsive sidebar shortcuts, calendar popup fixes and public OAuth project
+pages. These latest UI changes are source changes for the next release. Google Calendar
+setup and enabling GitHub Pages remain user configuration steps (see the guides below).
 
 **M10 Google Calendar sync**, branch `m10-google-calendar`: merged to `main` with M9 and
 released as **v0.4.0** (2026-11-05). Next: the user creates their OAuth client
@@ -34,6 +35,69 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### Source handoff checkpoint (2026-11-06)
+
+- Included all pending main-worktree changes and integrated the remote 0.6.0 release
+  commit. Other registered worktrees are clean, and their commits are already on remotes.
+- Validation: 269 frontend tests, frontend production build, Biome, full workspace Rust
+  tests and all-target Clippy passed. Native desktop interaction checks remain manual.
+
+### Public Google OAuth pages (2026-11-06)
+
+- Added static `site/` homepage, privacy policy and terms, shared responsive light/dark
+  styling and the existing 128px app icon. Privacy disclosures match the current
+  Calendar scopes, local storage, optional server credentials/cache, backups, revocation
+  and retained copies; contact uses the maintainer's GitHub profile and project issues.
+- Added a GitHub Pages workflow that uploads only `site/` from the public mirror's
+  main branch. Documented enabling Pages, exact Branding URLs/domain and formal
+  domain-verification limitations in `docs/github-pages.md`; corrected Calendar setup.
+- Verified 3 pages and 38 local links/assets/anchors, workflow YAML/permissions/artifact
+  path, icon size, desktop/mobile Chrome rendering, Biome and diff checks. Publication
+  uses the new Pages workflow after Pages is enabled in the GitHub repository.
+
+### Freeform Lineage canvas (2026-11-05)
+
+- Tasks now move freely on a dotted canvas, with background dragging/scrolling to pan,
+  cursor-centered Ctrl/Command + scroll zoom, Fit view and Auto arrange. Local card
+  positions and the view are remembered on this machine; links follow moved cards.
+- Drag from either connector to another task to create a dependency. Live curves snap
+  to targets with valid/invalid highlights. Circular/self/duplicate links are rejected;
+  empty drops, pointer cancellation and Escape leave task data untouched. Connections
+  use the existing optimistic command path and failed saves roll back.
+- The dependency inspector opens on selection; click-to-connect and searchable lists
+  remain available for keyboard users. Alt + arrow keys nudge cards. Filters clear
+  hidden selections/connections and fit the visible graph; offscreen cards/edges are culled.
+- Checked real mouse selection, card dragging, persisted positions, creating/rejecting
+  connections, pan/zoom, both themes and smaller windows in headless Chrome. Native
+  desktop pointer feel remains a manual check.
+- Verified: 269 frontend tests passed; TypeScript, Biome, the production build and
+  diff checks passed. No new dependencies or backend changes.
+
+### Responsive sidebar shortcuts (2026-11-05)
+
+- Inbox, Today, Calendar and All tasks form a square 2×2 grid of tiles in the wide
+  sidebar, with icons, counts and active states. They switch to a single-column list
+  when its content is narrower than 216px. Lineage and Metrics stay below the group.
+- The expanded sidebar adapts between 208px and 264px with the window width; the
+  Windows title bar uses the same width. Manual collapse keeps the existing 60px rail.
+- Visually checked both themes at 1440px and 1000px window widths, navigation and
+  the collapsed rail in headless Chrome.
+- Verified: 260 frontend tests, TypeScript, Biome and the production build passed.
+
+### Calendar picker and menu consistency (2026-11-05)
+
+- Replaced native date popups with a shared themed calendar on task pages, side
+  panels, list rows and epic target dates. Includes quick choices, clearing, validated
+  typed dates and keyboard navigation. Constrains height to the available window space.
+- Matched the tag picker to shared menu/input colors, spacing, selected states and
+  focus styling; migrated Lineage's two native dropdowns to the shared Select. Select
+  menus now bound their height, offer scroll controls and mark the current choice.
+- Escape dismisses an open calendar/menu before the app closes the task side panel.
+- Checked calendar, priority and tag popups in headless Chrome in light/dark themes
+  and calendar placement in a narrow window. Native WebView rendering remains manual.
+- Verified: 260 frontend tests passed; TypeScript, Biome, the production build,
+  the full Rust test suite and Clippy passed.
 
 ### Release 0.6.0 (2026-11-05)
 

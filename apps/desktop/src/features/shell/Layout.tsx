@@ -108,7 +108,7 @@ export function Layout() {
     go: (to) => void navigate({ to, search: {} }),
   });
 
-  const titleBar = (sidebarWidth: number) =>
+  const titleBar = (sidebarWidth: number | string) =>
     windowControls && <TitleBar controls={windowControls} sidebarWidth={sidebarWidth} />;
 
   if (loadError) {

@@ -75,6 +75,26 @@ afterEach(() => {
 });
 
 describe("the app", () => {
+  it("dismisses the calendar with Escape before closing the task editor", async () => {
+    fireEvent.click(await screen.findByText("Renew passport"));
+    const panel = await screen.findByRole("complementary", { name: "Task details" });
+    const trigger = within(panel).getByRole("button", { name: "Due date" });
+    fireEvent.click(trigger);
+    const calendar = await screen.findByRole("dialog", { name: "Choose due date" });
+    fireEvent.keyDown(within(calendar).getByRole("button", { name: "Next month" }), {
+      key: "Escape",
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Choose due date" })).toBeNull(),
+    );
+    expect(screen.getByRole("complementary", { name: "Task details" })).toBeTruthy();
+    await waitFor(() => expect(document.activeElement).toBe(trigger));
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("complementary", { name: "Task details" })).toBeNull(),
+    );
+  });
+
   it("lists inbox tasks grouped by status, with counts in the sidebar", async () => {
     expect(await screen.findByText("Renew passport")).toBeTruthy();
     expect(screen.getByRole("button", { name: /To do/ })).toBeTruthy();

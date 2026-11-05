@@ -85,6 +85,7 @@ export function useShortcuts(actions: ShortcutActions) {
       const editing = isEditable(e.target);
       const mod = e.ctrlKey || e.metaKey;
       if (e.key === "Escape") {
+        if (e.defaultPrevented) return;
         pending = null;
         if (editing && e.target instanceof HTMLElement) e.target.blur();
         else a.closeDetail();

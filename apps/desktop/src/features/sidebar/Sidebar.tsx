@@ -53,8 +53,8 @@ import { useShell } from "../shell/shellContext";
 import { ProjectTree } from "./ProjectTree";
 import { useProjectOrder } from "./useProjectOrder";
 
-/** Sidebar widths in px, open and folded to a rail (the Windows title bar matches them). */
-export const SIDEBAR_WIDTH = { open: 264, rail: 60 } as const;
+/** The expanded sidebar adapts to the window; the Windows title bar uses the same width. */
+export const SIDEBAR_WIDTH = { open: "clamp(208px, 22vw, 264px)", rail: 60 } as const;
 
 const rowBaseClass =
   "group flex min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-ink-2 transition-colors hover:bg-hover hover:text-ink";
@@ -68,6 +68,7 @@ function NavItem({
   children,
   count,
   title,
+  tile = false,
 }: {
   to: string;
   params?: Record<string, string>;
@@ -75,6 +76,7 @@ function NavItem({
   children: ReactNode;
   count?: number;
   title?: string;
+  tile?: boolean;
 }) {
   return (
     <Link
@@ -82,13 +84,35 @@ function NavItem({
       params={params as never}
       search={{}}
       title={title}
-      className={cx(rowClass, FOCUS)}
-      activeProps={{ className: activeClass }}
+      className={cx(
+        tile
+          ? "group relative flex min-w-0 items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-[5px] text-ink-2 transition-colors hover:bg-hover hover:text-ink @[216px]/sidebar:aspect-square @[216px]/sidebar:flex-col @[216px]/sidebar:items-start @[216px]/sidebar:justify-between @[216px]/sidebar:gap-3 @[216px]/sidebar:border-line @[216px]/sidebar:bg-raised/40 @[216px]/sidebar:p-3 @[216px]/sidebar:hover:bg-hover"
+          : rowClass,
+        FOCUS,
+      )}
+      activeProps={{
+        className: tile ? "border-accent/30! bg-accent/10! text-accent!" : activeClass,
+      }}
     >
       {icon}
-      <span className="min-w-0 flex-1 truncate">{children}</span>
+      <span
+        className={cx(
+          "min-w-0 flex-1 truncate",
+          tile &&
+            "@[216px]/sidebar:flex-none @[216px]/sidebar:text-[13px] @[216px]/sidebar:font-medium",
+        )}
+      >
+        {children}
+      </span>
       {count !== undefined && count > 0 && (
-        <span className="text-[12.5px] text-ink-3 tabular-nums">{count}</span>
+        <span
+          className={cx(
+            "text-[12.5px] text-ink-3 tabular-nums",
+            tile && "@[216px]/sidebar:absolute @[216px]/sidebar:top-3 @[216px]/sidebar:right-3",
+          )}
+        >
+          {count}
+        </span>
       )}
     </Link>
   );
@@ -542,11 +566,17 @@ export function Sidebar({
     <nav
       aria-label="Sidebar"
       style={{ width: SIDEBAR_WIDTH.open }}
-      className="tex-sidebar flex shrink-0 flex-col overflow-y-auto border-r border-line bg-sidebar px-3 pt-4 pb-3"
+      className="tex-sidebar @container/sidebar flex shrink-0 flex-col overflow-y-auto border-r border-line bg-sidebar px-3 pt-4 pb-3"
     >
       <div className="flex items-center gap-2 px-2 pb-3">
-        <img src={appIcon} width={30} height={30} alt="" className="shrink-0" />
-        <span className="flex-1 font-display text-[21px] tracking-wide text-accent">
+        <img
+          src={appIcon}
+          width={30}
+          height={30}
+          alt=""
+          className="hidden shrink-0 @[216px]/sidebar:block"
+        />
+        <span className="min-w-0 flex-1 truncate font-display text-[21px] tracking-wide text-accent">
           Task Master
         </span>
         <IconButton label="Collapse sidebar" onClick={onToggleCollapsed}>
@@ -580,27 +610,49 @@ export function Sidebar({
         </button>
       </div>
 
-      <div className="flex flex-col gap-px">
+      <div className="grid grid-cols-1 gap-1 @[216px]/sidebar:grid-cols-2 @[216px]/sidebar:gap-2">
         <NavItem
           to="/inbox"
+          tile
           count={counts.inbox}
-          icon={<Inbox size={17} className="shrink-0 text-sky-700 dark:text-sky-300" />}
+          icon={
+            <Inbox
+              size={17}
+              className="shrink-0 text-sky-700 @[216px]/sidebar:size-6 dark:text-sky-300"
+            />
+          }
         >
           Inbox
         </NavItem>
         <NavItem
           to="/today"
+          tile
           count={counts.today}
-          icon={<Sun size={17} className="shrink-0 text-amber-700 dark:text-amber-300" />}
+          icon={
+            <Sun
+              size={17}
+              className="shrink-0 text-amber-700 @[216px]/sidebar:size-6 dark:text-amber-300"
+            />
+          }
         >
           Today
         </NavItem>
-        <NavItem to="/calendar" icon={<CalendarDays size={17} className="shrink-0 text-rubric" />}>
+        <NavItem
+          to="/calendar"
+          tile
+          icon={<CalendarDays size={17} className="shrink-0 text-rubric @[216px]/sidebar:size-6" />}
+        >
           Calendar
         </NavItem>
-        <NavItem to="/all" icon={<Layers size={17} className="shrink-0" />}>
+        <NavItem
+          to="/all"
+          tile
+          icon={<Layers size={17} className="shrink-0 @[216px]/sidebar:size-6" />}
+        >
           All tasks
         </NavItem>
+      </div>
+      <div className="mt-2 flex flex-col gap-px">
         <NavItem to="/lineage" icon={<GitBranch size={17} className="shrink-0" />}>
           Lineage
         </NavItem>

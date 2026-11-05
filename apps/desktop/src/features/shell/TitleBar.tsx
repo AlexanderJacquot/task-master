@@ -89,7 +89,7 @@ export function TitleBar({
   sidebarWidth,
 }: {
   controls: WindowControls;
-  sidebarWidth: number;
+  sidebarWidth: number | string;
 }) {
   const [maximized, setMaximized] = useState(false);
   const [focused, setFocused] = useState(true);
@@ -131,7 +131,7 @@ export function TitleBar({
       )}
       style={{ height: TITLE_BAR_HEIGHT }}
     >
-      {sidebarWidth > 0 && (
+      {sidebarWidth !== 0 && (
         <div
           className="tex-sidebar shrink-0 border-r border-line bg-sidebar"
           style={{ width: sidebarWidth }}

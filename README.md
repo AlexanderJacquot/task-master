@@ -3,6 +3,10 @@
 Local-first desktop task manager: Tauri 2 shell, Rust core, SQLite, React UI.
 See [docs/plan.md](docs/plan.md) for the plan and [progress.md](progress.md) for status.
 
+The public homepage, privacy policy and terms are in [site/](site/). See
+[GitHub Pages setup](docs/github-pages.md) to publish them and use their URLs for
+[Google Calendar configuration](docs/google-calendar.md).
+
 ## CI
 
 Comment `@claude` on a pull request to get a Claude review, posted back as a

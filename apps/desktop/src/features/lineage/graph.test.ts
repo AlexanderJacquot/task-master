@@ -28,3 +28,18 @@ it("keeps disconnected tasks, ignores missing endpoints and tolerates synced cyc
   expect(graph.edges).toHaveLength(2);
   expect(graph.nodes.every((n) => Number.isFinite(n.x) && Number.isFinite(n.y))).toBe(true);
 });
+
+it("spreads unconnected tasks across a grid without overlapping the dependency chains", () => {
+  const a = task();
+  const b = task({ dependency_ids: [a.id] });
+  const unconnected = Array.from({ length: 7 }, () => task());
+  const graph = layoutGraph([a, b, ...unconnected]);
+  const nodes = graph.nodes.filter((node) => unconnected.some((task) => task.id === node.task.id));
+  expect(new Set(nodes.map((node) => node.x)).size).toBe(3);
+  expect(new Set(nodes.map((node) => node.y)).size).toBe(3);
+  expect(Math.min(...nodes.map((node) => node.y))).toBeGreaterThan(
+    Math.max(
+      ...graph.nodes.filter((node) => [a.id, b.id].includes(node.task.id)).map((node) => node.y),
+    ) + 100,
+  );
+});

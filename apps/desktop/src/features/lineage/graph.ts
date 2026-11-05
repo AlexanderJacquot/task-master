@@ -44,15 +44,32 @@ export function layoutGraph(tasks: Task[]) {
   }
   // Concurrent sync edits can introduce cycles; still show every task so links can be removed.
   const rows = new Map<number, number>();
-  const nodes = tasks.map((task) => {
-    const level = levels.get(task.id) ?? 0;
-    const row = rows.get(level) ?? 0;
-    rows.set(level, row + 1);
-    return {
+  const isolated = tasks.filter(
+    (task) => !((task.dependency_ids ?? []).some((id) => byId.has(id)) || outgoing.has(task.id)),
+  );
+  const isolatedIds = new Set(isolated.map((task) => task.id));
+  const nodes = tasks
+    .filter((task) => !isolatedIds.has(task.id))
+    .map((task) => {
+      const level = levels.get(task.id) ?? 0;
+      const row = rows.get(level) ?? 0;
+      rows.set(level, row + 1);
+      return {
+        task,
+        x: 40 + level * (NODE_WIDTH + COLUMN_GAP),
+        y: 40 + row * (NODE_HEIGHT + ROW_GAP),
+      };
+    });
+  // Unconnected tasks form a loose grid instead of an increasingly tall single column.
+  const startY = nodes.length
+    ? Math.max(...nodes.map((node) => node.y)) + NODE_HEIGHT + ROW_GAP * 2
+    : 40;
+  isolated.forEach((task, index) => {
+    nodes.push({
       task,
-      x: 40 + level * (NODE_WIDTH + COLUMN_GAP),
-      y: 40 + row * (NODE_HEIGHT + ROW_GAP),
-    };
+      x: 40 + (index % 3) * (NODE_WIDTH + COLUMN_GAP),
+      y: startY + Math.floor(index / 3) * (NODE_HEIGHT + ROW_GAP),
+    });
   });
   const positions = new Map(nodes.map((node) => [node.task.id, node]));
   const edges = tasks.flatMap((task) =>
