@@ -60,3 +60,18 @@ Debug builds of the app open `TASK_MASTER_DB` instead of the app data file when 
 - WIP limits are displayed but cannot be edited until status commands land (M6).
 - The 50-drag check runs twice: against the core (`tests/store.rs`) and against the store
   and board model (`src/store/board.test.ts`).
+
+## Addendum (2026-11-05): collapsible and resizable columns
+
+- A column can be **collapsed** to a 44 px strip (the header's `«` button). Without
+  swimlanes the strip shows the name and count and expands on click; with swimlanes the
+  header keeps an expand button and each lane's strip shows that cell's count. A strip is
+  still a drop target, and a card dropped there (or moved with `Alt+←/→`) goes on top.
+- A column is **resized** from the handle on its header's right edge (drag; ←/→ by 16 px,
+  Shift by 64, Home/End to the limits; double-click resets). Widths are 224–960 px,
+  default 280. From 512 px a column lays its cards out in two lanes, from 768 px in three
+  (rank order left to right, then down); rows stay virtualized, with dnd-kit's
+  `rectSortingStrategy` instead of the vertical one.
+- Both are kept per status in `localStorage` (`task-master.board.columns`,
+  `useBoardColumns`) and shared by every board, since statuses are global. Like the other
+  layout conveniences they are per machine and not part of saved views.
