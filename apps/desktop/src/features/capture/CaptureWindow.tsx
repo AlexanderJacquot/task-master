@@ -60,6 +60,8 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
   const [round, setRound] = useState(0);
   const [saved, setSaved] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  /** The task Shift+Enter created; it opens with the cursor in its description. */
+  const [created, setCreated] = useState<string | null>(null);
   const editingRef = useRef(editing);
   editingRef.current = editing;
   const task = useStoreState((s) => (editing ? s.tasks[editing] : undefined));
@@ -126,7 +128,12 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-8 py-7">
             {task ? (
-              <TaskEditor key={task.id} task={task} variant="page" />
+              <TaskEditor
+                key={task.id}
+                task={task}
+                variant="page"
+                focusDescription={task.id === created}
+              />
             ) : (
               <p className="text-ink-3">This task no longer exists.</p>
             )}
@@ -154,6 +161,7 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
           onEscape={hide}
           onCaptured={(id, how) => {
             if (how.open) {
+              setCreated(id);
               setEditing(id);
               void controls.expand();
               return;

@@ -106,6 +106,10 @@ describe("the quick-capture window", () => {
       "Write the report",
     );
     expect(screen.getByRole("region", { name: "Subtasks" })).toBeTruthy();
+    // Ready to write: the cursor is in the description editor.
+    const description = screen.getByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement?.classList.contains("cm-content")).toBe(true);
 
     act(() => fake.blur());
     expect(fake.calls).toEqual(["expand"]);

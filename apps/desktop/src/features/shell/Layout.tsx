@@ -140,7 +140,11 @@ export function Layout() {
           defaults={newTask}
           onClose={() => setNewTask(null)}
           onOpenTask={(id) =>
-            void navigate({ to: "/task/$taskId", params: { taskId: id }, search: {} })
+            void navigate({
+              to: "/task/$taskId",
+              params: { taskId: id },
+              search: { focus: "description" },
+            })
           }
         />
       </Framed>

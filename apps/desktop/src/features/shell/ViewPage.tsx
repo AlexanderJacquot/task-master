@@ -415,7 +415,11 @@ function ViewBody({
           placeholder={`Add a task${typeof title === "string" ? ` to ${title}` : ""}…   ${CAPTURE_HINT}`}
           onCaptured={(id, how) => {
             if (how.open)
-              void navigate({ to: "/task/$taskId", params: { taskId: id }, search: {} });
+              void navigate({
+                to: "/task/$taskId",
+                params: { taskId: id },
+                search: { focus: "description" },
+              });
           }}
         />
       </div>

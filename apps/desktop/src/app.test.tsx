@@ -539,6 +539,32 @@ describe("redesign", () => {
     const row = await screen.findByRole("button", { name: "Renew passport" });
     fireEvent.keyDown(row, { key: "Enter", shiftKey: true });
     await waitFor(() => expect(router.state.location.pathname).toBe(`/task/${existing.id}`));
+    // Only a task just created opens with the cursor in its description.
+    const description = await screen.findByRole("region", { name: "Description" });
+    expect(description.contains(document.activeElement)).toBe(false);
+  });
+
+  it("puts the cursor in the description of a task added with Shift+Enter", async () => {
+    const router = await renderWith("/inbox");
+    const input = await screen.findByRole("textbox", { name: "New task" });
+    fireEvent.change(input, { target: { value: "Draft the brief" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/task\//));
+    const description = await screen.findByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement?.classList.contains("cm-content")).toBe(true);
+  });
+
+  it("does the same from the New task dialog", async () => {
+    await renderWith("/inbox");
+    await screen.findByRole("heading", { name: "Inbox" });
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "New task" });
+    const input = within(dialog).getByRole("textbox", { name: "New task" });
+    fireEvent.change(input, { target: { value: "Call the bank" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    const description = await screen.findByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
   });
 
   it("adds a task from the sidebar's New task button into the current project", async () => {

@@ -48,6 +48,11 @@ closes; Done and X close. The shell resets the window to 660x230 on every hotkey
 opening. Window permissions added: `set-size`, `set-resizable`, `center`. Tests:
 `captureWindow.test.tsx` (+3, injected `CaptureControls` like the title bar's). No new
 dependencies.
+- A task just created with Shift+Enter opens with the cursor in its description, from
+  the capture window, a view's capture row or the New task dialog (`?focus=description`
+  on the task page; `DescriptionEditor` `autoFocus`). Opening an existing task does not.
+  Starting an edit now puts the cursor at the end of the text (was the start). Tests:
+  app.test +2, the capture window test checks it, and the row test checks it does not.
 
 ### M11 Sync core (2026-11-05)
 
