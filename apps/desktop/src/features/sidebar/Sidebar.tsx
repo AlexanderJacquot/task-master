@@ -4,6 +4,7 @@ import {
   ArchiveRestore,
   ArrowDownCircle,
   Bookmark,
+  CalendarDays,
   ChevronDown,
   ChevronRight,
   Diamond,
@@ -417,6 +418,9 @@ export function Sidebar({
         <RailLink to="/today" label="Today">
           <Sun size={18} className="text-amber-700 dark:text-amber-300" />
         </RailLink>
+        <RailLink to="/calendar" label="Calendar">
+          <CalendarDays size={18} className="text-rubric" />
+        </RailLink>
         <RailLink to="/all" label="All tasks">
           <Layers size={18} />
         </RailLink>
@@ -499,6 +503,9 @@ export function Sidebar({
           icon={<Sun size={17} className="shrink-0 text-amber-700 dark:text-amber-300" />}
         >
           Today
+        </NavItem>
+        <NavItem to="/calendar" icon={<CalendarDays size={17} className="shrink-0 text-rubric" />}>
+          Calendar
         </NavItem>
         <NavItem to="/all" icon={<Layers size={17} className="shrink-0" />}>
           All tasks

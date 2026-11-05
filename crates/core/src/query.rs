@@ -6,8 +6,8 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter, types::ToSq
 
 use crate::error::{Error, Result};
 use crate::model::{
-    Attachment, Epic, EpicState, Id, Priority, Project, Snapshot, Status, StatusCategory, Tag,
-    Task, View,
+    Attachment, BlockOutcome, Epic, EpicState, Id, Priority, Project, Snapshot, Status,
+    StatusCategory, Tag, Task, TimeBlock, View,
 };
 
 const TASK_COLS: &str = "id, project_id, epic_id, parent_id, status_id, title, description, \
@@ -22,6 +22,9 @@ const STATUS_COLS: &str =
 const VIEW_COLS: &str = "id, name, spec, rank, created_at, updated_at, deleted_at";
 const ATTACHMENT_COLS: &str =
     "id, task_id, hash, name, mime, size, created_at, updated_at, deleted_at";
+
+const TIME_BLOCK_COLS: &str =
+    "id, task_id, start_at, end_at, outcome, created_at, updated_at, deleted_at";
 
 fn bad_value(col: usize, value: String) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(
@@ -123,6 +126,20 @@ fn attachment_row(r: &Row<'_>) -> rusqlite::Result<Attachment> {
         created_at: r.get(6)?,
         updated_at: r.get(7)?,
         deleted_at: r.get(8)?,
+    })
+}
+
+fn time_block_row(r: &Row<'_>) -> rusqlite::Result<TimeBlock> {
+    let outcome: String = r.get(4)?;
+    Ok(TimeBlock {
+        id: r.get(0)?,
+        task_id: r.get(1)?,
+        start_at: r.get(2)?,
+        end_at: r.get(3)?,
+        outcome: BlockOutcome::parse(&outcome).ok_or_else(|| bad_value(4, outcome))?,
+        created_at: r.get(5)?,
+        updated_at: r.get(6)?,
+        deleted_at: r.get(7)?,
     })
 }
 
@@ -237,6 +254,17 @@ pub(crate) fn attachment(conn: &Connection, id: &str) -> Result<Attachment> {
     .ok_or_else(|| Error::not_found("attachment", id))
 }
 
+/// Any time block, including soft-deleted ones.
+pub(crate) fn time_block(conn: &Connection, id: &str) -> Result<TimeBlock> {
+    conn.query_row(
+        &format!("SELECT {TIME_BLOCK_COLS} FROM time_blocks WHERE id = ?1"),
+        [id],
+        time_block_row,
+    )
+    .optional()?
+    .ok_or_else(|| Error::not_found("time block", id))
+}
+
 /// Every live entity, in display order (rank, then id).
 pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
     let mut tasks = query(
@@ -293,6 +321,17 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
             &[],
             attachment_row,
         )?,
+        // Like attachments, a deleted task hides its blocks without deleting them.
+        time_blocks: query(
+            conn,
+            "SELECT b.id, b.task_id, b.start_at, b.end_at, b.outcome, b.created_at,
+                    b.updated_at, b.deleted_at
+             FROM time_blocks b JOIN tasks t ON t.id = b.task_id
+             WHERE b.deleted_at IS NULL AND t.deleted_at IS NULL
+             ORDER BY b.start_at, b.id",
+            &[],
+            time_block_row,
+        )?,
     })
 }
 
@@ -328,7 +367,9 @@ pub struct Activity {
     pub at: crate::model::Timestamp,
     pub batch_id: Option<Id>,
     /// `create`, `update`, `delete`, `restore`, `link` (tag added), `unlink` (tag removed),
-    /// or for attachments `attach`, `detach` and `rename_attachment` (field `name`).
+    /// or for attachments `attach`, `detach` and `rename_attachment` (field `name`), or for
+    /// time blocks `schedule`, `unschedule`, `reschedule` (fields `start_at`, `end_at`) and
+    /// `block_outcome` (field `outcome`).
     pub kind: String,
     pub fields: Vec<FieldChange>,
 }
@@ -361,6 +402,8 @@ pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Res
          WHERE (entity IN ('task', 'task_tag') AND entity_id = ?1)
             OR (entity = 'attachment'
                 AND entity_id IN (SELECT id FROM attachments WHERE task_id = ?1))
+            OR (entity = 'time_block'
+                AND entity_id IN (SELECT id FROM time_blocks WHERE task_id = ?1))
          ORDER BY seq DESC LIMIT ?2",
         &[&task_id, &(limit * 2)],
         |r| {
@@ -382,6 +425,11 @@ pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Res
         let inverse: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&inverse)?;
         let (kind, fields) = if entity == "attachment" {
             match attachment_entry(conn, &entity_id, &kind, &patch, &inverse)? {
+                Some(entry) => entry,
+                None => continue,
+            }
+        } else if entity == "time_block" {
+            match time_block_entry(conn, &entity_id, &kind, &patch, &inverse)? {
                 Some(entry) => entry,
                 None => continue,
             }
@@ -462,4 +510,59 @@ fn attachment_entry(
             after: after.to_string(),
         }],
     )))
+}
+
+/// A time block op as an activity entry: `schedule` (created or restored), `unschedule`,
+/// `reschedule` (moved or resized) or `block_outcome`. Times are the block's after the op.
+fn time_block_entry(
+    conn: &Connection,
+    id: &str,
+    kind: &str,
+    patch: &serde_json::Map<String, serde_json::Value>,
+    inverse: &serde_json::Map<String, serde_json::Value>,
+) -> Result<Option<(String, Vec<FieldChange>)>> {
+    let block = time_block(conn, id)?;
+    let null = serde_json::Value::Null;
+    let times = |before: bool| -> Vec<FieldChange> {
+        ["start_at", "end_at"]
+            .into_iter()
+            .map(|field| {
+                let current = serde_json::json!(if field == "start_at" {
+                    block.start_at
+                } else {
+                    block.end_at
+                });
+                let after = patch.get(field).unwrap_or(&current);
+                FieldChange {
+                    field: field.to_owned(),
+                    before: if before {
+                        inverse.get(field).unwrap_or(after).to_string()
+                    } else {
+                        null.to_string()
+                    },
+                    after: after.to_string(),
+                }
+            })
+            .collect()
+    };
+    let entry = match kind {
+        "create" | "restore" => ("schedule", times(false)),
+        "delete" => ("unschedule", times(false)),
+        "update" if patch.contains_key("start_at") || patch.contains_key("end_at") => {
+            ("reschedule", times(true))
+        }
+        "update" => match patch.get("outcome") {
+            Some(after) => (
+                "block_outcome",
+                vec![FieldChange {
+                    field: "outcome".to_owned(),
+                    before: inverse.get("outcome").unwrap_or(&null).to_string(),
+                    after: after.to_string(),
+                }],
+            ),
+            None => return Ok(None),
+        },
+        _ => return Ok(None),
+    };
+    Ok(Some((entry.0.to_owned(), entry.1)))
 }

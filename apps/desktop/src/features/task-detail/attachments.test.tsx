@@ -65,6 +65,7 @@ async function renderTask(t: Task, attachments: Attachment[] = [], activity: Act
         tags: [],
         views: [],
         attachments: [],
+        time_blocks: [],
         statuses: [],
       } as Changes;
     },

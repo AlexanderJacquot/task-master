@@ -5,6 +5,7 @@ import { ranksForDrop } from "../lib/board";
 import { rankBetween } from "../lib/rank";
 import type {
   Attachment,
+  BlockOutcome,
   Capture,
   Command,
   Epic,
@@ -18,6 +19,8 @@ import type {
   Tag,
   Task,
   TaskChange,
+  TimeBlock,
+  TimeBlockChange,
   View,
   ViewChange,
   ViewSpec,
@@ -752,4 +755,97 @@ export function deleteAttachment(store: TaskStore, id: string) {
   const s = store.getState();
   if (!s.attachments[id]) return Promise.resolve(null);
   return s.mutate([{ type: "delete_attachment", id }], { remove: { attachments: [id] } });
+}
+
+// ---------------------------------------------------------------------------------------
+// Time blocks (M9, ADR 013)
+
+/** Puts a task on the calendar. Resolves to the new block's id, or null when refused. */
+export async function scheduleTask(
+  store: TaskStore,
+  taskId: string,
+  start_at: number,
+  end_at: number,
+): Promise<string | null> {
+  const s = store.getState();
+  const task = s.tasks[taskId];
+  if (!task || end_at <= start_at) return null;
+  const now = Date.now();
+  const block: TimeBlock = {
+    id: uuidv7(now),
+    task_id: taskId,
+    start_at,
+    end_at,
+    outcome: "planned",
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  };
+  const changes = await s.mutate(
+    [
+      {
+        type: "create_time_block",
+        block: { id: block.id, task_id: taskId, start_at, end_at, outcome: "planned" },
+      },
+    ],
+    { upsert: { time_blocks: [block], tasks: [{ ...task, updated_at: now }] } },
+  );
+  return changes ? block.id : null;
+}
+
+/** Moves or resizes a block. */
+export function moveBlock(store: TaskStore, id: string, start_at: number, end_at: number) {
+  const s = store.getState();
+  const block = s.time_blocks[id];
+  if (!block || end_at <= start_at) return Promise.resolve(null);
+  const changes: TimeBlockChange[] = [];
+  if (start_at !== block.start_at) changes.push({ start_at });
+  if (end_at !== block.end_at) changes.push({ end_at });
+  if (!changes.length) return Promise.resolve(null);
+  const task = s.tasks[block.task_id];
+  const now = Date.now();
+  return s.mutate([{ type: "update_time_block", id, changes }], {
+    upsert: {
+      time_blocks: [{ ...block, start_at, end_at, updated_at: now }],
+      ...(task && { tasks: [{ ...task, updated_at: now }] }),
+    },
+  });
+}
+
+/**
+ * Sets what became of a block. `done` also completes the task (one undo), since the
+ * outcome says it was finished then.
+ */
+export function setBlockOutcome(store: TaskStore, id: string, outcome: BlockOutcome) {
+  const s = store.getState();
+  const block = s.time_blocks[id];
+  if (!block || block.outcome === outcome) return Promise.resolve(null);
+  const now = Date.now();
+  const commands: Command[] = [{ type: "update_time_block", id, changes: [{ outcome }] }];
+  let task = s.tasks[block.task_id];
+  const done = firstStatus(s.statuses, "done");
+  const category = task && s.statuses.find((st) => st.id === task?.status_id)?.category;
+  if (task && outcome === "done" && done && category !== "done" && category !== "cancelled") {
+    const change: TaskChange = { status_id: done.id };
+    commands.push({ type: "update_task", id: task.id, changes: [change] });
+    task = applyTaskChanges(task, [change], s.statuses, now);
+  }
+  return s.mutate(commands, {
+    upsert: {
+      time_blocks: [{ ...block, outcome, updated_at: now }],
+      ...(task && { tasks: [{ ...task, updated_at: now }] }),
+    },
+  });
+}
+
+/** Takes a block off the calendar (the task stays). */
+export function deleteBlock(store: TaskStore, id: string) {
+  const s = store.getState();
+  const block = s.time_blocks[id];
+  if (!block) return Promise.resolve(null);
+  const task = s.tasks[block.task_id];
+  return s.mutate([{ type: "delete_time_block", id }], {
+    remove: { time_blocks: [id] },
+    ...(task && { upsert: { tasks: [{ ...task, updated_at: Date.now() }] } }),
+  });
 }

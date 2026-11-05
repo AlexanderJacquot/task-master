@@ -1,4 +1,4 @@
-import type { Attachment, Capture, Project, Snapshot, Status, Task } from "../lib/types";
+import type { Attachment, Capture, Project, Snapshot, Status, Task, TimeBlock } from "../lib/types";
 
 export const STATUS = {
   backlog: "00000000-0000-7000-8000-000000000001",
@@ -139,6 +139,23 @@ export function attachment(overrides: Partial<Attachment> = {}): Attachment {
   };
 }
 
+/** A one-hour planned block on `task_id`, starting at `start_at`. */
+export function timeBlock(overrides: Partial<TimeBlock> = {}): TimeBlock {
+  counter += 1;
+  const start_at = overrides.start_at ?? new Date(2026, 10, 5, 9).getTime();
+  return {
+    id: `0192f0c5-0000-7000-8000-${String(counter).padStart(12, "0")}`,
+    task_id: "t0",
+    start_at,
+    end_at: start_at + 3_600_000,
+    outcome: "planned",
+    created_at: counter,
+    updated_at: counter,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
 export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
   return {
     tasks: [],
@@ -148,6 +165,7 @@ export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     tags: [],
     views: [],
     attachments: [],
+    time_blocks: [],
     ...overrides,
   };
 }

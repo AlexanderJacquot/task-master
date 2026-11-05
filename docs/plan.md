@@ -352,7 +352,7 @@ Three decisions taken:
 **Decide later**
 
 - [ ] Per-project status sets (Phase 2+), or keep one global workflow.
-- [ ] Calendar provider for Phase 4: Google, Microsoft 365, or a self-hosted CalDAV.
+- [x] Calendar provider for Phase 4: Google first, CalDAV later (ADR 013).
 - [ ] Phone client: Tauri mobile build or PWA (Phase 5).
 
 **Risks**

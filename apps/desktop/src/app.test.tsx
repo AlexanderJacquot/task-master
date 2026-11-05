@@ -30,6 +30,7 @@ function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
         tags: [],
         views: [],
         attachments: [],
+        time_blocks: [],
         statuses: [],
       } as Changes;
     },

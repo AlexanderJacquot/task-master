@@ -40,6 +40,7 @@ describe("tauriApi", () => {
       tags: [],
       views: [],
       attachments: [],
+      time_blocks: [],
     };
     tauri.reply = () => Promise.resolve(changes);
     const cmd = { type: "delete_task", id: "t" } as const;

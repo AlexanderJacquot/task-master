@@ -112,6 +112,14 @@ export function CommandPalette({
       },
       { key: "view:inbox", group: "Views", label: "Inbox", hint: "g i", run: () => go("/inbox") },
       { key: "view:today", group: "Views", label: "Today", hint: "g t", run: () => go("/today") },
+      {
+        key: "view:calendar",
+        group: "Views",
+        label: "Calendar",
+        hint: "g c",
+        keywords: "schedule week month day time blocks",
+        run: () => go("/calendar"),
+      },
       { key: "view:all", group: "Views", label: "All tasks", hint: "g a", run: () => go("/all") },
       {
         key: "view:settings",

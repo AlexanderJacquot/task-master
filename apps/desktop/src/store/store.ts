@@ -14,6 +14,7 @@ import type {
   Status,
   Tag,
   Task,
+  TimeBlock,
   View,
 } from "../lib/types";
 
@@ -30,6 +31,8 @@ export interface Entities {
   statuses: Status[];
   /** Files attached to live tasks. */
   attachments: ById<Attachment>;
+  /** Calendar blocks of live tasks. */
+  time_blocks: ById<TimeBlock>;
 }
 
 /** Local edits shown before the core confirms them. */
@@ -42,6 +45,7 @@ export interface Optimistic {
     views?: View[];
     statuses?: Status[];
     attachments?: Attachment[];
+    time_blocks?: TimeBlock[];
   };
   remove?: {
     tasks?: string[];
@@ -50,6 +54,7 @@ export interface Optimistic {
     views?: string[];
     statuses?: string[];
     attachments?: string[];
+    time_blocks?: string[];
   };
 }
 
@@ -71,8 +76,25 @@ export interface TaskStoreState extends Entities {
 
 export type TaskStore = StoreApi<TaskStoreState>;
 
-type Kind = "tasks" | "projects" | "epics" | "tags" | "views" | "statuses" | "attachments";
-const KINDS: Kind[] = ["tasks", "projects", "epics", "tags", "views", "statuses", "attachments"];
+type Kind =
+  | "tasks"
+  | "projects"
+  | "epics"
+  | "tags"
+  | "views"
+  | "statuses"
+  | "attachments"
+  | "time_blocks";
+const KINDS: Kind[] = [
+  "tasks",
+  "projects",
+  "epics",
+  "tags",
+  "views",
+  "statuses",
+  "attachments",
+  "time_blocks",
+];
 
 /** Statuses are kept as an array in workflow order; every other kind as a map by id. */
 function mapOf(state: Entities, kind: Kind): ById<{ id: string }> {
@@ -100,6 +122,7 @@ function fromSnapshot(snapshot: Snapshot): Entities {
     views: byId(snapshot.views),
     statuses: snapshot.statuses,
     attachments: byId(snapshot.attachments),
+    time_blocks: byId(snapshot.time_blocks),
   };
 }
 
@@ -174,6 +197,7 @@ export function createTaskStore(api: Api): TaskStore {
       views: {},
       statuses: [],
       attachments: {},
+      time_blocks: {},
       ready: false,
       loadError: null,
       lastError: null,

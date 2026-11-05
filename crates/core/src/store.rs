@@ -13,7 +13,7 @@ use crate::error::{Error, Result};
 use crate::events::{Changed, EntityRef, EventBus};
 use crate::files::FileStore;
 use crate::history::{self, History};
-use crate::model::{Attachment, Epic, Id, Project, Snapshot, Status, Tag, Task, View};
+use crate::model::{Attachment, Epic, Id, Project, Snapshot, Status, Tag, Task, TimeBlock, View};
 use crate::ops::{Batch, EntityKind};
 use crate::{db, query};
 
@@ -32,6 +32,7 @@ pub struct Changes {
     pub views: Vec<View>,
     pub statuses: Vec<Status>,
     pub attachments: Vec<Attachment>,
+    pub time_blocks: Vec<TimeBlock>,
 }
 
 impl Changes {
@@ -320,6 +321,7 @@ fn load_changes(
             EntityKind::View => changes.views.push(query::view(conn, id)?),
             EntityKind::Status => changes.statuses.push(query::status(conn, id)?),
             EntityKind::Attachment => changes.attachments.push(query::attachment(conn, id)?),
+            EntityKind::TimeBlock => changes.time_blocks.push(query::time_block(conn, id)?),
         }
     }
     Ok(changes)

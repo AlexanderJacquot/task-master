@@ -6,6 +6,7 @@ import {
   type RouterHistory,
   redirect,
 } from "@tanstack/react-router";
+import { CalendarPage } from "./features/calendar/CalendarPage";
 import { EpicPage } from "./features/organize/EpicPage";
 import { ProjectPage } from "./features/organize/ProjectPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
@@ -45,6 +46,12 @@ const todayRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "today",
   component: TodayPage,
+});
+
+const calendarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "calendar",
+  component: CalendarPage,
 });
 
 const allRoute = createRoute({
@@ -121,6 +128,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   inboxRoute,
   todayRoute,
+  calendarRoute,
   allRoute,
   projectRoute,
   epicRoute,

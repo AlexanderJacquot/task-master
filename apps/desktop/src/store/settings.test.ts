@@ -21,6 +21,7 @@ async function setup(fail = false) {
         tags: [],
         views: [],
         attachments: [],
+        time_blocks: [],
         statuses: [],
       } as Changes);
     },

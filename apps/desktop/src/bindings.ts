@@ -78,7 +78,9 @@ export type Activity_Deserialize = {
 	batch_id?: string | null,
 	/**
 	 *  `create`, `update`, `delete`, `restore`, `link` (tag added), `unlink` (tag removed),
-	 *  or for attachments `attach`, `detach` and `rename_attachment` (field `name`).
+	 *  or for attachments `attach`, `detach` and `rename_attachment` (field `name`), or for
+	 *  time blocks `schedule`, `unschedule`, `reschedule` (fields `start_at`, `end_at`) and
+	 *  `block_outcome` (field `outcome`).
 	 */
 	kind: string,
 	fields: FieldChange[],
@@ -92,7 +94,9 @@ export type Activity_Serialize = {
 	batch_id: string | null,
 	/**
 	 *  `create`, `update`, `delete`, `restore`, `link` (tag added), `unlink` (tag removed),
-	 *  or for attachments `attach`, `detach` and `rename_attachment` (field `name`).
+	 *  or for attachments `attach`, `detach` and `rename_attachment` (field `name`), or for
+	 *  time blocks `schedule`, `unschedule`, `reschedule` (fields `start_at`, `end_at`) and
+	 *  `block_outcome` (field `outcome`).
 	 */
 	kind: string,
 	fields: FieldChange[],
@@ -175,6 +179,13 @@ export type BackupStatus_Serialize = {
 	remote_error: string | null,
 };
 
+/**  What became of a [`TimeBlock`]. Logged time is the sum of `done` and `worked` blocks. */
+export type BlockOutcome = "planned" | 
+/**  The task was finished in this block. */
+"done" | 
+/**  Time spent on the task without finishing it. */
+"worked" | "cancelled";
+
 /**
  *  A parsed line with its names resolved, ready for the UI to preview and turn into
  *  commands.
@@ -241,6 +252,7 @@ export type Changes_Deserialize = {
 	views: View_Deserialize[],
 	statuses: Status_Deserialize[],
 	attachments: Attachment_Deserialize[],
+	time_blocks: TimeBlock_Deserialize[],
 };
 
 /**
@@ -258,6 +270,7 @@ export type Changes_Serialize = {
 	views: View_Serialize[],
 	statuses: Status_Serialize[],
 	attachments: Attachment_Serialize[],
+	time_blocks: TimeBlock_Serialize[],
 };
 
 /**  A user action. Several commands sent together form one undoable batch. */
@@ -294,7 +307,14 @@ export type Command_Deserialize = { type: "create_task"; task: NewTask_Deseriali
 /**  Records a file already stored by hash (see `FileStore`) as attached to a task. */
 { type: "create_attachment"; attachment: NewAttachment_Deserialize } | { type: "update_attachment"; id: string; changes: AttachmentChange[] } | 
 /**  Detaches the file. Its content stays stored, so undo brings it back. */
-{ type: "delete_attachment"; id: string };
+{ type: "delete_attachment"; id: string } | 
+/**  Places a task on the calendar. */
+{ type: "create_time_block"; block: NewTimeBlock_Deserialize } | 
+/**
+ *  Moves, resizes or sets the outcome of a block. The result must still end after it
+ *  starts.
+ */
+{ type: "update_time_block"; id: string; changes: TimeBlockChange[] } | { type: "delete_time_block"; id: string };
 
 /**  A user action. Several commands sent together form one undoable batch. */
 export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize } | { type: "update_task"; id: string; changes: TaskChange_Serialize[] } | 
@@ -320,7 +340,14 @@ export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize }
 /**  Records a file already stored by hash (see `FileStore`) as attached to a task. */
 { type: "create_attachment"; attachment: NewAttachment_Serialize } | { type: "update_attachment"; id: string; changes: AttachmentChange[] } | 
 /**  Detaches the file. Its content stays stored, so undo brings it back. */
-{ type: "delete_attachment"; id: string };
+{ type: "delete_attachment"; id: string } | 
+/**  Places a task on the calendar. */
+{ type: "create_time_block"; block: NewTimeBlock_Serialize } | 
+/**
+ *  Moves, resizes or sets the outcome of a block. The result must still end after it
+ *  starts.
+ */
+{ type: "update_time_block"; id: string; changes: TimeBlockChange[] } | { type: "delete_time_block"; id: string };
 
 /**  What the settings screen shows: never the secret itself. */
 export type ConfigView = ConfigView_Serialize | ConfigView_Deserialize;
@@ -354,7 +381,7 @@ export type DueFilter =
 "none";
 
 /**  Kinds of entity front ends get back in [`crate::Changes`] and events. */
-export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment";
+export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block";
 
 export type EntityRef = {
 	kind: EntityKind,
@@ -420,6 +447,7 @@ export type ImportSummary = {
 	tags: number,
 	views: number,
 	attachments: number,
+	time_blocks: number,
 	/**  Attachments whose file was not found (an export copied without its folder). */
 	missing_files: number,
 };
@@ -600,6 +628,30 @@ export type NewTask_Serialize = {
 	tag_ids: string[],
 };
 
+export type NewTimeBlock = NewTimeBlock_Serialize | NewTimeBlock_Deserialize;
+
+export type NewTimeBlock_Deserialize = {
+	id?: string | null,
+	task_id: string,
+	/**  Unix ms. */
+	start_at: number,
+	/**  Unix ms, after `start_at`, at most [`MAX_BLOCK_MS`] later. */
+	end_at: number,
+	/**  Defaults to `planned`. */
+	outcome?: BlockOutcome | null,
+};
+
+export type NewTimeBlock_Serialize = {
+	id: string | null,
+	task_id: string,
+	/**  Unix ms. */
+	start_at: number,
+	/**  Unix ms, after `start_at`, at most [`MAX_BLOCK_MS`] later. */
+	end_at: number,
+	/**  Defaults to `planned`. */
+	outcome: BlockOutcome | null,
+};
+
 export type NewView = NewView_Serialize | NewView_Deserialize;
 
 export type NewView_Deserialize = {
@@ -690,6 +742,8 @@ export type Snapshot_Deserialize = {
 	views: View_Deserialize[],
 	/**  Attachments of live tasks. */
 	attachments: Attachment_Deserialize[],
+	/**  Time blocks of live tasks, by start. */
+	time_blocks: TimeBlock_Deserialize[],
 };
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
@@ -702,6 +756,8 @@ export type Snapshot_Serialize = {
 	views: View_Serialize[],
 	/**  Attachments of live tasks. */
 	attachments: Attachment_Serialize[],
+	/**  Time blocks of live tasks, by start. */
+	time_blocks: TimeBlock_Serialize[],
 };
 
 export type SortBy = 
@@ -860,6 +916,37 @@ export type Task_Serialize = {
 	created_at: number,
 	updated_at: number,
 	completed_at: number | null,
+	deleted_at: number | null,
+};
+
+/**  A task placed on the calendar, from `start_at` to `end_at`. */
+export type TimeBlock = TimeBlock_Serialize | TimeBlock_Deserialize;
+
+export type TimeBlockChange = ({ start_at: number }) & { end_at?: never; outcome?: never } | ({ end_at: number }) & { outcome?: never; start_at?: never } | ({ outcome: BlockOutcome }) & { end_at?: never; start_at?: never };
+
+/**  A task placed on the calendar, from `start_at` to `end_at`. */
+export type TimeBlock_Deserialize = {
+	id: string,
+	task_id: string,
+	start_at: number,
+	/**  After `start_at`. */
+	end_at: number,
+	outcome: BlockOutcome,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**  A task placed on the calendar, from `start_at` to `end_at`. */
+export type TimeBlock_Serialize = {
+	id: string,
+	task_id: string,
+	start_at: number,
+	/**  After `start_at`. */
+	end_at: number,
+	outcome: BlockOutcome,
+	created_at: number,
+	updated_at: number,
 	deleted_at: number | null,
 };
 

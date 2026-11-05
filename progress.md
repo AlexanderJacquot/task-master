@@ -4,6 +4,12 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**M9 Calendar**, branch `m9-calendar` (from `main`), not committed yet: time blocks in the
+core, Calendar page with day / week / month views and drag and drop. Plan Phase 4 started
+early at the user's request (it skips the plan's gate: two weeks of daily use, Phases 2
+and 3). Next: **M10 Google Calendar sync** (ADR 013, "Planned for M10"); the user creates
+an OAuth client in Google Cloud Console (steps to write in docs).
+
 **M8 Attachments**, branch `m8-attachments` (from `main`): markdown preview, pasted
 images and file attachments, the Windows title bar and the parchment rubric colors.
 Merged to `main` and released as **v0.3.0** (2026-11-05). Next: install the update on
@@ -23,6 +29,30 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### M9 Calendar views and time blocks (2026-11-05)
+
+ADR `docs/adr/013-calendar.md`. Agreed first: Google first (CalDAV later, provider trait),
+dedicated calendar for pushed blocks, custom grid on dnd-kit, local M9 then sync M10.
+- Core: migration `0005_time_blocks.sql`; `TimeBlock` + `BlockOutcome` in the snapshot
+  and `Changes`; `create_time_block` / `update_time_block` (start, end, outcome) /
+  `delete_time_block` with ops, undo, task `updated_at`; 24 h limit; activity entries
+  `schedule` / `unschedule` / `reschedule` / `block_outcome`; export/import
+  (`ImportSummary.time_blocks`).
+- UI: `lib/calendar.ts` (dates, month grid, overlap layout, `resolveDrop`, next slot);
+  actions `scheduleTask`, `moveBlock`, `setBlockOutcome` (done completes the task, one
+  batch), `deleteBlock`; `/calendar` page (sidebar, `g c`, palette) with a task tray
+  (Today + searchable other tasks, Schedule button), day/week grid (all-day lane of
+  planned/due tasks, blocks side by side, drag to move, resize from the bottom edge,
+  block menu: outcome, open task, remove; Delete key; now line; drop preview), month
+  grid (blocks, planned and due tasks, "+N more", day number opens the day). Range
+  remembered in `localStorage`.
+- Tests: Rust +6 (`tests/time_blocks.rs`); Vitest 183 (+30: calendar model, block
+  actions, calendar page). Checked in a browser with a fake core (Playwright): drags from
+  the tray and between days land on the pointer's quarter hour, both themes, month view.
+  Fix found there: drop position now tracks the real pointer (dnd-kit's delta counts
+  scrolling).
+- No new dependencies.
 
 ### Parchment rubric red restored (2026-11-05)
 
@@ -299,6 +329,8 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Not yet verified
 
+- M9 in the real window (WebKitGTK / WebView2): drag feel, resize, `color-mix` block
+  fills, scroll position on open, migration of an existing DB to v5.
 - Windows title bar on Windows: drag, double-click, Aero Snap, resize from every edge,
   shadow, maximized size (taskbar not covered), buttons in both themes, unfocused dimming,
   the strip lining up with the sidebar (open and rail), close quits the process.
@@ -336,6 +368,10 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- Calendar: drag on empty grid to create a block (pick a task); keyboard moves of blocks;
+  week start and working hours in Settings; Today view counting tasks with a block today;
+  block list and logged time on the task page; multi-day blocks shown across days in the
+  month view.
 - Rename epics and tags from the sidebar (projects done in M7).
 - Drop cap on the full task page's description (needs care with CodeMirror measuring).
 - Optional sans body font (one variable, `--font-sans`).

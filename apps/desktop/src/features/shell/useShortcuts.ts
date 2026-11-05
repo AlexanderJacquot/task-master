@@ -11,7 +11,10 @@ export const SHORTCUTS: Array<{ keys: string; what: string }> = [
   { keys: "Ctrl+K", what: "Jump to anything: projects, views, tasks, actions" },
   { keys: "Ctrl+1 … Ctrl+9", what: "Jump to the first nine projects in the sidebar" },
   { keys: "Shift+Enter", what: "Open a task as a full page (in a list, or when adding one)" },
-  { keys: "g i / g t / g a / g s", what: "Go to Inbox / Today / All tasks / Settings" },
+  {
+    keys: "g i / g t / g c / g a / g s",
+    what: "Go to Inbox / Today / Calendar / All tasks / Settings",
+  },
   { keys: "Ctrl+Z / Ctrl+Shift+Z", what: "Undo / redo the last action" },
   { keys: "Esc", what: "Leave a field, close the task panel, or leave the full task page" },
   { keys: "Alt+← / Alt+→", what: "Board: move the focused card to the previous / next column" },
@@ -37,7 +40,7 @@ export interface ShortcutActions {
   newTask(): void;
   /** 1-based position in the sidebar's project order. */
   goToProject(n: number): void;
-  go(to: "/inbox" | "/today" | "/all" | "/settings"): void;
+  go(to: "/inbox" | "/today" | "/calendar" | "/all" | "/settings"): void;
 }
 
 /**
@@ -87,10 +90,16 @@ export function useShortcuts(actions: ShortcutActions) {
         void store.getState().redo();
       } else if (mod || e.altKey) {
         return;
-      } else if (Date.now() - pendingG < 1000 && ["i", "t", "a", "s"].includes(key)) {
+      } else if (Date.now() - pendingG < 1000 && ["i", "t", "c", "a", "s"].includes(key)) {
         e.preventDefault();
         pendingG = 0;
-        const to = { i: "/inbox", t: "/today", a: "/all", s: "/settings" } as const;
+        const to = {
+          i: "/inbox",
+          t: "/today",
+          c: "/calendar",
+          a: "/all",
+          s: "/settings",
+        } as const;
         a.go(to[key as keyof typeof to]);
       } else if (key === "g") {
         pendingG = Date.now();

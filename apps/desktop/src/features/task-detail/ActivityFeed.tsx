@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { formatRange } from "../../lib/calendar";
 import { formatAgo } from "../../lib/dates";
 import type { Activity, FieldChange, Task } from "../../lib/types";
 import { useApi, useStoreState } from "../../store/context";
@@ -55,6 +56,28 @@ function describe(entry: Activity, lookup: Lookup): string[] {
       if (entry.kind === "detach") return [`Removed the attachment ${name}`];
       const before = (field && (JSON.parse(field.before) as string | null)) ?? "a file";
       return [`Renamed the attachment ${before} → ${name}`];
+    }
+    case "schedule":
+    case "unschedule":
+    case "reschedule": {
+      const time = (name: string) => {
+        const f = entry.fields.find((x) => x.field === name);
+        const ms = f ? (JSON.parse(f.after) as number | null) : null;
+        return ms === null ? null : ms;
+      };
+      const start = time("start_at");
+      const end = time("end_at");
+      const when =
+        start !== null && end !== null
+          ? `${new Date(start).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}, ${formatRange(start, end)}`
+          : "a time";
+      if (entry.kind === "schedule") return [`Scheduled for ${when}`];
+      if (entry.kind === "unschedule") return [`Removed from the calendar (${when})`];
+      return [`Rescheduled to ${when}`];
+    }
+    case "block_outcome": {
+      const outcome = JSON.parse(entry.fields[0]?.after ?? "null") as string | null;
+      return [`Marked a time block ${outcome ?? "planned"}`];
     }
     case "link":
     case "unlink": {

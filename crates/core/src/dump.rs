@@ -30,6 +30,7 @@ const TABLES: &[&str] = &[
     "task_tags",
     "views",
     "attachments",
+    "time_blocks",
     "ops",
 ];
 
@@ -53,6 +54,7 @@ pub struct ImportSummary {
     pub tags: u32,
     pub views: u32,
     pub attachments: u32,
+    pub time_blocks: u32,
     /// Attachments whose file was not found (an export copied without its folder).
     pub missing_files: u32,
 }
@@ -221,6 +223,7 @@ pub(crate) fn import(
             "tags" => summary.tags = n,
             "views" => summary.views = n,
             "attachments" => summary.attachments = n,
+            "time_blocks" => summary.time_blocks = n,
             _ => {}
         }
     }

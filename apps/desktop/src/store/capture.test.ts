@@ -30,6 +30,7 @@ async function setup() {
         tags: [],
         views: [],
         attachments: [],
+        time_blocks: [],
         statuses: [],
       } as Changes;
     },

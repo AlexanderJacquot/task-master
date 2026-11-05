@@ -7,8 +7,8 @@ use serde_json::{Map, Value, json};
 use crate::clock::{check_date, check_id, new_id};
 use crate::error::{Error, Result};
 use crate::model::{
-    EpicState, Id, IsoDate, Priority, Status, StatusCategory, Task, VIEW_SPEC_VERSION, ViewScope,
-    ViewSpec,
+    BlockOutcome, EpicState, Id, IsoDate, Priority, Status, StatusCategory, Task, Timestamp,
+    VIEW_SPEC_VERSION, ViewScope, ViewSpec,
 };
 use crate::ops::{Batch, Change, Entity, OpKind};
 use crate::{files, query, rank};
@@ -114,6 +114,19 @@ pub enum Command {
     },
     /// Detaches the file. Its content stays stored, so undo brings it back.
     DeleteAttachment {
+        id: Id,
+    },
+    /// Places a task on the calendar.
+    CreateTimeBlock {
+        block: NewTimeBlock,
+    },
+    /// Moves, resizes or sets the outcome of a block. The result must still end after it
+    /// starts.
+    UpdateTimeBlock {
+        id: Id,
+        changes: Vec<TimeBlockChange>,
+    },
+    DeleteTimeBlock {
         id: Id,
     },
 }
@@ -283,6 +296,32 @@ pub enum AttachmentChange {
     Name(String),
 }
 
+/// Longest time block: one day.
+pub const MAX_BLOCK_MS: i64 = 24 * 60 * 60 * 1000;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewTimeBlock {
+    pub id: Option<Id>,
+    pub task_id: Id,
+    /// Unix ms.
+    pub start_at: Timestamp,
+    /// Unix ms, after `start_at`, at most [`MAX_BLOCK_MS`] later.
+    pub end_at: Timestamp,
+    /// Defaults to `planned`.
+    #[serde(default)]
+    pub outcome: Option<BlockOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum TimeBlockChange {
+    StartAt(Timestamp),
+    EndAt(Timestamp),
+    Outcome(BlockOutcome),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 #[serde(rename_all = "snake_case")]
@@ -326,6 +365,9 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
         Command::CreateAttachment { attachment } => create_attachment(b, attachment),
         Command::UpdateAttachment { id, changes } => update_attachment(b, &id, changes),
         Command::DeleteAttachment { id } => delete_attachment(b, &id),
+        Command::CreateTimeBlock { block } => create_time_block(b, block),
+        Command::UpdateTimeBlock { id, changes } => update_time_block(b, &id, changes),
+        Command::DeleteTimeBlock { id } => delete_time_block(b, &id),
     }
 }
 
@@ -1326,6 +1368,97 @@ fn live_attachment(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Attachme
         return Err(Error::not_found("attachment", id));
     }
     Ok(attachment)
+}
+
+// ---------------------------------------------------------------------------------------
+// Time blocks
+
+fn check_block_times(start_at: Timestamp, end_at: Timestamp) -> Result<()> {
+    if start_at < 0 {
+        return Err(Error::invalid("a time block cannot start before 1970"));
+    }
+    if end_at <= start_at {
+        return Err(Error::invalid("a time block must end after it starts"));
+    }
+    if end_at - start_at > MAX_BLOCK_MS {
+        return Err(Error::invalid("a time block can last at most 24 hours"));
+    }
+    Ok(())
+}
+
+fn create_time_block(b: &mut Batch<'_, '_>, n: NewTimeBlock) -> Result<()> {
+    let id = client_id(n.id)?;
+    live_task(b, &n.task_id)?;
+    check_block_times(n.start_at, n.end_at)?;
+    b.apply(Change::new(
+        Entity::TimeBlock,
+        &id,
+        OpKind::Create,
+        json!({
+            "task_id": n.task_id,
+            "start_at": n.start_at,
+            "end_at": n.end_at,
+            "outcome": n.outcome.unwrap_or_default().as_str(),
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))?;
+    touch_task(b, &n.task_id)
+}
+
+fn update_time_block(b: &mut Batch<'_, '_>, id: &str, changes: Vec<TimeBlockChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid(
+            "update_time_block needs at least one change",
+        ));
+    }
+    let block = live_time_block(b, id)?;
+    let (mut start_at, mut end_at) = (block.start_at, block.end_at);
+    let mut patch = Map::new();
+    for change in changes {
+        match change {
+            TimeBlockChange::StartAt(t) => {
+                start_at = t;
+                patch.insert("start_at".into(), json!(t));
+            }
+            TimeBlockChange::EndAt(t) => {
+                end_at = t;
+                patch.insert("end_at".into(), json!(t));
+            }
+            TimeBlockChange::Outcome(o) => {
+                patch.insert("outcome".into(), json!(o.as_str()));
+            }
+        }
+    }
+    check_block_times(start_at, end_at)?;
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::TimeBlock,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))?;
+    touch_task(b, &block.task_id)
+}
+
+fn delete_time_block(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    let task_id = live_time_block(b, id)?.task_id;
+    b.apply(Change::new(
+        Entity::TimeBlock,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))?;
+    touch_task(b, &task_id)
+}
+
+fn live_time_block(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::TimeBlock> {
+    let block = query::time_block(b.tx, id)?;
+    if block.deleted_at.is_some() {
+        return Err(Error::not_found("time block", id));
+    }
+    Ok(block)
 }
 
 fn client_id(id: Option<Id>) -> Result<Id> {

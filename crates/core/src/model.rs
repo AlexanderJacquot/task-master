@@ -215,6 +215,56 @@ pub struct Attachment {
     pub deleted_at: Option<Timestamp>,
 }
 
+/// What became of a [`TimeBlock`]. Logged time is the sum of `done` and `worked` blocks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum BlockOutcome {
+    #[default]
+    Planned,
+    /// The task was finished in this block.
+    Done,
+    /// Time spent on the task without finishing it.
+    Worked,
+    Cancelled,
+}
+
+impl BlockOutcome {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Planned => "planned",
+            Self::Done => "done",
+            Self::Worked => "worked",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "planned" => Self::Planned,
+            "done" => Self::Done,
+            "worked" => Self::Worked,
+            "cancelled" => Self::Cancelled,
+            _ => return None,
+        })
+    }
+}
+
+/// A task placed on the calendar, from `start_at` to `end_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct TimeBlock {
+    pub id: Id,
+    pub task_id: Id,
+    pub start_at: Timestamp,
+    /// After `start_at`.
+    pub end_at: Timestamp,
+    pub outcome: BlockOutcome,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
 /// A saved board or list: a name plus a [`ViewSpec`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -360,4 +410,6 @@ pub struct Snapshot {
     pub views: Vec<View>,
     /// Attachments of live tasks.
     pub attachments: Vec<Attachment>,
+    /// Time blocks of live tasks, by start.
+    pub time_blocks: Vec<TimeBlock>,
 }
