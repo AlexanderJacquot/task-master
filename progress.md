@@ -35,6 +35,15 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Release 0.6.0 (2026-11-05)
+
+- Version 0.6.0 for the desktop and the sync server (one workspace version, one tag).
+  Notes: docs/releases/0.6.0.md. Since 0.5.0: Lineage and task dependencies (migration
+  0009), epic appearance (0008), Google Calendar deadlines as all-day "Due:" events
+  (two-way), shared DatePicker, redesigned tag picker, All tasks search, delete from
+  quick capture, sync sign-in takeover, and the GHCR server image (ADR 016).
+- Homelab: bump `task-master` to v0.6.0 together with the desktops (schema 9).
+
 ### Sync sign-in retry (2026-11-05)
 
 - A sign-in that finds the callback port 47823 busy now asks the waiting attempt (in this

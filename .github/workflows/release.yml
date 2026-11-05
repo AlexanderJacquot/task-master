@@ -85,11 +85,10 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Sync tasks and attachments across devices with a self-hosted server from Settings → Sync.
-            Includes offline editing, merge or backed-up replacement, token/OIDC sign-in, task metrics and stale indicators.
+            Connect tasks with dependencies and see how they flow in the new Lineage view. Due dates now appear as all-day events in Google Calendar, and moving one there changes the due date.
+            Also: epic colors and shapes, a new date picker, a redesigned tag picker, search in All tasks, delete from quick capture, and a sync sign-in that can be restarted.
 
-            Move Google Calendar sync between desktop and server from Settings → Calendar. Existing events are reused and exclusive leases prevent competing runners.
-            Also includes the expanded quick-capture editor and new application artwork. The HTTP API, CLI and MCP remain future milestones.
+            Update the sync server to 0.6.0 together with your desktops: this release adds database migrations. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.6.0.
 
             Installed apps (0.2.0 and later) pick this up from Settings → About and updates.
             New install: Windows setup .exe, macOS .dmg, Linux .AppImage or .deb/.rpm.

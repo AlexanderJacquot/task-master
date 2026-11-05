@@ -45,7 +45,7 @@ task-master:
   host: gitche-gumee
   domain: tasks.solarnexus.space
   # renovate: datasource=docker depName=ghcr.io/alexanderjacquot/task-master-server
-  version: v0.5.0
+  version: v0.6.0
   exposure: private        # LAN/VPN, like s3.solarnexus.space
   port: 8080
   # OIDC, not forward-auth: desktops, the dashboard and MCP send bearer tokens, which

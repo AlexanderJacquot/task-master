@@ -26,19 +26,23 @@ that folder while `.forgejo/workflows` exists, which is why its manual-only stub
 
 ## Cutting a release
 
-For v0.5.0, use [the release notes](releases/0.5.0.md). Validate the integrated branch
-with the same checks as CI before tagging. This release includes server Calendar sync
-and the remaining capture and artwork changes.
+For v0.6.0, use [the release notes](releases/0.6.0.md). Validate the integrated branch
+with the same checks as CI before tagging.
+
+The same tag also publishes the sync server image (`server-image.yml`, ADR 016), with the
+same version as the app. Desktop and server must run the same database schema. After a
+release with migrations, update the homelab's `task-master` version (Renovate opens the
+bump) together with the desktops.
 
 1. Bump `version` in `apps/desktop/src-tauri/tauri.conf.json`, the workspace `Cargo.toml`
    and `apps/desktop/package.json` on `main`. The version must grow: the app only offers
    a release newer than itself. Regenerate `Cargo.lock` with `cargo check` so workspace
    package versions match.
-2. `git tag -a v0.5.0 -m … && git push origin v0.5.0`. The mirror forwards the tag to GitHub.
+2. `git tag -a v0.6.0 -m … && git push origin v0.6.0`. The mirror forwards the tag to GitHub.
 3. The tag push starts the *release* workflow on GitHub (it did for v0.2.0 and v0.3.0;
    check `gh run list -R AlexanderJacquot/task-master -L 3`). Only if no run appears,
    start it by hand: `gh workflow run release.yml -R AlexanderJacquot/task-master --ref
-   v0.5.0`. Do not do both: two runs publish to the same release.
+   v0.6.0`. Do not do both: two runs publish to the same release.
 4. On GitHub, the *release* workflow builds Linux (.deb, .AppImage, .rpm), Windows
    (.msi, setup .exe) and macOS (arm64 and x86_64 .dmg), plus signed update bundles and
    `latest.json`, and **publishes** the release (about 30–40 minutes on a cold cache).
