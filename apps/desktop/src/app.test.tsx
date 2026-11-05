@@ -9,6 +9,7 @@ import { createAppRouter } from "./router";
 import { StoreProvider } from "./store/context";
 import { createTaskStore, type TaskStore } from "./store/store";
 import { fakeParse, project, STATUS, snapshot, task } from "./test/fixtures";
+import { pickOption } from "./test/select";
 
 /** A core that confirms every write with what the store optimistically showed. */
 function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
@@ -125,7 +126,7 @@ describe("the app", () => {
       "Renew passport",
     );
 
-    fireEvent.change(within(panel).getByLabelText("Priority"), { target: { value: "urgent" } });
+    await pickOption(within(panel).getByRole("combobox", { name: "Priority" }), "Urgent");
     await waitFor(() =>
       expect(fake.executed.at(-1)).toEqual([
         { type: "update_task", id: existing.id, changes: [{ priority: "urgent" }] },
@@ -207,7 +208,7 @@ describe("the board", () => {
   it("splits the board into lanes", async () => {
     await openBoard();
     fireEvent.click(screen.getByRole("button", { name: "Display" }));
-    fireEvent.change(await screen.findByLabelText("Swimlanes"), { target: { value: "priority" } });
+    await pickOption("Swimlanes", "Lanes by priority");
     expect(await screen.findByRole("region", { name: "Lane Normal" })).toBeTruthy();
   });
 });
@@ -236,7 +237,7 @@ describe("saved views", () => {
 
     // Edits are a draft until saved.
     fireEvent.click(screen.getByRole("button", { name: "Filter" }));
-    fireEvent.change(screen.getByLabelText("Filter by due date"), { target: { value: "overdue" } });
+    await pickOption("Filter by due date", "Overdue");
     fireEvent.click(await screen.findByRole("button", { name: "Save view" }));
     await waitFor(() => expect(fake.executed.at(-1)?.[0]).toMatchObject({ type: "update_view" }));
     expect(fake.executed.at(-1)?.[0]).toMatchObject({
@@ -440,7 +441,7 @@ describe("redesign", () => {
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
     const title = (await screen.findByLabelText("Title")) as HTMLTextAreaElement;
     expect(title.value).toBe("Renew passport");
-    fireEvent.change(screen.getByLabelText("Priority"), { target: { value: "high" } });
+    await pickOption("Priority", "High priority");
     await waitFor(() =>
       expect(fake.executed.at(-1)?.[0]).toMatchObject({
         type: "update_task",

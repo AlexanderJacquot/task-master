@@ -72,18 +72,13 @@ function StatusRow({ status, first, last }: { status: Status; first: boolean; la
       <Select
         aria-label={`${status.name} color`}
         value={color ?? ""}
-        onChange={(e) => void updateStatus(store, status.id, [{ color: e.target.value || null }])}
-        className="w-10 text-xs"
-        style={{ color: color ?? undefined }}
-      >
-        <option value="">○</option>
-        {PROJECT_COLORS.map((c) => (
-          <option key={c} value={c} style={{ color: c }}>
-            ●
-          </option>
-        ))}
-      </Select>
-      <Dot color={color} />
+        onValueChange={(c) => void updateStatus(store, status.id, [{ color: c || null }])}
+        className="w-28 text-xs text-ink-2"
+        options={[
+          { value: "", label: "No color", icon: <Dot color={null} /> },
+          ...PROJECT_COLORS.map((c) => ({ value: c, label: c, icon: <Dot color={c} /> })),
+        ]}
+      />
       <input
         aria-label="Status name"
         defaultValue={status.name}
@@ -101,17 +96,10 @@ function StatusRow({ status, first, last }: { status: Status; first: boolean; la
       <Select
         aria-label={`${status.name} category`}
         value={status.category}
-        onChange={(e) =>
-          void updateStatus(store, status.id, [{ category: e.target.value as StatusCategory }])
-        }
+        onValueChange={(category) => void updateStatus(store, status.id, [{ category }])}
         className="w-32 text-xs"
-      >
-        {CATEGORIES.map((c) => (
-          <option key={c.value} value={c.value}>
-            {c.label}
-          </option>
-        ))}
-      </Select>
+        options={CATEGORIES}
+      />
       <label className="flex items-center gap-1 text-xs text-neutral-500">
         WIP limit
         <input

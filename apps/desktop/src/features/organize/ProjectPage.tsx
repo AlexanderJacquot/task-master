@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Archive, ArchiveRestore, MoreHorizontal, Trash2 } from "lucide-react";
 import { DropdownMenu, Popover } from "radix-ui";
-import { cx, IconButton, Select } from "../../components/ui";
+import { cx, IconButton, MENU, MENU_DANGER, MENU_ITEM, Select } from "../../components/ui";
 import type { Project } from "../../lib/types";
 import { deleteProject, moveProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
@@ -28,7 +28,7 @@ function ColorPicker({ project }: { project: Project }) {
         <Popover.Content
           align="end"
           sideOffset={4}
-          className="z-50 grid grid-cols-5 gap-1.5 rounded-xl border border-line-strong bg-overlay p-2.5 shadow-xl"
+          className={cx(MENU, "grid min-w-0 grid-cols-5 gap-1.5 p-2.5")}
         >
           {PROJECT_COLORS.map((color) => (
             <Popover.Close
@@ -101,8 +101,7 @@ export function ProjectPage({ project }: { project: Project }) {
     .sort((a, b) => (a.rank < b.rank ? -1 : 1));
   const archived = project.archived_at !== null;
   const area = project.parent_id ? projects[project.parent_id] : undefined;
-  const item =
-    "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink outline-none data-highlighted:bg-hover";
+  const item = MENU_ITEM;
 
   return (
     <ViewPage
@@ -128,18 +127,17 @@ export function ProjectPage({ project }: { project: Project }) {
             <Select
               aria-label="Area"
               value={project.parent_id ?? ""}
-              onChange={(e) =>
-                void moveProject(store, project.id, e.target.value || null, null, null)
-              }
+              onValueChange={(id) => void moveProject(store, project.id, id || null, null, null)}
               className="h-7 text-[13px] text-ink-2"
-            >
-              <option value="">No area</option>
-              {areas.map((a) => (
-                <option key={a.id} value={a.id}>
-                  In {a.name}
-                </option>
-              ))}
-            </Select>
+              options={[
+                { value: "", label: "No area" },
+                ...areas.map((a) => ({
+                  value: a.id,
+                  label: `In ${a.name}`,
+                  icon: <ProjectMark project={a} />,
+                })),
+              ]}
+            />
           )}
           <DropdownMenu.Root modal={false}>
             <DropdownMenu.Trigger asChild>
@@ -148,11 +146,7 @@ export function ProjectPage({ project }: { project: Project }) {
               </IconButton>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                align="end"
-                sideOffset={6}
-                className="z-50 min-w-44 rounded-xl border border-line-strong bg-overlay p-1 shadow-xl"
-              >
+              <DropdownMenu.Content align="end" sideOffset={6} className={cx(MENU, "min-w-44")}>
                 <DropdownMenu.Item
                   className={item}
                   onSelect={() => void updateProject(store, project.id, [{ archived: !archived }])}
@@ -161,7 +155,7 @@ export function ProjectPage({ project }: { project: Project }) {
                   {archived ? "Unarchive" : "Archive"}
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
-                  className={cx(item, "text-danger")}
+                  className={cx(item, MENU_DANGER)}
                   onSelect={async () => {
                     if ((await deleteProject(store, project.id)) !== null) {
                       void navigate({ to: "/inbox" });

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useRef, useState } from "react";
-import { cx, IconButton, InlineInput } from "../../components/ui";
+import { cx, IconButton, InlineInput, MENU, MENU_DANGER, MENU_ITEM } from "../../components/ui";
 import { attachmentMarkdown, formatSize, isImage } from "../../lib/attachments";
 import type { Attachment } from "../../lib/types";
 import { deleteAttachment, renameAttachment } from "../../store/actions";
@@ -19,8 +19,7 @@ import { useTaskStore } from "../../store/context";
 import { FILE_DROP_EVENT, type FileDropDetail } from "../shell/useFileDrop";
 import type { useTaskFiles } from "./useTaskFiles";
 
-const item =
-  "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink outline-none data-highlighted:bg-hover";
+const item = MENU_ITEM;
 
 function Thumb({ attachment, url }: { attachment: Attachment; url?: string }) {
   const [broken, setBroken] = useState(false);
@@ -187,11 +186,7 @@ export function AttachmentList({
                   </IconButton>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Portal>
-                  <DropdownMenu.Content
-                    align="end"
-                    sideOffset={4}
-                    className="z-50 min-w-48 rounded-xl border border-line-strong bg-overlay p-1 shadow-xl"
-                  >
+                  <DropdownMenu.Content align="end" sideOffset={4} className={cx(MENU, "min-w-48")}>
                     <DropdownMenu.Item
                       className={item}
                       onSelect={() => files.actions.openAttachment?.(a.id)}
@@ -211,7 +206,7 @@ export function AttachmentList({
                       <Pencil size={14} /> Rename
                     </DropdownMenu.Item>
                     <DropdownMenu.Item
-                      className={cx(item, "text-danger")}
+                      className={cx(item, MENU_DANGER)}
                       onSelect={() => void deleteAttachment(store, a.id)}
                     >
                       <Trash2 size={14} /> Remove

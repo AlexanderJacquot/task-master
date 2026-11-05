@@ -20,6 +20,11 @@ if (typeof window !== "undefined") {
     Object.defineProperty(HTMLElement.prototype, prop, { configurable: true, get: () => value });
   }
 
+  // Radix Select scrolls the chosen option into view and checks pointer capture.
+  Element.prototype.scrollIntoView ??= () => {};
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.releasePointerCapture ??= () => {};
+
   // CodeMirror measures text through Range rects.
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
   Range.prototype.getBoundingClientRect = () => ({ ...rect, toJSON: () => rect }) as DOMRect;

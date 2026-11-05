@@ -31,6 +31,17 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Dropdowns and menus restyled (2026-11-05)
+
+Branch `menus-ui` (stacked on `project-icons`). Native `<select>` popups (gray OS list on
+Windows) are gone: `Select` in `components/ui.tsx` is now Radix Select with an `options`
+list and `onValueChange`; property pills open the same list (`SelectRoot`). One look for
+every floating list: `MENU`, `MENU_ITEM`, `MENU_DANGER`, `MENU_SEPARATOR`, `MENU_LABEL`
+plus `.tm-menu` in index.css (paper texture, layered shadow, scale-in, accent-tinted
+highlight, check on the chosen option). Used by the sidebar, project, attachment and
+filter menus. Tests pick options with `test/select.ts` `pickOption`. Not yet checked in
+the real app on Windows.
+
 ### Project icons (2026-11-05)
 
 Branch `project-icons`. The project page's color popover (now "Color and icon") offers 15

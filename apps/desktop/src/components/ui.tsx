@@ -1,5 +1,6 @@
-import { Check } from "lucide-react";
-import type { ComponentProps, ReactNode } from "react";
+import { Check, ChevronDown } from "lucide-react";
+import { Select as RadixSelect } from "radix-ui";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import type { Priority } from "../lib/types";
 
 export function cx(...classes: Array<string | false | null | undefined>): string {
@@ -32,17 +33,129 @@ export const PRIORITY_PILL: Record<Priority, string> = {
 export const FOCUS =
   "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
 
-/** Compact native select: fast, keyboard-friendly, no portal. */
-export function Select({ className, ...props }: ComponentProps<"select">) {
+/* One look for every floating list: dropdowns, ⋯ menus, context menus, pickers. The
+   `tm-menu` class (index.css) adds the paper texture, layered shadow and open animation. */
+/** A menu or list panel. */
+export const MENU =
+  "tm-menu tex-sheet z-50 overflow-hidden rounded-xl border border-line-strong bg-overlay p-1 text-sm text-ink";
+/** A row in a menu; highlighted rows take a faint accent wash. */
+export const MENU_ITEM =
+  "relative flex min-h-8 cursor-default items-center gap-2.5 rounded-lg px-2.5 py-1 text-sm text-ink outline-none select-none data-disabled:opacity-40 data-highlighted:bg-accent/10 [&_svg]:shrink-0 [&_svg]:text-ink-3 data-highlighted:[&_svg]:text-ink";
+/** A destructive row (delete). */
+export const MENU_DANGER =
+  "text-danger! data-highlighted:bg-danger/10 [&_svg]:text-danger! data-highlighted:[&_svg]:text-danger!";
+export const MENU_SEPARATOR = "-mx-1 my-1 h-px bg-line";
+/** A small heading inside a menu. */
+export const MENU_LABEL = "px-2.5 pt-1.5 pb-1 text-[11px] font-medium tracking-wide text-ink-3";
+
+export type SelectOption<T extends string = string> = {
+  value: T;
+  label: string;
+  /** Shown before the label, in the list and on the trigger (a dot, an emoji). */
+  icon?: ReactNode;
+  /** Extra classes for the label (a priority color). */
+  className?: string;
+};
+
+/** Radix refuses "" as an item value; the empty choice ("None", "Inbox") maps to this. */
+const NONE = "\u0000none";
+
+/** The list part of a select, shared by `Select` and custom triggers (property pills). */
+export function SelectRoot<T extends string>({
+  value,
+  onValueChange,
+  options,
+  children,
+}: {
+  value: T;
+  onValueChange(value: T): void;
+  options: SelectOption<T>[];
+  children: ReactNode;
+}) {
   return (
-    <select
-      {...props}
-      className={cx(
-        "rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-ink hover:border-line-strong focus:border-accent focus:outline-none",
-        "[&>option]:bg-overlay [&>option]:text-ink",
-        className,
-      )}
-    />
+    <RadixSelect.Root
+      value={value === "" ? NONE : value}
+      onValueChange={(v) => {
+        const next = (v === NONE ? "" : v) as T;
+        if (next !== value) onValueChange(next);
+      }}
+    >
+      {children}
+      <RadixSelect.Portal>
+        <RadixSelect.Content
+          position="popper"
+          sideOffset={4}
+          collisionPadding={8}
+          className={cx(
+            MENU,
+            "max-h-(--radix-select-content-available-height) min-w-[max(9rem,var(--radix-select-trigger-width))]",
+          )}
+        >
+          <RadixSelect.Viewport>
+            {options.map((o) => (
+              <RadixSelect.Item
+                key={o.value}
+                value={o.value === "" ? NONE : o.value}
+                className={cx(MENU_ITEM, "pr-8")}
+              >
+                {o.icon}
+                <RadixSelect.ItemText>
+                  <span className={o.className}>{o.label}</span>
+                </RadixSelect.ItemText>
+                <RadixSelect.ItemIndicator className="absolute right-2.5 inline-flex">
+                  <Check size={14} className="text-accent!" />
+                </RadixSelect.ItemIndicator>
+              </RadixSelect.Item>
+            ))}
+          </RadixSelect.Viewport>
+        </RadixSelect.Content>
+      </RadixSelect.Portal>
+    </RadixSelect.Root>
+  );
+}
+
+/** A compact select: a quiet trigger with the chosen label, opening a styled list. */
+export function Select<T extends string>({
+  value,
+  onValueChange,
+  options,
+  className,
+  style,
+  title,
+  "aria-label": ariaLabel,
+}: {
+  value: T;
+  onValueChange(value: T): void;
+  options: SelectOption<T>[];
+  className?: string;
+  style?: CSSProperties;
+  title?: string;
+  "aria-label": string;
+}) {
+  const current = options.find((o) => o.value === value);
+  return (
+    <SelectRoot value={value} onValueChange={onValueChange} options={options}>
+      <RadixSelect.Trigger
+        aria-label={ariaLabel}
+        title={title}
+        style={style}
+        className={cx(
+          "group/select inline-flex min-w-0 items-center gap-1.5 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-left text-ink",
+          "hover:border-line-strong data-[state=open]:border-accent",
+          FOCUS,
+          className,
+        )}
+      >
+        {current?.icon}
+        <span className={cx("min-w-0 flex-1 truncate", current?.className)}>
+          {current?.label ?? ""}
+        </span>
+        <ChevronDown
+          size={13}
+          className="shrink-0 text-ink-3 transition-transform group-data-[state=open]/select:rotate-180"
+        />
+      </RadixSelect.Trigger>
+    </SelectRoot>
   );
 }
 

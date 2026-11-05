@@ -8,6 +8,7 @@ import { deleteEpic, updateEpic } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { EditableTitle } from "../shell/EditableTitle";
 import { HeaderButton, ViewPage } from "../shell/ViewPage";
+import { ProjectMark } from "./ProjectMark";
 
 const STATES: Array<{ value: EpicState; label: string }> = [
   { value: "active", label: "Active" },
@@ -46,16 +47,9 @@ function EpicDetails({ epic }: { epic: Epic }) {
         <Select
           aria-label="Epic state"
           value={epic.state}
-          onChange={(e) =>
-            void updateEpic(store, epic.id, [{ state: e.target.value as EpicState }])
-          }
-        >
-          {STATES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </Select>
+          onValueChange={(state) => void updateEpic(store, epic.id, [{ state }])}
+          options={STATES}
+        />
         <label className="flex items-center gap-1">
           Target
           <input
@@ -75,20 +69,15 @@ function EpicDetails({ epic }: { epic: Epic }) {
         <Select
           aria-label="Home project"
           value={epic.project_id ?? ""}
-          onChange={(e) =>
-            void updateEpic(store, epic.id, [{ project_id: e.target.value || null }])
-          }
-        >
-          <option value="">No home project</option>
-          {Object.values(projects)
-            .filter((p) => p.archived_at === null || p.id === epic.project_id)
-            .sort((a, b) => (a.rank < b.rank ? -1 : 1))
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-        </Select>
+          onValueChange={(id) => void updateEpic(store, epic.id, [{ project_id: id || null }])}
+          options={[
+            { value: "", label: "No home project" },
+            ...Object.values(projects)
+              .filter((p) => p.archived_at === null || p.id === epic.project_id)
+              .sort((a, b) => (a.rank < b.rank ? -1 : 1))
+              .map((p) => ({ value: p.id, label: p.name, icon: <ProjectMark project={p} /> })),
+          ]}
+        />
         <span className="ml-auto flex items-center gap-2" title={`${done} of ${total} done`}>
           <span className="block h-1.5 w-32 overflow-hidden rounded-full bg-line-strong">
             <span

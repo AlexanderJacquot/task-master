@@ -23,7 +23,17 @@ import {
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useMemo, useState } from "react";
-import { cx, FOCUS, IconButton, InlineInput, Kbd } from "../../components/ui";
+import {
+  cx,
+  FOCUS,
+  IconButton,
+  InlineInput,
+  Kbd,
+  MENU,
+  MENU_DANGER,
+  MENU_ITEM,
+  MENU_SEPARATOR,
+} from "../../components/ui";
 import { isoDate } from "../../lib/dates";
 import type { Project } from "../../lib/types";
 import { useUpdates } from "../../lib/updater";
@@ -159,8 +169,7 @@ function ProjectMenu({
 }) {
   const store = useTaskStore();
   const archived = project.archived_at !== null;
-  const item =
-    "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink outline-none data-highlighted:bg-hover";
+  const item = MENU_ITEM;
   return (
     <DropdownMenu.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <DropdownMenu.Trigger
@@ -175,11 +184,7 @@ function ProjectMenu({
         <MoreHorizontal size={15} />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          sideOffset={4}
-          className="z-50 min-w-48 rounded-xl border border-line-strong bg-overlay p-1 shadow-xl"
-        >
+        <DropdownMenu.Content align="start" sideOffset={4} className={cx(MENU, "min-w-48")}>
           <DropdownMenu.Item className={item} onSelect={onRename}>
             <Pencil size={14} /> Rename
           </DropdownMenu.Item>
@@ -197,7 +202,7 @@ function ProjectMenu({
               />
             ))}
           </div>
-          <DropdownMenu.Separator className="my-1 h-px bg-line" />
+          <DropdownMenu.Separator className={MENU_SEPARATOR} />
           <DropdownMenu.Item
             className={item}
             onSelect={() => void updateProject(store, project.id, [{ archived: !archived }])}
@@ -206,7 +211,7 @@ function ProjectMenu({
             {archived ? "Unarchive" : "Archive"}
           </DropdownMenu.Item>
           <DropdownMenu.Item
-            className={cx(item, "text-danger")}
+            className={cx(item, MENU_DANGER)}
             onSelect={() => void deleteProject(store, project.id)}
           >
             <Trash2 size={14} /> Delete

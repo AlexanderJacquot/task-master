@@ -240,8 +240,7 @@ describe("task page look (mockup)", () => {
   it("shows set properties as pills, unset ones as quiet labels", async () => {
     const t = task({ priority: "high", description: "The current page explains every plan." });
     await renderTask(t);
-    const priority = screen.getByLabelText("Priority") as HTMLSelectElement;
-    expect(priority.closest("span")?.textContent?.startsWith("HighUrgent")).toBe(true);
+    expect(screen.getByRole("combobox", { name: "Priority" }).textContent).toBe("High");
     expect(screen.getByLabelText("Due date").closest("span")?.textContent).toBe("Due date");
     expect(screen.getByText("Keep writing… Markdown works.")).toBeTruthy();
     expect(document.querySelector(".tm-dropcap")).toBeTruthy();

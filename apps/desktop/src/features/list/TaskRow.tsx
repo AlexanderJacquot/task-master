@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Flag } from "lucide-react";
 import { memo, useState } from "react";
 import { Chip, cx, Dot, PRIORITIES, PRIORITY_STYLE, Select, TaskCheck } from "../../components/ui";
 import { formatDue } from "../../lib/dates";
-import type { Priority, Project, Status, Tag, Task, TaskChange } from "../../lib/types";
+import type { Project, Status, Tag, Task, TaskChange } from "../../lib/types";
 
 export interface RowHandlers {
   onOpen(id: string): void;
@@ -169,27 +169,21 @@ export const TaskRow = memo(function TaskRow(p: Props) {
         <Select
           aria-label="Priority"
           value={task.priority}
-          onChange={(e) => p.onChange(task.id, [{ priority: e.target.value as Priority }])}
-          className={cx("w-[5.5rem] text-xs", PRIORITY_STYLE[task.priority])}
-        >
-          {PRIORITIES.map((pr) => (
-            <option key={pr.value} value={pr.value}>
-              {pr.label}
-            </option>
-          ))}
-        </Select>
+          onValueChange={(priority) => p.onChange(task.id, [{ priority }])}
+          className="w-[5.5rem] text-xs"
+          options={PRIORITIES.map((pr) => ({ ...pr, className: PRIORITY_STYLE[pr.value] }))}
+        />
         <Select
           aria-label="Status"
           value={task.status_id}
-          onChange={(e) => p.onChange(task.id, [{ status_id: e.target.value }])}
+          onValueChange={(status_id) => p.onChange(task.id, [{ status_id }])}
           className="w-28 text-xs text-ink-2"
-        >
-          {p.statuses.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </Select>
+          options={p.statuses.map((s) => ({
+            value: s.id,
+            label: s.name,
+            icon: <Dot color={s.color ?? null} />,
+          }))}
+        />
       </span>
     </div>
   );

@@ -317,15 +317,10 @@ function ViewBody({
                       <Select
                         aria-label="Swimlanes"
                         value={display.swimlane}
-                        onChange={(e) => setDisplay({ swimlane: e.target.value as Swimlane })}
+                        onValueChange={(swimlane) => setDisplay({ swimlane })}
                         className="w-36 border-line-strong"
-                      >
-                        {SWIMLANES.map((s) => (
-                          <option key={s.value} value={s.value}>
-                            {s.label}
-                          </option>
-                        ))}
-                      </Select>
+                        options={SWIMLANES}
+                      />
                     </DisplayRow>
                     <label className="flex items-center justify-between gap-2 text-ink-2">
                       Show subtasks
@@ -343,29 +338,19 @@ function ViewBody({
                       <Select
                         aria-label="Group by"
                         value={display.group_by}
-                        onChange={(e) => setDisplay({ group_by: e.target.value as GroupBy })}
+                        onValueChange={(group_by) => setDisplay({ group_by })}
                         className="w-36 border-line-strong"
-                      >
-                        {GROUPS.map((g) => (
-                          <option key={g.value} value={g.value}>
-                            {g.label}
-                          </option>
-                        ))}
-                      </Select>
+                        options={GROUPS}
+                      />
                     </DisplayRow>
                     <DisplayRow label="Sort">
                       <Select
                         aria-label="Sort"
                         value={display.sort}
-                        onChange={(e) => setDisplay({ sort: e.target.value as SortBy })}
+                        onValueChange={(sort) => setDisplay({ sort })}
                         className="w-36 border-line-strong"
-                      >
-                        {SORTS.map((s) => (
-                          <option key={s.value} value={s.value}>
-                            {s.label}
-                          </option>
-                        ))}
-                      </Select>
+                        options={SORTS}
+                      />
                     </DisplayRow>
                   </>
                 )}
