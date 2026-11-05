@@ -6,7 +6,8 @@
 //! when the server announces new ops, when the window gets focus, at start and every
 //! 5 minutes. The app never waits on it: edits always land in the local database first.
 
-use std::net::TcpListener;
+use std::io::{ErrorKind, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
@@ -32,6 +33,11 @@ const FIRST: Duration = Duration::from_secs(5);
 pub const OIDC_PORT: u16 = 47823;
 const OIDC_PATH: &str = "/oidc/callback";
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(300);
+/// How long a new sign-in waits for an earlier one (in this or another task-master
+/// instance) to let go of the callback port.
+const TAKE_OVER_WAIT: Duration = Duration::from_secs(3);
+/// The error of a sign-in that a newer one replaced. The UI drops results of replaced runs.
+const REPLACED: &str = "replaced by a newer sign-in";
 /// Settings warn when this device's clock is further off than this.
 const CLOCK_WARNING_MS: i64 = 60_000;
 
@@ -94,6 +100,8 @@ pub struct SyncRuntime {
     kick: Sender<()>,
     /// Bumped when the account changes, so the event watcher reconnects.
     generation: AtomicU64,
+    /// Numbers sign-in attempts: one that ends after a newer one started was replaced.
+    sign_in: AtomicU64,
 }
 
 impl SyncRuntime {
@@ -105,6 +113,7 @@ impl SyncRuntime {
                 round: Mutex::new(()),
                 kick,
                 generation: AtomicU64::new(0),
+                sign_in: AtomicU64::new(0),
             },
             kicks,
         )
@@ -394,29 +403,43 @@ pub fn sync_set_token(app: AppHandle, token: String) -> CommandResult<SyncStatus
 }
 
 /// Signs in with the server's OpenID provider in the browser (up to 5 minutes), then
-/// trades the ID token for this device's server token.
+/// trades the ID token for this device's server token. Starting again while the browser
+/// step is open replaces the earlier attempt, which then fails with `REPLACED`.
 #[tauri::command(async)]
 #[specta::specta]
 pub fn sync_sign_in(app: AppHandle) -> CommandResult<SyncStatus> {
     let state = app.state::<AppState>();
-    let _calendar = lock(&state.calendar.gate);
-    let _round = lock(&state.sync.round);
-    let mut account = account(&state).ok_or_else(|| invalid("connect to a server first"))?;
-    let client = Client::new(&account.url, None);
+    let attempt = state.sync.sign_in.fetch_add(1, Ordering::SeqCst) + 1;
+    let replaced = || state.sync.sign_in.load(Ordering::SeqCst) != attempt;
+    let url = account(&state)
+        .ok_or_else(|| invalid("connect to a server first"))?
+        .url;
+    let client = Client::new(&url, None);
     let info = client.info().map_err(|e| sync_error(&e))?;
     let (Some(issuer), Some(client_id)) = (info.oidc_issuer, info.oidc_client_id) else {
         return Err(invalid(
             "this server does not use sign-in; it needs a token or none",
         ));
     };
+    // The browser step holds no lock: sync rounds and Calendar keep running meanwhile,
+    // and a newer attempt can take over the callback port.
     let opener = app.clone();
-    let id_token = oidc_sign_in(&issuer, &client_id, |url| {
+    let signed_in = oidc_sign_in(&issuer, &client_id, |url| {
         opener
             .opener()
             .open_url(url, None::<&str>)
             .map_err(|e| format!("cannot open the browser: {e}"))
-    })
-    .map_err(internal)?;
+    });
+    if replaced() {
+        return Err(invalid(REPLACED));
+    }
+    let id_token = signed_in.map_err(internal)?;
+
+    let _calendar = lock(&state.calendar.gate);
+    let _round = lock(&state.sync.round);
+    let mut account = account(&state)
+        .filter(|a| a.url == url)
+        .ok_or_else(|| invalid("the server changed during sign-in; sign in again"))?;
     let issued = client
         .oidc_exchange(&id_token, &account.device_name)
         .map_err(|e| sync_error(&e))?;
@@ -555,8 +578,7 @@ pub fn oidc_sign_in(
         endpoint("token_endpoint")?,
     );
 
-    let listener = TcpListener::bind(("127.0.0.1", OIDC_PORT))
-        .map_err(|e| format!("port {OIDC_PORT} is busy ({e}); close what uses it and try again"))?;
+    let listener = bind_callback(OIDC_PORT, TAKE_OVER_WAIT)?;
     let redirect = format!("http://127.0.0.1:{OIDC_PORT}{OIDC_PATH}");
     let verifier = google::random_token(48)?;
     let state = google::random_token(16)?;
@@ -607,6 +629,42 @@ pub fn oidc_sign_in(
         .ok_or_else(|| "the provider sent no ID token (is the `openid` scope allowed?)".into())
 }
 
+/// Binds the fixed callback port. While an earlier sign-in still waits on it (in this
+/// instance or another one), asks it to stop and retries until `wait` runs out.
+fn bind_callback(port: u16, wait: Duration) -> Result<TcpListener, String> {
+    let deadline = Instant::now() + wait;
+    let mut asked: Option<Instant> = None;
+    loop {
+        match TcpListener::bind(("127.0.0.1", port)) {
+            Ok(listener) => return Ok(listener),
+            Err(e) if e.kind() == ErrorKind::AddrInUse && Instant::now() < deadline => {
+                if asked.is_none_or(|at| at.elapsed() >= Duration::from_secs(1)) {
+                    ask_to_stop(port);
+                    asked = Some(Instant::now());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => {
+                return Err(format!(
+                    "port {port} is used by another program ({e}); close it and try again"
+                ));
+            }
+        }
+    }
+}
+
+/// Sends a waiting sign-in the answer of a cancelled one: every sign-in accepts an
+/// `error` callback (`google::parse_callback`), stops and frees the port.
+fn ask_to_stop(port: u16) {
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(500)) {
+        let _ = stream.write_all(
+            format!("GET {OIDC_PATH}?error=replaced HTTP/1.1\r\nhost: 127.0.0.1\r\n\r\n")
+                .as_bytes(),
+        );
+    }
+}
+
 pub fn sync_before_calendar(state: &AppState) -> CommandResult<()> {
     let _round = lock(&state.sync.round);
     let account = account(state)
@@ -619,6 +677,33 @@ pub fn sync_before_calendar(state: &AppState) -> CommandResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_sign_in_takes_over_the_callback_port() {
+        let earlier = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = earlier.local_addr().unwrap().port();
+        let waiting = std::thread::spawn(move || {
+            google::receive_code(
+                &earlier,
+                "state",
+                Instant::now() + Duration::from_secs(10),
+                "your task-master server",
+            )
+        });
+        let listener = bind_callback(port, Duration::from_secs(3)).unwrap();
+        assert_eq!(listener.local_addr().unwrap().port(), port);
+        let err = waiting.join().unwrap().unwrap_err();
+        assert!(err.contains("replaced"), "{err}");
+    }
+
+    #[test]
+    fn a_port_held_by_another_program_is_reported() {
+        // Bound but never answering, like an unrelated program.
+        let other = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = other.local_addr().unwrap().port();
+        let err = bind_callback(port, Duration::from_millis(300)).unwrap_err();
+        assert!(err.contains("used by another program"), "{err}");
+    }
 
     #[test]
     fn addresses_are_normalized() {

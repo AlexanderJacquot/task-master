@@ -87,7 +87,8 @@ export const commands = {
 	syncSetToken: (token: string) => typedError<SyncStatus_Serialize, CommandError>(__TAURI_INVOKE("sync_set_token", { token })),
 	/**
 	 *  Signs in with the server's OpenID provider in the browser (up to 5 minutes), then
-	 *  trades the ID token for this device's server token.
+	 *  trades the ID token for this device's server token. Starting again while the browser
+	 *  step is open replaces the earlier attempt, which then fails with `REPLACED`.
 	 */
 	syncSignIn: () => typedError<SyncStatus_Serialize, CommandError>(__TAURI_INVOKE("sync_sign_in")),
 	/**

@@ -35,6 +35,15 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Sync sign-in retry (2026-11-05)
+
+- A sign-in that finds the callback port 47823 busy now asks the waiting attempt (in this
+  instance or another one) to stop, then takes over the port within 3 seconds. Another
+  program holding the port gets a clear error. The browser wait no longer holds the sync
+  round and Calendar locks, so syncing continues meanwhile. Settings → Sync shows
+  **Start over** while waiting and ignores the replaced attempt's result.
+- Rust tests cover the takeover and a foreign port holder. A UI test covers Start over.
+
 ### Server image on GHCR and homelab deploy (2026-11-05)
 
 - Homelab PR #146 deployed the sync server stack. The first deploy failed: hosts pull

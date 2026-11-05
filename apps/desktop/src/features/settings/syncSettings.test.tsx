@@ -131,6 +131,36 @@ describe("sync settings", () => {
     expect(sync.calls).toEqual(["connect tasks.example.org", "sign-in", "join replace"]);
   });
 
+  it("starts a waiting sign-in over and ignores the replaced attempt", async () => {
+    const sync = fakeSync("oidc");
+    // Each sign-in waits for the browser until the test settles it.
+    const attempts: { resolve: () => void; reject: (e: Error) => void }[] = [];
+    const finish = sync.api.signIn;
+    sync.api.signIn = () =>
+      new Promise<SyncStatus>((resolve, reject) => {
+        attempts.push({
+          resolve: () => void finish().then(resolve),
+          reject: (e) => reject(e),
+        });
+      });
+    renderWith(sync.api);
+    await connect("tasks.example.org");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+    expect(await screen.findByText(/Finish signing in in your browser/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Start over" }));
+    await waitFor(() => expect(attempts).toHaveLength(2));
+
+    // The backend fails the replaced attempt; the newer one is still waiting.
+    await act(async () => attempts[0]?.reject(new Error("replaced by a newer sign-in")));
+    expect(screen.queryByText(/replaced/)).toBeNull();
+    expect(screen.getByText(/Finish signing in in your browser/)).toBeTruthy();
+
+    await act(async () => attempts[1]?.resolve());
+    expect(await screen.findByText(/already has tasks/)).toBeTruthy();
+    expect(screen.queryByText(/Finish signing in/)).toBeNull();
+  });
+
   it("asks for a token, shows a refused one, and uploads to an empty server", async () => {
     const sync = fakeSync("token", { serverEmpty: true });
     renderWith(sync.api);

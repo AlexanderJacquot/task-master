@@ -2,7 +2,7 @@
 // token when it asks for one, choose how this device starts, then see the sync status.
 // Setup of the server itself: docs/server.md.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, cx, INPUT } from "../../components/ui";
 import { formatAgo } from "../../lib/dates";
 import type { JoinMode, SyncStatus } from "../../lib/types";
@@ -27,6 +27,8 @@ export function SyncSettings() {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmReplace, setConfirmReplace] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Only the latest run reports: starting a sign-in over replaces the waiting one.
+  const latestRun = useRef(0);
 
   useEffect(() => {
     if (!api) return;
@@ -45,16 +47,20 @@ export function SyncSettings() {
   if (!api) return null;
 
   const run = async (label: string, work: () => Promise<SyncStatus>) => {
+    const id = ++latestRun.current;
+    const current = () => id === latestRun.current;
     setError(null);
     setBusy(label);
     try {
-      setStatus(await work());
+      const next = await work();
+      if (current()) setStatus(next);
     } catch (e) {
-      setError(message(e));
+      if (current()) setError(message(e));
     } finally {
-      setBusy(null);
+      if (current()) setBusy(null);
     }
   };
+  const signIn = () => void run("sign-in", () => api.signIn());
 
   const join = (mode: JoinMode) => {
     setConfirmReplace(false);
@@ -103,18 +109,18 @@ export function SyncSettings() {
             <>
               {status.auth === "oidc" && (
                 <div className="flex items-center gap-3">
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    disabled={!!busy}
-                    onClick={() => void run("sign-in", () => api.signIn())}
-                  >
+                  <Button size="sm" variant="primary" disabled={!!busy} onClick={signIn}>
                     Sign in
                   </Button>
                   {busy === "sign-in" && (
-                    <span role="status" className="text-xs text-ink-3">
-                      Finish signing in in your browser…
-                    </span>
+                    <>
+                      <span role="status" className="text-xs text-ink-3">
+                        Finish signing in in your browser…
+                      </span>
+                      <Button size="sm" variant="ghost" onClick={signIn}>
+                        Start over
+                      </Button>
+                    </>
                   )}
                 </div>
               )}

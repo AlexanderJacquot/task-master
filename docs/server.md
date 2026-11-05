@@ -275,7 +275,8 @@ are refreshed when changing runners. Server day-boundary calculations use UTC.
 | Symptom | Check |
 | --- | --- |
 | Desktop says "unreachable" | `curl <url>/info` from that machine; on the homelab, LAN or VPN only |
-| Sign-in loops or fails | The redirect URI is exactly `http://127.0.0.1:47823/oidc/callback`, the client is `public: true`, and nothing else listens on port 47823 |
+| Sign-in loops or fails | The redirect URI is exactly `http://127.0.0.1:47823/oidc/callback` and the client is `public: true` |
+| "Port 47823 is used by another program" | A sign-in still waiting in task-master (this window or another instance) is replaced automatically, and **Start over** restarts one. This error means a different program holds the port: `netstat -ano \| findstr 47823` (Windows) or `lsof -i :47823` shows which |
 | `401` for the dashboard | Token revoked or wrong scope (`token list`) |
 | Settings → Sync warns about the clock | The device clock is more than a minute off. Sync corrects for it, but fix the clock (NTP). |
 | Server refuses pushes after an update | The device runs an older app with a different schema. Update the app. |
