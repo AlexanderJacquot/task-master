@@ -35,6 +35,8 @@
   /* Priority tones (text; pills tint their background with the same color). */
   --color-urgent: var(--tm-urgent);
   --color-high: var(--tm-high);
+  /* Finished subtasks and progress bars. */
+  --color-done: var(--tm-done);
   --color-white: var(--tm-white);
 
   --color-neutral-50: var(--tm-n-50);
@@ -83,6 +85,7 @@
   --tm-rubric: #8b2e1f;
   --tm-urgent: #a3301f;
   --tm-high: #a8521c;
+  --tm-done: #3f7a52;
   --tm-white: #fbf6ea;
 
   --tm-n-50: #f8f0df;
@@ -131,6 +134,7 @@
   --tm-rubric: #d4d4da;
   --tm-urgent: #f2857a;
   --tm-high: #f0a868;
+  --tm-done: #6fbf8a;
   --tm-white: #f5f5f7;
 
   --tm-n-50: #f5f5f7;
@@ -175,18 +179,14 @@ body {
   background: color-mix(in srgb, var(--tm-accent) 30%, transparent);
 }
 
-/* Parchment texture: a lighter middle, darker edges and a faint grain, all CSS. The dark
-   theme stays flat. */
+/* Parchment texture: darker edges and a faint vertical fibre, all CSS. The dark theme
+   stays flat. Only near-vertical lines: crossing them with horizontal ones read as graph
+   paper on Windows. Two periods (5 and 7 px) keep the fibre from looking ruled. */
 :root:not(.dark) .tex-canvas {
   background-image:
-    radial-gradient(
-      ellipse 120% 90% at 50% 40%,
-      rgb(255 251 240 / 0.6) 0%,
-      rgb(255 251 240 / 0) 60%
-    ),
-    radial-gradient(ellipse 140% 120% at 50% 50%, rgb(0 0 0 / 0) 60%, rgb(120 80 30 / 0.12) 100%),
-    repeating-linear-gradient(93deg, rgb(110 80 40 / 0.022) 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(1.5deg, rgb(110 80 40 / 0.018) 0 1px, transparent 1px 6px);
+    radial-gradient(ellipse 140% 120% at 50% 45%, rgb(0 0 0 / 0) 55%, rgb(120 80 30 / 0.1) 100%),
+    repeating-linear-gradient(90deg, rgb(110 80 40 / 0.02) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(90deg, rgb(110 80 40 / 0.015) 0 1px, transparent 1px 7px);
   background-attachment: fixed;
 }
 
@@ -197,8 +197,8 @@ body {
       rgb(255 250 235 / 0.35) 0%,
       rgb(255 250 235 / 0) 70%
     ),
-    repeating-linear-gradient(91deg, rgb(110 80 40 / 0.03) 0 1px, transparent 1px 4px),
-    repeating-linear-gradient(-1deg, rgb(110 80 40 / 0.022) 0 1px, transparent 1px 5px);
+    repeating-linear-gradient(90deg, rgb(110 80 40 / 0.025) 0 1px, transparent 1px 5px),
+    repeating-linear-gradient(90deg, rgb(110 80 40 / 0.018) 0 1px, transparent 1px 7px);
 }
 
 :root:not(.dark) .tex-sheet {
@@ -353,4 +353,16 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .tm-prose del {
   color: var(--tm-ink-3);
+}
+
+/* Drop cap on the full task page: the first letter of an opening paragraph, in the
+   display face and rubric color, two lines tall. Only on the rendered view (the editor
+   measures lines, so it never gets one). */
+.tm-dropcap > p:first-child::first-letter {
+  float: left;
+  font-family: var(--font-display);
+  color: var(--tm-rubric);
+  font-size: 3.35em;
+  line-height: 0.85;
+  padding: 0.06em 0.08em 0 0;
 }

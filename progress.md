@@ -81,6 +81,26 @@ dedicated calendar for pushed blocks, custom grid on dnd-kit, local M9 then sync
   Fix found there: drop position now tracks the real pointer (dnd-kit's delta counts
   scrolling).
 - No new dependencies.
+### Task page matched to the mockup (2026-11-05)
+
+User, with a screenshot of 0.3.0 next to the mockup: the full task page still did not
+look like the design. Branch `worktree-mockup-parity` (from `main`), merged to `main` and
+released as **v0.3.1** (2026-11-05).
+- Canvas and sidebar texture: vertical fibre only. The crossing near-horizontal grain
+  read as graph paper on Windows.
+- `PropertyPills` (page only): set properties as tinted pills without icons, the status
+  tinted by its color, due as "Due Fri, Nov 6" (red when overdue), tags inline as pills;
+  unset ones (Priority, Due date, Add to Today, Epic, Estimate, + Tag) as quiet labels
+  after them. Native select/date inputs lie invisibly over the pills (date opens the
+  picker); the estimate edits in place.
+- Description: drop cap in the rendered view (`.tm-dropcap`), "Keep writing… Markdown
+  works." under the text, no tall empty block.
+- Subtasks (page): "Subtasks · 2 of 4" with a green progress bar, square boxes filled
+  with the new `--tm-done` green; they now come right after the description, attachments
+  after them (one quiet "Attach file" line when there are none).
+- Bigger title ring is 2 px.
+- Tests: Vitest 156 (+3: due label, page pills, subtask progress). Checked visually in
+  both themes with a throwaway Vite harness (fake API, mockup's task). Rust unchanged.
 
 ### Parchment rubric red restored (2026-11-05)
 
