@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultsForPath } from "./features/shell/Layout";
 import type { Api } from "./lib/api";
+import { reloadKeymap } from "./lib/keymap";
 import type { Changes, Command, Task } from "./lib/types";
 import { createAppRouter } from "./router";
 import { StoreProvider } from "./store/context";
@@ -70,6 +71,7 @@ beforeEach(() => renderApp());
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  reloadKeymap();
 });
 
 describe("the app", () => {
@@ -380,6 +382,46 @@ describe("speed", () => {
       }),
     );
     expect(await within(panel).findByText(/Nothing pressing/)).toBeTruthy();
+  });
+});
+
+describe("keyboard shortcuts", () => {
+  it("opens the list from the ? box in the sidebar, and links to Settings", async () => {
+    expect(screen.queryByText("G S")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
+    const dialog = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
+    expect(within(dialog).getByText("Go to Settings")).toBeTruthy();
+    expect(within(dialog).getByText("Ctrl+,")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change shortcuts" }));
+    expect(await screen.findByRole("heading", { name: "Keyboard shortcuts" })).toBeTruthy();
+  });
+
+  it("remaps a shortcut in Settings and uses it right away", async () => {
+    fireEvent.keyDown(window, { key: ",", ctrlKey: true });
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add a shortcut for Go to Today" }));
+    fireEvent.keyDown(window, { key: "t", altKey: true });
+    expect(
+      await screen.findByRole("button", { name: "Remove Alt+T from Go to Today" }),
+    ).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem("task-master.shortcuts") ?? "{}")).toEqual({
+      goToday: ["G T", "Alt+T"],
+    });
+
+    // Taken from another action: it moves, with a note.
+    fireEvent.click(screen.getByRole("button", { name: "Add a shortcut for Go to Inbox" }));
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(await screen.findByText("Ctrl+K moved from “Jump to anything”.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Ctrl+K from Go to Inbox" }));
+
+    // Kept for typing: refused.
+    fireEvent.click(screen.getByRole("button", { name: "Add a shortcut for Undo" }));
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+    expect(await screen.findByText("Ctrl+C: kept for typing and lists.")).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "t", altKey: true });
+    expect(await screen.findByRole("heading", { name: "Today" })).toBeTruthy();
   });
 });
 

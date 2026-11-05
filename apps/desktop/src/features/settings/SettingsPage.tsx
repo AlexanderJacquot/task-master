@@ -1,3 +1,4 @@
+import { useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { type ReactNode, useEffect, useState } from "react";
 import { cx, Dot, InlineInput, Select } from "../../components/ui";
@@ -17,6 +18,7 @@ import { PROJECT_COLORS } from "../organize/projectColors";
 import { HeaderButton } from "../shell/ViewPage";
 import { About } from "./About";
 import { CalendarSettings } from "./CalendarSettings";
+import { ShortcutSettings } from "./ShortcutSettings";
 
 const CATEGORIES: Array<{ value: StatusCategory; label: string }> = [
   { value: "backlog", label: "Backlog" },
@@ -29,14 +31,16 @@ const CATEGORIES: Array<{ value: StatusCategory; label: string }> = [
 export function Section({
   title,
   hint,
+  id,
   children,
 }: {
   title: string;
   hint?: string;
+  id?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-2.5 border-b border-line py-6">
+    <section id={id} className="flex scroll-mt-4 flex-col gap-2.5 border-b border-line py-6">
       <h2 className="font-display text-[19px] tracking-wide text-accent">{title}</h2>
       {hint && <p className="text-xs text-neutral-500">{hint}</p>}
       {children}
@@ -457,6 +461,23 @@ function RemoteBackupForm({
   );
 }
 
+function Shortcuts() {
+  // Opened from the shortcuts overlay ("Change shortcuts"): bring the section into view.
+  const hash = useRouterState({ select: (r) => r.location.hash });
+  useEffect(() => {
+    if (hash === "shortcuts") document.getElementById("shortcuts")?.scrollIntoView();
+  }, [hash]);
+  return (
+    <Section
+      id="shortcuts"
+      title="Keyboard shortcuts"
+      hint="Add a key combination to an action, or two keys in a row (G, then I). A combination used elsewhere moves here. Press ? anywhere to see them all."
+    >
+      <ShortcutSettings />
+    </Section>
+  );
+}
+
 export function SettingsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -467,6 +488,7 @@ export function SettingsPage() {
         <About />
         <Workflow />
         <Appearance />
+        <Shortcuts />
         <CalendarSettings />
         <Data />
       </div>

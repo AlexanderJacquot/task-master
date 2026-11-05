@@ -28,13 +28,13 @@ import {
   FOCUS,
   IconButton,
   InlineInput,
-  Kbd,
   MENU,
   MENU_DANGER,
   MENU_ITEM,
   MENU_SEPARATOR,
 } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
+import { useKeymap, withKeys } from "../../lib/keymap";
 import type { Project, Tag } from "../../lib/types";
 import { useUpdates } from "../../lib/updater";
 import { inView, isOpen, type ViewContext } from "../../lib/views";
@@ -131,6 +131,26 @@ function TagRow({ tag, count }: { tag: Tag; count?: number }) {
         }
       />
     </div>
+  );
+}
+
+/** The "?" box: opens the keyboard shortcuts overlay. */
+function ShortcutsButton({ onClick, className }: { onClick(): void; className?: string }) {
+  const keymap = useKeymap();
+  return (
+    <button
+      type="button"
+      aria-label="Keyboard shortcuts"
+      title={withKeys(keymap, "help", "Keyboard shortcuts")}
+      onClick={onClick}
+      className={cx(
+        "inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-line-strong font-mono text-[13px] text-ink-3 transition-colors hover:border-ink-3 hover:bg-hover hover:text-ink",
+        FOCUS,
+        className,
+      )}
+    >
+      ?
+    </button>
   );
 }
 
@@ -357,6 +377,7 @@ export function Sidebar({
 }) {
   const store = useTaskStore();
   const shell = useShell();
+  const keymap = useKeymap();
   const tasks = useStoreState((s) => s.tasks);
   const projects = useStoreState((s) => s.projects);
   const epics = useStoreState((s) => s.epics);
@@ -457,7 +478,7 @@ export function Sidebar({
         <button
           type="button"
           aria-label="New task"
-          title="New task (Ctrl+N)"
+          title={withKeys(keymap, "newTask", "New task")}
           onClick={() => shell.openNewTask()}
           className={cx(
             "mb-2 flex size-9 items-center justify-center rounded-[10px] bg-accent text-accent-ink shadow-sm hover:bg-accent-hover",
@@ -495,6 +516,7 @@ export function Sidebar({
         })}
         <div className="flex-1" />
         <UpdatePill compact />
+        <ShortcutsButton onClick={shell.showShortcuts} className="mb-1" />
         <RailLink to="/settings" label="Settings">
           <Settings2 size={17} />
         </RailLink>
@@ -520,7 +542,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={() => shell.openNewTask()}
-          title="New task (Ctrl+N)"
+          title={withKeys(keymap, "newTask", "New task")}
           className={cx(
             "flex h-9 flex-1 items-center justify-center gap-2 rounded-[10px] bg-accent font-display text-[15px] tracking-wide text-accent-ink shadow-sm transition-colors hover:bg-accent-hover",
             FOCUS,
@@ -531,8 +553,8 @@ export function Sidebar({
         </button>
         <button
           type="button"
-          aria-label="Jump to (Ctrl+K)"
-          title="Jump to… (Ctrl+K)"
+          aria-label="Jump to"
+          title={withKeys(keymap, "palette", "Jump to…")}
           onClick={shell.openPalette}
           className={cx(
             "flex size-9 items-center justify-center rounded-[10px] border border-line-strong text-ink-2 transition-colors hover:bg-hover hover:text-ink",
@@ -716,11 +738,18 @@ export function Sidebar({
 
       <div className="mt-auto flex flex-col gap-1 pt-4">
         <UpdatePill />
-        <NavItem to="/settings" icon={<Settings2 size={16} className="shrink-0" />}>
-          <span className="flex items-center justify-between">
-            Settings <Kbd>G S</Kbd>
-          </span>
-        </NavItem>
+        <div className="flex items-center gap-1">
+          <div className="min-w-0 flex-1">
+            <NavItem
+              to="/settings"
+              icon={<Settings2 size={16} className="shrink-0" />}
+              title={withKeys(keymap, "goSettings", "Settings")}
+            >
+              Settings
+            </NavItem>
+          </div>
+          <ShortcutsButton onClick={shell.showShortcuts} />
+        </div>
       </div>
     </nav>
   );

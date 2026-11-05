@@ -31,6 +31,18 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Remappable keyboard shortcuts (2026-11-05)
+
+Branch `remappable-shortcuts` (stacked on `delete-tags`). `lib/keymap.ts`: the
+remappable actions, their defaults, chord names ("Ctrl+K", "G I"), sequence matching and
+checks (keys kept for typing are refused; a key used elsewhere moves). Saved per machine
+in localStorage like the theme (only what differs from the defaults). `useShortcuts`
+resolves through it; Esc, Ctrl+1–9, board/plan keys and Quick capture stay fixed.
+Settings → Keyboard shortcuts records, removes and resets keys; the `?` overlay shows the
+current keys with a "Change shortcuts" link. The sidebar's "G S" hint became a `?` box
+(also on the rail). New default: Ctrl+, opens Settings. Tests: `lib/keymap.test.ts`,
+app.test "keyboard shortcuts".
+
 ### Delete tags (2026-11-05)
 
 Branch `delete-tags` (stacked on `menus-ui`). `TagMenu` (features/organize) offers "Delete
