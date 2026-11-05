@@ -134,7 +134,8 @@ optional.
   signing in again from the same device replaces its token. ID tokens: asymmetric
   algorithms only; issuer, audience, expiry and `sub` are required.
 - Image: distroless, built by `.forgejo/workflows/server-image.yml` on the homelab runner
-  (the registry is private). Pushed as `knowledgesystem/task-master-server`.
+  (only it can push to the registry). Pushed as `alex/task-master-server`: hosts pull
+  anonymously, and the KnowledgeSystem org is private.
 
 ## Implementation notes (M13 release review)
 

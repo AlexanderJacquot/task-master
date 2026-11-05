@@ -44,7 +44,7 @@ changes there, deployed by a merge to its `main`. Stack name: `task-master`, hos
 task-master:
   host: gitche-gumee
   domain: tasks.solarnexus.space
-  # renovate: datasource=docker depName=harbor.solarnexus.space/knowledgesystem/task-master-server
+  # renovate: datasource=docker depName=harbor.solarnexus.space/alex/task-master-server
   version: v0.5.0
   exposure: private        # LAN/VPN, like s3.solarnexus.space
   port: 8080
@@ -71,7 +71,7 @@ networks:
 
 services:
   server:
-    image: harbor.solarnexus.space/knowledgesystem/task-master-server:${VERSION}
+    image: harbor.solarnexus.space/alex/task-master-server:${VERSION}
     container_name: task-master
     restart: unless-stopped
     env_file: .env
@@ -127,6 +127,7 @@ signs in through a loopback redirect on a fixed port, like the Google sign-in. I
       - client_id: task-master
         client_name: task-master
         public: true
+        claims_policy: task-master
         authorization_policy: one_factor   # two_factor if you prefer
         require_pkce: true
         pkce_challenge_method: S256
@@ -138,6 +139,15 @@ signs in through a loopback redirect on a fixed port, like the Google sign-in. I
         response_types: [code]
         grant_types: [authorization_code, refresh_token]
         token_endpoint_auth_method: none
+```
+
+The server reads `preferred_username` (device token name) and `groups`
+(`TM_OIDC_ALLOWED_GROUPS`) from the ID token, which Authelia leaves out by default. Add a
+claims policy under `identity_providers.oidc.claims_policies`:
+
+```yaml
+      task-master:
+        id_token: [preferred_username, groups]
 ```
 
 Add `task-master` to the client list in the template's header comment. Nothing goes into
@@ -185,7 +195,7 @@ One container and one volume. The smallest setup, for a private network:
 docker run -d --name task-master --restart unless-stopped \
   -p 8080:8080 -v task-master:/data \
   -e TM_AUTH=none \
-  harbor.solarnexus.space/knowledgesystem/task-master-server:latest
+  harbor.solarnexus.space/alex/task-master-server:latest
 ```
 
 Point the desktop at `http://<host>:8080`. For any address reachable from outside your
@@ -273,13 +283,16 @@ are refreshed when changing runners. Server day-boundary calculations use UTC.
 ## 9. Publishing the image
 
 `.forgejo/workflows/server-image.yml` builds `crates/server/Dockerfile` on the homelab's
-Forgejo runner. The registry is private, so the GitHub mirror cannot push to it. Each `v*`
-tag pushes `harbor.solarnexus.space/knowledgesystem/task-master-server:<tag>` and `:latest`.
-Renovate in the homelab repo then opens the version bump.
+Forgejo runner. Only that runner can push to the registry, so the GitHub mirror cannot.
+Each `v*` tag pushes `harbor.solarnexus.space/alex/task-master-server:<tag>` and `:latest`.
+Renovate in the homelab repo then opens the version bump. The image is under `alex/`, a
+public owner, because homelab hosts pull without logging in. The KnowledgeSystem org is
+private, and its packages would need a login.
 
 Once, on the Forgejo repo (Settings → Actions → Secrets): add `REGISTRY_TOKEN`, a Forgejo
 token with package write. You can also run the workflow by hand (Actions →
-server-image → Run workflow) to push `latest` from `main`.
+server-image → Run workflow) to push `latest` from `main`, or set `version` to an
+existing tag (`v0.5.0`) to rebuild that release and push only `:<version>`.
 
 To build locally: `docker build -f crates/server/Dockerfile -t task-master-server .` from
 the repo root.
