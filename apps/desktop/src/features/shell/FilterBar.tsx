@@ -1,5 +1,5 @@
 import { Popover } from "radix-ui";
-import { cx, Dot, PRIORITIES, Select } from "../../components/ui";
+import { cx, Dot, MENU, MENU_ITEM, MENU_LABEL, PRIORITIES, Select } from "../../components/ui";
 import type { DueFilter, Epic, Priority, Project, Status, Tag, ViewFilter } from "../../lib/types";
 import { EMPTY_FILTER, filterIsEmpty } from "../../lib/views";
 
@@ -43,14 +43,11 @@ function MultiPick({
         <Popover.Content
           align="start"
           sideOffset={4}
-          className="z-50 max-h-72 w-56 overflow-y-auto rounded-xl border border-line-strong bg-overlay p-1 text-sm shadow-xl"
+          className={cx(MENU, "max-h-72 w-56 overflow-y-auto")}
         >
-          {options.length === 0 && <p className="px-2 py-1 text-xs text-ink-3">Nothing yet</p>}
+          {options.length === 0 && <p className={MENU_LABEL}>Nothing yet</p>}
           {options.map((o) => (
-            <label
-              key={o.value}
-              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-hover"
-            >
+            <label key={o.value} className={cx(MENU_ITEM, "cursor-pointer hover:bg-accent/10")}>
               <input
                 type="checkbox"
                 checked={selected.includes(o.value)}
@@ -135,20 +132,15 @@ export function FilterBar({
       <Select
         aria-label="Filter by due date"
         value={filter.due ?? ""}
-        onChange={(e) => set({ due: (e.target.value || null) as DueFilter | null })}
+        onValueChange={(due) => set({ due: due || null })}
         className={cx(
-          "rounded-full border px-2 text-[13px]",
+          "rounded-full! border px-3 text-[13px]",
           filter.due
             ? "border-accent/60 bg-accent/10 text-accent"
-            : "border-line-strong text-ink-2",
+            : "border-line-strong text-ink-2 hover:bg-hover",
         )}
-      >
-        {DUE_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </Select>
+        options={DUE_OPTIONS}
+      />
       {!filterIsEmpty(filter) && (
         <button
           type="button"

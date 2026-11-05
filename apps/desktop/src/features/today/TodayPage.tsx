@@ -1,10 +1,10 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
-import { Dot } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
 import { planCandidates } from "../../lib/planDay";
 import { updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { ProjectMark } from "../organize/ProjectMark";
 import { HeaderButton, ViewPage } from "../shell/ViewPage";
 
 function isEditable(target: EventTarget | null): boolean {
@@ -72,7 +72,7 @@ function PlanMyDay({ onClose }: { onClose(): void }) {
                 <span className="min-w-0 flex-1 truncate">{c.task.title}</span>
                 {project && (
                   <span className="flex items-center gap-1 text-xs text-neutral-500">
-                    <Dot color={project.color} />
+                    <ProjectMark project={project} />
                     {project.name}
                   </span>
                 )}

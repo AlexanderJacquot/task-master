@@ -4,11 +4,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultsForPath } from "./features/shell/Layout";
 import type { Api } from "./lib/api";
+import { reloadKeymap } from "./lib/keymap";
 import type { Changes, Command, Task } from "./lib/types";
 import { createAppRouter } from "./router";
 import { StoreProvider } from "./store/context";
 import { createTaskStore, type TaskStore } from "./store/store";
 import { fakeParse, project, STATUS, snapshot, task } from "./test/fixtures";
+import { pickOption } from "./test/select";
 
 /** A core that confirms every write with what the store optimistically showed. */
 function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
@@ -69,6 +71,7 @@ beforeEach(() => renderApp());
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  reloadKeymap();
 });
 
 describe("the app", () => {
@@ -125,7 +128,7 @@ describe("the app", () => {
       "Renew passport",
     );
 
-    fireEvent.change(within(panel).getByLabelText("Priority"), { target: { value: "urgent" } });
+    await pickOption(within(panel).getByRole("combobox", { name: "Priority" }), "Urgent");
     await waitFor(() =>
       expect(fake.executed.at(-1)).toEqual([
         { type: "update_task", id: existing.id, changes: [{ priority: "urgent" }] },
@@ -207,7 +210,7 @@ describe("the board", () => {
   it("splits the board into lanes", async () => {
     await openBoard();
     fireEvent.click(screen.getByRole("button", { name: "Display" }));
-    fireEvent.change(await screen.findByLabelText("Swimlanes"), { target: { value: "priority" } });
+    await pickOption("Swimlanes", "Lanes by priority");
     expect(await screen.findByRole("region", { name: "Lane Normal" })).toBeTruthy();
   });
 });
@@ -236,7 +239,7 @@ describe("saved views", () => {
 
     // Edits are a draft until saved.
     fireEvent.click(screen.getByRole("button", { name: "Filter" }));
-    fireEvent.change(screen.getByLabelText("Filter by due date"), { target: { value: "overdue" } });
+    await pickOption("Filter by due date", "Overdue");
     fireEvent.click(await screen.findByRole("button", { name: "Save view" }));
     await waitFor(() => expect(fake.executed.at(-1)?.[0]).toMatchObject({ type: "update_view" }));
     expect(fake.executed.at(-1)?.[0]).toMatchObject({
@@ -382,6 +385,46 @@ describe("speed", () => {
   });
 });
 
+describe("keyboard shortcuts", () => {
+  it("opens the list from the ? box in the sidebar, and links to Settings", async () => {
+    expect(screen.queryByText("G S")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Keyboard shortcuts" }));
+    const dialog = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
+    expect(within(dialog).getByText("Go to Settings")).toBeTruthy();
+    expect(within(dialog).getByText("Ctrl+,")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Change shortcuts" }));
+    expect(await screen.findByRole("heading", { name: "Keyboard shortcuts" })).toBeTruthy();
+  });
+
+  it("remaps a shortcut in Settings and uses it right away", async () => {
+    fireEvent.keyDown(window, { key: ",", ctrlKey: true });
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add a shortcut for Go to Today" }));
+    fireEvent.keyDown(window, { key: "t", altKey: true });
+    expect(
+      await screen.findByRole("button", { name: "Remove Alt+T from Go to Today" }),
+    ).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem("task-master.shortcuts") ?? "{}")).toEqual({
+      goToday: ["G T", "Alt+T"],
+    });
+
+    // Taken from another action: it moves, with a note.
+    fireEvent.click(screen.getByRole("button", { name: "Add a shortcut for Go to Inbox" }));
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(await screen.findByText("Ctrl+K moved from “Jump to anything”.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Ctrl+K from Go to Inbox" }));
+
+    // Kept for typing: refused.
+    fireEvent.click(screen.getByRole("button", { name: "Add a shortcut for Undo" }));
+    fireEvent.keyDown(window, { key: "c", ctrlKey: true });
+    expect(await screen.findByText("Ctrl+C: kept for typing and lists.")).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "t", altKey: true });
+    expect(await screen.findByRole("heading", { name: "Today" })).toBeTruthy();
+  });
+});
+
 describe("settings", () => {
   it("edits the workflow, and the board shows the WIP limit", async () => {
     fireEvent.keyDown(window, { key: "g" });
@@ -440,7 +483,7 @@ describe("redesign", () => {
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
     const title = (await screen.findByLabelText("Title")) as HTMLTextAreaElement;
     expect(title.value).toBe("Renew passport");
-    fireEvent.change(screen.getByLabelText("Priority"), { target: { value: "high" } });
+    await pickOption("Priority", "High priority");
     await waitFor(() =>
       expect(fake.executed.at(-1)?.[0]).toMatchObject({
         type: "update_task",

@@ -1,9 +1,22 @@
-import { useEffect, useState } from "react";
+import { Undo2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { cx } from "../../components/ui";
 import { formatRange } from "../../lib/calendar";
 import { formatAgo } from "../../lib/dates";
+import { diffLines } from "../../lib/diff";
+import {
+  isEmptyPlan,
+  isRestorable,
+  type Known,
+  planRestore,
+  type RestorePlan,
+} from "../../lib/history";
 import type { Activity, FieldChange, Task } from "../../lib/types";
-import { useApi, useStoreState } from "../../store/context";
+import { restoreTask } from "../../store/actions";
+import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import type { TaskStoreState } from "../../store/store";
+
+const DESCRIPTION_LINE = "Edited the description";
 
 const LABELS: Record<string, string> = {
   title: "Title",
@@ -87,7 +100,7 @@ function describe(entry: Activity, lookup: Lookup): string[] {
     }
     default:
       return entry.fields.flatMap((f: FieldChange) => {
-        if (f.field === "description") return ["Edited the description"];
+        if (f.field === "description") return [DESCRIPTION_LINE];
         if (f.field === "rank") return ["Reordered"];
         if (f.field === "completed_at" || f.field === "deleted_at") return [];
         const label = LABELS[f.field] ?? f.field;
@@ -98,15 +111,53 @@ function describe(entry: Activity, lookup: Lookup): string[] {
   }
 }
 
-/** The task's history from the ops log, refreshed after every change to the task. */
+/** A description edit, line by line: removed lines struck through, added ones tinted. */
+function DescriptionDiff({ field }: { field: FieldChange }) {
+  const before = (JSON.parse(field.before) as string | null) ?? "";
+  const after = (JSON.parse(field.after) as string | null) ?? "";
+  const lines = useMemo(() => diffLines(before, after), [before, after]);
+  const changed = lines.some((l) => l.kind !== "same");
+  return (
+    <pre className="mt-1 max-h-60 overflow-auto rounded-md border border-line bg-hover/50 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
+      {!changed && <span className="text-ink-3">Only whitespace changed.</span>}
+      {lines.map((l, i) => (
+        <div
+          // Lines repeat, so position is part of the identity here.
+          // biome-ignore lint/suspicious/noArrayIndexKey: a diff is a fixed, ordered list
+          key={i}
+          className={cx(
+            l.kind === "add" && "bg-emerald-600/12 text-emerald-800 dark:text-emerald-200",
+            l.kind === "del" && "bg-danger/10 text-danger line-through",
+            l.kind === "same" && "text-ink-3",
+          )}
+        >
+          {l.kind === "add" ? "+ " : l.kind === "del" ? "− " : "  "}
+          {l.text || " "}
+        </div>
+      ))}
+    </pre>
+  );
+}
+
+const quiet =
+  "rounded px-1 text-ink-3 underline-offset-2 hover:text-ink hover:underline focus-visible:outline-1 focus-visible:outline-accent";
+
+/**
+ * The task's history from the ops log, refreshed after every change to the task. Each
+ * change can be expanded (description diffs), and the task can go back to how it was
+ * after any of them ("Restore", on hover) or just before the latest ("Undo last change").
+ */
 export function ActivityFeed({ task }: { task: Task }) {
   const api = useApi();
+  const store = useTaskStore();
   const statuses = useStoreState((s) => s.statuses);
   const projects = useStoreState((s) => s.projects);
   const epics = useStoreState((s) => s.epics);
   const tasks = useStoreState((s) => s.tasks);
   const tags = useStoreState((s) => s.tags);
   const [entries, setEntries] = useState<Activity[]>([]);
+  const [open, setOpen] = useState<number | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -122,16 +173,102 @@ export function ActivityFeed({ task }: { task: Task }) {
   }, [api, task.id, task.updated_at]);
 
   const lookup = { statuses, projects, epics, tasks, tags };
+  const known: Known = useMemo(
+    () => ({
+      statuses: new Set(statuses.map((s) => s.id)),
+      projects: new Set(Object.keys(projects)),
+      epics: new Set(Object.keys(epics)),
+      tags: new Set(Object.keys(tags)),
+    }),
+    [statuses, projects, epics, tags],
+  );
+
+  // Restoring entry i's version: possible when something after it can be put back.
+  const plans = useMemo(
+    () => entries.map((_, i) => (i === 0 ? null : planRestore(task, entries, i, known))),
+    [entries, task, known],
+  );
+  const lastIndex = entries.findIndex(isRestorable);
+  const undoPlan = lastIndex >= 0 ? planRestore(task, entries, lastIndex + 1, known) : null;
+  const lastEntry = lastIndex >= 0 ? entries[lastIndex] : undefined;
+
+  const restore = async (plan: RestorePlan, done: string) => {
+    if ((await restoreTask(store, task.id, plan)) === null) return;
+    const skipped = plan.skipped.length ? ` Not put back: ${plan.skipped.join(", ")}.` : "";
+    setNote(`${done} Ctrl+Z takes it back.${skipped}`);
+  };
+
   return (
-    <ol className="flex flex-col gap-1 text-xs text-neutral-500">
-      {entries.flatMap((entry) =>
-        describe(entry, lookup).map((line) => (
-          <li key={`${entry.seq}-${line}`} className="flex gap-2">
-            <span className="w-20 shrink-0 text-neutral-400">{formatAgo(entry.at)}</span>
-            <span className="min-w-0 flex-1">{line}</span>
-          </li>
-        )),
+    <div className="flex flex-col gap-1.5 text-xs text-ink-3">
+      {undoPlan && lastEntry && !isEmptyPlan(undoPlan) && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            title={`Undo: ${describe(lastEntry, lookup).join("; ")}`}
+            onClick={() => void restore(undoPlan, "Undid the last change.")}
+            className={cx(quiet, "inline-flex items-center gap-1")}
+          >
+            <Undo2 size={12} /> Undo last change
+          </button>
+        </div>
       )}
-    </ol>
+      <ol className="flex flex-col">
+        {entries.map((entry, i) => {
+          const lines = describe(entry, lookup);
+          if (!lines.length) return null;
+          const description = entry.fields.find((f) => f.field === "description");
+          const plan = plans[i];
+          const restorable = plan && !isEmptyPlan(plan);
+          return (
+            <li
+              key={entry.seq}
+              className="group/entry -mx-1 flex gap-2 rounded px-1 py-0.5 hover:bg-hover/60"
+            >
+              <span className="w-20 shrink-0 text-ink-3/80">{formatAgo(entry.at)}</span>
+              <div className="min-w-0 flex-1">
+                {lines.map((line) =>
+                  description && line === DESCRIPTION_LINE ? (
+                    <div key={line}>
+                      <button
+                        type="button"
+                        aria-expanded={open === entry.seq}
+                        onClick={() => setOpen(open === entry.seq ? null : entry.seq)}
+                        className="text-left text-ink-2 underline decoration-dotted underline-offset-2 hover:text-ink"
+                      >
+                        {line}
+                      </button>
+                      {open === entry.seq && <DescriptionDiff field={description} />}
+                    </div>
+                  ) : (
+                    <div key={line} className="text-ink-2">
+                      {line}
+                    </div>
+                  ),
+                )}
+              </div>
+              {restorable && (
+                <button
+                  type="button"
+                  aria-label={`Restore the version from ${formatAgo(entry.at)}`}
+                  title="Put the task back as it was right after this change"
+                  onClick={() => void restore(plan, "Restored that version.")}
+                  className={cx(
+                    quiet,
+                    "shrink-0 self-start opacity-0 group-hover/entry:opacity-100 focus-visible:opacity-100",
+                  )}
+                >
+                  Restore
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {note && (
+        <p role="status" className="text-ink-2">
+          {note}
+        </p>
+      )}
+    </div>
   );
 }

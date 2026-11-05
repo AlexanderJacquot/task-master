@@ -23,14 +23,26 @@ import {
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useMemo, useState } from "react";
-import { cx, Dot, FOCUS, IconButton, InlineInput, Kbd } from "../../components/ui";
+import {
+  cx,
+  FOCUS,
+  IconButton,
+  InlineInput,
+  MENU,
+  MENU_DANGER,
+  MENU_ITEM,
+  MENU_SEPARATOR,
+} from "../../components/ui";
 import { isoDate } from "../../lib/dates";
-import type { Project } from "../../lib/types";
+import { useKeymap, withKeys } from "../../lib/keymap";
+import type { Project, Tag } from "../../lib/types";
 import { useUpdates } from "../../lib/updater";
 import { inView, isOpen, type ViewContext } from "../../lib/views";
 import { createEpic, createProject, deleteProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { ProjectMark } from "../organize/ProjectMark";
 import { PROJECT_COLORS } from "../organize/projectColors";
+import { TagMenu } from "../organize/TagMenu";
 import { useShell } from "../shell/shellContext";
 import { ProjectTree } from "./ProjectTree";
 import { useProjectOrder } from "./useProjectOrder";
@@ -72,6 +84,73 @@ function NavItem({
         <span className="text-[12.5px] text-ink-3 tabular-nums">{count}</span>
       )}
     </Link>
+  );
+}
+
+/** A tag in the sidebar: link, open-task count, ⋯ menu (also on right-click). */
+function TagRow({ tag, count }: { tag: Tag; count?: number }) {
+  const [menu, setMenu] = useState(false);
+  const active = useRouterState({
+    select: (r) => r.location.pathname === `/tag/${tag.id}`,
+  });
+  return (
+    <div className={cx(rowClass, "py-0 pr-1", active && activeClass)}>
+      <Link
+        to="/tag/$tagId"
+        params={{ tagId: tag.id }}
+        search={{}}
+        className={cx("flex min-w-0 flex-1 items-center gap-2.5 py-[5px]", FOCUS)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenu(true);
+        }}
+      >
+        <Hash size={14} className="shrink-0" />
+        <span className="min-w-0 flex-1 truncate">{tag.name}</span>
+        {count !== undefined && count > 0 && (
+          <span className="text-[12.5px] text-ink-3 tabular-nums">{count}</span>
+        )}
+      </Link>
+      <TagMenu
+        tag={tag}
+        open={menu}
+        onOpenChange={setMenu}
+        trigger={
+          <button
+            type="button"
+            aria-label={`${tag.name} actions`}
+            title="Delete tag"
+            className={cx(
+              "inline-flex size-6 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-hover hover:text-ink",
+              "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+              FOCUS,
+            )}
+          >
+            <MoreHorizontal size={15} />
+          </button>
+        }
+      />
+    </div>
+  );
+}
+
+/** The "?" box: opens the keyboard shortcuts overlay. */
+function ShortcutsButton({ onClick, className }: { onClick(): void; className?: string }) {
+  const keymap = useKeymap();
+  return (
+    <button
+      type="button"
+      aria-label="Keyboard shortcuts"
+      title={withKeys(keymap, "help", "Keyboard shortcuts")}
+      onClick={onClick}
+      className={cx(
+        "inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-line-strong font-mono text-[13px] text-ink-3 transition-colors hover:border-ink-3 hover:bg-hover hover:text-ink",
+        FOCUS,
+        className,
+      )}
+    >
+      ?
+    </button>
   );
 }
 
@@ -158,8 +237,7 @@ function ProjectMenu({
 }) {
   const store = useTaskStore();
   const archived = project.archived_at !== null;
-  const item =
-    "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink outline-none data-highlighted:bg-hover";
+  const item = MENU_ITEM;
   return (
     <DropdownMenu.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <DropdownMenu.Trigger
@@ -174,11 +252,7 @@ function ProjectMenu({
         <MoreHorizontal size={15} />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          align="start"
-          sideOffset={4}
-          className="z-50 min-w-48 rounded-xl border border-line-strong bg-overlay p-1 shadow-xl"
-        >
+        <DropdownMenu.Content align="start" sideOffset={4} className={cx(MENU, "min-w-48")}>
           <DropdownMenu.Item className={item} onSelect={onRename}>
             <Pencil size={14} /> Rename
           </DropdownMenu.Item>
@@ -196,7 +270,7 @@ function ProjectMenu({
               />
             ))}
           </div>
-          <DropdownMenu.Separator className="my-1 h-px bg-line" />
+          <DropdownMenu.Separator className={MENU_SEPARATOR} />
           <DropdownMenu.Item
             className={item}
             onSelect={() => void updateProject(store, project.id, [{ archived: !archived }])}
@@ -205,7 +279,7 @@ function ProjectMenu({
             {archived ? "Unarchive" : "Archive"}
           </DropdownMenu.Item>
           <DropdownMenu.Item
-            className={cx(item, "text-danger")}
+            className={cx(item, MENU_DANGER)}
             onSelect={() => void deleteProject(store, project.id)}
           >
             <Trash2 size={14} /> Delete
@@ -271,7 +345,7 @@ function ProjectRow({
           setMenu(true);
         }}
       >
-        <Dot color={project.color} className="size-[9px]" />
+        <ProjectMark project={project} dotClass="size-[9px]" className="text-[13px]" />
         <span className="min-w-0 flex-1 truncate">{project.name}</span>
       </Link>
       <IconButton
@@ -303,6 +377,7 @@ export function Sidebar({
 }) {
   const store = useTaskStore();
   const shell = useShell();
+  const keymap = useKeymap();
   const tasks = useStoreState((s) => s.tasks);
   const projects = useStoreState((s) => s.projects);
   const epics = useStoreState((s) => s.epics);
@@ -403,7 +478,7 @@ export function Sidebar({
         <button
           type="button"
           aria-label="New task"
-          title="New task (Ctrl+N)"
+          title={withKeys(keymap, "newTask", "New task")}
           onClick={() => shell.openNewTask()}
           className={cx(
             "mb-2 flex size-9 items-center justify-center rounded-[10px] bg-accent text-accent-ink shadow-sm hover:bg-accent-hover",
@@ -435,12 +510,13 @@ export function Sidebar({
               params={{ projectId: id }}
               label={i < 9 ? `${p.name}  (Ctrl+${i + 1})` : p.name}
             >
-              <Dot color={p.color} className="size-2.5" />
+              <ProjectMark project={p} dotClass="size-2.5" className="text-[15px]" />
             </RailLink>
           );
         })}
         <div className="flex-1" />
         <UpdatePill compact />
+        <ShortcutsButton onClick={shell.showShortcuts} className="mb-1" />
         <RailLink to="/settings" label="Settings">
           <Settings2 size={17} />
         </RailLink>
@@ -466,7 +542,7 @@ export function Sidebar({
         <button
           type="button"
           onClick={() => shell.openNewTask()}
-          title="New task (Ctrl+N)"
+          title={withKeys(keymap, "newTask", "New task")}
           className={cx(
             "flex h-9 flex-1 items-center justify-center gap-2 rounded-[10px] bg-accent font-display text-[15px] tracking-wide text-accent-ink shadow-sm transition-colors hover:bg-accent-hover",
             FOCUS,
@@ -477,8 +553,8 @@ export function Sidebar({
         </button>
         <button
           type="button"
-          aria-label="Jump to (Ctrl+K)"
-          title="Jump to… (Ctrl+K)"
+          aria-label="Jump to"
+          title={withKeys(keymap, "palette", "Jump to…")}
           onClick={shell.openPalette}
           className={cx(
             "flex size-9 items-center justify-center rounded-[10px] border border-line-strong text-ink-2 transition-colors hover:bg-hover hover:text-ink",
@@ -653,15 +729,7 @@ export function Sidebar({
 
       <Collapsible id="tags" title="Tags" count={tagList.length}>
         {tagList.map((tag) => (
-          <NavItem
-            key={tag.id}
-            to="/tag/$tagId"
-            params={{ tagId: tag.id }}
-            icon={<Hash size={14} className="shrink-0" />}
-            count={counts.perTag.get(tag.id)}
-          >
-            {tag.name}
-          </NavItem>
+          <TagRow key={tag.id} tag={tag} count={counts.perTag.get(tag.id)} />
         ))}
         {tagList.length === 0 && (
           <p className="px-2.5 py-1 text-[12.5px] text-ink-3">Type #tag when adding a task</p>
@@ -670,11 +738,18 @@ export function Sidebar({
 
       <div className="mt-auto flex flex-col gap-1 pt-4">
         <UpdatePill />
-        <NavItem to="/settings" icon={<Settings2 size={16} className="shrink-0" />}>
-          <span className="flex items-center justify-between">
-            Settings <Kbd>G S</Kbd>
-          </span>
-        </NavItem>
+        <div className="flex items-center gap-1">
+          <div className="min-w-0 flex-1">
+            <NavItem
+              to="/settings"
+              icon={<Settings2 size={16} className="shrink-0" />}
+              title={withKeys(keymap, "goSettings", "Settings")}
+            >
+              Settings
+            </NavItem>
+          </div>
+          <ShortcutsButton onClick={shell.showShortcuts} />
+        </div>
       </div>
     </nav>
   );

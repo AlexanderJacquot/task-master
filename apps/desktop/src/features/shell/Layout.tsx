@@ -1,8 +1,10 @@
 import { Outlet, useNavigate, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
 import { Dialog } from "radix-ui";
 import { useCallback, useMemo, useState } from "react";
+import { KeyList } from "../../components/Keys";
 import { Kbd } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
+import { FIXED_SHORTCUTS, SHORTCUT_DEFS, useKeymap } from "../../lib/keymap";
 import type { NewTaskInput } from "../../store/actions";
 import { useStoreState } from "../../store/context";
 import { CaptureBox } from "../capture/CaptureBox";
@@ -15,7 +17,7 @@ import { type ShellActions, ShellContext } from "./shellContext";
 import { TitleBar, tauriWindowControls, usesCustomTitleBar } from "./TitleBar";
 import { useFileDrop } from "./useFileDrop";
 import { useOpenTask } from "./useOpenTask";
-import { SHORTCUTS, useShortcuts } from "./useShortcuts";
+import { useShortcuts } from "./useShortcuts";
 
 type Defaults = Omit<NewTaskInput, "title">;
 
@@ -79,7 +81,11 @@ export function Layout() {
     [pathname],
   );
   const shell: ShellActions = useMemo(
-    () => ({ openNewTask, openPalette: () => setPalette(true) }),
+    () => ({
+      openNewTask,
+      openPalette: () => setPalette(true),
+      showShortcuts: () => setHelp(true),
+    }),
     [openNewTask],
   );
 
@@ -194,24 +200,50 @@ function ShortcutHelp({
   open: boolean;
   onOpenChange(open: boolean): void;
 }) {
+  const keymap = useKeymap();
+  const navigate = useNavigate();
+  const row = "contents";
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="tex-sheet fixed top-[12%] left-1/2 z-50 w-[34rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-line-strong bg-overlay p-5 shadow-2xl shadow-black/40"
+          className="tex-sheet fixed top-[8%] left-1/2 z-50 flex max-h-[84vh] w-[36rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col rounded-2xl border border-line-strong bg-overlay p-5 shadow-2xl shadow-black/40"
         >
-          <Dialog.Title className="mb-4 font-display text-xl tracking-wide text-accent">
-            Keyboard shortcuts
-          </Dialog.Title>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-5 gap-y-2 text-sm">
-            {SHORTCUTS.map((s) => (
-              <div key={s.keys} className="contents">
-                <dt>
+          <div className="mb-4 flex items-baseline justify-between gap-3">
+            <Dialog.Title className="font-display text-xl tracking-wide text-accent">
+              Keyboard shortcuts
+            </Dialog.Title>
+            <button
+              type="button"
+              onClick={() => {
+                onOpenChange(false);
+                void navigate({ to: "/settings", search: {}, hash: "shortcuts" });
+              }}
+              className="text-[13px] text-accent hover:underline"
+            >
+              Change shortcuts
+            </button>
+          </div>
+          <dl className="grid min-h-0 grid-cols-[1fr_max-content] gap-x-5 gap-y-2 overflow-y-auto text-sm">
+            {SHORTCUT_DEFS.map((d) => (
+              <div key={d.id} className={row}>
+                <dt className="text-ink-2">{d.label}</dt>
+                <dd>
+                  <KeyList bindings={keymap[d.id]} />
+                </dd>
+              </div>
+            ))}
+            <div className="col-span-2 mt-2 border-t border-line pt-3 text-xs text-ink-3">
+              Fixed
+            </div>
+            {FIXED_SHORTCUTS.map((s) => (
+              <div key={s.keys} className={row}>
+                <dt className="text-ink-2">{s.what}</dt>
+                <dd>
                   <Kbd>{s.keys}</Kbd>
-                </dt>
-                <dd className="text-ink-2">{s.what}</dd>
+                </dd>
               </div>
             ))}
           </dl>

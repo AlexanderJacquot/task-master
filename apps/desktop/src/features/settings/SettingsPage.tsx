@@ -1,3 +1,4 @@
+import { useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { type ReactNode, useEffect, useState } from "react";
 import { cx, Dot, InlineInput, Select } from "../../components/ui";
@@ -17,6 +18,7 @@ import { PROJECT_COLORS } from "../organize/projectColors";
 import { HeaderButton } from "../shell/ViewPage";
 import { About } from "./About";
 import { CalendarSettings } from "./CalendarSettings";
+import { ShortcutSettings } from "./ShortcutSettings";
 
 const CATEGORIES: Array<{ value: StatusCategory; label: string }> = [
   { value: "backlog", label: "Backlog" },
@@ -29,14 +31,16 @@ const CATEGORIES: Array<{ value: StatusCategory; label: string }> = [
 export function Section({
   title,
   hint,
+  id,
   children,
 }: {
   title: string;
   hint?: string;
+  id?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-2.5 border-b border-line py-6">
+    <section id={id} className="flex scroll-mt-4 flex-col gap-2.5 border-b border-line py-6">
       <h2 className="font-display text-[19px] tracking-wide text-accent">{title}</h2>
       {hint && <p className="text-xs text-neutral-500">{hint}</p>}
       {children}
@@ -72,18 +76,13 @@ function StatusRow({ status, first, last }: { status: Status; first: boolean; la
       <Select
         aria-label={`${status.name} color`}
         value={color ?? ""}
-        onChange={(e) => void updateStatus(store, status.id, [{ color: e.target.value || null }])}
-        className="w-10 text-xs"
-        style={{ color: color ?? undefined }}
-      >
-        <option value="">○</option>
-        {PROJECT_COLORS.map((c) => (
-          <option key={c} value={c} style={{ color: c }}>
-            ●
-          </option>
-        ))}
-      </Select>
-      <Dot color={color} />
+        onValueChange={(c) => void updateStatus(store, status.id, [{ color: c || null }])}
+        className="w-28 text-xs text-ink-2"
+        options={[
+          { value: "", label: "No color", icon: <Dot color={null} /> },
+          ...PROJECT_COLORS.map((c) => ({ value: c, label: c, icon: <Dot color={c} /> })),
+        ]}
+      />
       <input
         aria-label="Status name"
         defaultValue={status.name}
@@ -101,17 +100,10 @@ function StatusRow({ status, first, last }: { status: Status; first: boolean; la
       <Select
         aria-label={`${status.name} category`}
         value={status.category}
-        onChange={(e) =>
-          void updateStatus(store, status.id, [{ category: e.target.value as StatusCategory }])
-        }
+        onValueChange={(category) => void updateStatus(store, status.id, [{ category }])}
         className="w-32 text-xs"
-      >
-        {CATEGORIES.map((c) => (
-          <option key={c.value} value={c.value}>
-            {c.label}
-          </option>
-        ))}
-      </Select>
+        options={CATEGORIES}
+      />
       <label className="flex items-center gap-1 text-xs text-neutral-500">
         WIP limit
         <input
@@ -469,6 +461,23 @@ function RemoteBackupForm({
   );
 }
 
+function Shortcuts() {
+  // Opened from the shortcuts overlay ("Change shortcuts"): bring the section into view.
+  const hash = useRouterState({ select: (r) => r.location.hash });
+  useEffect(() => {
+    if (hash === "shortcuts") document.getElementById("shortcuts")?.scrollIntoView();
+  }, [hash]);
+  return (
+    <Section
+      id="shortcuts"
+      title="Keyboard shortcuts"
+      hint="Add a key combination to an action, or two keys in a row (G, then I). A combination used elsewhere moves here. Press ? anywhere to see them all."
+    >
+      <ShortcutSettings />
+    </Section>
+  );
+}
+
 export function SettingsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -479,6 +488,7 @@ export function SettingsPage() {
         <About />
         <Workflow />
         <Appearance />
+        <Shortcuts />
         <CalendarSettings />
         <Data />
       </div>

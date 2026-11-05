@@ -6,9 +6,11 @@ export interface ShellActions {
   /** Opens the New task dialog; `defaults` are what the new task gets unless the line overrides. */
   openNewTask(defaults?: Omit<NewTaskInput, "title">): void;
   openPalette(): void;
+  /** Opens the keyboard shortcuts overlay. */
+  showShortcuts(): void;
 }
 
-const noop: ShellActions = { openNewTask() {}, openPalette() {} };
+const noop: ShellActions = { openNewTask() {}, openPalette() {}, showShortcuts() {} };
 
 export const ShellContext = createContext<ShellActions>(noop);
 

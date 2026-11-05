@@ -1,29 +1,34 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Archive, ArchiveRestore, MoreHorizontal, Trash2 } from "lucide-react";
 import { DropdownMenu, Popover } from "radix-ui";
-import { cx, Dot, IconButton, Select } from "../../components/ui";
+import { cx, IconButton, MENU, MENU_DANGER, MENU_ITEM, Select } from "../../components/ui";
 import type { Project } from "../../lib/types";
 import { deleteProject, moveProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { EditableTitle } from "../shell/EditableTitle";
 import { ViewPage } from "../shell/ViewPage";
+import { firstGrapheme, PROJECT_ICONS, ProjectMark } from "./ProjectMark";
 import { PROJECT_COLORS } from "./projectColors";
 
 function ColorPicker({ project }: { project: Project }) {
   const store = useTaskStore();
+  const setIcon = (icon: string | null) => {
+    if (icon !== project.icon) void updateProject(store, project.id, [{ icon }]);
+  };
   return (
     <Popover.Root>
       <Popover.Trigger
-        aria-label="Project color"
+        aria-label="Project color and icon"
+        title="Color and icon"
         className="flex size-7 items-center justify-center rounded-md hover:bg-hover"
       >
-        <Dot color={project.color} />
+        <ProjectMark project={project} />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
           align="end"
           sideOffset={4}
-          className="z-50 grid grid-cols-5 gap-1.5 rounded-xl border border-line-strong bg-overlay p-2.5 shadow-xl"
+          className={cx(MENU, "grid min-w-0 grid-cols-5 gap-1.5 p-2.5")}
         >
           {PROJECT_COLORS.map((color) => (
             <Popover.Close
@@ -43,6 +48,41 @@ function ColorPicker({ project }: { project: Project }) {
           >
             No color
           </Popover.Close>
+          <div className="col-span-5 my-1 h-px bg-line" />
+          {PROJECT_ICONS.map((icon) => (
+            <Popover.Close
+              key={icon}
+              aria-label={`Icon ${icon}`}
+              onClick={() => setIcon(icon)}
+              className={cx(
+                "flex size-6 items-center justify-center rounded-md text-[15px] leading-none hover:bg-hover",
+                project.icon === icon && "bg-hover ring-1 ring-line-strong",
+              )}
+            >
+              {icon}
+            </Popover.Close>
+          ))}
+          <input
+            aria-label="Custom icon"
+            placeholder="Other emoji…"
+            defaultValue={project.icon && !PROJECT_ICONS.includes(project.icon) ? project.icon : ""}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") setIcon(firstGrapheme(e.currentTarget.value));
+            }}
+            onBlur={(e) => {
+              const icon = firstGrapheme(e.currentTarget.value);
+              if (icon) setIcon(icon);
+            }}
+            className="col-span-5 mt-1 h-7 rounded-md border border-line-strong bg-transparent px-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+          />
+          {project.icon && (
+            <Popover.Close
+              onClick={() => setIcon(null)}
+              className="col-span-5 mt-1 text-xs text-ink-3 hover:underline"
+            >
+              No icon (show the color dot)
+            </Popover.Close>
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -61,8 +101,7 @@ export function ProjectPage({ project }: { project: Project }) {
     .sort((a, b) => (a.rank < b.rank ? -1 : 1));
   const archived = project.archived_at !== null;
   const area = project.parent_id ? projects[project.parent_id] : undefined;
-  const item =
-    "flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-sm text-ink outline-none data-highlighted:bg-hover";
+  const item = MENU_ITEM;
 
   return (
     <ViewPage
@@ -70,7 +109,7 @@ export function ProjectPage({ project }: { project: Project }) {
       eyebrow={area?.name}
       title={
         <span className="flex min-w-0 items-center gap-2">
-          <Dot color={project.color} className="size-3" />
+          <ProjectMark project={project} dotClass="size-3" className="text-[0.85em]" />
           <EditableTitle
             value={project.name}
             placeholder="Project name"
@@ -88,18 +127,17 @@ export function ProjectPage({ project }: { project: Project }) {
             <Select
               aria-label="Area"
               value={project.parent_id ?? ""}
-              onChange={(e) =>
-                void moveProject(store, project.id, e.target.value || null, null, null)
-              }
+              onValueChange={(id) => void moveProject(store, project.id, id || null, null, null)}
               className="h-7 text-[13px] text-ink-2"
-            >
-              <option value="">No area</option>
-              {areas.map((a) => (
-                <option key={a.id} value={a.id}>
-                  In {a.name}
-                </option>
-              ))}
-            </Select>
+              options={[
+                { value: "", label: "No area" },
+                ...areas.map((a) => ({
+                  value: a.id,
+                  label: `In ${a.name}`,
+                  icon: <ProjectMark project={a} />,
+                })),
+              ]}
+            />
           )}
           <DropdownMenu.Root modal={false}>
             <DropdownMenu.Trigger asChild>
@@ -108,11 +146,7 @@ export function ProjectPage({ project }: { project: Project }) {
               </IconButton>
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                align="end"
-                sideOffset={6}
-                className="z-50 min-w-44 rounded-xl border border-line-strong bg-overlay p-1 shadow-xl"
-              >
+              <DropdownMenu.Content align="end" sideOffset={6} className={cx(MENU, "min-w-44")}>
                 <DropdownMenu.Item
                   className={item}
                   onSelect={() => void updateProject(store, project.id, [{ archived: !archived }])}
@@ -121,7 +155,7 @@ export function ProjectPage({ project }: { project: Project }) {
                   {archived ? "Unarchive" : "Archive"}
                 </DropdownMenu.Item>
                 <DropdownMenu.Item
-                  className={cx(item, "text-danger")}
+                  className={cx(item, MENU_DANGER)}
                   onSelect={async () => {
                     if ((await deleteProject(store, project.id)) !== null) {
                       void navigate({ to: "/inbox" });

@@ -2,6 +2,7 @@
 // immediately. Ids and ranks are computed here and sent, so local and confirmed rows agree.
 
 import { ranksForDrop } from "../lib/board";
+import type { RestorePlan } from "../lib/history";
 import { rankBetween } from "../lib/rank";
 import type {
   Attachment,
@@ -58,6 +59,8 @@ function lastRank<T extends { rank: string }>(
 export interface WithTask {
   before?: Command[];
   upsert?: { tags?: Tag[]; projects?: Project[]; epics?: Epic[] };
+  /** Also puts the new task on the calendar (same batch, so one undo removes both). */
+  schedule?: { start_at: number; end_at: number };
 }
 
 export async function createTask(
@@ -102,6 +105,19 @@ export async function createTask(
     completed_at: status.category === "done" ? now : null,
     deleted_at: null,
   };
+  const block: TimeBlock | null =
+    extra.schedule && extra.schedule.end_at > extra.schedule.start_at
+      ? {
+          id: uuidv7(now),
+          task_id: id,
+          start_at: extra.schedule.start_at,
+          end_at: extra.schedule.end_at,
+          outcome: "planned",
+          created_at: now,
+          updated_at: now,
+          deleted_at: null,
+        }
+      : null;
   const changes = await store.getState().mutate(
     [
       ...(extra.before ?? []),
@@ -121,8 +137,22 @@ export async function createTask(
           tag_ids: task.tag_ids,
         },
       },
+      ...(block
+        ? [
+            {
+              type: "create_time_block" as const,
+              block: {
+                id: block.id,
+                task_id: id,
+                start_at: block.start_at,
+                end_at: block.end_at,
+                outcome: "planned" as const,
+              },
+            },
+          ]
+        : []),
     ],
-    { upsert: { ...extra.upsert, tasks: [task] } },
+    { upsert: { ...extra.upsert, tasks: [task], ...(block && { time_blocks: [block] }) } },
   );
   return changes ? id : null;
 }
@@ -164,6 +194,24 @@ export function updateTask(store: TaskStore, id: string, changes: TaskChange[]) 
   if (!task || !changes.length) return Promise.resolve(null);
   const updated = applyTaskChanges(task, changes, s.statuses, Date.now());
   return s.mutate([{ type: "update_task", id, changes }], { upsert: { tasks: [updated] } });
+}
+
+/** Puts a task back to an earlier version (lib/history.ts) as one undoable batch. */
+export function restoreTask(store: TaskStore, id: string, plan: RestorePlan) {
+  const s = store.getState();
+  const task = s.tasks[id];
+  if (!task) return Promise.resolve(null);
+  const commands: Command[] = [];
+  if (plan.changes.length) commands.push({ type: "update_task", id, changes: plan.changes });
+  for (const tag_id of plan.addTags) commands.push({ type: "tag_task", task_id: id, tag_id });
+  for (const tag_id of plan.removeTags) commands.push({ type: "untag_task", task_id: id, tag_id });
+  if (!commands.length) return Promise.resolve(null);
+  const updated = applyTaskChanges(task, plan.changes, s.statuses, Date.now());
+  const tag_ids = [
+    ...updated.tag_ids.filter((t) => !plan.removeTags.includes(t)),
+    ...plan.addTags.filter((t) => !updated.tag_ids.includes(t)),
+  ].sort();
+  return s.mutate(commands, { upsert: { tasks: [{ ...updated, tag_ids }] } });
 }
 
 /** Checkbox: open → first `done` status; done → first `todo` status. */
@@ -231,6 +279,20 @@ export function setTagged(store: TaskStore, taskId: string, tagId: string, tagge
     : task.tag_ids.filter((t) => t !== tagId);
   return s.mutate([{ type: tagged ? "tag_task" : "untag_task", task_id: taskId, tag_id: tagId }], {
     upsert: { tasks: [{ ...task, tag_ids, updated_at: Date.now() }] },
+  });
+}
+
+/** Deletes a tag; the core takes it off every task in the same undoable batch. */
+export function deleteTag(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.tags[id]) return Promise.resolve(null);
+  const now = Date.now();
+  const untagged = Object.values(s.tasks)
+    .filter((t) => t.tag_ids.includes(id))
+    .map((t) => ({ ...t, tag_ids: t.tag_ids.filter((x) => x !== id), updated_at: now }));
+  return s.mutate([{ type: "delete_tag", id }], {
+    remove: { tags: [id] },
+    upsert: { tasks: untagged },
   });
 }
 
@@ -538,6 +600,7 @@ export async function captureTask(
   store: TaskStore,
   capture: Capture,
   defaults: Omit<NewTaskInput, "title"> = {},
+  schedule?: WithTask["schedule"],
 ): Promise<string | null> {
   const s = store.getState();
   const title = capture.title.trim();
@@ -629,7 +692,7 @@ export async function captureTask(
     due_date: capture.due_date ?? defaults.due_date ?? null,
     tag_ids: [...new Set([...(defaults.tag_ids ?? []), ...tagIds])],
   };
-  return createTask(store, input, { before: commands, upsert });
+  return createTask(store, input, { before: commands, upsert, schedule });
 }
 
 // ---------------------------------------------------------------------------------------

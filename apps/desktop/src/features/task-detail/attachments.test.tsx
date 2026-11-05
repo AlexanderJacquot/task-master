@@ -240,8 +240,7 @@ describe("task page look (mockup)", () => {
   it("shows set properties as pills, unset ones as quiet labels", async () => {
     const t = task({ priority: "high", description: "The current page explains every plan." });
     await renderTask(t);
-    const priority = screen.getByLabelText("Priority") as HTMLSelectElement;
-    expect(priority.closest("span")?.textContent?.startsWith("HighUrgent")).toBe(true);
+    expect(screen.getByRole("combobox", { name: "Priority" }).textContent).toBe("High");
     expect(screen.getByLabelText("Due date").closest("span")?.textContent).toBe("Due date");
     expect(screen.getByText("Keep writing… Markdown works.")).toBeTruthy();
     expect(document.querySelector(".tm-dropcap")).toBeTruthy();
@@ -260,5 +259,76 @@ describe("task page look (mockup)", () => {
     const bar = screen.getByRole("progressbar", { name: "Subtasks done" });
     expect(bar.getAttribute("aria-valuenow")).toBe("1");
     expect(screen.getByText("1 of 2")).toBeTruthy();
+  });
+});
+
+describe("task history", () => {
+  let seq = 50;
+  const change = (kind: string, fields: Array<[string, unknown, unknown]>): Activity => {
+    seq -= 1;
+    return {
+      seq,
+      at: Date.now() - seq * 60_000,
+      batch_id: `b${seq}`,
+      kind,
+      fields: fields.map(([field, before, after]) => ({
+        field,
+        before: JSON.stringify(before),
+        after: JSON.stringify(after),
+      })),
+    };
+  };
+  const updates = (executed: Command[][]) =>
+    executed.flatMap((batch) => batch.filter((c) => c.type === "update_task"));
+
+  it("undoes the last change from the activity", async () => {
+    const t = task({ title: "Final", priority: "high" });
+    const { executed } = await renderTask(
+      t,
+      [],
+      [
+        change("update", [["title", "Plan", "Final"]]),
+        change("update", [["priority", "normal", "high"]]),
+        change("create", []),
+      ],
+    );
+    fireEvent.click(screen.getByText("Activity"));
+    fireEvent.click(await screen.findByRole("button", { name: "Undo last change" }));
+    await waitFor(() =>
+      expect(updates(executed)).toEqual([
+        { type: "update_task", id: t.id, changes: [{ title: "Plan" }] },
+      ]),
+    );
+    expect(await screen.findByRole("status")).toBeTruthy();
+  });
+
+  it("shows a description edit as a diff and restores an older version", async () => {
+    const t = task({ title: "Final", description: "one\nTWO" });
+    const { executed } = await renderTask(
+      t,
+      [],
+      [
+        change("update", [["description", "one\ntwo", "one\nTWO"]]),
+        change("update", [["title", "Plan", "Final"]]),
+        change("create", []),
+      ],
+    );
+    fireEvent.click(screen.getByText("Activity"));
+    fireEvent.click(await screen.findByRole("button", { name: "Edited the description" }));
+    expect(screen.getByText("− two")).toBeTruthy();
+    expect(screen.getByText("+ TWO")).toBeTruthy();
+
+    // The version right after creation: both later changes go back.
+    const restores = screen.getAllByRole("button", { name: /^Restore the version from/ });
+    fireEvent.click(restores.at(-1) as HTMLElement);
+    await waitFor(() =>
+      expect(updates(executed)).toEqual([
+        {
+          type: "update_task",
+          id: t.id,
+          changes: [{ title: "Plan" }, { description: "one\ntwo" }],
+        },
+      ]),
+    );
   });
 });

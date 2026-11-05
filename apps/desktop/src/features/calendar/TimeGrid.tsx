@@ -1,6 +1,7 @@
 // Day and week views: an all-day lane per day (tasks planned or due that day) above a
 // 24-hour grid of time blocks. Blocks move by drag, resize from their bottom edge, and
-// open a small menu on click (outcome, open the task, remove).
+// open a small menu on click (outcome, open the task, remove). Clicking or dragging on an
+// empty spot creates a task there (NewBlock.tsx).
 
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { Check, Clock, ExternalLink, Trash2, X } from "lucide-react";
@@ -32,6 +33,7 @@ import type { BlockOutcome, CalendarEvent, Task, TimeBlock } from "../../lib/typ
 import { deleteBlock, moveBlock, setBlockOutcome } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
 import { EventChip, EventView } from "./events";
+import { DraftBlock, useDrawBlock } from "./NewBlock";
 import { blockStyle, DayChip, type DragData, dayTasks, projectColor, useCalendar } from "./shared";
 
 /** Where a dragged item would land, drawn as a ghost in that day's column. */
@@ -206,6 +208,7 @@ function TimeColumn({
 }) {
   const { now } = useCalendar();
   const { setNodeRef } = useDroppable({ id: dropId.time(iso) });
+  const { draft, setDraft, onPointerDown } = useDrawBlock();
   // Blocks and events share the day's width where they overlap.
   const placed = useMemo(
     () => layoutDay(segmentsOn<TimeBlock | EventSpan>([...blocks, ...events], iso)),
@@ -216,7 +219,8 @@ function TimeColumn({
       ref={setNodeRef}
       data-time-column={iso}
       data-testid={`time-column-${iso}`}
-      className="relative min-w-0 flex-1 border-l border-line"
+      onPointerDown={onPointerDown}
+      className="relative min-w-0 flex-1 cursor-cell border-l border-line"
       style={{
         backgroundImage: `repeating-linear-gradient(to bottom, var(--tm-line) 0 1px, transparent 1px ${HOUR_PX}px)`,
       }}
@@ -228,6 +232,7 @@ function TimeColumn({
           <BlockView key={p.item.id} iso={iso} placed={p as Placed<TimeBlock>} />
         ),
       )}
+      {draft && <DraftBlock iso={iso} draft={draft} onClose={() => setDraft(null)} />}
       {preview && (
         <div
           aria-hidden

@@ -12,9 +12,10 @@ import {
   TaskCheck,
 } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
-import type { Priority, Task, TaskChange } from "../../lib/types";
+import type { Task, TaskChange } from "../../lib/types";
 import { deleteTask, setParent, toggleDone, updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { ProjectMark } from "../organize/ProjectMark";
 import { useOpenTask } from "../shell/useOpenTask";
 import { ActivityFeed } from "./ActivityFeed";
 import { AttachmentList } from "./AttachmentList";
@@ -48,7 +49,7 @@ function useProjectOptions(task: Task | undefined) {
       .filter((p) => p.parent_id === null)
       .sort((a, b) => (a.rank < b.rank ? -1 : 1));
     return areas.flatMap((area) => [
-      { id: area.id, label: area.name, name: area.name, color: area.color },
+      { id: area.id, label: area.name, name: area.name, color: area.color, icon: area.icon },
       ...list
         .filter((p) => p.parent_id === area.id)
         .sort((a, b) => (a.rank < b.rank ? -1 : 1))
@@ -57,6 +58,7 @@ function useProjectOptions(task: Task | undefined) {
           label: `  ${area.name} / ${p.name}`,
           name: p.name,
           color: p.color,
+          icon: p.icon,
         })),
     ]);
   }, [projects, task?.project_id]);
@@ -123,16 +125,15 @@ function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
   const statusSelect = (className?: string) => (
     <Select
       value={task.status_id}
-      onChange={(e) => change([{ status_id: e.target.value }])}
+      onValueChange={(status_id) => change([{ status_id }])}
       aria-label="Status"
       className={className}
-    >
-      {statuses.map((s) => (
-        <option key={s.id} value={s.id}>
-          {s.name}
-        </option>
-      ))}
-    </Select>
+      options={statuses.map((s) => ({
+        value: s.id,
+        label: s.name,
+        icon: <Dot color={s.color ?? null} />,
+      }))}
+    />
   );
 
   const properties = page ? (
@@ -152,16 +153,11 @@ function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
       <Field label="Priority">
         <Select
           value={task.priority}
-          onChange={(e) => change([{ priority: e.target.value as Priority }])}
+          onValueChange={(priority) => change([{ priority }])}
           aria-label="Priority"
-          className={cx("w-full", PRIORITY_STYLE[task.priority])}
-        >
-          {PRIORITIES.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </Select>
+          className="w-full"
+          options={PRIORITIES.map((p) => ({ ...p, className: PRIORITY_STYLE[p.value] }))}
+        />
       </Field>
       <Field label="Due">
         <input
@@ -209,32 +205,30 @@ function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
       <Field label="Project">
         <Select
           value={task.project_id ?? ""}
-          onChange={(e) => change([{ project_id: e.target.value || null }])}
+          onValueChange={(id) => change([{ project_id: id || null }])}
           aria-label="Project"
           className="w-full"
-        >
-          <option value="">Inbox (no project)</option>
-          {projectOptions.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </Select>
+          options={[
+            { value: "", label: "Inbox (no project)" },
+            ...projectOptions.map((p) => ({
+              value: p.id,
+              label: p.label.trim(),
+              icon: <ProjectMark project={p} />,
+            })),
+          ]}
+        />
       </Field>
       <Field label="Epic">
         <Select
           value={task.epic_id ?? ""}
-          onChange={(e) => change([{ epic_id: e.target.value || null }])}
+          onValueChange={(id) => change([{ epic_id: id || null }])}
           aria-label="Epic"
           className="w-full"
-        >
-          <option value="">None</option>
-          {epicOptions.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name}
-            </option>
-          ))}
-        </Select>
+          options={[
+            { value: "", label: "None" },
+            ...epicOptions.map((e) => ({ value: e.id, label: e.name })),
+          ]}
+        />
       </Field>
       <Field label="Tags">
         <TagPicker task={task} />
@@ -417,7 +411,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
           <ArrowLeft size={15} />
           {project ? (
             <>
-              <Dot color={project.color} />
+              <ProjectMark project={project} />
               {project.name}
             </>
           ) : (

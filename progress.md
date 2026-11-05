@@ -65,6 +65,66 @@ multi-field rules repaired automatically**.
   fails 6. Perf budgets (10k tasks) still pass. Vitest unchanged (190).
 - No new dependencies.
 
+### Create tasks on the calendar (2026-11-05)
+
+Branch `calendar-create` (stacked on `task-history`). Day and week views: press on an
+empty spot of the time grid and drag to draw the time (quarter-hour snap; a plain click
+makes a one-hour block), then type the task in the box beside it (capture markers work:
+#tag !high +Project, with the same confirm before creating a project or epic). Task and
+block are one batch (`createTask`'s new `schedule`, passed through `captureTask`), so one
+undo removes both. `features/calendar/NewBlock.tsx`. Tests: calendar.test "creating a task
+on the grid". Drawing stays within one day.
+
+### Task history: undo, diffs, restore (2026-11-05)
+
+Branch `task-history` (stacked on `remappable-shortcuts`). In a task's Activity: a quiet
+"Undo last change" link, "Restore" on hover for any entry (puts the task back as it was
+right after it), and description edits expand into a line diff. UI only: `lib/history.ts`
+works out the old values from the activity's before/after and `restoreTask` sends one
+ordinary batch (update_task + tag_task/untag_task), so the restore shows in the activity
+and Ctrl+Z undoes it. Not put back (and said so): files, calendar blocks, the parent,
+values pointing at deleted statuses/projects/epics/tags. Only the last 50 changes are
+listed. Tests: `lib/history.test.ts`, attachments.test "task history".
+
+### Remappable keyboard shortcuts (2026-11-05)
+
+Branch `remappable-shortcuts` (stacked on `delete-tags`). `lib/keymap.ts`: the
+remappable actions, their defaults, chord names ("Ctrl+K", "G I"), sequence matching and
+checks (keys kept for typing are refused; a key used elsewhere moves). Saved per machine
+in localStorage like the theme (only what differs from the defaults). `useShortcuts`
+resolves through it; Esc, Ctrl+1–9, board/plan keys and Quick capture stay fixed.
+Settings → Keyboard shortcuts records, removes and resets keys; the `?` overlay shows the
+current keys with a "Change shortcuts" link. The sidebar's "G S" hint became a `?` box
+(also on the rail). New default: Ctrl+, opens Settings. Tests: `lib/keymap.test.ts`,
+app.test "keyboard shortcuts".
+
+### Delete tags (2026-11-05)
+
+Branch `delete-tags` (stacked on `menus-ui`). `TagMenu` (features/organize) offers "Delete
+tag" with the number of tasks using it: hover ⋯ or right-click on a sidebar tag, ⋯ in the
+tag page header (leaves for the Inbox first). `deleteTag` action: optimistic removal and
+untagging; the core's `delete_tag` already untags and is one undoable batch. UI only.
+Tests: `features/organize/tagDelete.test.tsx`. Renaming tags is still open (see Later).
+
+### Dropdowns and menus restyled (2026-11-05)
+
+Branch `menus-ui` (stacked on `project-icons`). Native `<select>` popups (gray OS list on
+Windows) are gone: `Select` in `components/ui.tsx` is now Radix Select with an `options`
+list and `onValueChange`; property pills open the same list (`SelectRoot`). One look for
+every floating list: `MENU`, `MENU_ITEM`, `MENU_DANGER`, `MENU_SEPARATOR`, `MENU_LABEL`
+plus `.tm-menu` in index.css (paper texture, layered shadow, scale-in, accent-tinted
+highlight, check on the chosen option). Used by the sidebar, project, attachment and
+filter menus. Tests pick options with `test/select.ts` `pickOption`. Not yet checked in
+the real app on Windows.
+
+### Project icons (2026-11-05)
+
+Branch `project-icons`. The project page's color popover (now "Color and icon") offers 15
+emoji, a field for any other one (kept to its first grapheme) and "No icon". A project
+with an icon shows it instead of its color dot (`ProjectMark`): sidebar row and rail,
+project title, task page breadcrumb and project pill, Today. UI only; the core already
+had `ProjectChange::Icon`. Tests: `features/organize/projectIcon.test.tsx`.
+
 ### M10 Google Calendar sync (2026-11-05)
 
 ADR `docs/adr/014-google-calendar-sync.md`; setup guide `docs/google-calendar.md`. Agreed
@@ -466,7 +526,7 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Calendar sync: CalDAV provider (iCloud) behind the same trait; refresh token in the OS
   keychain; a push right after each change instead of the 4 s pause; show which blocks
   are synced (a small cloud mark); pick another calendar as the target.
-- Calendar: drag on empty grid to create a block (pick a task); keyboard moves of blocks;
+- Calendar: drag on empty grid to block out an *existing* task (new tasks done); keyboard moves of blocks;
   week start and working hours in Settings; Today view counting tasks with a block today;
   block list and logged time on the task page; multi-day blocks shown across days in the
   month view.

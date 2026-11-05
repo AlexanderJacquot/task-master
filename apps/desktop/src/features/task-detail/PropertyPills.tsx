@@ -1,16 +1,26 @@
 import { CalendarDays, Clock, Diamond, Flag, Sun } from "lucide-react";
+import { Select as RadixSelect } from "radix-ui";
 import { type CSSProperties, type ReactNode, useState } from "react";
-import { cx, Dot, PRIORITIES, PRIORITY_PILL } from "../../components/ui";
+import {
+  cx,
+  Dot,
+  PRIORITIES,
+  PRIORITY_PILL,
+  PRIORITY_STYLE,
+  type SelectOption,
+  SelectRoot,
+} from "../../components/ui";
 import { daysFrom, formatDueLong } from "../../lib/dates";
-import type { Epic, Priority, Status, Task, TaskChange } from "../../lib/types";
+import type { Epic, Status, Task, TaskChange } from "../../lib/types";
+import { ProjectMark } from "../organize/ProjectMark";
 import { GHOST, OVERLAY, PILL, SET } from "./pill";
 import { TagPicker } from "./TagPicker";
 
 /**
  * The full page's properties, as in the mockup: set values are compact tinted pills
  * ("In progress", "High", "Due Fri, Nov 6", "◆ Launch v2", "#copy"); unset ones follow
- * as quiet labels. Every pill keeps a native control (an invisible select or date input
- * laid over it), so keyboard use and accessible names are unchanged.
+ * as quiet labels. Choice pills open the shared menu list (SelectRoot); date pills keep an
+ * invisible native date input laid over them.
  */
 
 /** Background and text tinted with a status or project color. */
@@ -22,7 +32,7 @@ function tint(color: string | null): CSSProperties | undefined {
   };
 }
 
-function SelectPill({
+function SelectPill<T extends string>({
   label,
   ariaLabel,
   value,
@@ -34,30 +44,24 @@ function SelectPill({
 }: {
   label: ReactNode;
   ariaLabel: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  options: SelectOption<T>[];
   icon?: ReactNode;
   className: string;
   style?: CSSProperties;
 }) {
   return (
-    <span className={cx(PILL, className)} style={style}>
-      {icon}
-      {label}
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+    <SelectRoot value={value} onValueChange={onChange} options={options}>
+      <RadixSelect.Trigger
         aria-label={ariaLabel}
-        className={OVERLAY}
+        className={cx(PILL, "cursor-pointer outline-none", className)}
+        style={style}
       >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </span>
+        {icon}
+        {label}
+      </RadixSelect.Trigger>
+    </SelectRoot>
   );
 }
 
@@ -153,7 +157,13 @@ export function PropertyPills({
 }: PillProps & {
   statuses: Status[];
   epics: Epic[];
-  projects: { id: string; label: string; name: string; color: string | null }[];
+  projects: {
+    id: string;
+    label: string;
+    name: string;
+    color: string | null;
+    icon: string | null;
+  }[];
 }) {
   const status = statuses.find((s) => s.id === task.status_id);
   const epic = epics.find((e) => e.id === task.epic_id);
@@ -173,7 +183,11 @@ export function PropertyPills({
           icon={<Dot color={status?.color ?? null} />}
           value={task.status_id}
           onChange={(status_id) => change([{ status_id }])}
-          options={statuses.map((s) => ({ value: s.id, label: s.name }))}
+          options={statuses.map((s) => ({
+            value: s.id,
+            label: s.name,
+            icon: <Dot color={s.color ?? null} />,
+          }))}
           className={status?.color ? "hover:brightness-95" : SET}
           style={tint(status?.color ?? null)}
         />
@@ -188,8 +202,12 @@ export function PropertyPills({
           label={prioritySet ? priority?.label : "Priority"}
           icon={prioritySet ? undefined : <Flag size={13} />}
           value={task.priority}
-          onChange={(p) => change([{ priority: p as Priority }])}
-          options={PRIORITIES.map((p) => ({ value: p.value, label: `${p.label} priority` }))}
+          onChange={(priority) => change([{ priority }])}
+          options={PRIORITIES.map((p) => ({
+            value: p.value,
+            label: `${p.label} priority`,
+            className: PRIORITY_STYLE[p.value],
+          }))}
           className={
             task.priority === "low" ? SET : prioritySet ? PRIORITY_PILL[task.priority] : GHOST
           }
@@ -222,12 +240,16 @@ export function PropertyPills({
           key="project"
           ariaLabel="Project"
           label={project?.name ?? "Inbox"}
-          icon={project ? <Dot color={project.color} /> : undefined}
+          icon={project ? <ProjectMark project={project} /> : undefined}
           value={task.project_id ?? ""}
           onChange={(id) => change([{ project_id: id || null }])}
           options={[
             { value: "", label: "Inbox" },
-            ...projects.map((p) => ({ value: p.id, label: p.label })),
+            ...projects.map((p) => ({
+              value: p.id,
+              label: p.label.trim(),
+              icon: <ProjectMark project={p} />,
+            })),
           ]}
           className={SET}
         />

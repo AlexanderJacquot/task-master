@@ -1,27 +1,18 @@
 import { useEffect, useRef } from "react";
+import {
+  chordOf,
+  getKeymap,
+  hasCommandModifier,
+  recording,
+  resolve,
+  type ShortcutId,
+} from "../../lib/keymap";
 import { useTaskStore } from "../../store/context";
 
 export const NEW_TASK_INPUT_ID = "new-task-input";
 
-/** Every app-wide key, for the `?` overlay. Board keys live on the cards. */
-export const SHORTCUTS: Array<{ keys: string; what: string }> = [
-  { keys: "Ctrl+Shift+Space", what: "Quick capture from any app (where the desktop allows it)" },
-  { keys: "Ctrl+N", what: "New task (in the current project, epic, tag or Today)" },
-  { keys: "n", what: "Type into the Add task line of the current view" },
-  { keys: "Ctrl+K", what: "Jump to anything: projects, views, tasks, actions" },
-  { keys: "Ctrl+1 … Ctrl+9", what: "Jump to the first nine projects in the sidebar" },
-  { keys: "Shift+Enter", what: "Open a task as a full page (in a list, or when adding one)" },
-  {
-    keys: "g i / g t / g c / g a / g s",
-    what: "Go to Inbox / Today / Calendar / All tasks / Settings",
-  },
-  { keys: "Ctrl+Z / Ctrl+Shift+Z", what: "Undo / redo the last action" },
-  { keys: "Esc", what: "Leave a field, close the task panel, or leave the full task page" },
-  { keys: "Alt+← / Alt+→", what: "Board: move the focused card to the previous / next column" },
-  { keys: "Space, arrows", what: "Board: pick up a card and move it with the keyboard" },
-  { keys: "1–9", what: "Plan my day: add the numbered suggestion to Today" },
-  { keys: "?", what: "Show these shortcuts" },
-];
+/** How long the first key of a sequence ("G" of "G I") waits for the second. */
+const SEQUENCE_MS = 1000;
 
 function isEditable(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -44,10 +35,9 @@ export interface ShortcutActions {
 }
 
 /**
- * App-wide keys. Text fields keep their own keys (Ctrl+K still opens the palette);
- * so do Ctrl+N (new task) and Ctrl+1–9 (projects). Elsewhere Ctrl+Z / Ctrl+Shift+Z undo
- * and redo, `n` starts a new task, `g` + a letter navigates and Escape closes the detail
- * panel or leaves the full task page.
+ * App-wide keys. The remappable ones come from the keymap (lib/keymap.ts, Settings →
+ * Keyboard shortcuts); Escape and Ctrl+1–9 (projects) are fixed. In a text field only
+ * Ctrl/Alt bindings of actions marked `inFields` fire, so typing is never hijacked.
  */
 export function useShortcuts(actions: ShortcutActions) {
   const store = useTaskStore();
@@ -55,20 +45,49 @@ export function useShortcuts(actions: ShortcutActions) {
   latest.current = actions;
 
   useEffect(() => {
-    let pendingG = 0;
+    let pending: { chord: string; at: number } | null = null;
+
+    const run = (id: ShortcutId) => {
+      const a = latest.current;
+      switch (id) {
+        case "palette":
+          return a.openPalette();
+        case "newTask":
+          return a.newTask();
+        case "addLine": {
+          const input = document.getElementById(NEW_TASK_INPUT_ID);
+          if (input) input.focus();
+          else a.newTask();
+          return;
+        }
+        case "undo":
+          return void store.getState().undo();
+        case "redo":
+          return void store.getState().redo();
+        case "goInbox":
+          return a.go("/inbox");
+        case "goToday":
+          return a.go("/today");
+        case "goCalendar":
+          return a.go("/calendar");
+        case "goAll":
+          return a.go("/all");
+        case "goSettings":
+          return a.go("/settings");
+        case "help":
+          return a.showHelp();
+      }
+    };
+
     const onKey = (e: KeyboardEvent) => {
+      if (recording.active) return;
       const a = latest.current;
       const editing = isEditable(e.target);
       const mod = e.ctrlKey || e.metaKey;
-      const key = e.key.toLowerCase();
-      if (mod && key === "k") {
-        e.preventDefault();
-        a.openPalette();
-        return;
-      }
-      if (mod && !e.shiftKey && !e.altKey && key === "n") {
-        e.preventDefault();
-        a.newTask();
+      if (e.key === "Escape") {
+        pending = null;
+        if (editing && e.target instanceof HTMLElement) e.target.blur();
+        else a.closeDetail();
         return;
       }
       if (mod && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {
@@ -76,41 +95,16 @@ export function useShortcuts(actions: ShortcutActions) {
         a.goToProject(Number(e.key));
         return;
       }
-      if (e.key === "Escape") {
-        if (editing && e.target instanceof HTMLElement) e.target.blur();
-        else a.closeDetail();
-        return;
-      }
-      if (editing || e.defaultPrevented) return;
-      if (mod && key === "z") {
+      const chord = chordOf(e);
+      if (!chord) return;
+      // A key an editor already handled stays its own, except Ctrl/Alt app shortcuts.
+      if (e.defaultPrevented && !hasCommandModifier(chord)) return;
+      const waiting = pending && Date.now() - pending.at < SEQUENCE_MS ? pending.chord : null;
+      const result = resolve(getKeymap(), chord, waiting, editing);
+      pending = result.pending ? { chord: result.pending, at: Date.now() } : null;
+      if (result.action) {
         e.preventDefault();
-        void (e.shiftKey ? store.getState().redo() : store.getState().undo());
-      } else if (mod && key === "y") {
-        e.preventDefault();
-        void store.getState().redo();
-      } else if (mod || e.altKey) {
-        return;
-      } else if (Date.now() - pendingG < 1000 && ["i", "t", "c", "a", "s"].includes(key)) {
-        e.preventDefault();
-        pendingG = 0;
-        const to = {
-          i: "/inbox",
-          t: "/today",
-          c: "/calendar",
-          a: "/all",
-          s: "/settings",
-        } as const;
-        a.go(to[key as keyof typeof to]);
-      } else if (key === "g") {
-        pendingG = Date.now();
-      } else if (key === "n") {
-        e.preventDefault();
-        const input = document.getElementById(NEW_TASK_INPUT_ID);
-        if (input) input.focus();
-        else a.newTask();
-      } else if (e.key === "?") {
-        e.preventDefault();
-        a.showHelp();
+        run(result.action);
       }
     };
     window.addEventListener("keydown", onKey);
