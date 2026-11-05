@@ -1,6 +1,6 @@
 # ADR 017: Agent sessions (Claude Code from a task)
 
-Date: 2026-11-05 · Status: accepted (M16, branch `m16-agent-sessions`); steps 1 and 2 done
+Date: 2026-11-05 · Status: accepted (M16, branch `m16-agent-sessions`); steps 1 to 3 done
 
 ## Context
 
@@ -54,29 +54,55 @@ in the same space without cluttering the user's views. Decided with the user:
   prerequisites and dependents with their status, epic, project, tags, priority, due date,
   recent activity, previous sessions' summaries) as markdown. Snapshot-tested.
 
-### Spawning (desktop shell, `src-tauri/src/agents.rs`)
+### Spawning (desktop shell, `src-tauri/src/agents/`)
 
-- New IPC commands, the minimum for a process the core cannot own: `agent_start(task_id,
-  folder, runtime, permission_mode, extra_prompt)`, `agent_cancel(session_id)`,
-  `agent_send(session_id, message)` (follow-up turn after a run ended),
-  `agent_open_terminal(session_id)`. CLAUDE.md's IPC list gains this group.
-- The shell generates the Claude session id (UUIDv7 formatted as a UUID) and runs
-  `claude -p --output-format stream-json --verbose --session-id <id>
-  --permission-mode <mode> --mcp-config <file> --append-system-prompt <rules>`, the brief
-  on **stdin** (no quoting through `wsl.exe`). WSL runtime prefixes
-  `wsl.exe -d <distro> --cd <path> --`, with the path given as a WSL path.
-- The stream is parsed line by line: `system/init` confirms the session, `assistant` tool
-  uses become the live activity line ("Editing src/x.rs"), `result` ends the session with
-  summary, cost, turns and permission denials. Live status goes to the window as an event,
-  not through `execute`; only start and end are written as commands.
+- IPC commands, the minimum for a process the core cannot own: `agent_start({task_id,
+  folder, permission_mode?, prompt})`, `agent_send(session_id, message)` (a follow-up turn
+  after a run ended), `agent_cancel`, `agent_open_terminal`, `agent_live` (activity of
+  running sessions, for a window that just opened), and reads/settings: `agent_brief`,
+  `agent_notes`, `agent_settings`, `set_agent_settings`, `detect_claude`,
+  `list_wsl_distros`, `project_folders`, `set_project_folder`. One event,
+  `AgentActivity { session_id, activity }` (`None` when a run stopped). CLAUDE.md's IPC
+  list names the group.
+- Settings (`config.json`, `agents`): runtime, WSL distro (default one when unset),
+  `claude_path`, Linux terminal command, default permission mode, optional model.
+  `detect_claude` runs `claude --version`; when `claude` is not on the PATH a GUI app
+  (or `wsl.exe --exec`) gets, it asks the user's login shell (`$SHELL -lic 'command -v
+  claude'`) and offers that absolute path.
+- Each session has `<data dir>/agents/<session id>/` with `mcp.json` (our server with
+  `--db` and `--session`) and `rules.md`, passed by path (as the runtime sees it:
+  `C:\…` becomes `/mnt/c/…` under WSL). The run is `claude -p --output-format stream-json
+  --verbose --session-id <id> --append-system-prompt-file rules.md --permission-mode
+  <mode> --mcp-config mcp.json --allowedTools mcp__task-master [--model m]`; a follow-up
+  uses `--resume <id>` instead of the id and rules (a resumed session keeps its first
+  system prompt). The brief plus the user's instructions go on **stdin**.
+- WSL: `wsl.exe [-d <distro>] --cd <linux folder> --exec <claude> …`. `--exec` runs
+  without a Linux shell, so arguments arrive as given (paths with spaces). A folder
+  picked in the dialog (`\\wsl.localhost\<distro>\…` or `C:\…`) is converted to a Linux
+  path. Children start without a console window (`CREATE_NO_WINDOW`).
+- The stream is parsed line by line (`agents/stream.rs`, tested on a recorded run):
+  tool uses become the activity line ("Editing store.rs", "Running `cargo test`",
+  "Noting: …"), `system/permission_denied` and the result's `permission_denials` list
+  refused tools, `result` gives the final message, cost and turns. Live status goes to
+  the window as an event, never through `execute`; the start and the end are written as
+  commands (`execute_without_undo`).
+- The end: cancelled when the user stopped it, done for a successful result, else failed
+  with the result text, the end of stderr, or the exit status. The agent's own summary
+  (`complete_session`) is kept over Claude's last message. Cost and turns add up over
+  follow-ups. Refused tools on a done run are reported in `error` ("Needed approval…").
+  A start that cannot launch (missing folder, MCP binary or `claude`) still records the
+  session, as failed with the reason.
 - Permission mode is chosen at spawn: `acceptEdits` by default, `plan`, `default` (tools
   that need approval are denied and listed in the result), `bypassPermissions` behind a
   confirmation. Approving tools from the app (`--permission-prompt-tool` served by our
   MCP) is a follow-up, noted under Later.
 - **Open in terminal** runs `claude --resume <id>` in the folder: `wt.exe wsl.exe -d … --cd
-  …` on Windows, Terminal.app on macOS, `$TERMINAL` or a setting on Linux. Allowed while
-  running (it forks the conversation in Claude Code) but the UI suggests waiting or cancelling.
-- Sessions are children of the app: quitting the app cancels them after a confirmation.
+  … --exec claude --resume <id>` on Windows (a `cmd /c start` console without Windows
+  Terminal), Terminal.app through `osascript` on macOS, the setting, `$TERMINAL -e` or
+  `x-terminal-emulator -e` on Linux. Allowed while running (it forks the conversation in
+  Claude Code) but the UI suggests waiting or cancelling.
+- Sessions are children of the app: on exit the shell marks running ones `interrupted`
+  and kills them (the confirmation before quitting is the UI's, step 4).
 
 ### MCP server (`crates/mcp`, a Tauri sidecar)
 

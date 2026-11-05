@@ -102,10 +102,43 @@ export const commands = {
 	 *  later sends everything again (the server ignores what it has).
 	 */
 	syncDisconnect: () => typedError<SyncStatus_Serialize, CommandError>(__TAURI_INVOKE("sync_disconnect")),
+	/**
+	 *  Starts a session on a task. The session is recorded even when Claude Code cannot be
+	 *  started (as failed, with the reason), so the attempt shows on the task.
+	 */
+	agentStart: (input: AgentStart_Deserialize) => typedError<AgentSession_Serialize, CommandError>(__TAURI_INVOKE("agent_start", { input })),
+	/**  A follow-up turn of an ended session, run in the background like the first. */
+	agentSend: (sessionId: string, message: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_send", { sessionId, message })),
+	/**  Stops a running session. One left `running` by a crash is marked cancelled. */
+	agentCancel: (sessionId: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_cancel", { sessionId })),
+	/**  Opens a terminal running `claude --resume` in the session's folder. */
+	agentOpenTerminal: (sessionId: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_open_terminal", { sessionId })),
+	/**  What each running session is doing, for a window that just opened. */
+	agentLive: () => typedError<AgentActivity_Serialize[], CommandError>(__TAURI_INVOKE("agent_live")),
+	/**  The brief a session on this task would start with (for the dialog's preview). */
+	agentBrief: (taskId: string) => typedError<string, CommandError>(__TAURI_INVOKE("agent_brief", { taskId })),
+	/**  A task's agent notes (or one session's), the newest `limit`, oldest first. */
+	agentNotes: (taskId: string, sessionId: string | null, limit: number) => typedError<AgentNote_Serialize[], CommandError>(__TAURI_INVOKE("agent_notes", { taskId, sessionId, limit })),
+	agentSettings: () => typedError<AgentSettings_Serialize, CommandError>(__TAURI_INVOKE("agent_settings")),
+	setAgentSettings: (settings: AgentSettings_Deserialize) => typedError<AgentSettings_Serialize, CommandError>(__TAURI_INVOKE("set_agent_settings", { settings })),
+	/**
+	 *  Checks Claude Code runs with these settings; when `claude` is not on the PATH the app
+	 *  gets, looks it up through the user's login shell.
+	 */
+	detectClaude: (settings: AgentSettings_Deserialize) => typedError<ClaudeCheck, CommandError>(__TAURI_INVOKE("detect_claude", { settings })),
+	/**  Installed WSL distributions (Windows only; empty elsewhere or without WSL). */
+	listWslDistros: () => __TAURI_INVOKE<string[]>("list_wsl_distros"),
+	projectFolders: () => typedError<ProjectFolder[], CommandError>(__TAURI_INVOKE("project_folders")),
+	/**
+	 *  Sets (or clears, with `None`) this device's folder for a project, as the current
+	 *  runtime sees it.
+	 */
+	setProjectFolder: (projectId: string, path: string | null) => typedError<ProjectFolder[], CommandError>(__TAURI_INVOKE("set_project_folder", { projectId, path })),
 };
 
 /** Events */
 export const events = {
+	agentActivity: makeEvent<AgentActivity_Serialize, AgentActivity_Deserialize>("agent-activity"),
 	calendarSynced: makeEvent<CalendarSynced_Serialize, CalendarSynced_Deserialize>("calendar-synced"),
 	captureOpened: makeEvent<CaptureOpened, CaptureOpened>("capture-opened"),
 	storeChanged: makeEvent<StoreChanged, StoreChanged>("store-changed"),
@@ -148,6 +181,21 @@ export type Activity_Serialize = {
 	 */
 	kind: string,
 	fields: FieldChange[],
+};
+
+/**  What a running session is doing now; `activity: None` when it stopped. */
+export type AgentActivity = AgentActivity_Serialize | AgentActivity_Deserialize;
+
+/**  What a running session is doing now; `activity: None` when it stopped. */
+export type AgentActivity_Deserialize = {
+	session_id: string,
+	activity?: string | null,
+};
+
+/**  What a running session is doing now; `activity: None` when it stopped. */
+export type AgentActivity_Serialize = {
+	session_id: string,
+	activity: string | null,
 };
 
 /**  A progress line an agent wrote during a session. */
@@ -249,6 +297,76 @@ export type AgentSession_Serialize = {
 	created_at: number,
 	updated_at: number,
 	deleted_at: number | null,
+};
+
+/**  How this device runs Claude Code for agent sessions (ADR 017). */
+export type AgentSettings = AgentSettings_Serialize | AgentSettings_Deserialize;
+
+/**  How this device runs Claude Code for agent sessions (ADR 017). */
+export type AgentSettings_Deserialize = {
+	runtime?: AgentRuntime,
+	/**  WSL distribution (`wsl.exe -d`); the default one when `None`. */
+	wsl_distro?: string | null,
+	/**
+	 *  `claude`, or an absolute path (as the runtime sees it) when it is not on the PATH
+	 *  a GUI app or `wsl.exe --exec` gets.
+	 */
+	claude_path?: string,
+	/**
+	 *  Linux only: the terminal command that runs what follows it, e.g. `kitty` or
+	 *  `gnome-terminal --`. `$TERMINAL -e`, else `x-terminal-emulator -e`, when `None`.
+	 */
+	terminal?: string | null,
+	/**  Default `--permission-mode` for new sessions. */
+	permission_mode?: string,
+	/**  `--model` for sessions; Claude Code's default when `None`. */
+	model?: string | null,
+};
+
+/**  How this device runs Claude Code for agent sessions (ADR 017). */
+export type AgentSettings_Serialize = {
+	runtime: AgentRuntime,
+	/**  WSL distribution (`wsl.exe -d`); the default one when `None`. */
+	wsl_distro: string | null,
+	/**
+	 *  `claude`, or an absolute path (as the runtime sees it) when it is not on the PATH
+	 *  a GUI app or `wsl.exe --exec` gets.
+	 */
+	claude_path: string,
+	/**
+	 *  Linux only: the terminal command that runs what follows it, e.g. `kitty` or
+	 *  `gnome-terminal --`. `$TERMINAL -e`, else `x-terminal-emulator -e`, when `None`.
+	 */
+	terminal: string | null,
+	/**  Default `--permission-mode` for new sessions. */
+	permission_mode: string,
+	/**  `--model` for sessions; Claude Code's default when `None`. */
+	model: string | null,
+};
+
+/**  What "Send to Claude" sends. */
+export type AgentStart = AgentStart_Serialize | AgentStart_Deserialize;
+
+/**  What "Send to Claude" sends. */
+export type AgentStart_Deserialize = {
+	task_id: string,
+	/**  As typed or picked (a Windows path is converted for WSL). */
+	folder: string,
+	/**  The settings' default when `None`. */
+	permission_mode?: string | null,
+	/**  Extra instructions; may be empty. */
+	prompt: string,
+};
+
+/**  What "Send to Claude" sends. */
+export type AgentStart_Serialize = {
+	task_id: string,
+	/**  As typed or picked (a Windows path is converted for WSL). */
+	folder: string,
+	/**  The settings' default when `None`. */
+	permission_mode: string | null,
+	/**  Extra instructions; may be empty. */
+	prompt: string,
 };
 
 /**
@@ -544,6 +662,13 @@ export type Changes_Serialize = {
 	time_blocks: TimeBlock_Serialize[],
 	agent_sessions: AgentSession_Serialize[],
 	agent_notes: AgentNote_Serialize[],
+};
+
+/**  Claude Code as found with these settings (not saved). */
+export type ClaudeCheck = {
+	/**  The path that works; save it as `claude_path` when it differs. */
+	path: string,
+	version: string,
 };
 
 /**  A user action. Several commands sent together form one undoable batch. */
@@ -1048,6 +1173,14 @@ export type ProjectChange = ProjectChange_Serialize | ProjectChange_Deserialize;
 export type ProjectChange_Deserialize = ({ name: string }) & { archived?: never; color?: never; icon?: never; parent_id?: never; rank?: never } | ({ color?: string | null }) & { archived?: never; icon?: never; name?: never; parent_id?: never; rank?: never } | ({ icon?: string | null }) & { archived?: never; color?: never; name?: never; parent_id?: never; rank?: never } | ({ parent_id?: string | null }) & { archived?: never; color?: never; icon?: never; name?: never; rank?: never } | ({ rank: string }) & { archived?: never; color?: never; icon?: never; name?: never; parent_id?: never } | ({ archived: boolean }) & { color?: never; icon?: never; name?: never; parent_id?: never; rank?: never };
 
 export type ProjectChange_Serialize = ({ name: string }) & { archived?: never; color?: never; icon?: never; parent_id?: never; rank?: never } | ({ color: string | null }) & { archived?: never; icon?: never; name?: never; parent_id?: never; rank?: never } | ({ icon: string | null }) & { archived?: never; color?: never; name?: never; parent_id?: never; rank?: never } | ({ parent_id: string | null }) & { archived?: never; color?: never; icon?: never; name?: never; rank?: never } | ({ rank: string }) & { archived?: never; color?: never; icon?: never; name?: never; parent_id?: never } | ({ archived: boolean }) & { color?: never; icon?: never; name?: never; parent_id?: never; rank?: never };
+
+/**  This device's working folder for a project. */
+export type ProjectFolder = {
+	project_id: string,
+	path: string,
+	runtime: AgentRuntime,
+	updated_at: number,
+};
 
 /**  Where work lives. One level of nesting: areas contain projects. */
 export type Project_Deserialize = {

@@ -7,8 +7,10 @@ Running log for task-master. Read at the start of every session; update at the e
 **M16 Agent sessions**, branch `m16-agent-sessions` (from `main`, ADR 017): "Send to
 Claude" from a task, headless Claude Code runs with a live status, an MCP server for
 agents to track their work, and agent-owned tasks hidden from the user's views. Steps 1
-(core) and 2 (`crates/mcp`) done; next step 3, the desktop shell: settings, spawning
-(native and WSL), the stream parser, cancel, follow-up, open in terminal. Note: migration 0010 bumps the schema,
+(core), 2 (`crates/mcp`) and 3 (desktop shell) done; next step 4, the UI: Send to Claude
+dialog, session chips and panel, Agents section, owner filter, Settings → Agents, project
+folder. Not yet verified: the WSL runtime and Windows Terminal on Windows (unit-tested
+command lines only; this environment cannot run `wsl.exe`). Note: migration 0010 bumps the schema,
 so the sync server must be upgraded with the desktop (replicas sync only at one version).
 
 **v0.5.0**, `main`: all current branches and the icon/UI working-tree changes are
@@ -41,6 +43,27 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### M16 step 3: spawning sessions from the desktop shell (2026-11-05)
+
+- `src-tauri/src/agents/`: `launch.rs` (claude command for native and WSL through
+  `wsl.exe --exec`, Windows → WSL paths, resume-in-terminal for Windows Terminal / cmd,
+  macOS Terminal and Linux, `wsl -l -q` UTF-16 parsing, login-shell lookup of `claude`),
+  `stream.rs` (stream-json → activity, denials, result; tested on a recorded 2.1.318
+  run), `mod.rs` (runs, threads, outcome, IPC). Settings → `config.json` `agents`.
+- IPC: `agent_start`, `agent_send`, `agent_cancel`, `agent_open_terminal`, `agent_live`,
+  `agent_brief`, `agent_notes`, `agent_settings`, `set_agent_settings`, `detect_claude`,
+  `list_wsl_distros`, `project_folders`, `set_project_folder`; event `AgentActivity`.
+  Start-up marks old running sessions interrupted; exit marks live ones interrupted and
+  kills them. CLAUDE.md's IPC list updated.
+- Checked by hand with the installed Claude Code: `--append-system-prompt-file` works on a
+  new session, `-p --resume <id>` continues it (and keeps its first system prompt).
+- Tests: 14 unit tests, plus an opt-in real run (`cargo build -p taskmaster-mcp && cargo
+  test -p taskmaster-desktop real_claude -- --ignored`): Claude Code (Haiku) added a note,
+  created and finished an agent subtask and recorded its summary through our MCP, live
+  activity read "Noting: …", "Planning: Step one", and the outcome was recorded as done.
+- Verified: workspace Clippy, rustfmt, 184 Rust tests (3 opt-in ignored), TypeScript,
+  Biome and 259 frontend tests. Bindings regenerated (new commands, event and types).
 
 ### M16 step 2: MCP server (2026-11-05)
 
