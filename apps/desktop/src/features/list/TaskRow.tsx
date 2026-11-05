@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Flag } from "lucide-react";
 import { memo, useState } from "react";
+import { DatePicker } from "../../components/DatePicker";
 import { Chip, cx, Dot, PRIORITIES, PRIORITY_STYLE, Select, TaskCheck } from "../../components/ui";
 import { formatDue } from "../../lib/dates";
 import type { Project, Status, Tag, Task, TaskChange } from "../../lib/types";
@@ -36,7 +37,6 @@ interface Props extends RowHandlers, RowLookups {
 export const TaskRow = memo(function TaskRow(p: Props) {
   const { task } = p;
   const [editingTitle, setEditingTitle] = useState(false);
-  const [editingDue, setEditingDue] = useState(false);
   const category = p.statuses.find((s) => s.id === task.status_id)?.category;
   const done = category === "done" || category === "cancelled";
   const overdue = !done && task.due_date !== null && task.due_date < p.today;
@@ -126,37 +126,20 @@ export const TaskRow = memo(function TaskRow(p: Props) {
         </span>
       )}
 
-      {editingDue ? (
-        <input
-          type="date"
-          // biome-ignore lint/a11y/noAutofocus: entered by an explicit click
-          autoFocus
-          aria-label="Due date"
-          defaultValue={task.due_date ?? ""}
-          className="w-32 rounded-md border border-accent bg-raised px-1 text-xs text-ink"
-          onBlur={(e) => {
-            setEditingDue(false);
-            const value = e.currentTarget.value || null;
-            if (value !== task.due_date) p.onChange(task.id, [{ due_date: value }]);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-          }}
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setEditingDue(true)}
-          className={cx(
-            "shrink-0 rounded px-1 text-right text-[12.5px] tabular-nums",
-            overdue ? "text-danger" : "text-ink-2",
-            !task.due_date && "w-0 overflow-hidden group-hover:w-auto",
-          )}
-          aria-label="Set due date"
-        >
-          {task.due_date ? formatDue(task.due_date, p.today) : "Due…"}
-        </button>
-      )}
+      <DatePicker
+        value={task.due_date}
+        today={p.today}
+        onValueChange={(due_date) => p.onChange(task.id, [{ due_date }])}
+        className={cx(
+          "shrink-0 rounded px-1 text-right text-[12.5px] tabular-nums hover:bg-hover",
+          overdue ? "text-danger" : "text-ink-2",
+          !task.due_date &&
+            "w-0 overflow-hidden group-hover:w-auto focus-visible:w-auto data-[state=open]:w-auto",
+        )}
+        aria-label="Set due date"
+      >
+        {task.due_date ? formatDue(task.due_date, p.today) : "Due…"}
+      </DatePicker>
       {hasFlag && (
         <Flag
           size={14}

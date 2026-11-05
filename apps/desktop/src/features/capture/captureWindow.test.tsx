@@ -32,12 +32,15 @@ function fakeControls() {
   return { controls, calls, blur: () => blur?.(), open: () => opened?.() };
 }
 
-async function renderWindow() {
+async function renderWindow({ failDelete = false } = {}) {
   const executed: Command[][] = [];
   const api: Api = {
     snapshot: async () => snapshot(),
     execute: async (commands) => {
       executed.push(commands);
+      if (failDelete && commands.some((command) => command.type === "delete_task")) {
+        throw new Error("Deletion failed");
+      }
       return {
         batch_id: `b${executed.length}`,
         op_seq: executed.length,
@@ -80,7 +83,7 @@ async function renderWindow() {
     </StoreProvider>,
   );
   const input = await screen.findByRole("textbox", { name: "New task" });
-  return { fake, executed, input };
+  return { fake, executed, input, store };
 }
 
 afterEach(cleanup);
@@ -133,4 +136,57 @@ describe("the quick-capture window", () => {
     act(() => fake.open());
     expect(screen.queryByRole("region", { name: "Description" })).toBeNull();
   });
+
+  it("deletes the expanded task and closes the popup", async () => {
+    const { fake, executed, input, store } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Unwanted task" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    await screen.findByRole("textbox", { name: "Title" });
+    const task = Object.values(store.getState().tasks).find((t) => t.title === "Unwanted task");
+    expect(task).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete task" }));
+
+    await waitFor(() => expect(fake.calls).toEqual(["expand", "hide"]));
+    expect(executed[1]).toEqual([{ type: "delete_task", id: task?.id }]);
+    expect(store.getState().tasks[task?.id ?? ""]).toBeUndefined();
+    await screen.findByRole("textbox", { name: "New task" });
+  });
+
+  it("keeps the editor open and allows retrying if deletion fails", async () => {
+    const { fake, executed, input, store } = await renderWindow({ failDelete: true });
+    fireEvent.change(input, { target: { value: "Keep until deleted" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    await screen.findByRole("textbox", { name: "Title" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete task" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not delete");
+    expect(fake.calls).toEqual(["expand"]);
+    expect((screen.getByRole("textbox", { name: "Title" }) as HTMLTextAreaElement).value).toBe(
+      "Keep until deleted",
+    );
+    expect(
+      Object.values(store.getState().tasks).some((t) => t.title === "Keep until deleted"),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Delete task" }));
+    await waitFor(() => expect(executed.length).toBe(3));
+  });
+
+  for (const button of ["Done", "Close"]) {
+    it(`keeps the expanded task when closed with ${button}`, async () => {
+      const { fake, executed, input, store } = await renderWindow();
+      fireEvent.change(input, { target: { value: "Keep this task" } });
+      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      await screen.findByRole("textbox", { name: "Title" });
+
+      fireEvent.click(screen.getByRole("button", { name: button }));
+
+      await waitFor(() => expect(fake.calls).toEqual(["expand", "hide"]));
+      expect(executed.length).toBe(1);
+      expect(Object.values(store.getState().tasks).some((t) => t.title === "Keep this task")).toBe(
+        true,
+      );
+    });
+  }
 });

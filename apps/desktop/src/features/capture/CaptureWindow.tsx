@@ -1,9 +1,10 @@
 import { currentMonitor, getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { X } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { events } from "../../bindings";
 import { Button, IconButton } from "../../components/ui";
-import { useStoreState } from "../../store/context";
+import { deleteTask } from "../../store/actions";
+import { useStoreState, useTaskStore } from "../../store/context";
 import { OpenTaskContext } from "../shell/useOpenTask";
 import { isEditable } from "../shell/useShortcuts";
 import { TaskEditor } from "../task-detail/TaskDetail";
@@ -55,11 +56,13 @@ export const tauriCaptureControls = (): CaptureControls => {
  * subtasks, files...); it then stays open until Esc or Done, so file pickers can open.
  */
 export function CaptureWindow({ controls }: { controls: CaptureControls }) {
+  const store = useTaskStore();
   const ready = useStoreState((s) => s.ready);
   const input = useRef<HTMLInputElement>(null);
   const [round, setRound] = useState(0);
   const [saved, setSaved] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   /** The task Shift+Enter created; it opens with the cursor in its description. */
   const [created, setCreated] = useState<string | null>(null);
   const editingRef = useRef(editing);
@@ -80,6 +83,7 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
         setRound((r) => r + 1);
         setSaved(null);
         setEditing(null);
+        setDeleteError(null);
         requestAnimationFrame(() => input.current?.focus());
       }),
       controls.onBlur(() => {
@@ -119,6 +123,21 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
               Quick capture
             </p>
             <span className="text-[12.5px] text-ink-3">Saves as you edit · Esc closes</span>
+            <Button
+              size="sm"
+              className="text-danger hover:text-danger"
+              disabled={!task}
+              onClick={async () => {
+                if (!task) return;
+                setDeleteError(null);
+                const deleted = await deleteTask(store, task.id);
+                if (deleted) hide();
+                else setDeleteError("Could not delete this task. Please try again.");
+              }}
+            >
+              <Trash2 size={14} />
+              Delete task
+            </Button>
             <Button variant="primary" size="sm" onClick={hide}>
               Done
             </Button>
@@ -127,6 +146,11 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
             </IconButton>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-8 py-7">
+            {deleteError && (
+              <p role="alert" className="mb-4 text-[13px] text-danger">
+                {deleteError}
+              </p>
+            )}
             {task ? (
               <TaskEditor
                 key={task.id}

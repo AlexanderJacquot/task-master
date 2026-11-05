@@ -576,49 +576,49 @@ function BoardCell(p: CellProps) {
       strategy={lanes > 1 ? rectSortingStrategy : verticalListSortingStrategy}
     >
       <div
-        ref={(el) => {
-          scrollRef.current = el;
-          setNodeRef(el);
-        }}
+        ref={setNodeRef}
         className={cx(
-          "shrink-0 overflow-y-auto rounded-[14px] border border-line bg-hover/60 p-2",
+          "flex shrink-0 flex-col overflow-hidden rounded-[14px] border border-line bg-hover/60 p-2",
           p.bounded ? "max-h-[28rem] min-h-16" : "min-h-0",
           isOver && "ring-2 ring-accent/60",
         )}
         style={{ width: p.width }}
       >
-        <ul
-          aria-label={p.label}
-          data-lanes={lanes}
-          style={{ height: virtualizer.getTotalSize(), position: "relative" }}
-        >
-          {virtualizer.getVirtualItems().flatMap((row) =>
-            p.ids.slice(row.index * lanes, (row.index + 1) * lanes).map((cardId, lane) => {
-              const card = p.cards.get(cardId);
-              if (!card) return null;
-              return (
-                <li
-                  key={cardId}
-                  style={{
-                    position: "absolute",
-                    top: row.start,
-                    left: `calc((100% + ${LANE_GAP}px) * ${lane} / ${lanes})`,
-                    width: `calc((100% - ${LANE_GAP * (lanes - 1)}px) / ${lanes})`,
-                  }}
-                >
-                  <SortableCard
-                    card={card}
-                    placeholder={card.task.id === p.activeId}
-                    selected={card.task.id === p.selectedId}
-                    onOpen={p.onOpen}
-                    onCardKey={p.onCardKey}
-                    lookups={p.lookups}
-                  />
-                </li>
-              );
-            }),
-          )}
-        </ul>
+        {/* Inset the scrollport so native scrollbars clear the rounded border. */}
+        <div ref={scrollRef} className="-mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
+          <ul
+            aria-label={p.label}
+            data-lanes={lanes}
+            style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+          >
+            {virtualizer.getVirtualItems().flatMap((row) =>
+              p.ids.slice(row.index * lanes, (row.index + 1) * lanes).map((cardId, lane) => {
+                const card = p.cards.get(cardId);
+                if (!card) return null;
+                return (
+                  <li
+                    key={cardId}
+                    style={{
+                      position: "absolute",
+                      top: row.start,
+                      left: `calc((100% + ${LANE_GAP}px) * ${lane} / ${lanes})`,
+                      width: `calc((100% - ${LANE_GAP * (lanes - 1)}px) / ${lanes})`,
+                    }}
+                  >
+                    <SortableCard
+                      card={card}
+                      placeholder={card.task.id === p.activeId}
+                      selected={card.task.id === p.selectedId}
+                      onOpen={p.onOpen}
+                      onCardKey={p.onCardKey}
+                      lookups={p.lookups}
+                    />
+                  </li>
+                );
+              }),
+            )}
+          </ul>
+        </div>
       </div>
     </SortableContext>
   );

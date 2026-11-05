@@ -255,11 +255,6 @@ body {
   scrollbar-color: var(--tm-line-strong) transparent;
 }
 
-/* Native date inputs: keep the picker icon legible in dark mode. */
-input[type="date"]::-webkit-calendar-picker-indicator {
-  @apply dark:invert;
-}
-
 /* Rendered task descriptions (MarkdownView). Colors come from the theme variables, so
    both themes follow; sizes are relative to the container's font size. */
 .tm-prose {

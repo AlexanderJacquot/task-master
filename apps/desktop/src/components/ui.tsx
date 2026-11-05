@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, ChevronUp } from "lucide-react";
 import { Select as RadixSelect } from "radix-ui";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import type { Priority } from "../lib/types";
@@ -40,7 +40,7 @@ export const MENU =
   "tm-menu tex-sheet z-50 overflow-hidden rounded-xl border border-line-strong bg-overlay p-1 text-sm text-ink";
 /** A row in a menu; highlighted rows take a faint accent wash. */
 export const MENU_ITEM =
-  "relative flex min-h-8 cursor-default items-center gap-2.5 rounded-lg px-2.5 py-1 text-sm text-ink outline-none select-none data-disabled:opacity-40 data-highlighted:bg-accent/10 [&_svg]:shrink-0 [&_svg]:text-ink-3 data-highlighted:[&_svg]:text-ink";
+  "relative flex min-h-8 cursor-default items-center gap-2.5 rounded-lg px-2.5 py-1 text-sm text-ink outline-none select-none data-disabled:opacity-40 data-highlighted:bg-accent/10 data-[state=checked]:bg-accent/8 [&_svg]:shrink-0 [&_svg]:text-ink-3 data-highlighted:[&_svg]:text-ink";
 /** A destructive row (delete). */
 export const MENU_DANGER =
   "text-danger! data-highlighted:bg-danger/10 [&_svg]:text-danger! data-highlighted:[&_svg]:text-danger!";
@@ -84,14 +84,17 @@ export function SelectRoot<T extends string>({
       <RadixSelect.Portal>
         <RadixSelect.Content
           position="popper"
-          sideOffset={4}
-          collisionPadding={8}
+          sideOffset={6}
+          collisionPadding={12}
           className={cx(
             MENU,
-            "max-h-(--radix-select-content-available-height) min-w-[max(9rem,var(--radix-select-trigger-width))]",
+            "max-h-[min(20rem,var(--radix-select-content-available-height))] min-w-[max(11rem,var(--radix-select-trigger-width))] max-w-[calc(100vw-1.5rem)]",
           )}
         >
-          <RadixSelect.Viewport>
+          <RadixSelect.ScrollUpButton className="flex h-6 items-center justify-center text-ink-3">
+            <ChevronUp size={14} />
+          </RadixSelect.ScrollUpButton>
+          <RadixSelect.Viewport className="space-y-0.5">
             {options.map((o) => (
               <RadixSelect.Item
                 key={o.value}
@@ -100,7 +103,7 @@ export function SelectRoot<T extends string>({
               >
                 {o.icon}
                 <RadixSelect.ItemText>
-                  <span className={o.className}>{o.label}</span>
+                  <span className={cx("break-words", o.className)}>{o.label}</span>
                 </RadixSelect.ItemText>
                 <RadixSelect.ItemIndicator className="absolute right-2.5 inline-flex">
                   <Check size={14} className="text-accent!" />
@@ -108,6 +111,9 @@ export function SelectRoot<T extends string>({
               </RadixSelect.Item>
             ))}
           </RadixSelect.Viewport>
+          <RadixSelect.ScrollDownButton className="flex h-6 items-center justify-center text-ink-3">
+            <ChevronDown size={14} />
+          </RadixSelect.ScrollDownButton>
         </RadixSelect.Content>
       </RadixSelect.Portal>
     </RadixSelect.Root>
@@ -141,7 +147,7 @@ export function Select<T extends string>({
         style={style}
         className={cx(
           "group/select inline-flex min-w-0 items-center gap-1.5 rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-left text-ink",
-          "hover:border-line-strong data-[state=open]:border-accent",
+          "transition-colors hover:border-line-strong hover:bg-hover data-[state=open]:border-accent/40 data-[state=open]:bg-selected",
           FOCUS,
           className,
         )}

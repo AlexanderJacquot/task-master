@@ -1,6 +1,7 @@
 import { Clock, Diamond, Flag, Sun } from "lucide-react";
 import { Select as RadixSelect } from "radix-ui";
 import { type CSSProperties, type ReactNode, useState } from "react";
+import { DatePicker } from "../../components/DatePicker";
 import { DueDateIcon as CalendarDays } from "../../components/TaskIcons";
 import {
   cx,
@@ -15,14 +16,13 @@ import { daysFrom, formatDueLong } from "../../lib/dates";
 import type { Epic, Status, Task, TaskChange } from "../../lib/types";
 import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
-import { GHOST, OVERLAY, PILL, SET } from "./pill";
+import { GHOST, PILL, SET } from "./pill";
 import { TagPicker } from "./TagPicker";
 
 /**
  * The full page's properties, as in the mockup: set values are compact tinted pills
  * ("In progress", "High", "Due Fri, Nov 6", "◆ Launch v2", "#copy"); unset ones follow
- * as quiet labels. Choice pills open the shared menu list (SelectRoot); date pills keep an
- * invisible native date input laid over them.
+ * as quiet labels. Choice pills open the shared menu list; dates use the shared calendar.
  */
 
 /** Background and text tinted with a status or project color. */
@@ -71,28 +71,16 @@ function DuePill({ task, today, change }: PillProps) {
   const due = task.due_date;
   const overdue = due !== null && daysFrom(today, due) < 0;
   return (
-    <span
+    <DatePicker
+      aria-label="Due date"
+      value={due}
+      today={today}
+      onValueChange={(due_date) => change([{ due_date }])}
       className={cx(PILL, due ? (overdue ? "bg-urgent/14 text-urgent" : SET) : GHOST)}
-      title={due ? "Change the due date (Delete clears it)" : undefined}
     >
-      {!due && <CalendarDays size={13} />}
-      {due ? formatDueLong(due, today) : "Due date"}
-      <input
-        type="date"
-        aria-label="Due date"
-        value={due ?? ""}
-        onChange={(e) => change([{ due_date: e.target.value || null }])}
-        onClick={(e) => {
-          // A transparent date input would only focus a segment; open the picker.
-          try {
-            e.currentTarget.showPicker?.();
-          } catch {
-            // Not allowed (not a user gesture, or unsupported): typing still works.
-          }
-        }}
-        className={OVERLAY}
-      />
-    </span>
+      <CalendarDays size={13} />
+      <span>{due ? formatDueLong(due, today) : "Due date"}</span>
+    </DatePicker>
   );
 }
 

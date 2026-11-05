@@ -1,5 +1,5 @@
-//! Calendar sync (M10, ADR 014): pushes time blocks and day plans to a calendar the app
-//! owns, brings moves, resizes and deletions made there back as commands, and keeps a
+//! Calendar sync (M10, ADR 014): pushes time blocks, day plans and deadlines to the app's
+//! calendar, brings moves, resizes and deletions made there back as commands, and keeps a
 //! read-only copy of the user's other calendars to plan around.
 //!
 //! The engine is provider-neutral: a [`CalendarProvider`] does the network calls (Google
@@ -23,7 +23,7 @@ use crate::{MAX_BLOCK_MS, query};
 
 /// Name of the calendar the app creates and pushes to.
 pub const TARGET_CALENDAR: &str = "task-master";
-/// New links are made for blocks ending, and plans dated, at most this long ago.
+/// New links are made for blocks ending, and plans/deadlines dated, at most this long ago.
 const PUSH_PAST_MS: i64 = 30 * 86_400_000;
 /// The window of other calendars kept locally.
 const EVENTS_PAST_MS: i64 = 14 * 86_400_000;
@@ -80,7 +80,7 @@ pub struct EventBody {
     pub title: String,
     pub description: String,
     pub when: When,
-    /// `block:<id>` or `plan:<task id>`, stored with the event.
+    /// `block:<id>`, `plan:<task id>` or `due:<task id>`, stored with the event.
     pub key: String,
 }
 
@@ -171,7 +171,7 @@ pub struct CalendarSource {
     pub name: String,
     pub color: Option<String>,
     pub primary: bool,
-    /// The app's own calendar (blocks and plans are pushed there).
+    /// The app's own calendar (blocks, plans and deadlines are pushed there).
     pub target: bool,
     /// Its events are shown in the app.
     pub shown: bool,
@@ -215,7 +215,7 @@ pub struct SyncReport {
     pub created: u32,
     pub updated: u32,
     pub deleted: u32,
-    /// Local blocks and plans changed by edits made in the calendar.
+    /// Local blocks, plans and deadlines changed by edits made in the calendar.
     pub pulled: u32,
     /// Events kept from shown calendars.
     pub events: u32,
@@ -340,8 +340,8 @@ struct Local {
     body: EventBody,
 }
 
-/// The pushable state of `block:<id>` or `plan:<task id>`; `None` when it should not be in
-/// the calendar (deleted, cancelled, no longer planned).
+/// The pushable state of `block:<id>`, `plan:<task id>` or `due:<task id>`; `None` when it
+/// should not be in the calendar (deleted, cancelled, no longer planned or due).
 fn local_item(conn: &Connection, key: &str) -> Result<Option<Local>> {
     let Some((kind, id)) = key.split_once(':') else {
         return Ok(None);
@@ -387,11 +387,15 @@ fn local_item(conn: &Connection, key: &str) -> Result<Option<Local>> {
                 },
             }))
         }
-        "plan" => {
+        "plan" | "due" => {
             let Some(task) = live_task(id)? else {
                 return Ok(None);
             };
-            let Some(day) = task.today_on.clone() else {
+            let Some(day) = (if kind == "due" {
+                task.due_date.clone()
+            } else {
+                task.today_on.clone()
+            }) else {
                 return Ok(None);
             };
             let done: bool = conn.query_row(
@@ -399,13 +403,23 @@ fn local_item(conn: &Connection, key: &str) -> Result<Option<Local>> {
                 [&task.status_id],
                 |r| r.get(0),
             )?;
-            let title = format!("{}{}", if done { "✓ " } else { "" }, task.title);
+            let title = format!(
+                "{}{}{}",
+                if done { "✓ " } else { "" },
+                if kind == "due" { "Due: " } else { "" },
+                task.title
+            );
             let end = next_day(&day)?;
             Ok(Some(Local {
-                fingerprint: format!("plan|{title}|{day}"),
+                fingerprint: format!("{kind}|{title}|{day}"),
                 body: EventBody {
                     title,
-                    description: "Planned for this day in task-master.".into(),
+                    description: if kind == "due" {
+                        "Due on this day in task-master."
+                    } else {
+                        "Planned for this day in task-master."
+                    }
+                    .into(),
                     when: When::AllDay { start: day, end },
                     key: key.to_owned(),
                 },
@@ -420,7 +434,7 @@ fn next_day(iso: &str) -> Result<IsoDate> {
     Ok(dates::to_iso(days + 1))
 }
 
-/// Keys of items not yet in the calendar that should be: recent blocks and plans.
+/// Keys of items not yet in the calendar that should be: recent blocks, plans and deadlines.
 fn wanted_keys(conn: &Connection, now: Timestamp, today: &str) -> Result<Vec<String>> {
     let since = dates::to_days(today).map_or_else(String::new, |d| {
         dates::to_iso(d - PUSH_PAST_MS / 86_400_000)
@@ -432,7 +446,10 @@ fn wanted_keys(conn: &Connection, now: Timestamp, today: &str) -> Result<Vec<Str
            AND b.end_at >= ?1
          UNION ALL
          SELECT 'plan:' || id FROM tasks
-         WHERE deleted_at IS NULL AND today_on IS NOT NULL AND today_on >= ?2",
+         WHERE deleted_at IS NULL AND today_on IS NOT NULL AND today_on >= ?2
+         UNION ALL
+         SELECT 'due:' || id FROM tasks
+         WHERE deleted_at IS NULL AND due_date IS NOT NULL AND due_date >= ?2",
     )?;
     let rows = stmt.query_map(params![now - PUSH_PAST_MS, since], |r| r.get(0))?;
     for row in rows {
@@ -499,6 +516,17 @@ fn follow(conn: &Connection, key: &str, when: &When) -> Result<Option<Command>> 
                 })
             }
         }
+        ("due", When::AllDay { start, .. }) => {
+            let task = query::task(conn, id)?;
+            if task.due_date.as_deref() == Some(start.as_str()) {
+                None
+            } else {
+                Some(Command::UpdateTask {
+                    id: id.to_owned(),
+                    changes: vec![TaskChange::DueDate(Some(start.clone()))],
+                })
+            }
+        }
         // A block turned into an all-day event (or the reverse): the next push restores it.
         _ => None,
     })
@@ -512,6 +540,10 @@ fn removal(key: &str) -> Option<Command> {
         "plan" => Some(Command::UpdateTask {
             id: id.to_owned(),
             changes: vec![TaskChange::TodayOn(None)],
+        }),
+        "due" => Some(Command::UpdateTask {
+            id: id.to_owned(),
+            changes: vec![TaskChange::DueDate(None)],
         }),
         _ => None,
     }

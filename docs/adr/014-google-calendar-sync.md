@@ -28,16 +28,21 @@ write is a command". Edits coming back from Google still change tasks and blocks
 
 **What is pushed.** Every block that isn't cancelled is a timed event: "opaque", with "✓ "
 before the title when done. Every day plan (`today_on`) is an all-day "transparent"
-event, so it does not mark the day busy. Each event stores its local key
-(`block:<id>` / `plan:<task id>`) in a private extended property. New events are made for
-items from the last 30 days on. Items already linked stay in sync whatever their date.
-Cancelling or deleting a block, or clearing a plan, deletes the event.
+event, so it does not mark the day busy. Each task due date (`due_date`) is a separate
+all-day transparent event titled "Due: <task title>" ("✓ Due: <task title>" when done).
+Deadlines remain separate from plans and blocks, including when they share a date.
+Each event stores its local key (`block:<id>` / `plan:<task id>` / `due:<task id>`)
+in a private extended property. New events are made for items from the last 30 days on.
+Items already linked stay in sync whatever their date.
+Cancelling or deleting a block, or clearing a plan or due date, deletes the event.
+Deleting a task deletes all its events.
 
 **What comes back (the target calendar only).** It uses incremental sync with Google's
 sync token. HTTP 410 means a full listing. Moving or resizing a block event, or moving a
-plan event to another day, updates the local item. Deleting the event deletes the block
-or clears the plan. Title edits and timed ↔ all-day changes there are overwritten by the
-next push. **Conflicts: the app wins** (both sides changed since the last sync → the
+plan or deadline event to another day, updates the local item. Deleting the event deletes
+the block or clears the plan or due date. Calendar edits to deadlines use the same
+undoable commands and app-wins conflict rules as plans. Title edits and timed ↔ all-day
+changes there are overwritten by the next push. **Conflicts: the app wins** (both sides changed since the last sync → the
 event is pushed again). Events found with a key but no link (after an import, a
 reconnect, or a lost token) are linked again by key, never duplicated. Events whose key
 names nothing here are deleted. Events added by hand to the task-master calendar are

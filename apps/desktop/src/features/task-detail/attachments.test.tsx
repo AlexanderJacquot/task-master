@@ -237,11 +237,23 @@ describe("attachment list", () => {
 });
 
 describe("task page look (mockup)", () => {
+  it("sets and clears the task due date through the themed calendar", async () => {
+    await renderTask(task());
+    fireEvent.click(screen.getByRole("button", { name: "Due date" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tomorrow" }));
+    await waitFor(() => expect(store.getState().pending).toBe(0));
+    expect(screen.getByRole("button", { name: "Due date" }).textContent).toContain("Due tomorrow");
+    fireEvent.click(screen.getByRole("button", { name: "Due date" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear date" }));
+    await waitFor(() => expect(store.getState().pending).toBe(0));
+    expect(screen.getByRole("button", { name: "Due date" }).textContent).toBe("Due date");
+  });
+
   it("shows set properties as pills, unset ones as quiet labels", async () => {
     const t = task({ priority: "high", description: "The current page explains every plan." });
     await renderTask(t);
     expect(screen.getByRole("combobox", { name: "Priority" }).textContent).toBe("High");
-    expect(screen.getByLabelText("Due date").closest("span")?.textContent).toBe("Due date");
+    expect(screen.getByRole("button", { name: "Due date" }).textContent).toBe("Due date");
     expect(screen.getByText("Keep writing… Markdown works.")).toBeTruthy();
     expect(document.querySelector(".tm-dropcap")).toBeTruthy();
 

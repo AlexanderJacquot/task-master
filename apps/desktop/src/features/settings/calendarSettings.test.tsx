@@ -87,7 +87,7 @@ describe("calendar settings", () => {
     renderWith(calendar);
     expect(await screen.findByText(/Last synced 1 min ago/)).toBeTruthy();
     expect(screen.getByText(/2 added/)).toBeTruthy();
-    expect(screen.getByText("receives your blocks and day plans")).toBeTruthy();
+    expect(screen.getByText("receives your blocks, day plans and due dates")).toBeTruthy();
     const work = screen.getByRole("checkbox", { name: /Work/ }) as HTMLInputElement;
     expect(work.checked).toBe(false);
     fireEvent.click(work);

@@ -1,7 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowRight, GitBranch, Minus, Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
-import { cx, FOCUS, IconButton } from "../../components/ui";
+import { cx, FOCUS, IconButton, Select } from "../../components/ui";
 import { updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
@@ -115,19 +115,16 @@ export function LineagePage() {
           Connect tasks into chains and branches. Arrows run from prerequisite to dependent.
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <select
+          <Select
             aria-label="Filter lineage by project"
             className={cx(control, FOCUS)}
             value={project}
-            onChange={(e) => setProject(e.target.value)}
-          >
-            <option value="">All projects</option>
-            {Object.values(projects).map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+            onValueChange={setProject}
+            options={[
+              { value: "", label: "All projects" },
+              ...Object.values(projects).map((p) => ({ value: p.id, label: p.name })),
+            ]}
+          />
           <label className="flex items-center gap-2 text-sm text-ink-2">
             <input
               type="checkbox"
@@ -375,15 +372,16 @@ export function LineagePage() {
                 Connect on graph
               </button>
               <h3 className="mt-6 text-sm font-medium text-ink">Add a connection</h3>
-              <select
+              <Select<typeof direction>
                 aria-label="Connection type"
                 className={cx(control, "mt-2 w-full", FOCUS)}
                 value={direction}
-                onChange={(e) => setDirection(e.target.value as typeof direction)}
-              >
-                <option value="prerequisite">Add prerequisite</option>
-                <option value="dependent">Add dependent</option>
-              </select>
+                onValueChange={setDirection}
+                options={[
+                  { value: "prerequisite", label: "Add prerequisite" },
+                  { value: "dependent", label: "Add dependent" },
+                ]}
+              />
               <input
                 aria-label="Find task to connect"
                 placeholder="Search tasks…"

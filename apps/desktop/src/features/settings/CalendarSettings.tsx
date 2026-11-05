@@ -63,7 +63,7 @@ export function CalendarSettings() {
   return (
     <Section
       title="Calendar"
-      hint="Two-way sync with Google Calendar: your time blocks and day plans go to a calendar named “task-master” in your account (moving or deleting them there comes back here), and the calendars you pick below show in the Calendar view, read-only."
+      hint="Two-way sync with Google Calendar: your time blocks, day plans and due dates go to a calendar named “task-master” in your account (moving or deleting them there comes back here). Due dates appear as all-day “Due:” events marked as free. The calendars you pick below show in the Calendar view, read-only."
     >
       {status?.connected && status.can_set_runner && setRunner && (
         <fieldset className="flex items-center gap-3" disabled={waiting}>
@@ -115,7 +115,9 @@ export function CalendarSettings() {
                 <div key={source.id} className="flex items-center gap-2 text-sm">
                   <Dot color={source.color} />
                   <span className="text-ink">{source.name}</span>
-                  <span className="text-xs text-ink-3">receives your blocks and day plans</span>
+                  <span className="text-xs text-ink-3">
+                    receives your blocks, day plans and due dates
+                  </span>
                 </div>
               ) : (
                 <label key={source.id} className="flex items-center gap-2 text-sm">

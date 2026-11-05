@@ -8,6 +8,7 @@ import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore } from "../../store/store";
 import { fakeParse, snapshot, task } from "../../test/fixtures";
+import { pickOption } from "../../test/select";
 
 afterEach(() => {
   cleanup();
@@ -69,9 +70,7 @@ it("edits chains and branches from the graph and removes connections", async () 
   await waitFor(() => expect(store.getState().tasks[c.id]?.dependency_ids).toEqual([b.id]));
   await waitFor(() => expect(store.getState().pending).toBe(0));
   fireEvent.click(screen.getByRole("button", { name: "Select Plan" }));
-  fireEvent.change(screen.getByRole("combobox", { name: "Connection type" }), {
-    target: { value: "dependent" },
-  });
+  await pickOption("Connection type", "Add dependent");
   fireEvent.change(screen.getByRole("textbox", { name: "Find task to connect" }), {
     target: { value: "Ship" },
   });

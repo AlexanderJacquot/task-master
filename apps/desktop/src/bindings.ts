@@ -288,7 +288,7 @@ export type CalendarSource_Deserialize = {
 	name: string,
 	color?: string | null,
 	primary: boolean,
-	/**  The app's own calendar (blocks and plans are pushed there). */
+	/**  The app's own calendar (blocks, plans and deadlines are pushed there). */
 	target: boolean,
 	/**  Its events are shown in the app. */
 	shown: boolean,
@@ -301,7 +301,7 @@ export type CalendarSource_Serialize = {
 	name: string,
 	color: string | null,
 	primary: boolean,
-	/**  The app's own calendar (blocks and plans are pushed there). */
+	/**  The app's own calendar (blocks, plans and deadlines are pushed there). */
 	target: boolean,
 	/**  Its events are shown in the app. */
 	shown: boolean,
@@ -1029,7 +1029,7 @@ export type SyncReport = {
 	created: number,
 	updated: number,
 	deleted: number,
-	/**  Local blocks and plans changed by edits made in the calendar. */
+	/**  Local blocks, plans and deadlines changed by edits made in the calendar. */
 	pulled: number,
 	/**  Events kept from shown calendars. */
 	events: number,

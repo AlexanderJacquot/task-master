@@ -129,6 +129,203 @@ fn first_sync_creates_the_calendar_and_pushes_blocks_and_plans() {
 }
 
 #[test]
+fn deadlines_sync_without_a_plan_and_stay_separate_from_scheduled_work() {
+    let (s, mut server) = setup();
+    let task = add_task(&s, "Submit report", None);
+    let update = |changes| {
+        s.borrow_mut()
+            .execute(Command::UpdateTask {
+                id: task.id.clone(),
+                changes,
+            })
+            .unwrap();
+    };
+    update(vec![TaskChange::DueDate(Some("2026-11-30".into()))]);
+    assert_eq!(run(&s, &mut server).created, 1);
+    let key = format!("due:{}", task.id);
+    let deadline = event_of(&s, &server, &key);
+    assert_eq!(deadline.title, "Due: Submit report");
+    assert_eq!(
+        deadline.when,
+        Some(When::AllDay {
+            start: "2026-11-30".into(),
+            end: "2026-12-01".into(),
+        })
+    );
+    run(&s, &mut server);
+    assert!(
+        server.writes.is_empty(),
+        "unchanged deadlines are not rewritten"
+    );
+
+    update(vec![TaskChange::TodayOn(Some(TODAY.into()))]);
+    let block = schedule(&s, &task.id, NOW, NOW + HOUR);
+    assert_eq!(run(&s, &mut server).created, 2);
+    assert_eq!(server.live(&server.target()).len(), 3);
+    let plan = event_of(&s, &server, &format!("plan:{}", task.id));
+    let timed = event_of(&s, &server, &format!("block:{}", block.id));
+
+    let done = s
+        .borrow()
+        .snapshot()
+        .unwrap()
+        .statuses
+        .into_iter()
+        .find(|status| status.category == StatusCategory::Done)
+        .unwrap();
+    update(vec![
+        TaskChange::DueDate(Some("2026-12-31".into())),
+        TaskChange::Title("Send report".into()),
+        TaskChange::StatusId(done.id),
+    ]);
+    run(&s, &mut server);
+    let changed = event_of(&s, &server, &key);
+    assert_eq!(
+        changed.id, deadline.id,
+        "update the existing deadline event"
+    );
+    assert_eq!(changed.title, "✓ Due: Send report");
+    assert_eq!(
+        changed.when,
+        Some(When::AllDay {
+            start: "2026-12-31".into(),
+            end: "2027-01-01".into(),
+        })
+    );
+    assert_eq!(
+        event_of(&s, &server, &format!("plan:{}", task.id)).when,
+        plan.when
+    );
+    assert_eq!(
+        event_of(&s, &server, &format!("block:{}", block.id)).when,
+        timed.when
+    );
+
+    update(vec![TaskChange::DueDate(None)]);
+    assert_eq!(run(&s, &mut server).deleted, 1);
+    assert!(server.event(&server.target(), &deadline.id).cancelled);
+    assert_eq!(
+        server.live(&server.target()).len(),
+        2,
+        "keep the plan and block"
+    );
+
+    update(vec![TaskChange::DueDate(Some(TODAY.into()))]);
+    assert_eq!(run(&s, &mut server).created, 1);
+    let deadline = event_of(&s, &server, &key);
+    s.borrow_mut()
+        .execute(Command::DeleteTask {
+            id: task.id.clone(),
+        })
+        .unwrap();
+    assert_eq!(run(&s, &mut server).deleted, 3);
+    assert!(server.event(&server.target(), &deadline.id).cancelled);
+}
+
+#[test]
+fn calendar_deadline_moves_and_deletions_only_change_the_due_date_and_support_undo() {
+    let (s, mut server) = setup();
+    let task = add_task(&s, "Submit report", Some(TODAY));
+    s.borrow_mut()
+        .execute(Command::UpdateTask {
+            id: task.id.clone(),
+            changes: vec![TaskChange::DueDate(Some("2026-11-06".into()))],
+        })
+        .unwrap();
+    run(&s, &mut server);
+    let target = server.target();
+    let key = format!("due:{}", task.id);
+    let deadline = event_of(&s, &server, &key);
+    server.user_edit(&target, &deadline.id, |event| {
+        event.when = Some(When::AllDay {
+            start: "2026-11-07".into(),
+            end: "2026-11-08".into(),
+        });
+    });
+    assert_eq!(run(&s, &mut server).pulled, 1);
+    let moved = s.borrow().snapshot().unwrap().tasks.remove(0);
+    assert_eq!(moved.due_date.as_deref(), Some("2026-11-07"));
+    assert_eq!(moved.today_on.as_deref(), Some(TODAY));
+    assert!(server.writes.is_empty());
+
+    s.borrow_mut().undo().unwrap();
+    run(&s, &mut server);
+    assert_eq!(event_of(&s, &server, &key).when, deadline.when);
+
+    server.delete(&target, &deadline.id).unwrap();
+    assert_eq!(run(&s, &mut server).pulled, 1);
+    let cleared = s.borrow().snapshot().unwrap().tasks.remove(0);
+    assert_eq!(cleared.due_date, None);
+    assert_eq!(cleared.today_on.as_deref(), Some(TODAY));
+    assert_eq!(server.live(&target).len(), 1, "keep the plan");
+    s.borrow_mut().undo().unwrap();
+    assert_eq!(run(&s, &mut server).created, 1);
+
+    // A local deadline change wins over a simultaneous move in Google.
+    let deadline = event_of(&s, &server, &key);
+    server.user_edit(&target, &deadline.id, |event| {
+        event.when = Some(When::AllDay {
+            start: "2026-11-08".into(),
+            end: "2026-11-09".into(),
+        });
+    });
+    s.borrow_mut()
+        .execute(Command::UpdateTask {
+            id: task.id.clone(),
+            changes: vec![TaskChange::DueDate(Some("2026-11-09".into()))],
+        })
+        .unwrap();
+    let report = run(&s, &mut server);
+    assert_eq!((report.pulled, report.updated), (0, 1));
+    assert_eq!(
+        event_of(&s, &server, &key).when,
+        Some(When::AllDay {
+            start: "2026-11-09".into(),
+            end: "2026-11-10".into(),
+        })
+    );
+}
+
+#[test]
+fn deadlines_use_the_existing_history_window_but_linked_deadlines_keep_syncing() {
+    let (s, mut server) = setup();
+    for date in ["2026-10-05", "2026-10-06"] {
+        s.borrow_mut()
+            .execute(Command::CreateTask {
+                task: NewTask {
+                    title: date.into(),
+                    due_date: Some(date.into()),
+                    ..NewTask::default()
+                },
+            })
+            .unwrap();
+    }
+    assert_eq!(run(&s, &mut server).created, 1, "only the last 30 days");
+    let task = s
+        .borrow()
+        .snapshot()
+        .unwrap()
+        .tasks
+        .into_iter()
+        .find(|task| task.title == "2026-10-06")
+        .unwrap();
+    s.borrow_mut()
+        .execute(Command::UpdateTask {
+            id: task.id.clone(),
+            changes: vec![TaskChange::DueDate(Some("2026-10-01".into()))],
+        })
+        .unwrap();
+    assert_eq!(run(&s, &mut server).updated, 1);
+    assert_eq!(
+        event_of(&s, &server, &format!("due:{}", task.id)).when,
+        Some(When::AllDay {
+            start: "2026-10-01".into(),
+            end: "2026-10-02".into(),
+        })
+    );
+}
+
+#[test]
 fn local_changes_are_pushed() {
     let (s, mut server) = setup();
     let task = add_task(&s, "Deep work", None);
@@ -373,14 +570,20 @@ fn other_calendars_are_kept_read_only_and_can_be_hidden() {
 fn an_expired_token_or_lost_links_never_duplicate_events() {
     let (s, mut server) = setup();
     let task = add_task(&s, "Plan", Some(TODAY));
+    s.borrow_mut()
+        .execute(Command::UpdateTask {
+            id: task.id.clone(),
+            changes: vec![TaskChange::DueDate(Some(TODAY.into()))],
+        })
+        .unwrap();
     schedule(&s, &task.id, NOW, NOW + HOUR);
     run(&s, &mut server);
     let target = server.target();
-    assert_eq!(server.live(&target).len(), 2);
+    assert_eq!(server.live(&target).len(), 3);
 
     server.expire_token = true;
     run(&s, &mut server);
-    assert_eq!(server.live(&target).len(), 2);
+    assert_eq!(server.live(&target).len(), 3);
     assert!(
         server.writes.iter().all(|w| !w.starts_with("insert")),
         "{:?}",
@@ -391,7 +594,7 @@ fn an_expired_token_or_lost_links_never_duplicate_events() {
     let file = s.borrow().export().unwrap();
     s.borrow_mut().import(&file).unwrap();
     run(&s, &mut server);
-    assert_eq!(server.live(&target).len(), 2);
+    assert_eq!(server.live(&target).len(), 3);
     assert!(
         server.writes.iter().all(|w| !w.starts_with("insert")),
         "{:?}",

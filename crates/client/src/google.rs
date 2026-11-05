@@ -450,7 +450,7 @@ pub fn body_to_json(body: &EventBody) -> Value {
             json!({ "dateTime": format_utc(*end_at) }),
             "opaque",
         ),
-        // A day plan does not make the day busy.
+        // Day plans and deadlines do not make the day busy.
         When::AllDay { start, end } => (
             json!({ "date": start }),
             json!({ "date": end }),
@@ -481,7 +481,7 @@ impl CalendarProvider for GoogleCalendar {
             "POST",
             &format!("{API}/calendars"),
             &[],
-            Some(&json!({ "summary": name, "description": "Time blocks and day plans from task-master." })),
+            Some(&json!({ "summary": name, "description": "Time blocks, day plans and deadlines from task-master." })),
         )?;
         Ok(RemoteCalendar {
             id: created["id"]
@@ -726,6 +726,23 @@ mod tests {
         });
         assert_eq!(plan["start"]["date"], "2026-11-05");
         assert_eq!(plan["transparency"], "transparent");
+        let due = body_to_json(&EventBody {
+            title: "Due: Submit report".into(),
+            description: "Due on this day in task-master.".into(),
+            when: When::AllDay {
+                start: "2026-11-30".into(),
+                end: "2026-12-01".into(),
+            },
+            key: "due:t".into(),
+        });
+        assert_eq!(due["summary"], "Due: Submit report");
+        assert_eq!(due["start"], json!({ "date": "2026-11-30" }));
+        assert_eq!(due["end"], json!({ "date": "2026-12-01" }));
+        assert_eq!(due["transparency"], "transparent");
+        assert_eq!(
+            due["extendedProperties"]["private"]["taskMasterKey"],
+            "due:t"
+        );
     }
 
     #[test]

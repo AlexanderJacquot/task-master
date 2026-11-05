@@ -52,6 +52,16 @@ the app daily for two weeks before Phase 2 (plan section 10).
   `.github/workflows/server-image.yml`. The Forgejo workflow and `REGISTRY_TOKEN` are no
   longer used. server.md now documents the Authelia claims policy as well.
 
+### Delete from expanded quick capture (2026-11-05)
+
+- Added a visible Delete task button beside Done in the expanded global capture
+  popup. It uses the existing soft-delete command and closes after deletion succeeds;
+  a failed deletion keeps the editor open with an error and allows retrying.
+- Done and Close keep the saved task. Regression tests cover deletion, failure/retry
+  and both ways of closing without deletion.
+- Verified: 251 frontend tests passed; TypeScript, Biome, the full Rust test suite
+  and Clippy passed. Native popup appearance remains a manual check.
+
 ### Task dependency lineage (2026-11-05)
 
 - Added Lineage to the expanded sidebar and collapsed rail. The graph shows task

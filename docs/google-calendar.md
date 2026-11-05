@@ -35,8 +35,16 @@ What the app may do, and nothing more:
 
 - Time blocks appear in the **task-master** calendar as events. Done ones get a ✓.
   Planned days appear as all-day events, which do not mark you as busy.
+- Due dates appear as separate all-day **Due: Task name** events, also marked as free.
+  A task planned for Monday and due Friday has a plan on Monday and a deadline on Friday,
+  even if it also has time blocks. Completed tasks' deadlines get a ✓.
+  Changing or clearing a due date updates or removes its deadline event.
 - Moving, resizing or deleting those events in Google Calendar changes the block or plan
-  in the app. If both sides changed since the last sync, the app's version wins.
+  in the app. Moving a deadline changes the due date; deleting it clears the due date.
+  These changes can be undone in the app. If both sides changed since the last sync,
+  the app's version wins.
+- New events are created for dates from the last 30 days onward. Events already synced
+  stay in sync regardless of their date.
 - In Settings → Calendar, tick the calendars whose events should show in the Calendar view
   (your primary calendar is ticked at first). They are read-only in the app.
 - Sync runs every 5 minutes, a few seconds after you change something, and on **Sync now**.

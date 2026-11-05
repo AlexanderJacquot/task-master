@@ -56,8 +56,9 @@ import { useProjectOrder } from "./useProjectOrder";
 /** Sidebar widths in px, open and folded to a rail (the Windows title bar matches them). */
 export const SIDEBAR_WIDTH = { open: 264, rail: 60 } as const;
 
-const rowClass =
-  "group flex min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-[5px] text-ink-2 transition-colors hover:bg-hover hover:text-ink";
+const rowBaseClass =
+  "group flex min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-ink-2 transition-colors hover:bg-hover hover:text-ink";
+const rowClass = `${rowBaseClass} py-[5px]`;
 const activeClass = "bg-selected text-ink";
 
 function NavItem({
@@ -100,7 +101,7 @@ function TagRow({ tag, count }: { tag: Tag; count?: number }) {
     select: (r) => r.location.pathname === `/tag/${tag.id}`,
   });
   return (
-    <div className={cx(rowClass, "py-0 pr-1", active && activeClass)}>
+    <div className={cx(rowBaseClass, "pr-1", active && activeClass)}>
       <Link
         to="/tag/$tagId"
         params={{ tagId: tag.id }}

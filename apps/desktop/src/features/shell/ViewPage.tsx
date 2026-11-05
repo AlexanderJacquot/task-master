@@ -451,11 +451,12 @@ function ViewBody({
       <div
         className={cx(
           "grid items-start gap-3 px-10 pt-1 pb-2",
-          scope.kind === "all" && "lg:grid-cols-2",
+          scope.kind === "all" && "grid-cols-2",
         )}
       >
         <CaptureBox
           id={NEW_TASK_INPUT_ID}
+          className={scope.kind === "all" ? "min-w-0" : undefined}
           defaults={captureDefaults(scope, today)}
           placeholder={`Add a task${typeof title === "string" ? ` to ${title}` : ""}…   ${CAPTURE_HINT}`}
           onCaptured={(id, how) => {
@@ -484,7 +485,7 @@ function ViewBody({
               event.preventDefault();
               setQuery(searchText.trim());
             }}
-            className="flex flex-col gap-1.5"
+            className="flex min-w-0 flex-col gap-1.5"
           >
             <div className="flex items-center gap-3 rounded-[10px] border border-line-strong px-3.5 py-1.5 focus-within:border-accent focus-within:bg-raised/60">
               <Search size={16} className="shrink-0 text-rubric" aria-hidden />

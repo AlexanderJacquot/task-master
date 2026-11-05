@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { DatePicker } from "../../components/DatePicker";
 import { Dot, Select } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
 import type { Epic, EpicState } from "../../lib/types";
@@ -77,22 +78,15 @@ function EpicDetails({ epic }: { epic: Epic }) {
           onValueChange={(state) => void updateEpic(store, epic.id, [{ state }])}
           options={STATES}
         />
-        <label className="flex items-center gap-1">
-          Target
-          <input
-            type="date"
+        <div className="flex items-center gap-1">
+          <span>Target</span>
+          <DatePicker
             aria-label="Target date"
-            value={epic.target_date ?? ""}
-            onChange={(e) =>
-              void updateEpic(store, epic.id, [{ target_date: e.target.value || null }])
-            }
-            className={
-              late
-                ? "rounded border border-red-300 bg-transparent px-1 text-red-600"
-                : "rounded border border-neutral-300 bg-transparent px-1 dark:border-neutral-700"
-            }
+            value={epic.target_date}
+            onValueChange={(target_date) => void updateEpic(store, epic.id, [{ target_date }])}
+            className={late ? "text-danger" : undefined}
           />
-        </label>
+        </div>
         <Select
           aria-label="Home project"
           value={epic.project_id ?? ""}

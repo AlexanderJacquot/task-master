@@ -1,6 +1,6 @@
 import { Popover } from "radix-ui";
 import { useMemo, useState } from "react";
-import { Chip, cx } from "../../components/ui";
+import { Chip, cx, FOCUS, INPUT, MENU, MENU_ITEM } from "../../components/ui";
 import type { Tag, Task } from "../../lib/types";
 import { createTagOnTask, setTagged } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
@@ -23,7 +23,7 @@ export function TagPicker({ task, variant = "chips" }: { task: Task; variant?: "
     [tags],
   );
   const matches = sorted.filter((t) => t.name.toLowerCase().includes(name.toLowerCase()));
-  const exact = sorted.some((t) => t.name.toLowerCase() === name.toLowerCase());
+  const exact = sorted.find((t) => t.name.toLowerCase() === name.toLowerCase());
 
   const toggle = (tag: Tag) =>
     void setTagged(store, task.id, tag.id, !task.tag_ids.includes(tag.id));
@@ -47,7 +47,7 @@ export function TagPicker({ task, variant = "chips" }: { task: Task; variant?: "
             className={
               pill
                 ? "-mr-1.5 w-3 text-ink-3 opacity-0 group-hover/tag:opacity-100 hover:text-danger focus-visible:opacity-100"
-                : "hover:text-red-600"
+                : "rounded text-ink-3 hover:text-danger"
             }
           >
             ×
@@ -65,46 +65,67 @@ export function TagPicker({ task, variant = "chips" }: { task: Task; variant?: "
           </Chip>
         );
       })}
-      <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Root
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setQuery("");
+        }}
+      >
         <Popover.Trigger
           className={
             pill
               ? cx(PILL, GHOST)
-              : "rounded px-1.5 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              : cx(
+                  "inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-xs text-ink-3 hover:bg-hover hover:text-ink data-[state=open]:bg-selected",
+                  FOCUS,
+                )
           }
         >
-          + Tag
+          <Plus size={13} /> Tag
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Content
             align="start"
-            sideOffset={4}
-            className="z-50 w-56 rounded-md border border-neutral-200 bg-white p-2 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+            aria-label="Task tags"
+            sideOffset={6}
+            collisionPadding={12}
+            className={cx(MENU, "w-64 max-w-[calc(100vw-1.5rem)] p-2")}
           >
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                e.preventDefault();
-                const first = matches[0];
-                if (exact && first) toggle(first);
-                else create();
-              }}
-              placeholder="Find or create…"
-              aria-label="Tag name"
-              className="mb-2 w-full rounded border border-neutral-300 bg-transparent px-2 py-1 text-sm focus:border-blue-500 focus:outline-none dark:border-neutral-700"
-            />
-            <ul className="max-h-48 overflow-y-auto">
+            <div className="relative mb-2">
+              <Search
+                size={14}
+                className="pointer-events-none absolute top-2.5 left-2.5 text-ink-3"
+              />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  if (exact) toggle(exact);
+                  else create();
+                }}
+                placeholder="Find or create…"
+                aria-label="Tag name"
+                className={cx(INPUT, "pl-8 text-[13px]")}
+              />
+            </div>
+            <ul className="max-h-48 space-y-0.5 overflow-y-auto">
               {matches.map((tag) => (
                 <li key={tag.id}>
                   <button
                     type="button"
+                    aria-pressed={task.tag_ids.includes(tag.id)}
                     onClick={() => toggle(tag)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                    className={cx(
+                      MENU_ITEM,
+                      "w-full cursor-pointer hover:bg-accent/10 focus-visible:bg-accent/10 aria-pressed:bg-accent/8",
+                    )}
                   >
-                    <span className="w-3">{task.tag_ids.includes(tag.id) ? "✓" : ""}</span>#
-                    {tag.name}
+                    <Hash size={14} />
+                    <span className="min-w-0 flex-1 truncate text-left">{tag.name}</span>
+                    {task.tag_ids.includes(tag.id) && <Check size={14} className="text-accent!" />}
                   </button>
                 </li>
               ))}
@@ -114,16 +135,27 @@ export function TagPicker({ task, variant = "chips" }: { task: Task; variant?: "
                     type="button"
                     onClick={create}
                     disabled={/\s/.test(name)}
-                    className="w-full rounded px-2 py-1 text-left text-blue-600 hover:bg-neutral-100 disabled:text-neutral-400 dark:hover:bg-neutral-800"
+                    className={cx(
+                      MENU_ITEM,
+                      "w-full cursor-pointer text-accent hover:bg-accent/10 focus-visible:bg-accent/10 disabled:cursor-default disabled:text-ink-3",
+                    )}
                   >
+                    <Plus size={14} />
                     {/\s/.test(name) ? "Tags cannot contain spaces" : `Create #${name}`}
                   </button>
                 </li>
               )}
             </ul>
+            {!sorted.length && !name && (
+              <p className="px-2 py-3 text-center text-xs text-ink-3">
+                Type a name to create your first tag.
+              </p>
+            )}
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
     </div>
   );
 }
+
+import { Check, Hash, Plus, Search } from "lucide-react";

@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, ArrowUpRight, ChevronRight, Maximize2, Sun, Trash2, X } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
+import { DatePicker } from "../../components/DatePicker";
 import {
   cx,
   Dot,
@@ -172,12 +173,12 @@ export function TaskEditor({
         />
       </Field>
       <Field label="Due">
-        <input
-          type="date"
+        <DatePicker
           aria-label="Due date"
-          value={task.due_date ?? ""}
-          onChange={(e) => change([{ due_date: e.target.value || null }])}
-          className={fieldInput}
+          value={task.due_date}
+          today={today}
+          onValueChange={(due_date) => change([{ due_date }])}
+          className="w-full"
         />
       </Field>
       <Field label="Today">
