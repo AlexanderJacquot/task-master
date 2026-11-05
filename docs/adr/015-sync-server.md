@@ -94,11 +94,14 @@ already pushed by their stored key (ADR 014), so nothing is duplicated. A
 `calendar_runner` lease on the server stops a second runner.
 
 **Auth modes** (server setting): `none` (base URL only; for a LAN), `token` (bearer
-tokens made with `tm-server token add <name> --scope sync|api:read|api:write`, stored
+tokens made with `task-master-server token add <name> --scope sync|api:read|api:write`, stored
 hashed, revocable) and `oidc` (the desktop signs in with authorization code + PKCE over a
 loopback redirect, like `google.rs`; the server checks the ID token against the
 provider's JWKS and issues its own device token). Headless clients use server tokens in
-every mode. The client asks only for the URL and reads the mode from `/info`.
+every mode. The client asks only for the URL and reads the mode from `/info`. The
+desktop is a public OIDC client (no secret, PKCE) with the fixed redirect
+`http://127.0.0.1:47823/oidc/callback`. Configuration, image name and token commands:
+`docs/server.md`.
 
 **Adapters.**
 - CLI (`tk`): local database only.

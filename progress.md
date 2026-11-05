@@ -454,6 +454,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- Sync (M12): build to `docs/server.md` (env vars, image
+  `harbor.solarnexus.space/knowledgesystem/task-master-server`, `token add|list|revoke`,
+  `health`, `/info`); update that page in the same change if anything differs.
 - Sync (M13): order equal ranks by id in `src/lib/views.ts` (two devices can pick the
   same rank); desktop reload on `PRAGMA data_version` for outside writers; ops
   compaction with the 30-day purge; `apply_remote` skips (and counts) ops for rows it
