@@ -471,6 +471,31 @@ fn import_resets_sync_and_pushes_everything_again() {
 }
 
 #[test]
+fn replacing_a_device_with_the_server_copy() {
+    let (mut a, mut b, mut server) = (store(), store(), store());
+    let id = add_task(&mut a, "on the server", None);
+    update(&mut a, &id, TaskChange::Priority(Priority::High));
+    sync(&mut a, &mut server);
+
+    // b has its own tasks, then chooses "replace with the server's tasks".
+    add_task(&mut b, "only on b", None);
+    add_tag(&mut b, "local");
+    b.clear_for_replace().unwrap();
+    assert!(live_tasks(&b).is_empty());
+    assert!(b.snapshot().unwrap().tags.is_empty());
+    assert!(!b.snapshot().unwrap().statuses.is_empty(), "statuses stay");
+    assert_eq!(b.sync_cursor().unwrap(), 0);
+    assert!(
+        b.outbox(10).unwrap().ops.is_empty(),
+        "nothing of b's is pushed"
+    );
+
+    sync(&mut b, &mut server);
+    assert_eq!(rows(&b), rows(&server));
+    assert_eq!(task(&b, &id).priority, Priority::High);
+}
+
+#[test]
 fn bad_ops_are_refused_without_changing_anything() {
     let (mut a, mut b) = (store(), store());
     add_task(&mut a, "ok", None);
@@ -676,4 +701,50 @@ fn random_concurrent_edits_converge() {
             check_rules(s);
         }
     }
+}
+
+#[test]
+fn a_pull_with_missing_rows_does_not_advance_the_cursor() {
+    let (mut a, mut b) = (store(), store());
+    let id = add_task(&mut a, "created", None);
+    update(&mut a, &id, TaskChange::Title("edited".into()));
+    let mut ops = a.ops_after(0, 100).unwrap().ops;
+    ops.remove(0);
+    assert!(b.apply_remote(ops, Some(99)).is_err());
+    assert_eq!(b.sync_cursor().unwrap(), 0);
+    assert_eq!(b.last_seq().unwrap(), 0);
+}
+
+#[test]
+fn replacement_resets_locally_modified_statuses() {
+    let mut b = store();
+    let mut file = b.export().unwrap();
+    file.tables
+        .get_mut("statuses")
+        .unwrap()
+        .as_array_mut()
+        .unwrap()[0]["name"] = serde_json::json!("Local column");
+    b.import(&file).unwrap();
+    b.clear_for_replace().unwrap();
+    assert_eq!(
+        b.snapshot().unwrap().statuses,
+        store().snapshot().unwrap().statuses
+    );
+}
+
+#[test]
+fn outside_writes_notify_subscribers_once() {
+    let dir = std::env::temp_dir().join(format!("tm-external-{}", new_id()));
+    let path = dir.join("tasks.sqlite");
+    let mut desktop = Store::open(&path).unwrap();
+    let mut cli = Store::open(&path).unwrap();
+    desktop.refresh_external_changes().unwrap();
+    let events = desktop.subscribe();
+    assert!(!desktop.refresh_external_changes().unwrap());
+    add_task(&mut cli, "from the CLI", None);
+    assert!(desktop.refresh_external_changes().unwrap());
+    assert!(events.try_recv().unwrap().entities.is_empty());
+    assert!(!desktop.refresh_external_changes().unwrap());
+    assert!(events.try_recv().is_err());
+    assert_eq!(desktop.snapshot().unwrap().tasks[0].title, "from the CLI");
 }

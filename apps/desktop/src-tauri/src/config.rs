@@ -30,6 +30,24 @@ pub struct GoogleAccount {
     pub refresh_token: Option<String>,
 }
 
+/// The sync server this device syncs with (ADR 015, docs/server.md).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncAccount {
+    /// e.g. `https://tasks.example.org`.
+    pub url: String,
+    /// The server's token for this device (pasted, or from the OIDC sign-in). `None` for
+    /// a server that asks for none.
+    #[serde(default)]
+    pub token: Option<String>,
+    /// Shown in the server's `token list`.
+    #[serde(default)]
+    pub device_name: String,
+    /// The first sync chose how to combine this device's data with the server's; syncing
+    /// runs only once this is set.
+    #[serde(default)]
+    pub joined: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppConfig {
     /// A data folder chosen in settings; the OS app-data folder when `None`.
@@ -39,6 +57,8 @@ pub struct AppConfig {
     pub remote: Option<RemoteBackup>,
     #[serde(default)]
     pub google: Option<GoogleAccount>,
+    #[serde(default)]
+    pub sync: Option<SyncAccount>,
 }
 
 impl AppConfig {
@@ -182,6 +202,12 @@ mod tests {
                 client_id: "id.apps.googleusercontent.com".into(),
                 client_secret: "secret".into(),
                 refresh_token: Some("1//token".into()),
+            }),
+            sync: Some(SyncAccount {
+                url: "https://tasks.example.org".into(),
+                token: Some("tm_abc".into()),
+                device_name: "Laptop".into(),
+                joined: true,
             }),
         };
         config.save(&path).unwrap();

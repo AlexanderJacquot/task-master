@@ -8,6 +8,7 @@ mod backups;
 mod calendar_sync;
 mod config;
 mod google;
+mod server_sync;
 
 use backups::BackupStatus;
 use config::{AppConfig, ConfigView, RemoteInput, RemoteView};
@@ -53,6 +54,7 @@ struct AppState {
     config: Mutex<AppConfig>,
     backup: Mutex<BackupStatus>,
     calendar: calendar_sync::CalendarRuntime,
+    sync: server_sync::SyncRuntime,
 }
 
 /// Error returned to the UI by every command.
@@ -565,12 +567,20 @@ fn specta_builder() -> Builder<tauri::Wry> {
             calendar_sync::google_disconnect,
             calendar_sync::set_calendar_shown,
             calendar_sync::calendar_sync_now,
-            calendar_sync::calendar_events
+            calendar_sync::calendar_events,
+            server_sync::sync_status,
+            server_sync::sync_connect,
+            server_sync::sync_set_token,
+            server_sync::sync_sign_in,
+            server_sync::sync_join,
+            server_sync::sync_now,
+            server_sync::sync_disconnect
         ])
         .events(collect_events![
             StoreChanged,
             CaptureOpened,
-            calendar_sync::CalendarSynced
+            calendar_sync::CalendarSynced,
+            server_sync::SyncChanged
         ])
         // Timestamps (Unix ms) and op sequence numbers stay far below 2^53.
         .dangerously_cast_bigints_to_number()
@@ -618,6 +628,13 @@ pub fn run() {
             if window.label() == MAIN_WINDOW && matches!(event, tauri::WindowEvent::Destroyed) {
                 window.app_handle().exit(0);
             }
+            // Coming back to the app: pick up what other devices did meanwhile.
+            if window.label() == MAIN_WINDOW
+                && matches!(event, tauri::WindowEvent::Focused(true))
+                && let Some(state) = window.app_handle().try_state::<AppState>()
+            {
+                state.sync.kick();
+            }
         })
         .setup(move |app| {
             builder.mount_events(app);
@@ -644,10 +661,15 @@ pub fn run() {
             let changes = store.subscribe();
             let handle = app.handle().clone();
             let (calendar, kicks) = calendar_sync::CalendarRuntime::new();
+            let (sync, sync_kicks) = server_sync::SyncRuntime::new();
             std::thread::Builder::new()
                 .name("store-events".into())
                 .spawn(move || {
                     for changed in changes {
+                        // Local edits go to the sync server soon (ADR 015).
+                        if let Some(state) = handle.try_state::<AppState>() {
+                            state.sync.local_change();
+                        }
                         // Pushed items changed: sync the calendar soon.
                         if calendar_sync::CalendarRuntime::wants(&changed.entities)
                             && let Some(state) = handle.try_state::<AppState>()
@@ -664,7 +686,32 @@ pub fn run() {
                 config: Mutex::new(config),
                 backup: Mutex::new(BackupStatus::default()),
                 calendar,
+                sync,
             });
+
+            // Local tools share this database but have their own SQLite connection.
+            let handle = app.handle().clone();
+            std::thread::Builder::new()
+                .name("external-writes".into())
+                .spawn(move || {
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        let state = handle.state::<AppState>();
+                        if let Err(e) = with_store(&state, |s| s.refresh_external_changes()) {
+                            eprintln!("cannot check external writes: {}", e.message);
+                        }
+                    }
+                })?;
+
+            // Server sync (ADR 015): idle until a server is joined in settings.
+            let handle = app.handle().clone();
+            std::thread::Builder::new()
+                .name("server-sync".into())
+                .spawn(move || server_sync::run(handle, sync_kicks))?;
+            let handle = app.handle().clone();
+            std::thread::Builder::new()
+                .name("server-events".into())
+                .spawn(move || server_sync::watch(handle))?;
 
             // Calendar sync (ADR 014): idle until a Google account is connected.
             let handle = app.handle().clone();

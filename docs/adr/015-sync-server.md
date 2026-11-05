@@ -1,6 +1,6 @@
 # ADR 015: Sync server and API
 
-Date: 2026-11-05 · Status: accepted (design); M11 implements the core part. Plan Phase 5.
+Date: 2026-11-05 · Status: accepted; device sync implemented in M11–M13. Plan Phase 5.
 
 ## Context
 
@@ -114,6 +114,44 @@ desktop is a public OIDC client (no secret, PKCE) with the fixed redirect
 **Backups.** Local daily backups stay. The S3 remote backup stays during the rollout; then
 the server backs up its database to Garage nightly and the desktop's remote backup becomes
 optional.
+
+## Implementation notes (M12)
+
+- `crates/client` (blocking, `ureq`) holds the client side: one `Client` per server and
+  `sync()`, one full round. It runs the clock offset, a server-reset check, attachment
+  uploads, pushes, pulls, the repairs' push and the downloads. The desktop worker (M13)
+  and the MCP server in remote mode (M15) use it; the server's tests run devices through it.
+- Wire types (`ServerInfo`, `AuthMode`, `PushRequest`/`PushResult`, `PullPage`,
+  `OidcExchange`, `IssuedToken`) live in the core's `sync` module, so the two sides cannot drift.
+- No `/sync/snapshot`: a new device pulls from 0. The ops log is complete, and a snapshot
+  would be a second path to keep correct until compaction needs one.
+- `/events` sends `event: head` with the newest `seq` on connect and after each push, plus
+  a keep-alive every 15 s. Clients reopen it at least every 10 minutes.
+- A server behind a device's cursor (restored, or new) makes the device forget its sync
+  position and send everything again.
+- Tokens: `tm_` + 32 random bytes, stored as SHA-256 in `server.sqlite`, apart from the
+  replicated data. An OIDC sign-in makes a `sync` token named `<user>@<device>`, so
+  signing in again from the same device replaces its token. ID tokens: asymmetric
+  algorithms only; issuer, audience, expiry and `sub` are required.
+- Image: distroless, built by `.forgejo/workflows/server-image.yml` on the homelab runner
+  (the registry is private). Pushed as `knowledgesystem/task-master-server`.
+
+## Implementation notes (M13 release review)
+
+- Settings → Sync supports none/token/OIDC auth, merge or backed-up replacement,
+  status and manual sync. The worker pushes after edits, pulls on SSE/focus/start and
+  polls every five minutes. Attachment files are fetched during sync.
+- Account changes and sync rounds are serialized so an old server cannot update a
+  new account's cursors or pull data after a replacement. Authentication mode and join
+  information are refreshed when Settings opens after restarting the app.
+- Restarting sync requeues every retained op, including received ops, so a surviving
+  replica can refill an empty server without the original authoring device. Skipped
+  pushes are not acknowledged; skipped pulls roll back and retain their cursor.
+- Replacement uses a fresh replica's default statuses before replaying the server log.
+- The desktop polls `PRAGMA data_version` every two seconds for outside writers.
+- Calendar runner transfer and the server lease are **not implemented in v0.5.0**.
+  Calendar stays on one desktop; server execution is a follow-up. Op compaction and
+  the 30-day purge remain deferred together.
 
 ## Rejected
 

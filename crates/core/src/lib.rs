@@ -41,7 +41,10 @@ pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};
 pub use query::{Activity, FieldChange};
 pub use store::{ATTACHMENTS_DIR, Changes, Store};
-pub use sync::{Merged, OpsPage, SyncOp};
+pub use sync::{
+    AuthMode, IssuedToken, Merged, OidcExchange, OpsPage, PullPage, PushRequest, PushResult,
+    ServerInfo, SyncOp,
+};
 
 /// Crate version, reported to adapters for diagnostics.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

@@ -4,10 +4,13 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M11 Sync core**, branch `m11-sync-core` (from `main`): done, pending review. First of
-the sync milestones in ADR 015 (M12 server, M13 desktop sync, M14 API, M15 CLI and MCP).
-Plan Phase 5 started early at the user's request. Nothing user-visible yet: the desktop
-does not sync until M13.
+**v0.5.0 release preparation**, branch `release/0.5.0`: M11 is on main;
+M12 and M13 are integrated in the isolated release worktree. Review fixes and local release
+validation are complete; no version tag has been published. The original checkout's uncommitted icon/UI work is excluded.
+
+M11 core, M12 server and M13 desktop device sync are implemented. **Calendar runner
+transfer to the server is still open**; Calendar runs on one desktop in this release.
+Before publishing the server image, configure the registry credentials (docs/server.md).
 
 **M10 Google Calendar sync**, branch `m10-google-calendar`: merged to `main` with M9 and
 released as **v0.4.0** (2026-11-05). Next: the user creates their OAuth client
@@ -35,6 +38,51 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### M13 desktop sync and v0.5.0 review (2026-11-05)
+
+- Integrated M12/M13 with main, preserving the metrics dashboard changes.
+- Desktop worker, Settings → Sync, merge/replace, OIDC sign-in, token auth, attachments.
+- Fixed recovery when only a replica with received ops survives; account changes racing
+  network rounds; silently skipped operations; local workflow columns surviving replace;
+  missing auth/join information after restart; SSE subscription race.
+- Added outside-writer detection with `PRAGMA data_version` and full UI reload events.
+- Bumped workspace, desktop package and Tauri versions to 0.5.0; release notes in
+  `docs/releases/0.5.0.md`. Server Calendar handoff remains unimplemented and is documented.
+- Validation: 137 Rust tests and 231 UI tests pass (2 opt-in perf tests skipped in
+  each suite); Clippy for all workspace targets, Rust format, Biome, TypeScript,
+  frontend production build, server release build, and Linux debug `.deb` build pass.
+  Generated bindings match M13. Docker image and Windows/macOS installers were not
+  exercised locally; Docker Desktop is not connected to this WSL distro.
+- Release workflow now requires the reusable CI checks before publishing installers.
+  Pending release scope: whether to ship device sync now with Calendar on one desktop,
+  or implement the server Calendar runner before tagging.
+
+### M12 Sync server (2026-11-05)
+
+ADR 015 (implementation notes); setup `docs/server.md` (now matches the code).
+- `crates/server` (`task-master-server`): axum. Routes `/health`, `/info`, `/sync/push`
+  (schema check, 409 on mismatch), `/sync/pull` (pages of up to 1000), `/events` (SSE
+  heads, keep-alive, ends on shutdown), `/blobs/{hash}` (HEAD/GET/PUT, hash checked, 50 MB),
+  `/auth/oidc`. Auth modes none/token/oidc; scopes sync, api:read, api:write. Config from
+  `TM_*`. Hourly backup thread: daily copy in `/data/backups`, upload of the copy and
+  attachment content to S3 once each (`uploaded.txt`). CLI `serve`, `health`,
+  `token add|list|revoke`, `version`. Graceful stop on SIGTERM.
+- `crates/client` (`taskmaster_client`): `Client` and `sync()` (see the ADR).
+- Core: wire types; `Store::last_seq`, `schema_version`, `clear_for_replace` (M13 join),
+  `restart_sync`.
+- `crates/server/Dockerfile` (distroless), `.dockerignore` additions,
+  `.forgejo/workflows/server-image.yml` (homelab runner, `REGISTRY_TOKEN`).
+- Tests: server 13 integration (two devices through the server, paging, attachments,
+  tokens and scopes, schema refusal, events, clock offset, OIDC against a fake provider
+  with refusals for audience/expiry/group/issuer/signature, lost-server refill, backups
+  with a fake S3) + 5 unit; core +1 (replace). Found and fixed while testing: a fake S3
+  that answered before reading the body broke the upload pipe (test fake only).
+  Smoke run of the binary: token add/list, `/info`, 401 without a token, `health`, exit 0
+  on SIGTERM. The Docker build itself is not run here (no Docker in this WSL); the locked
+  release build of the package is (10 MB).
+- New dependencies (server only, agreed in ADR 015): axum 0.8.9, tokio 1.54,
+  jsonwebtoken 11.1 (rust_crypto), futures-util (already in the tree).
 
 ### M11 Sync core (2026-11-05)
 
@@ -532,19 +580,13 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
-- Sync (M12): build to `docs/server.md` (env vars, image
-  `harbor.solarnexus.space/knowledgesystem/task-master-server`, `token add|list|revoke`,
-  `health`, `/info`); update that page in the same change if anything differs.
-- Sync (M13): order equal ranks by id in `src/lib/views.ts` (two devices can pick the
-  same rank); desktop reload on `PRAGMA data_version` for outside writers; ops
-  compaction with the 30-day purge; `apply_remote` skips (and counts) ops for rows it
-  never saw, which a server relaying in order never sends; surface `skipped` if it ever
-  shows up.
+- Sync: Calendar runner transfer and lease on the server (ADR 015); op compaction
+  together with the 30-day purge. Device sync and outside-writer reload are implemented.
 
 - Calendar sync: CalDAV provider (iCloud) behind the same trait; refresh token in the OS
   keychain; a push right after each change instead of the 4 s pause; show which blocks
   are synced (a small cloud mark); pick another calendar as the target.
-- Calendar: drag on empty grid to block out an *existing* task (new tasks done); keyboard moves of blocks;
+- Calendar: drag on empty grid to block out an _existing_ task (new tasks done); keyboard moves of blocks;
   week start and working hours in Settings; Today view counting tasks with a block today;
   block list and logged time on the task page; multi-day blocks shown across days in the
   month view.

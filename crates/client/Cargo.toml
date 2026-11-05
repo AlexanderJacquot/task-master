@@ -1,0 +1,19 @@
+[package]
+name = "taskmaster-client"
+description = "Blocking client for the task-master sync server (ADR 015): the desktop's sync worker, and later the MCP server in remote mode."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "taskmaster_client"
+
+[lints]
+workspace = true
+
+[dependencies]
+taskmaster-core = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = "3.4.3"

@@ -21,7 +21,7 @@ pub const EXPORT_FORMAT: &str = "task-master-export";
 
 /// User tables in dependency order (parents first). `settings` stays out: it holds this
 /// device's id. `tasks_fts` is rebuilt by its triggers.
-const TABLES: &[&str] = &[
+pub(crate) const TABLES: &[&str] = &[
     "statuses",
     "tags",
     "projects",

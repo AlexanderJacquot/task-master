@@ -39,7 +39,7 @@ fn agent() -> ureq::Agent {
         .into()
 }
 
-fn random_token(bytes: usize) -> Result<String, String> {
+pub fn random_token(bytes: usize) -> Result<String, String> {
     let mut buf = vec![0u8; bytes];
     getrandom::fill(&mut buf).map_err(|e| format!("no secure random source: {e}"))?;
     Ok(URL_SAFE_NO_PAD.encode(buf))
@@ -102,15 +102,19 @@ pub fn parse_callback(request_line: &str, state: &str) -> Result<Callback, Strin
     Ok(Callback::Code(code))
 }
 
-fn answer(mut stream: &TcpStream, ok: bool) {
+/// The page the browser shows after the redirect. `provider` names what was signed in to.
+fn answer(mut stream: &TcpStream, ok: bool, provider: &str) {
     let body = if ok {
-        "<!doctype html><meta charset=utf-8><title>task-master</title>\
-         <body style=\"font:16px system-ui;padding:3em\"><h1>Connected</h1>\
-         <p>task-master can now use your Google Calendar. You can close this tab.</p>"
+        format!(
+            "<!doctype html><meta charset=utf-8><title>task-master</title>\
+             <body style=\"font:16px system-ui;padding:3em\"><h1>Connected</h1>\
+             <p>task-master is now connected to {provider}. You can close this tab.</p>"
+        )
     } else {
         "<!doctype html><meta charset=utf-8><title>task-master</title>\
          <body style=\"font:16px system-ui;padding:3em\"><h1>Not connected</h1>\
          <p>Go back to task-master to try again.</p>"
+            .to_owned()
     };
     let _ = write!(
         stream,
@@ -141,7 +145,12 @@ pub fn sign_in(
         &state,
     ))?;
 
-    let code = receive_code(&listener, &state, Instant::now() + SIGN_IN_TIMEOUT)?;
+    let code = receive_code(
+        &listener,
+        &state,
+        Instant::now() + SIGN_IN_TIMEOUT,
+        "Google Calendar",
+    )?;
 
     let token = post_token(&[
         ("grant_type", "authorization_code"),
@@ -163,11 +172,12 @@ pub fn receive_code(
     listener: &TcpListener,
     state: &str,
     deadline: Instant,
+    provider: &str,
 ) -> Result<String, String> {
     listener.set_nonblocking(true).map_err(|e| e.to_string())?;
     loop {
         if Instant::now() > deadline {
-            return Err("the Google sign-in timed out".into());
+            return Err(format!("the sign-in to {provider} timed out"));
         }
         let stream = match listener.accept() {
             Ok((stream, _)) => stream,
@@ -185,16 +195,16 @@ pub fn receive_code(
         let _ = BufReader::new(&stream).read_line(&mut line);
         match parse_callback(&line, state) {
             Ok(Callback::Code(code)) => {
-                answer(&stream, true);
+                answer(&stream, true, provider);
                 return Ok(code);
             }
             Ok(Callback::Denied(why)) => {
-                answer(&stream, false);
-                return Err(format!("Google sign-in refused: {why}"));
+                answer(&stream, false, provider);
+                return Err(format!("sign-in to {provider} refused: {why}"));
             }
-            Ok(Callback::Other) => answer(&stream, false),
+            Ok(Callback::Other) => answer(&stream, false, provider),
             Err(e) => {
-                answer(&stream, false);
+                answer(&stream, false, provider);
                 return Err(e);
             }
         }
@@ -626,14 +636,17 @@ mod tests {
             replies
         });
         let deadline = Instant::now() + Duration::from_secs(10);
-        assert_eq!(receive_code(&listener, "st", deadline), Ok("4/xyz".into()));
+        assert_eq!(
+            receive_code(&listener, "st", deadline, "Google Calendar"),
+            Ok("4/xyz".into())
+        );
         let replies = browser.join().unwrap();
         assert!(replies[0].contains("Not connected"));
         assert!(replies[1].contains("Connected"));
 
         let late = TcpListener::bind("127.0.0.1:0").unwrap();
         assert!(
-            receive_code(&late, "st", Instant::now())
+            receive_code(&late, "st", Instant::now(), "Google Calendar")
                 .unwrap_err()
                 .contains("timed out")
         );

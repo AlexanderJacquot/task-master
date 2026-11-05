@@ -18,7 +18,11 @@ concurrency:
   group: release-${{ github.ref }}
 
 jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+
   build:
+    needs: check
     permissions:
       contents: write
     strategy:
@@ -80,10 +84,14 @@ jobs:
           tauriScript: pnpm tauri
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
-          releaseBody: >-
+          releaseBody: |
+            Sync tasks and attachments across devices with a self-hosted server from Settings → Sync.
+            Includes offline editing, merge or backed-up replacement, token/OIDC sign-in, task metrics and stale indicators.
+
+            Google Calendar continues to run on one desktop. Server Calendar execution, the HTTP API, CLI and MCP are not included.
+
             Installed apps (0.2.0 and later) pick this up from Settings → About and updates.
-            New install: Windows setup .exe, macOS .dmg, Linux .AppImage (updates in place)
-            or .deb/.rpm.
+            New install: Windows setup .exe, macOS .dmg, Linux .AppImage or .deb/.rpm.
           releaseDraft: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true

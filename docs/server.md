@@ -1,14 +1,12 @@
 # Sync server setup
 
 The sync server keeps a copy of your tasks that is always on. Desktops sync with it in the
-background. Other software (a home dashboard, the MCP server in remote mode, a headless
-AI integration) reads and writes tasks through its API. Design: `docs/adr/015-sync-server.md`.
+background. An API for other software (a home dashboard, the MCP server in remote mode,
+a headless AI integration) is planned for M14. Design: `docs/adr/015-sync-server.md`.
 
-> **Status.** The merge engine is done (M11). The server program itself arrives in
-> **M12**, and the desktop's Settings → Sync in **M13**. You can prepare the homelab side
-> now (section 3, steps 1 to 5). The names in this guide (environment variables, image,
-> commands) are what M12 builds against. If M12 changes one, it updates this page in the
-> same change.
+> **Status.** The server is built (M12): image, auth modes, sync, backups and tokens as
+> described here. Settings → Sync connects the desktop in v0.5.0 (M13). Calendar
+> execution remains on the desktop. The API for other software (`/api/v1`) is M14.
 
 ## 1. How it fits together
 
@@ -17,8 +15,8 @@ AI integration) reads and writes tasks through its API. Design: `docs/adr/015-sy
 - The server runs the same core as the desktop, with its own SQLite file in `/data`.
 - Conflicts sort themselves out: the latest edit wins, field by field, and a delete wins
   over a later edit. You never pick between versions.
-- Attachments upload once, by content hash. Other devices download them when you open
-  them.
+- Attachments upload once, by content hash, and other devices download them during their
+  next sync.
 
 ## 2. Pick an auth mode
 
@@ -56,8 +54,8 @@ task-master:
   dashboard: { group: Tools, name: Tasks, icon: mdi-checkbox-marked-outline, description: "task-master sync server" }
 ```
 
-`version` is the first release that ships the server (M12). Keep the renovate comment
-directly above it.
+`version` is the first release that ships the server image (section 9). Keep the renovate
+comment directly above it.
 
 ### Step 2: the stack
 
@@ -161,7 +159,8 @@ just tofu-plan dns && just tofu-apply dns     # tasks.solarnexus.space in Pi-hol
 ```
 
 Check from the LAN: `curl https://tasks.solarnexus.space/info` returns
-`{"auth":"oidc","issuer":"https://auth.solarnexus.space",...}`. Then add an Uptime Kuma
+`{"name":"task-master",...,"auth":"oidc","oidc_issuer":"https://auth.solarnexus.space",...}`.
+Then add an Uptime Kuma
 monitor on `/health`.
 
 ### Step 6: tokens for headless clients
@@ -220,8 +219,9 @@ Open Settings → Sync and enter the URL, `https://tasks.solarnexus.space`. Then
 - On every other device, choose **Replace with the server's tasks** (a backup is taken
   first) or **Merge**. Merging keeps both sets.
 
-Calendar sync keeps running on the desktop. Settings → Calendar → "Runs on: Server"
-moves it to the server, which picks up the existing events without duplicating them.
+Calendar sync runs on the desktop in v0.5.0. Connect Google Calendar on only one
+desktop to avoid competing runners. Moving the calendar runner to the server is planned;
+there is no "Runs on: Server" option in this release.
 
 ## 7. Backups and restore
 
@@ -232,8 +232,9 @@ moves it to the server, which picks up the existing events without duplicating t
 - **Restore the server:** stop the container, copy a backup over
   `/data/tasks.sqlite`, then start it. Devices that synced past that point push their
   newer ops again, so the server catches up by itself.
-- **Lose the server entirely:** start an empty one. The first desktop that syncs
-  uploads its full history.
+- **Lose the server entirely:** start an empty one. Each desktop notices on its next sync
+  that the server is behind it and sends all its changes again. The server ignores what
+  it already has.
 
 ## 8. Troubleshooting
 
@@ -244,3 +245,17 @@ moves it to the server, which picks up the existing events without duplicating t
 | `401` for the dashboard | Token revoked or wrong scope (`token list`) |
 | Settings → Sync warns about the clock | The device clock is more than a minute off. Sync corrects for it, but fix the clock (NTP). |
 | Server refuses pushes after an update | The device runs an older app with a different schema. Update the app. |
+
+## 9. Publishing the image
+
+`.forgejo/workflows/server-image.yml` builds `crates/server/Dockerfile` on the homelab's
+Forgejo runner. The registry is private, so the GitHub mirror cannot push to it. Each `v*`
+tag pushes `harbor.solarnexus.space/knowledgesystem/task-master-server:<tag>` and `:latest`.
+Renovate in the homelab repo then opens the version bump.
+
+Once, on the Forgejo repo (Settings → Actions → Secrets): add `REGISTRY_TOKEN`, a Forgejo
+token with package write. You can also run the workflow by hand (Actions →
+server-image → Run workflow) to push `latest` from `main`.
+
+To build locally: `docker build -f crates/server/Dockerfile -t task-master-server .` from
+the repo root.

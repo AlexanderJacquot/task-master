@@ -53,6 +53,7 @@ pub struct Store {
     files: Option<FileStore>,
     /// Added to the system clock (see [`Store::set_clock_offset`]).
     clock_offset_ms: i64,
+    data_version: i64,
 }
 
 /// Name of the attachment folder, next to the database and inside backup folders.
@@ -86,6 +87,7 @@ impl Store {
     }
 
     fn from_connection(conn: Connection) -> Result<Self> {
+        let data_version = conn.query_row("PRAGMA data_version", [], |r| r.get(0))?;
         let device_id = db::device_id(&conn)?;
         let clock = Hlc::new(device_id.clone(), db::last_hlc(&conn)?.as_deref());
         Ok(Self {
@@ -96,6 +98,7 @@ impl Store {
             events: EventBus::default(),
             files: None,
             clock_offset_ms: 0,
+            data_version,
         })
     }
 
@@ -286,6 +289,25 @@ impl Store {
         self.events.subscribe()
     }
 
+    /// Notices writes committed by another connection (CLI or local MCP), and asks
+    /// subscribers to reload. Writes through this connection do not change data_version.
+    pub fn refresh_external_changes(&mut self) -> Result<bool> {
+        let version = self
+            .conn
+            .query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        if version == self.data_version {
+            return Ok(false);
+        }
+        self.data_version = version;
+        self.history = History::default();
+        self.events.publish(&Changed {
+            batch_id: crate::clock::new_id(),
+            op_seq: self.last_seq()?,
+            entities: Vec::new(),
+        });
+        Ok(true)
+    }
+
     // -----------------------------------------------------------------------------------
     // Sync (docs/adr/015-sync-server.md)
 
@@ -323,6 +345,42 @@ impl Store {
         sync::state(&self.conn, sync::CURSOR)
     }
 
+    /// Forgets the sync position: the next round pushes every retained op again and pulls
+    /// from the start. For a server that lost data (restored from a backup, or new);
+    /// it ignores what it already has.
+    pub fn restart_sync(&mut self) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("DELETE FROM sync_state", [])?;
+        // This replica may be the only surviving copy of another device's work.
+        tx.execute("UPDATE ops SET received = 0", [])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The newest op `seq` (0 when there is none): a server's head.
+    pub fn last_seq(&self) -> Result<i64> {
+        Ok(self
+            .conn
+            .query_row("SELECT COALESCE(MAX(seq), 0) FROM ops", [], |r| r.get(0))?)
+    }
+
+    /// Number of migrations applied. Replicas exchange ops only at the same version.
+    pub fn schema_version(&self) -> Result<u32> {
+        Ok(u32::try_from(db::applied_migrations(&self.conn)?).unwrap_or(u32::MAX))
+    }
+
+    /// Empties this replica before it takes the server's data ("replace with the
+    /// server's tasks"): every task, project, epic, tag, view, attachment row, time block
+    /// and op goes, and sync starts over. Statuses reset to the same defaults as a
+    /// fresh replica, then the server's ops overwrite them. Not undoable: back up first.
+    pub fn clear_for_replace(&mut self) -> Result<()> {
+        // Use the same seed data as a fresh replica. Keeping local statuses would
+        // retain custom columns and edits that the server never made.
+        let empty = Self::open_in_memory()?.export()?;
+        self.import(&empty)?;
+        Ok(())
+    }
+
     /// Applies ops from another replica (latest edit wins, per field), repairs the merged
     /// state, and moves the pull cursor to `cursor` when given, all in one transaction.
     /// Not undoable; subscribers get a change event as for a local batch.
@@ -333,6 +391,11 @@ impl Store {
         tx.execute_batch("PRAGMA defer_foreign_keys = ON")?;
         observe_stored_clock(&tx, &mut self.clock)?;
         let applied = sync::apply(&tx, &mut self.clock, &self.device_id, ops, now)?;
+        if cursor.is_some() && applied.merged.skipped > 0 {
+            return Err(Error::invalid(
+                "sync received operations for missing rows; the pull was not acknowledged",
+            ));
+        }
         if let Some(cursor) = cursor {
             sync::set_state(&tx, sync::CURSOR, cursor)?;
         }
