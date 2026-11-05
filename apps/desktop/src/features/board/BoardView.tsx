@@ -584,8 +584,12 @@ function BoardCell(p: CellProps) {
         )}
         style={{ width: p.width }}
       >
-        {/* Inset the scrollport so native scrollbars clear the rounded border. */}
-        <div ref={scrollRef} className="-mr-1 min-h-0 flex-1 overflow-y-auto pr-1">
+        {/* Inset the scrollport so native scrollbars clear the rounded border, and pad it by
+            the widest card ring (ring-2) so the scroll clip doesn't cut the selected outline. */}
+        <div
+          ref={scrollRef}
+          className="-mx-0.5 -my-0.5 -mr-1 min-h-0 flex-1 overflow-y-auto px-0.5 py-0.5 pr-1"
+        >
           <ul
             aria-label={p.label}
             data-lanes={lanes}
