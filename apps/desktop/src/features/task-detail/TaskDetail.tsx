@@ -3,7 +3,6 @@ import { ArrowLeft, ArrowUpRight, ChevronRight, Maximize2, Sun, Trash2, X } from
 import { type ReactNode, useMemo } from "react";
 import {
   cx,
-  Dot,
   IconButton,
   PRIORITIES,
   PRIORITY_STYLE,
@@ -15,6 +14,7 @@ import { isoDate } from "../../lib/dates";
 import type { Priority, Task, TaskChange } from "../../lib/types";
 import { deleteTask, setParent, toggleDone, updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { ProjectMark } from "../organize/ProjectMark";
 import { useOpenTask } from "../shell/useOpenTask";
 import { ActivityFeed } from "./ActivityFeed";
 import { AttachmentList } from "./AttachmentList";
@@ -48,7 +48,7 @@ function useProjectOptions(task: Task | undefined) {
       .filter((p) => p.parent_id === null)
       .sort((a, b) => (a.rank < b.rank ? -1 : 1));
     return areas.flatMap((area) => [
-      { id: area.id, label: area.name, name: area.name, color: area.color },
+      { id: area.id, label: area.name, name: area.name, color: area.color, icon: area.icon },
       ...list
         .filter((p) => p.parent_id === area.id)
         .sort((a, b) => (a.rank < b.rank ? -1 : 1))
@@ -57,6 +57,7 @@ function useProjectOptions(task: Task | undefined) {
           label: `  ${area.name} / ${p.name}`,
           name: p.name,
           color: p.color,
+          icon: p.icon,
         })),
     ]);
   }, [projects, task?.project_id]);
@@ -417,7 +418,7 @@ export function TaskPage({ taskId }: { taskId: string }) {
           <ArrowLeft size={15} />
           {project ? (
             <>
-              <Dot color={project.color} />
+              <ProjectMark project={project} />
               {project.name}
             </>
           ) : (

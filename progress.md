@@ -31,6 +31,14 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Project icons (2026-11-05)
+
+Branch `project-icons`. The project page's color popover (now "Color and icon") offers 15
+emoji, a field for any other one (kept to its first grapheme) and "No icon". A project
+with an icon shows it instead of its color dot (`ProjectMark`): sidebar row and rail,
+project title, task page breadcrumb and project pill, Today. UI only; the core already
+had `ProjectChange::Icon`. Tests: `features/organize/projectIcon.test.tsx`.
+
 ### M10 Google Calendar sync (2026-11-05)
 
 ADR `docs/adr/014-google-calendar-sync.md`; setup guide `docs/google-calendar.md`. Agreed

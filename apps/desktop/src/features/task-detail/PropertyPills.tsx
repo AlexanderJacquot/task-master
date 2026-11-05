@@ -3,6 +3,7 @@ import { type CSSProperties, type ReactNode, useState } from "react";
 import { cx, Dot, PRIORITIES, PRIORITY_PILL } from "../../components/ui";
 import { daysFrom, formatDueLong } from "../../lib/dates";
 import type { Epic, Priority, Status, Task, TaskChange } from "../../lib/types";
+import { ProjectMark } from "../organize/ProjectMark";
 import { GHOST, OVERLAY, PILL, SET } from "./pill";
 import { TagPicker } from "./TagPicker";
 
@@ -153,7 +154,13 @@ export function PropertyPills({
 }: PillProps & {
   statuses: Status[];
   epics: Epic[];
-  projects: { id: string; label: string; name: string; color: string | null }[];
+  projects: {
+    id: string;
+    label: string;
+    name: string;
+    color: string | null;
+    icon: string | null;
+  }[];
 }) {
   const status = statuses.find((s) => s.id === task.status_id);
   const epic = epics.find((e) => e.id === task.epic_id);
@@ -222,7 +229,7 @@ export function PropertyPills({
           key="project"
           ariaLabel="Project"
           label={project?.name ?? "Inbox"}
-          icon={project ? <Dot color={project.color} /> : undefined}
+          icon={project ? <ProjectMark project={project} /> : undefined}
           value={task.project_id ?? ""}
           onChange={(id) => change([{ project_id: id || null }])}
           options={[

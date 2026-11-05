@@ -1,23 +1,28 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Archive, ArchiveRestore, MoreHorizontal, Trash2 } from "lucide-react";
 import { DropdownMenu, Popover } from "radix-ui";
-import { cx, Dot, IconButton, Select } from "../../components/ui";
+import { cx, IconButton, Select } from "../../components/ui";
 import type { Project } from "../../lib/types";
 import { deleteProject, moveProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { EditableTitle } from "../shell/EditableTitle";
 import { ViewPage } from "../shell/ViewPage";
+import { firstGrapheme, PROJECT_ICONS, ProjectMark } from "./ProjectMark";
 import { PROJECT_COLORS } from "./projectColors";
 
 function ColorPicker({ project }: { project: Project }) {
   const store = useTaskStore();
+  const setIcon = (icon: string | null) => {
+    if (icon !== project.icon) void updateProject(store, project.id, [{ icon }]);
+  };
   return (
     <Popover.Root>
       <Popover.Trigger
-        aria-label="Project color"
+        aria-label="Project color and icon"
+        title="Color and icon"
         className="flex size-7 items-center justify-center rounded-md hover:bg-hover"
       >
-        <Dot color={project.color} />
+        <ProjectMark project={project} />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
@@ -43,6 +48,41 @@ function ColorPicker({ project }: { project: Project }) {
           >
             No color
           </Popover.Close>
+          <div className="col-span-5 my-1 h-px bg-line" />
+          {PROJECT_ICONS.map((icon) => (
+            <Popover.Close
+              key={icon}
+              aria-label={`Icon ${icon}`}
+              onClick={() => setIcon(icon)}
+              className={cx(
+                "flex size-6 items-center justify-center rounded-md text-[15px] leading-none hover:bg-hover",
+                project.icon === icon && "bg-hover ring-1 ring-line-strong",
+              )}
+            >
+              {icon}
+            </Popover.Close>
+          ))}
+          <input
+            aria-label="Custom icon"
+            placeholder="Other emoji…"
+            defaultValue={project.icon && !PROJECT_ICONS.includes(project.icon) ? project.icon : ""}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") setIcon(firstGrapheme(e.currentTarget.value));
+            }}
+            onBlur={(e) => {
+              const icon = firstGrapheme(e.currentTarget.value);
+              if (icon) setIcon(icon);
+            }}
+            className="col-span-5 mt-1 h-7 rounded-md border border-line-strong bg-transparent px-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-accent"
+          />
+          {project.icon && (
+            <Popover.Close
+              onClick={() => setIcon(null)}
+              className="col-span-5 mt-1 text-xs text-ink-3 hover:underline"
+            >
+              No icon (show the color dot)
+            </Popover.Close>
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -70,7 +110,7 @@ export function ProjectPage({ project }: { project: Project }) {
       eyebrow={area?.name}
       title={
         <span className="flex min-w-0 items-center gap-2">
-          <Dot color={project.color} className="size-3" />
+          <ProjectMark project={project} dotClass="size-3" className="text-[0.85em]" />
           <EditableTitle
             value={project.name}
             placeholder="Project name"

@@ -23,13 +23,14 @@ import {
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useMemo, useState } from "react";
-import { cx, Dot, FOCUS, IconButton, InlineInput, Kbd } from "../../components/ui";
+import { cx, FOCUS, IconButton, InlineInput, Kbd } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
 import type { Project } from "../../lib/types";
 import { useUpdates } from "../../lib/updater";
 import { inView, isOpen, type ViewContext } from "../../lib/views";
 import { createEpic, createProject, deleteProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { ProjectMark } from "../organize/ProjectMark";
 import { PROJECT_COLORS } from "../organize/projectColors";
 import { useShell } from "../shell/shellContext";
 import { ProjectTree } from "./ProjectTree";
@@ -271,7 +272,7 @@ function ProjectRow({
           setMenu(true);
         }}
       >
-        <Dot color={project.color} className="size-[9px]" />
+        <ProjectMark project={project} dotClass="size-[9px]" className="text-[13px]" />
         <span className="min-w-0 flex-1 truncate">{project.name}</span>
       </Link>
       <IconButton
@@ -435,7 +436,7 @@ export function Sidebar({
               params={{ projectId: id }}
               label={i < 9 ? `${p.name}  (Ctrl+${i + 1})` : p.name}
             >
-              <Dot color={p.color} className="size-2.5" />
+              <ProjectMark project={p} dotClass="size-2.5" className="text-[15px]" />
             </RailLink>
           );
         })}
