@@ -133,9 +133,8 @@ optional.
   replicated data. An OIDC sign-in makes a `sync` token named `<user>@<device>`, so
   signing in again from the same device replaces its token. ID tokens: asymmetric
   algorithms only; issuer, audience, expiry and `sub` are required.
-- Image: distroless, built by `.forgejo/workflows/server-image.yml` on the homelab runner
-  (only it can push to the registry). Pushed as `alex/task-master-server`: hosts pull
-  anonymously, and the KnowledgeSystem org is private.
+- Image: distroless, built by `.github/workflows/server-image.yml` and published as
+  `ghcr.io/alexanderjacquot/task-master-server` (ADR 016).
 
 ## Implementation notes (M13 release review)
 

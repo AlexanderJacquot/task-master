@@ -1,6 +1,6 @@
 # task-master sync server image (docs/server.md). Build from the repo root:
 #   docker build -f crates/server/Dockerfile -t task-master-server .
-# Released by .forgejo/workflows/server-image.yml on v* tags.
+# Released by .github/workflows/server-image.yml on v* tags (ADR 016).
 
 FROM rust:1.99.1-slim-bookworm AS build
 # Use the image's toolchain as is: rust-toolchain.toml would also ask for clippy/rustfmt.

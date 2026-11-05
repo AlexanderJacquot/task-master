@@ -44,7 +44,7 @@ changes there, deployed by a merge to its `main`. Stack name: `task-master`, hos
 task-master:
   host: gitche-gumee
   domain: tasks.solarnexus.space
-  # renovate: datasource=docker depName=harbor.solarnexus.space/alex/task-master-server
+  # renovate: datasource=docker depName=ghcr.io/alexanderjacquot/task-master-server
   version: v0.5.0
   exposure: private        # LAN/VPN, like s3.solarnexus.space
   port: 8080
@@ -71,7 +71,7 @@ networks:
 
 services:
   server:
-    image: harbor.solarnexus.space/alex/task-master-server:${VERSION}
+    image: ghcr.io/alexanderjacquot/task-master-server:${VERSION}
     container_name: task-master
     restart: unless-stopped
     env_file: .env
@@ -195,7 +195,7 @@ One container and one volume. The smallest setup, for a private network:
 docker run -d --name task-master --restart unless-stopped \
   -p 8080:8080 -v task-master:/data \
   -e TM_AUTH=none \
-  harbor.solarnexus.space/alex/task-master-server:latest
+  ghcr.io/alexanderjacquot/task-master-server:latest
 ```
 
 Point the desktop at `http://<host>:8080`. For any address reachable from outside your
@@ -282,17 +282,15 @@ are refreshed when changing runners. Server day-boundary calculations use UTC.
 
 ## 9. Publishing the image
 
-`.forgejo/workflows/server-image.yml` builds `crates/server/Dockerfile` on the homelab's
-Forgejo runner. Only that runner can push to the registry, so the GitHub mirror cannot.
-Each `v*` tag pushes `harbor.solarnexus.space/alex/task-master-server:<tag>` and `:latest`.
-Renovate in the homelab repo then opens the version bump. The image is under `alex/`, a
-public owner, because homelab hosts pull without logging in. The KnowledgeSystem org is
-private, and its packages would need a login.
+`.github/workflows/server-image.yml` builds `crates/server/Dockerfile` on the GitHub
+mirror, next to the installers (`release.yml`), and publishes it to GitHub's registry
+(ADR 016). Each `v*` tag pushes `ghcr.io/alexanderjacquot/task-master-server:<tag>` and
+`:latest`. Renovate in the homelab repo then opens the version bump.
 
-Once, on the Forgejo repo (Settings → Actions → Secrets): add `REGISTRY_TOKEN`, a Forgejo
-token with package write. You can also run the workflow by hand (Actions →
-server-image → Run workflow) to push `latest` from `main`, or set `version` to an
-existing tag (`v0.5.0`) to rebuild that release and push only `:<version>`.
+The package is public, because homelab hosts pull without logging in. It needs no secret:
+the workflow pushes with `GITHUB_TOKEN`. You can also run the workflow by hand
+(`gh workflow run server-image.yml -R AlexanderJacquot/task-master`) to push `latest` from
+`main`, or add `-f version=v0.5.0` to rebuild that release and push only `:<version>`.
 
 To build locally: `docker build -f crates/server/Dockerfile -t task-master-server .` from
 the repo root.

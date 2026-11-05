@@ -35,6 +35,14 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Server image on GHCR and homelab deploy (2026-11-05)
+
+- Homelab PR #146 deployed the sync server stack. The first deploy failed: hosts pull
+  anonymously and the KnowledgeSystem org is private. ADR 016 moves the image to
+  `ghcr.io/alexanderjacquot/task-master-server`, built by
+  `.github/workflows/server-image.yml`. The Forgejo workflow and `REGISTRY_TOKEN` are no
+  longer used. server.md now documents the Authelia claims policy as well.
+
 ### Task dependency lineage (2026-11-05)
 
 - Added Lineage to the expanded sidebar and collapsed rail. The graph shows task

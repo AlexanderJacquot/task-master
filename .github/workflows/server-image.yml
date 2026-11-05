@@ -1,11 +1,9 @@
-# Sync server image (ADR 015, docs/server.md), built on the homelab's Forgejo runner:
-# the registry (harbor.solarnexus.space) is private, so the GitHub mirror cannot push to
-# it. Same pattern as the other homelab apps (homelab repo, builds-ci).
+# Sync server image (ADR 015, ADR 016, docs/server.md). Runs on the GitHub mirror, like
+# release.yml: Forgejo reads .forgejo/workflows and ignores this folder while that exists.
 #
-# Needs the repo secret REGISTRY_TOKEN: a Forgejo token with package write.
-# A v* tag pushes `<version>` and `latest`; Renovate in the homelab repo then bumps the
-# deployed version. The image lives under `alex/` (a public owner) because hosts pull
-# anonymously; the KnowledgeSystem org is private.
+# A v* tag pushes ghcr.io/<owner>/task-master-server:<version> and :latest; Renovate in the
+# homelab repo then bumps the deployed version. The package must be public (hosts pull
+# without logging in): set it once in the package settings after its first push.
 #
 # Manual run: no input pushes `latest` from the chosen branch; `version: vX.Y.Z` rebuilds
 # that existing tag and pushes only `<version>` (e.g. to republish a release).
@@ -22,8 +20,8 @@ on:
         required: false
         default: ""
 
-env:
-  IMAGE: harbor.solarnexus.space/alex/task-master-server
+concurrency:
+  group: server-image-${{ inputs.version || github.ref }}
 
 jobs:
   build:
@@ -35,16 +33,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.version || github.ref }}
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: harbor.solarnexus.space
-          username: ${{ github.actor }}
-          password: ${{ secrets.REGISTRY_TOKEN }}
-      - id: tags
+      - id: meta
         env:
           VERSION: ${{ inputs.version }}
+          OWNER: ${{ github.repository_owner }}
         run: |
+          IMAGE="ghcr.io/${OWNER,,}/task-master-server"
           if [ -n "${VERSION}" ]; then
             [[ "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version: ${VERSION}" >&2; exit 1; }
             TAGS="${IMAGE}:${VERSION}"
@@ -53,11 +47,21 @@ jobs:
             [ "${{ github.ref_type }}" = "tag" ] && TAGS="${IMAGE}:${{ github.ref_name }},${TAGS}"
           fi
           echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/build-push-action@v6
         with:
           context: .
           file: crates/server/Dockerfile
           push: true
-          tags: ${{ steps.tags.outputs.tags }}
-          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          # Links the package to this repository on GHCR.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=task-master sync server
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
