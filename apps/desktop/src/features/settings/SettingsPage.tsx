@@ -16,6 +16,7 @@ import { useStoreState, useTaskStore } from "../../store/context";
 import { PROJECT_COLORS } from "../organize/projectColors";
 import { HeaderButton } from "../shell/ViewPage";
 import { About } from "./About";
+import { CalendarSettings } from "./CalendarSettings";
 
 const CATEGORIES: Array<{ value: StatusCategory; label: string }> = [
   { value: "backlog", label: "Backlog" },
@@ -25,7 +26,15 @@ const CATEGORIES: Array<{ value: StatusCategory; label: string }> = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+export function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
   return (
     <section className="flex flex-col gap-2.5 border-b border-line py-6">
       <h2 className="font-display text-[19px] tracking-wide text-accent">{title}</h2>
@@ -470,6 +479,7 @@ export function SettingsPage() {
         <About />
         <Workflow />
         <Appearance />
+        <CalendarSettings />
         <Data />
       </div>
     </div>

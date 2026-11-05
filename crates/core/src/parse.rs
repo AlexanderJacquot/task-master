@@ -262,7 +262,7 @@ pub(crate) mod dates {
         (yoe + era * 400 + i64::from(m <= 2), m, d)
     }
 
-    fn to_days(iso: &str) -> Option<i64> {
+    pub(crate) fn to_days(iso: &str) -> Option<i64> {
         check_date("date", iso).ok()?;
         let n = |r: std::ops::Range<usize>| iso[r].parse::<i64>().ok();
         Some(days_from_civil(n(0..4)?, n(5..7)?, n(8..10)?))

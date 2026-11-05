@@ -32,17 +32,19 @@ import {
   SNAP_MIN,
   shiftPeriod,
   snapMinute,
+  viewRange,
   visibleDays,
 } from "../../lib/calendar";
-import { isoDate } from "../../lib/dates";
+import { formatAgo, isoDate } from "../../lib/dates";
 import type { Task } from "../../lib/types";
 import { moveBlock, scheduleTask, updateTask } from "../../store/actions";
-import { useStoreState, useTaskStore } from "../../store/context";
+import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
 import { MonthGrid } from "./MonthGrid";
 import { CalendarContext, type CalendarData, type DragData } from "./shared";
 import { TaskTray } from "./TaskTray";
 import { type DropPreview, TimeGrid, useNow } from "./TimeGrid";
+import { useCalendarEvents } from "./useCalendarEvents";
 
 const MODE_KEY = "task-master.calendar-mode";
 const MODES: CalendarMode[] = ["day", "week", "month"];
@@ -106,6 +108,10 @@ export function CalendarPage() {
   }, []);
 
   const blocks = useMemo(() => Object.values(timeBlocks), [timeBlocks]);
+  const api = useApi();
+  const range = useMemo(() => viewRange(mode, date), [mode, date]);
+  const { events, status } = useCalendarEvents(api.calendar, range);
+  const sources = status?.sources;
   const data: CalendarData = useMemo(
     () => ({
       tasks,
@@ -115,8 +121,10 @@ export function CalendarPage() {
       now,
       openTask: (id) => openTaskPanel(id),
       justDragged: () => Date.now() - lastDragEnd.current < 250,
+      openUrl: api.files ? (url) => void api.files?.openUrl(url) : undefined,
+      calendarName: (id) => sources?.find((s) => s.id === id)?.name ?? "Calendar",
     }),
-    [tasks, projects, statuses, today, now, openTaskPanel],
+    [tasks, projects, statuses, today, now, openTaskPanel, api.files, sources],
   );
 
   const sensors = useSensors(
@@ -238,6 +246,24 @@ export function CalendarPage() {
             </h1>
             <div className="mt-1 text-[13.5px] text-ink-2" aria-live="polite">
               {periodLabel(mode, date)}
+              {status?.connected && (
+                <span
+                  className={cx(
+                    "ml-2 text-[12.5px]",
+                    status.last_error ? "text-danger" : "text-ink-3",
+                  )}
+                  title={status.last_error ?? undefined}
+                >
+                  ·{" "}
+                  {status.syncing
+                    ? "Syncing with Google…"
+                    : status.last_error
+                      ? "Google Calendar sync failed (see Settings)"
+                      : status.last_sync_at
+                        ? `Google Calendar synced ${formatAgo(status.last_sync_at, now)}`
+                        : "Google Calendar connected"}
+                </span>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -291,11 +317,12 @@ export function CalendarPage() {
           <div className="flex min-h-0 flex-1 border-t border-line">
             <TaskTray onSchedule={schedule} />
             {mode === "month" ? (
-              <MonthGrid date={date} blocks={blocks} onPickDay={pickDay} />
+              <MonthGrid date={date} blocks={blocks} events={events} onPickDay={pickDay} />
             ) : (
               <TimeGrid
                 days={days}
                 blocks={blocks}
+                events={events}
                 preview={preview}
                 onPickDay={mode === "week" ? pickDay : undefined}
               />

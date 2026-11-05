@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 mod backups;
+mod calendar_sync;
 mod config;
+mod google;
 
 use backups::BackupStatus;
 use config::{AppConfig, ConfigView, RemoteInput, RemoteView};
@@ -50,6 +52,7 @@ struct AppState {
     config_path: PathBuf,
     config: Mutex<AppConfig>,
     backup: Mutex<BackupStatus>,
+    calendar: calendar_sync::CalendarRuntime,
 }
 
 /// Error returned to the UI by every command.
@@ -556,9 +559,19 @@ fn specta_builder() -> Builder<tauri::Wry> {
             store_data,
             open_attachment,
             save_attachment,
-            open_url
+            open_url,
+            calendar_sync::calendar_status,
+            calendar_sync::google_connect,
+            calendar_sync::google_disconnect,
+            calendar_sync::set_calendar_shown,
+            calendar_sync::calendar_sync_now,
+            calendar_sync::calendar_events
         ])
-        .events(collect_events![StoreChanged, CaptureOpened])
+        .events(collect_events![
+            StoreChanged,
+            CaptureOpened,
+            calendar_sync::CalendarSynced
+        ])
         // Timestamps (Unix ms) and op sequence numbers stay far below 2^53.
         .dangerously_cast_bigints_to_number()
 }
@@ -630,10 +643,17 @@ pub fn run() {
             let mut store = Store::open(&path)?;
             let changes = store.subscribe();
             let handle = app.handle().clone();
+            let (calendar, kicks) = calendar_sync::CalendarRuntime::new();
             std::thread::Builder::new()
                 .name("store-events".into())
                 .spawn(move || {
                     for changed in changes {
+                        // Pushed items changed: sync the calendar soon.
+                        if calendar_sync::CalendarRuntime::wants(&changed.entities)
+                            && let Some(state) = handle.try_state::<AppState>()
+                        {
+                            state.calendar.kick();
+                        }
                         let _ = StoreChanged(changed).emit(&handle);
                     }
                 })?;
@@ -643,7 +663,14 @@ pub fn run() {
                 config_path,
                 config: Mutex::new(config),
                 backup: Mutex::new(BackupStatus::default()),
+                calendar,
             });
+
+            // Calendar sync (ADR 014): idle until a Google account is connected.
+            let handle = app.handle().clone();
+            std::thread::Builder::new()
+                .name("calendar-sync".into())
+                .spawn(move || calendar_sync::run(handle, kicks))?;
 
             // Daily backups and remote uploads, every 15 minutes from shortly after start.
             let handle = app.handle().clone();

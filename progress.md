@@ -4,11 +4,12 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M9 Calendar**, branch `m9-calendar` (from `main`), not committed yet: time blocks in the
-core, Calendar page with day / week / month views and drag and drop. Plan Phase 4 started
-early at the user's request (it skips the plan's gate: two weeks of daily use, Phases 2
-and 3). Next: **M10 Google Calendar sync** (ADR 013, "Planned for M10"); the user creates
-an OAuth client in Google Cloud Console (steps to write in docs).
+**M10 Google Calendar sync**, branch `m10-google-calendar` (from `main` after M9 was
+merged), not committed yet. Next: the user creates their OAuth client
+(`docs/google-calendar.md`) and tries it in the real app; see "Not yet verified".
+
+**M9 Calendar**: merged to `main` (`c9dc9b6`, not pushed). Plan Phase 4 started early at
+the user's request (it skips the plan's gate: two weeks of daily use, Phases 2 and 3).
 
 **M8 Attachments**, branch `m8-attachments` (from `main`): markdown preview, pasted
 images and file attachments, the Windows title bar and the parchment rubric colors.
@@ -29,6 +30,33 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### M10 Google Calendar sync (2026-11-05)
+
+ADR `docs/adr/014-google-calendar-sync.md`; setup guide `docs/google-calendar.md`. Agreed
+first: token in `config.json`, day plans pushed as all-day events. Free (no billing).
+- Core `calendar` module: `CalendarProvider` trait, `sync()` (calendars → pull edits from
+  the target calendar → push → shown calendars), `StoreAccess`; migration
+  `0006_calendar_sync.sql` (sources, links, cached events; outside `ops`, not exported;
+  import forgets links); app wins on conflicts; relink by stored key; RFC 3339 helpers;
+  `Error::Remote`.
+- Shell: `google.rs` (loopback OAuth with PKCE, least-privilege scopes, token refresh,
+  Calendar v3 calls, JSON mapping, revoke), `calendar_sync.rs` (sync thread: 10 s after
+  start, every 5 min, 4 s after task/block changes, Sync now; status; commands
+  `calendar_status`, `google_connect`, `google_disconnect`, `set_calendar_shown`,
+  `calendar_sync_now`, `calendar_events`; event `CalendarSynced`). `config.json` gains
+  `google`. Direct deps `sha2`, `getrandom` (already in the tree).
+- UI: `Api.calendar` (optional); Settings → Calendar (setup steps, client ID/secret,
+  connect, calendars with checkboxes, last sync and report, errors, Sync now,
+  Disconnect); calendar view shows events read-only (timed ones beside blocks, all-day
+  ones in the lane and month cells, details popover with "Open in Google Calendar") and
+  the sync state in the header.
+- Tests: Rust 90 (+13: 7 sync engine against a fake server, 1 RFC 3339, 6 Google client
+  incl. a real loopback listener with a preconnect socket; one mutation check of the
+  conflict rule); Vitest 187 (+4: events on the calendar, settings connect/toggle/
+  disconnect). Browser preview (fake core) checked both themes.
+- Found while testing: Chrome's idle preconnect sockets would have aborted the sign-in;
+  now ignored.
 
 ### M9 Calendar views and time blocks (2026-11-05)
 
@@ -329,6 +357,10 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Not yet verified
 
+- M10 against the real Google API (needs the user's OAuth client): sign-in in the
+  browser on Windows and in WSL (where it depends on xdg-open finding a browser), the
+  task-master calendar created once, blocks and plans appearing, a move / resize /
+  delete in Google coming back, 410 handling, shown calendars, Disconnect revoking.
 - M9 in the real window (WebKitGTK / WebView2): drag feel, resize, `color-mix` block
   fills, scroll position on open, migration of an existing DB to v5.
 - Windows title bar on Windows: drag, double-click, Aero Snap, resize from every edge,
@@ -368,6 +400,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- Calendar sync: CalDAV provider (iCloud) behind the same trait; refresh token in the OS
+  keychain; a push right after each change instead of the 4 s pause; show which blocks
+  are synced (a small cloud mark); pick another calendar as the target.
 - Calendar: drag on empty grid to create a block (pick a task); keyboard moves of blocks;
   week start and working hours in Settings; Today view counting tasks with a block today;
   block list and logged time on the task page; multi-day blocks shown across days in the

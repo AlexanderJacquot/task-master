@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Api } from "../../lib/api";
 import { addDays, atMinute } from "../../lib/calendar";
@@ -9,13 +9,15 @@ import type { Changes, Command, Task, TimeBlock } from "../../lib/types";
 import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore, type TaskStore } from "../../store/store";
+import { fakeCalendar } from "../../test/fakeCalendar";
 import { fakeParse, snapshot, task, timeBlock } from "../../test/fixtures";
 
 const today = isoDate();
 
-function fakeApi(data: { tasks: Task[]; time_blocks: TimeBlock[] }) {
+function fakeApi(data: { tasks: Task[]; time_blocks: TimeBlock[] }, extra: Partial<Api> = {}) {
   const executed: Command[][] = [];
   const api: Api = {
+    ...extra,
     snapshot: async () => snapshot(data),
     execute: async (commands) => {
       executed.push(commands);
@@ -55,8 +57,8 @@ const block = timeBlock({
 let store: TaskStore;
 let fake: ReturnType<typeof fakeApi>;
 
-async function renderCalendar(path = "/calendar") {
-  fake = fakeApi({ tasks: [planned, due, other, blocked], time_blocks: [block] });
+async function renderCalendar(path = "/calendar", extra: Partial<Api> = {}) {
+  fake = fakeApi({ tasks: [planned, due, other, blocked], time_blocks: [block] }, extra);
   store = createTaskStore(fake.api);
   await store.getState().hydrate();
   const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
@@ -186,5 +188,95 @@ describe("the calendar", () => {
     expect(router.state.location.pathname).toBe("/calendar");
     const nav = screen.getByRole("navigation");
     expect(within(nav).getByRole("link", { name: /Calendar/ })).toBeTruthy();
+  });
+});
+
+describe("events from Google Calendar", () => {
+  const standup = {
+    calendar_id: "me@example.com",
+    id: "ev1",
+    title: "Standup",
+    start_at: atMinute(today, 10 * 60 + 30),
+    end_at: atMinute(today, 10 * 60 + 45),
+    start_date: null,
+    end_date: null,
+    location: "Room 4",
+    link: "https://calendar.google.com/event?eid=1",
+    color: "#0b8043",
+  };
+  const holiday = {
+    ...standup,
+    id: "ev2",
+    title: "Holiday",
+    start_at: null,
+    end_at: null,
+    start_date: today,
+    end_date: addDays(today, 2),
+    location: null,
+  };
+  const sources = [
+    {
+      id: "me@example.com",
+      name: "Me",
+      color: "#0b8043",
+      primary: true,
+      target: false,
+      shown: true,
+      synced_at: 1,
+    },
+  ];
+
+  it("shows them read-only beside the blocks, with a link to Google", async () => {
+    const calendar = fakeCalendar(
+      { connected: true, last_sync_at: Date.now() - 120_000, sources },
+      [standup, holiday],
+    );
+    const opened: string[] = [];
+    await renderCalendar("/calendar", {
+      calendar: calendar.api,
+      files: {
+        storeFile: async () => ({ hash: "", size: 0, name: "", mime: "" }),
+        storeData: async () => ({ hash: "", size: 0, name: "", mime: "" }),
+        open: async () => {},
+        saveCopy: async () => false,
+        openUrl: async (url) => {
+          opened.push(url);
+        },
+        pickFiles: async () => [],
+        url: (id) => id,
+      },
+    });
+    const column = await screen.findByTestId(`time-column-${today}`);
+    const event = await within(column).findByRole("button", { name: /^Standup, .*calendar event/ });
+    // It overlaps the Dentist block (10:00 to 11:00): they share the column.
+    expect(within(column).getByRole("button", { name: /^Dentist, / })).toBeTruthy();
+    expect(within(screen.getByTestId(`day-lane-${today}`)).getByText("Holiday")).toBeTruthy();
+    expect(
+      within(screen.getByTestId(`day-lane-${addDays(today, 1)}`)).getByText("Holiday"),
+    ).toBeTruthy();
+    expect(screen.getByText(/Google Calendar synced 2 min ago/)).toBeTruthy();
+
+    fireEvent.click(event);
+    const details = await screen.findByRole("dialog", { name: "Calendar event" });
+    expect(within(details).getByText("Room 4")).toBeTruthy();
+    expect(within(details).getByText(/Me · read-only/)).toBeTruthy();
+    fireEvent.click(within(details).getByRole("button", { name: "Open in Google Calendar" }));
+    expect(opened).toEqual([standup.link]);
+
+    // The week's range was asked for.
+    expect((calendar.ranges.at(-1)?.to_date ?? "") > today).toBe(true);
+  });
+
+  it("re-reads events after a sync and in the month view", async () => {
+    const calendar = fakeCalendar({ connected: true, sources }, [standup]);
+    await renderCalendar("/calendar", { calendar: calendar.api });
+    await screen.findAllByTestId("calendar-event");
+    const before = calendar.ranges.length;
+    act(() => calendar.synced({ syncing: false, last_sync_at: Date.now() }));
+    await waitFor(() => expect(calendar.ranges.length).toBe(before + 1));
+
+    fireEvent.click(screen.getByRole("button", { name: "month" }));
+    const cell = screen.getByTestId(`month-cell-${today}`);
+    await waitFor(() => expect(within(cell).getByText("Standup")).toBeTruthy());
   });
 });

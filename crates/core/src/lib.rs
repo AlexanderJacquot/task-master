@@ -5,6 +5,7 @@
 //! [`Store::execute`], which writes rows and their `ops` entries in one transaction.
 //! See `docs/plan.md`.
 
+pub mod calendar;
 mod clock;
 mod commands;
 mod db;

@@ -8,9 +8,11 @@ import { Popover } from "radix-ui";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button, cx, FOCUS } from "../../components/ui";
 import {
+  allDayOn,
   atMinute,
   DAY_MIN,
   dropId,
+  type EventSpan,
   formatDuration,
   formatHour,
   formatRange,
@@ -24,10 +26,12 @@ import {
   SNAP_MIN,
   segmentsOn,
   snapMinute,
+  timedSpans,
 } from "../../lib/calendar";
-import type { BlockOutcome, Task, TimeBlock } from "../../lib/types";
+import type { BlockOutcome, CalendarEvent, Task, TimeBlock } from "../../lib/types";
 import { deleteBlock, moveBlock, setBlockOutcome } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
+import { EventChip, EventView } from "./events";
 import { blockStyle, DayChip, type DragData, dayTasks, projectColor, useCalendar } from "./shared";
 
 /** Where a dragged item would land, drawn as a ghost in that day's column. */
@@ -43,11 +47,14 @@ const HOURS = Array.from({ length: 24 }, (_, h) => h);
 export function TimeGrid({
   days,
   blocks,
+  events = [],
   preview,
   onPickDay,
 }: {
   days: string[];
   blocks: TimeBlock[];
+  /** Read-only events of the user's calendars. */
+  events?: CalendarEvent[];
   preview: DropPreview | null;
   onPickDay?(iso: string): void;
 }) {
@@ -55,6 +62,7 @@ export function TimeGrid({
   const scroller = useRef<HTMLDivElement>(null);
   const showsToday = days.includes(today);
   const allTasks = useMemo(() => Object.values(tasks), [tasks]);
+  const spans = useMemo(() => timedSpans(events), [events]);
 
   // Open on the working day, or just before now when today is shown.
   const firstDay = days[0];
@@ -110,7 +118,7 @@ export function TimeGrid({
       <div className="flex border-b border-line [scrollbar-gutter:stable] overflow-y-hidden">
         <div className={cx(GUTTER, "pt-1.5 pr-2 text-right text-[11px] text-ink-3")}>All day</div>
         {days.map((iso) => (
-          <DayLane key={iso} iso={iso} tasks={allTasks} statuses={statuses} />
+          <DayLane key={iso} iso={iso} tasks={allTasks} statuses={statuses} events={events} />
         ))}
       </div>
       <div
@@ -135,6 +143,7 @@ export function TimeGrid({
               key={iso}
               iso={iso}
               blocks={blocks}
+              events={spans}
               preview={preview?.iso === iso ? preview : null}
               showNow={iso === today}
             />
@@ -150,13 +159,16 @@ function DayLane({
   iso,
   tasks,
   statuses,
+  events,
 }: {
   iso: string;
   tasks: Task[];
   statuses: ReturnType<typeof useCalendar>["statuses"];
+  events: CalendarEvent[];
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: dropId.day(iso) });
   const { planned, due } = useMemo(() => dayTasks(tasks, iso, statuses), [tasks, iso, statuses]);
+  const allDay = useMemo(() => allDayOn(events, iso), [events, iso]);
   return (
     <div
       ref={setNodeRef}
@@ -166,6 +178,9 @@ function DayLane({
         isOver && "bg-accent/10",
       )}
     >
+      {allDay.map((e) => (
+        <EventChip key={`${e.calendar_id}:${e.id}`} event={e} />
+      ))}
       {planned.map((t) => (
         <DayChip key={t.id} task={t} dragKey={`lane:${iso}:${t.id}`} />
       ))}
@@ -179,17 +194,23 @@ function DayLane({
 function TimeColumn({
   iso,
   blocks,
+  events,
   preview,
   showNow,
 }: {
   iso: string;
   blocks: TimeBlock[];
+  events: EventSpan[];
   preview: DropPreview | null;
   showNow: boolean;
 }) {
   const { now } = useCalendar();
   const { setNodeRef } = useDroppable({ id: dropId.time(iso) });
-  const placed = useMemo(() => layoutDay(segmentsOn(blocks, iso)), [blocks, iso]);
+  // Blocks and events share the day's width where they overlap.
+  const placed = useMemo(
+    () => layoutDay(segmentsOn<TimeBlock | EventSpan>([...blocks, ...events], iso)),
+    [blocks, events, iso],
+  );
   return (
     <div
       ref={setNodeRef}
@@ -200,9 +221,13 @@ function TimeColumn({
         backgroundImage: `repeating-linear-gradient(to bottom, var(--tm-line) 0 1px, transparent 1px ${HOUR_PX}px)`,
       }}
     >
-      {placed.map((p) => (
-        <BlockView key={p.item.id} iso={iso} placed={p} />
-      ))}
+      {placed.map((p) =>
+        "event" in p.item ? (
+          <EventView key={p.item.id} placed={p as Placed<EventSpan>} />
+        ) : (
+          <BlockView key={p.item.id} iso={iso} placed={p as Placed<TimeBlock>} />
+        ),
+      )}
       {preview && (
         <div
           aria-hidden

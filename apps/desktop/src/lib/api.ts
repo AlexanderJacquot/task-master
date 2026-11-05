@@ -3,11 +3,14 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { commands, events } from "../bindings";
 import type {
   Activity,
+  CalendarEvent,
+  CalendarStatus,
   Capture,
   Changed,
   Changes,
   Command,
   CommandError,
+  EventRange,
   Snapshot,
   StoredUpload,
 } from "./types";
@@ -47,7 +50,32 @@ export interface Api {
   onChanged(handler: (event: Changed) => void): Promise<() => void>;
   /** Attachments and links; absent where there is no file system (some tests). */
   files?: FilesApi;
+  /** The calendar connection (ADR 014); absent in tests that do not need it. */
+  calendar?: CalendarApi;
 }
+
+/** Google Calendar sync: settings, status and the read-only events of shown calendars. */
+export interface CalendarApi {
+  status(): Promise<CalendarStatus>;
+  /** Opens the Google sign-in in the browser and waits for it (up to 5 minutes). */
+  connect(clientId: string, clientSecret: string): Promise<CalendarStatus>;
+  disconnect(): Promise<CalendarStatus>;
+  setShown(calendarId: string, shown: boolean): Promise<CalendarStatus>;
+  syncNow(): Promise<CalendarStatus>;
+  events(range: EventRange): Promise<CalendarEvent[]>;
+  /** Called when a sync starts and ends. */
+  onSynced(handler: (status: CalendarStatus) => void): Promise<() => void>;
+}
+
+export const tauriCalendar: CalendarApi = {
+  status: () => unwrap(commands.calendarStatus()),
+  connect: (clientId, clientSecret) => unwrap(commands.googleConnect(clientId, clientSecret)),
+  disconnect: () => unwrap(commands.googleDisconnect()),
+  setShown: (calendarId, shown) => unwrap(commands.setCalendarShown(calendarId, shown)),
+  syncNow: () => unwrap(commands.calendarSyncNow()),
+  events: (range) => unwrap(commands.calendarEvents(range)),
+  onSynced: (handler) => events.calendarSynced.listen((event) => handler(event.payload)),
+};
 
 /**
  * Attachment content and the OS around it (ADR 011). Storing content is not a data edit:
@@ -103,4 +131,5 @@ export const tauriApi: Api = {
   parseCapture: (text, today) => unwrap(commands.parseCapture(text, today)),
   onChanged: (handler) => events.storeChanged.listen((event) => handler(event.payload)),
   files: tauriFiles,
+  calendar: tauriCalendar,
 };

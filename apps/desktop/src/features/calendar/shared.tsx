@@ -23,6 +23,10 @@ export interface CalendarData {
   openTask(id: string): void;
   /** True right after a drag, so the click that ends it does not also open things. */
   justDragged(): boolean;
+  /** Opens a link outside the app (absent in tests). */
+  openUrl?(url: string): void;
+  /** A synced calendar's name, for event details. */
+  calendarName(id: string): string;
 }
 
 export const CalendarContext = createContext<CalendarData | null>(null);

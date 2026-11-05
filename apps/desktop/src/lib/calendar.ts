@@ -3,7 +3,7 @@
 // Minutes within a day are computed from local wall time, so DST days stay correct.
 
 import { isoDate } from "./dates";
-import type { Task, TimeBlock } from "./types";
+import type { CalendarEvent, EventRange, Task, TimeBlock } from "./types";
 
 export type CalendarMode = "day" | "week" | "month";
 
@@ -305,4 +305,46 @@ export function nextSlot(iso: string, now: number = Date.now()): number {
   if (iso !== isoDate(new Date(now))) return atMinute(iso, 9 * 60);
   const minute = Math.ceil((minuteOfDay(now) + 1) / SNAP_MIN) * SNAP_MIN;
   return atMinute(iso, Math.min(minute, DAY_MIN - SNAP_MIN));
+}
+
+// ---------------------------------------------------------------------------------------
+// Events of the user's calendars (M10, ADR 014): read-only, shown beside blocks.
+
+/** The span a view shows, as the core's `calendar_events` takes it. */
+export function viewRange(mode: CalendarMode, iso: string): EventRange {
+  const days = mode === "month" ? monthWeeks(iso).flat() : visibleDays(mode, iso);
+  const first = days[0] ?? iso;
+  const after = addDays(days[days.length - 1] ?? iso, 1);
+  return {
+    from: parseIso(first).getTime(),
+    to: parseIso(after).getTime(),
+    from_date: first,
+    to_date: after,
+  };
+}
+
+/** A timed event placed like a block. */
+export interface EventSpan extends Span {
+  event: CalendarEvent;
+}
+
+export function timedSpans(events: CalendarEvent[]): EventSpan[] {
+  const out: EventSpan[] = [];
+  for (const event of events) {
+    if (event.start_at === null || event.end_at === null) continue;
+    out.push({
+      id: `event:${event.calendar_id}:${event.id}`,
+      start_at: event.start_at,
+      end_at: event.end_at,
+      event,
+    });
+  }
+  return out;
+}
+
+/** All-day events covering a day (their end date is exclusive). */
+export function allDayOn(events: CalendarEvent[], iso: string): CalendarEvent[] {
+  return events.filter(
+    (e) => e.start_date !== null && e.end_date !== null && e.start_date <= iso && iso < e.end_date,
+  );
 }

@@ -58,10 +58,28 @@ export const commands = {
 	 *  `http`, `https` and `mailto` links: the description is user text, not trusted code.
 	 */
 	openUrl: (url: string) => typedError<null, CommandError>(__TAURI_INVOKE("open_url", { url })),
+	/**  The calendar connection and the account's calendars. */
+	calendarStatus: () => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("calendar_status")),
+	/**
+	 *  Signs in to Google in the browser with the user's OAuth client, then syncs. An empty
+	 *  secret keeps the stored one. Waits for the sign-in (up to 5 minutes).
+	 */
+	googleConnect: (clientId: string, clientSecret: string) => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("google_connect", { clientId, clientSecret })),
+	/**
+	 *  Signs out: forgets the token and the synced calendars (the events stay in Google). The
+	 *  OAuth client is kept for reconnecting.
+	 */
+	googleDisconnect: () => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("google_disconnect")),
+	/**  Shows or hides one of the account's calendars, then syncs. */
+	setCalendarShown: (calendarId: string, shown: boolean) => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("set_calendar_shown", { calendarId, shown })),
+	calendarSyncNow: () => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("calendar_sync_now")),
+	/**  Events of the shown calendars in a range (read-only). */
+	calendarEvents: (range: EventRange) => typedError<CalendarEvent_Serialize[], CommandError>(__TAURI_INVOKE("calendar_events", { range })),
 };
 
 /** Events */
 export const events = {
+	calendarSynced: makeEvent<CalendarSynced_Serialize, CalendarSynced_Deserialize>("calendar-synced"),
 	captureOpened: makeEvent<CaptureOpened, CaptureOpened>("capture-opened"),
 	storeChanged: makeEvent<StoreChanged, StoreChanged>("store-changed"),
 };
@@ -185,6 +203,110 @@ export type BlockOutcome = "planned" |
 "done" | 
 /**  Time spent on the task without finishing it. */
 "worked" | "cancelled";
+
+/**  An event of a shown calendar, read-only in the app. */
+export type CalendarEvent = CalendarEvent_Serialize | CalendarEvent_Deserialize;
+
+/**  An event of a shown calendar, read-only in the app. */
+export type CalendarEvent_Deserialize = {
+	calendar_id: string,
+	id: string,
+	title: string,
+	/**  Timed events. */
+	start_at?: number | null,
+	end_at?: number | null,
+	/**  All-day events; `end_date` is exclusive. */
+	start_date?: string | null,
+	end_date?: string | null,
+	location?: string | null,
+	link?: string | null,
+	color?: string | null,
+};
+
+/**  An event of a shown calendar, read-only in the app. */
+export type CalendarEvent_Serialize = {
+	calendar_id: string,
+	id: string,
+	title: string,
+	/**  Timed events. */
+	start_at: number | null,
+	end_at: number | null,
+	/**  All-day events; `end_date` is exclusive. */
+	start_date: string | null,
+	end_date: string | null,
+	location: string | null,
+	link: string | null,
+	color: string | null,
+};
+
+/**  A calendar of the connected account, as settings show it. */
+export type CalendarSource = CalendarSource_Serialize | CalendarSource_Deserialize;
+
+/**  A calendar of the connected account, as settings show it. */
+export type CalendarSource_Deserialize = {
+	id: string,
+	name: string,
+	color?: string | null,
+	primary: boolean,
+	/**  The app's own calendar (blocks and plans are pushed there). */
+	target: boolean,
+	/**  Its events are shown in the app. */
+	shown: boolean,
+	synced_at?: number | null,
+};
+
+/**  A calendar of the connected account, as settings show it. */
+export type CalendarSource_Serialize = {
+	id: string,
+	name: string,
+	color: string | null,
+	primary: boolean,
+	/**  The app's own calendar (blocks and plans are pushed there). */
+	target: boolean,
+	/**  Its events are shown in the app. */
+	shown: boolean,
+	synced_at: number | null,
+};
+
+/**  What settings and the calendar page show. */
+export type CalendarStatus = CalendarStatus_Serialize | CalendarStatus_Deserialize;
+
+/**  What settings and the calendar page show. */
+export type CalendarStatus_Deserialize = {
+	/**  An OAuth client is saved. */
+	configured: boolean,
+	client_id: string,
+	/**  Signed in (a refresh token is saved). */
+	connected: boolean,
+	syncing: boolean,
+	last_sync_at?: number | null,
+	last_error?: string | null,
+	last_report?: SyncReport | null,
+	sources: CalendarSource_Deserialize[],
+};
+
+/**  What settings and the calendar page show. */
+export type CalendarStatus_Serialize = {
+	/**  An OAuth client is saved. */
+	configured: boolean,
+	client_id: string,
+	/**  Signed in (a refresh token is saved). */
+	connected: boolean,
+	syncing: boolean,
+	last_sync_at: number | null,
+	last_error: string | null,
+	last_report: SyncReport | null,
+	sources: CalendarSource_Serialize[],
+};
+
+/**  Sent when a sync starts and ends, so views re-read events and status. */
+export type CalendarSynced = CalendarSynced_Serialize | CalendarSynced_Deserialize;
+
+/**  Sent when a sync starts and ends, so views re-read events and status. */
+export type CalendarSynced_Deserialize = CalendarStatus_Deserialize;
+
+/**  Sent when a sync starts and ends, so views re-read events and status. */
+export type CalendarSynced_Serialize = CalendarStatus_Serialize;
 
 /**
  *  A parsed line with its names resolved, ready for the UI to preview and turn into
@@ -427,6 +549,15 @@ export type Epic_Serialize = {
 	created_at: number,
 	updated_at: number,
 	deleted_at: number | null,
+};
+
+/**  The range a calendar view shows: times for timed events, local dates for all-day ones. */
+export type EventRange = {
+	from: number,
+	to: number,
+	from_date: string,
+	/**  Exclusive. */
+	to_date: string,
 };
 
 /**  A field's value before and after, JSON-encoded (`null` for none). */
@@ -823,6 +954,18 @@ export type StoredUpload = {
 };
 
 export type Swimlane = "none" | "project" | "epic" | "priority";
+
+/**  What one sync did. */
+export type SyncReport = {
+	/**  Events created, updated and deleted in the target calendar. */
+	created: number,
+	updated: number,
+	deleted: number,
+	/**  Local blocks and plans changed by edits made in the calendar. */
+	pulled: number,
+	/**  Events kept from shown calendars. */
+	events: number,
+};
 
 export type Tag = Tag_Serialize | Tag_Deserialize;
 

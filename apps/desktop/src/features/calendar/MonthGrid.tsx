@@ -5,8 +5,18 @@
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useMemo } from "react";
 import { cx, FOCUS } from "../../components/ui";
-import { dropId, formatTime, monthWeeks, parseIso, segmentsOn } from "../../lib/calendar";
-import type { Task, TimeBlock } from "../../lib/types";
+import {
+  allDayOn,
+  dropId,
+  type EventSpan,
+  formatTime,
+  monthWeeks,
+  parseIso,
+  segmentsOn,
+  timedSpans,
+} from "../../lib/calendar";
+import type { CalendarEvent, Task, TimeBlock } from "../../lib/types";
+import { EventChip } from "./events";
 import { blockStyle, DayChip, type DragData, dayTasks, projectColor, useCalendar } from "./shared";
 
 /** Items shown in a cell before "+N more". */
@@ -15,13 +25,17 @@ const VISIBLE = 4;
 export function MonthGrid({
   date,
   blocks,
+  events = [],
   onPickDay,
 }: {
   date: string;
   blocks: TimeBlock[];
+  /** Read-only events of the user's calendars. */
+  events?: CalendarEvent[];
   onPickDay(iso: string): void;
 }) {
   const { tasks } = useCalendar();
+  const spans = useMemo(() => timedSpans(events), [events]);
   const weeks = useMemo(() => monthWeeks(date), [date]);
   const allTasks = useMemo(() => Object.values(tasks), [tasks]);
   const weekdays = (weeks[0] ?? []).map((iso) =>
@@ -47,6 +61,8 @@ export function MonthGrid({
             inMonth={iso.slice(0, 7) === date.slice(0, 7)}
             tasks={allTasks}
             blocks={blocks}
+            events={events}
+            spans={spans}
             onPickDay={onPickDay}
           />
         ))}
@@ -60,23 +76,39 @@ function MonthCell({
   inMonth,
   tasks,
   blocks,
+  events,
+  spans,
   onPickDay,
 }: {
   iso: string;
   inMonth: boolean;
   tasks: Task[];
   blocks: TimeBlock[];
+  events: CalendarEvent[];
+  spans: EventSpan[];
   onPickDay(iso: string): void;
 }) {
   const { statuses, today } = useCalendar();
   const { setNodeRef, isOver } = useDroppable({ id: dropId.day(iso) });
-  const daySegments = useMemo(
-    () => segmentsOn(blocks, iso).filter((s) => !s.continuesBefore),
-    [blocks, iso],
+  // Blocks and timed events by start time; an item spanning midnight shows on its first day.
+  const timed = useMemo(
+    () =>
+      segmentsOn<TimeBlock | EventSpan>([...blocks, ...spans], iso).filter(
+        (s) => !s.continuesBefore,
+      ),
+    [blocks, spans, iso],
   );
+  const allDay = useMemo(() => allDayOn(events, iso), [events, iso]);
   const { planned, due } = useMemo(() => dayTasks(tasks, iso, statuses), [tasks, iso, statuses]);
   const items = [
-    ...daySegments.map((s) => <MonthBlock key={s.item.id} block={s.item} />),
+    ...allDay.map((e) => <EventChip key={`${e.calendar_id}:${e.id}`} event={e} />),
+    ...timed.map((s) =>
+      "event" in s.item ? (
+        <EventChip key={s.item.id} event={s.item.event} />
+      ) : (
+        <MonthBlock key={s.item.id} block={s.item} />
+      ),
+    ),
     ...planned.map((t) => <DayChip key={t.id} task={t} dragKey={`month:${iso}:${t.id}`} />),
     ...due.map((t) => <DayChip key={t.id} task={t} due />),
   ];

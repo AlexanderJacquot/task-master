@@ -20,6 +20,16 @@ pub struct RemoteBackup {
     pub prefix: String,
 }
 
+/// The Google account the calendar syncs with (ADR 014): the user's own OAuth client and,
+/// once signed in, a refresh token.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoogleAccount {
+    pub client_id: String,
+    pub client_secret: String,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppConfig {
     /// A data folder chosen in settings; the OS app-data folder when `None`.
@@ -27,6 +37,8 @@ pub struct AppConfig {
     pub data_dir: Option<PathBuf>,
     #[serde(default)]
     pub remote: Option<RemoteBackup>,
+    #[serde(default)]
+    pub google: Option<GoogleAccount>,
 }
 
 impl AppConfig {
@@ -41,7 +53,7 @@ impl AppConfig {
         }
     }
 
-    /// Written atomically, and only readable by the user (it may hold a secret key).
+    /// Written atomically, and only readable by the user (it holds secrets and tokens).
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -165,6 +177,11 @@ mod tests {
             remote: Some(RemoteBackup {
                 enabled: true,
                 ..RemoteBackup::default()
+            }),
+            google: Some(GoogleAccount {
+                client_id: "id.apps.googleusercontent.com".into(),
+                client_secret: "secret".into(),
+                refresh_token: Some("1//token".into()),
             }),
         };
         config.save(&path).unwrap();

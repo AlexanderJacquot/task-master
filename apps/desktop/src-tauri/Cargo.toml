@@ -28,6 +28,9 @@ url = "2.5"
 serde_json = "1"
 # Pasted attachment content arrives base64-encoded (ADR 011); already in the tree.
 base64 = "0.23.1"
+# Google sign-in (ADR 014): PKCE challenge and random verifier; both already in the tree.
+sha2 = "0.11.1"
+getrandom = "0.3.4"
 # Release candidates: pinned exactly (plan, section 10 risks).
 specta = "=2.0.0-rc.26"
 tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }

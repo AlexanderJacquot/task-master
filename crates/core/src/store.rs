@@ -95,6 +95,10 @@ impl Store {
         })
     }
 
+    pub(crate) fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
     pub fn device_id(&self) -> &str {
         &self.device_id
     }
@@ -244,6 +248,8 @@ impl Store {
     pub fn import(&mut self, file: &crate::dump::ExportFile) -> Result<crate::dump::ImportSummary> {
         let version = db::applied_migrations(&self.conn)?;
         let mut summary = crate::dump::import(&mut self.conn, file, version)?;
+        // Links name the replaced rows; the next sync matches events by their keys again.
+        crate::calendar::forget_links(&self.conn)?;
         if self.files.is_some() {
             summary.missing_files = u32::try_from(self.missing_files()?.len()).unwrap_or(u32::MAX);
         }

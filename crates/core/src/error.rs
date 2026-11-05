@@ -21,6 +21,10 @@ pub enum Error {
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    /// A calendar server refused or failed a request.
+    #[error("{0}")]
+    Remote(String),
 }
 
 impl Error {
@@ -40,6 +44,7 @@ impl Error {
         match self {
             Self::Invalid(_) => "invalid",
             Self::NotFound { .. } => "not_found",
+            Self::Remote(_) => "remote",
             _ => "internal",
         }
     }
