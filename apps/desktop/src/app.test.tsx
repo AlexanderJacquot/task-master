@@ -650,10 +650,26 @@ describe("redesign", () => {
   });
 });
 
-describe("All tasks search", () => {
+describe("Task search", () => {
+  it("searches within a scoped view's board as well as All tasks", async () => {
+    await renderWith("/inbox");
+    await screen.findByRole("heading", { name: "Inbox" });
+    fireEvent.click(screen.getByRole("button", { name: "board" }));
+    const input = screen.getByRole("searchbox", { name: "Search tasks" });
+    fake.api.search = async (text) => (text === "passport" ? [existing.id] : []);
+    fireEvent.change(input, { target: { value: "passport" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByText("1 matching task");
+    expect(screen.getByRole("button", { name: "Renew passport" })).toBeTruthy();
+    fireEvent.change(input, { target: { value: "missing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await screen.findByText("0 matching tasks");
+    expect(screen.queryByRole("button", { name: "Renew passport" })).toBeNull();
+  });
+
   it("ignores an older search response after the search is cleared", async () => {
     await renderWith("/all");
-    const input = await screen.findByRole("searchbox", { name: "Search all tasks" });
+    const input = await screen.findByRole("searchbox", { name: "Search tasks" });
     let resolveSearch: (ids: string[]) => void = () => {};
     fake.api.search = () =>
       new Promise<string[]>((resolve) => {
@@ -674,7 +690,7 @@ describe("All tasks search", () => {
     await renderWith("/all");
     await screen.findByRole("heading", { name: "All tasks" });
     expect(screen.getByRole("textbox", { name: "New task" })).toBeTruthy();
-    const input = screen.getByRole("searchbox", { name: "Search all tasks" });
+    const input = screen.getByRole("searchbox", { name: "Search tasks" });
     const calls: string[] = [];
     fake.api.search = async (text) => {
       calls.push(text);
@@ -687,7 +703,7 @@ describe("All tasks search", () => {
     expect(screen.getByRole("button", { name: "Renew passport" })).toBeTruthy();
 
     fireEvent.change(input, { target: { value: "missing" } });
-    fireEvent.submit(screen.getByRole("form", { name: "Search all tasks" }));
+    fireEvent.submit(screen.getByRole("form", { name: "Search tasks" }));
     await screen.findByText("No matching tasks.");
     expect(screen.queryByRole("button", { name: "Renew passport" })).toBeNull();
     fireEvent.change(input, { target: { value: "" } });
@@ -698,7 +714,7 @@ describe("All tasks search", () => {
     await renderWith("/all");
     await screen.findByRole("heading", { name: "All tasks" });
     fireEvent.click(screen.getByRole("button", { name: "board" }));
-    const input = screen.getByRole("searchbox", { name: "Search all tasks" });
+    const input = screen.getByRole("searchbox", { name: "Search tasks" });
     fake.api.search = async () => [];
     fireEvent.change(input, { target: { value: "missing" } });
     fireEvent.click(screen.getByRole("button", { name: "Search" }));

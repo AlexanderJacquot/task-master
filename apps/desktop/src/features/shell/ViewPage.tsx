@@ -241,9 +241,10 @@ function ViewBody({
     [today, statuses, projects, epics],
   );
   const spec = useMemo(() => specOf(stableScope, display), [stableScope, display]);
-  const searchingAll = scope.kind === "all" && !!query;
+  // Search narrows whichever view is open (list or board); the view's own filters still apply.
+  const searchActive = !!query;
   useEffect(() => {
-    if (!searchingAll) {
+    if (!searchActive) {
       setSearchIds(null);
       setSearchError(false);
       setSearching(false);
@@ -270,10 +271,10 @@ function ViewBody({
     return () => {
       cancelled = true;
     };
-  }, [api, query, searchingAll, tasks]);
+  }, [api, query, searchActive, tasks]);
   const visibleTasks = useMemo(
-    () => Object.values(tasks).filter((task) => !searchingAll || searchIds?.has(task.id)),
-    [tasks, searchingAll, searchIds],
+    () => Object.values(tasks).filter((task) => !searchActive || searchIds?.has(task.id)),
+    [tasks, searchActive, searchIds],
   );
   const rows = useMemo(
     () =>
@@ -448,15 +449,10 @@ function ViewBody({
           tags={tags}
         />
       )}
-      <div
-        className={cx(
-          "grid items-start gap-3 px-10 pt-1 pb-2",
-          scope.kind === "all" && "grid-cols-2",
-        )}
-      >
+      <div className="grid grid-cols-2 items-start gap-3 px-10 pt-1 pb-2">
         <CaptureBox
           id={NEW_TASK_INPUT_ID}
-          className={scope.kind === "all" ? "min-w-0" : undefined}
+          className="min-w-0"
           defaults={captureDefaults(scope, today)}
           placeholder={`Add a task${typeof title === "string" ? ` to ${title}` : ""}…   ${CAPTURE_HINT}`}
           onCaptured={(id, how) => {
@@ -478,46 +474,44 @@ function ViewBody({
               });
           }}
         />
-        {scope.kind === "all" && (
-          <form
-            aria-label="Search all tasks"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setQuery(searchText.trim());
-            }}
-            className="flex min-w-0 flex-col gap-1.5"
-          >
-            <div className="flex items-center gap-3 rounded-[10px] border border-line-strong px-3.5 py-1.5 focus-within:border-accent focus-within:bg-raised/60">
-              <Search size={16} className="shrink-0 text-rubric" aria-hidden />
-              <input
-                type="search"
-                aria-label="Search all tasks"
-                placeholder="Search task titles and descriptions…"
-                value={searchText}
-                onChange={(event) => {
-                  setSearchText(event.target.value);
-                  if (!event.target.value.trim()) setQuery("");
-                }}
-                className="min-w-0 flex-1 bg-transparent py-0.5 text-ink placeholder:text-ink-3 focus:outline-none"
-              />
-              <Button size="sm" type="submit">
-                Search
-              </Button>
-            </div>
-            <div aria-live="polite" className="px-1 text-xs text-ink-3">
-              {searching
-                ? "Searching…"
-                : searchingAll && !searchError
-                  ? `${taskCount} matching ${taskCount === 1 ? "task" : "tasks"}`
-                  : null}
-            </div>
-            {searchError && (
-              <p role="alert" className="px-1 text-xs text-danger">
-                Could not search tasks. Clear the search and try again.
-              </p>
-            )}
-          </form>
-        )}
+        <form
+          aria-label="Search tasks"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setQuery(searchText.trim());
+          }}
+          className="flex min-w-0 flex-col gap-1.5"
+        >
+          <div className="flex items-center gap-3 rounded-[10px] border border-line-strong px-3.5 py-1.5 focus-within:border-accent focus-within:bg-raised/60">
+            <Search size={16} className="shrink-0 text-rubric" aria-hidden />
+            <input
+              type="search"
+              aria-label="Search tasks"
+              placeholder="Search task titles and descriptions…"
+              value={searchText}
+              onChange={(event) => {
+                setSearchText(event.target.value);
+                if (!event.target.value.trim()) setQuery("");
+              }}
+              className="min-w-0 flex-1 bg-transparent py-0.5 text-ink placeholder:text-ink-3 focus:outline-none"
+            />
+            <Button size="sm" type="submit">
+              Search
+            </Button>
+          </div>
+          <div aria-live="polite" className="px-1 text-xs text-ink-3">
+            {searching
+              ? "Searching…"
+              : searchActive && !searchError
+                ? `${taskCount} matching ${taskCount === 1 ? "task" : "tasks"}`
+                : null}
+          </div>
+          {searchError && (
+            <p role="alert" className="px-1 text-xs text-danger">
+              Could not search tasks. Clear the search and try again.
+            </p>
+          )}
+        </form>
       </div>
       {boardModel ? (
         <BoardView
@@ -528,7 +522,7 @@ function ViewBody({
         />
       ) : rows.length === 0 ? (
         <p className="p-10 text-center font-display text-lg text-ink-3">
-          {searchingAll
+          {searchActive
             ? searching
               ? "Searching…"
               : searchError
