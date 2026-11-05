@@ -99,8 +99,9 @@ hashed, revocable) and `oidc` (the desktop signs in with authorization code + PK
 loopback redirect, like `google.rs`; the server checks the ID token against the
 provider's JWKS and issues its own device token). Headless clients use server tokens in
 every mode. The client asks only for the URL and reads the mode from `/info`. The
-desktop is a public OIDC client (no secret, PKCE) with the fixed redirect
-`http://127.0.0.1:47823/oidc/callback`. Configuration, image name and token commands:
+desktop is a public OIDC client (no secret, PKCE) with a fixed loopback redirect
+`http://127.0.0.1:47823/oidc/callback`, falling back to ports 38823 and 28823 when Windows
+reserves the first (WSL mirrored networking, Hyper-V); all three are registered. Configuration, image name and token commands:
 `docs/server.md`.
 
 **Adapters.**
