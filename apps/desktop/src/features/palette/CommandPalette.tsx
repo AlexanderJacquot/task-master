@@ -122,6 +122,13 @@ export function CommandPalette({
       },
       { key: "view:all", group: "Views", label: "All tasks", hint: "g a", run: () => go("/all") },
       {
+        key: "view:metrics",
+        group: "Views",
+        label: "Metrics",
+        keywords: "dashboard statistics creation completion rates AI",
+        run: () => go("/metrics"),
+      },
+      {
         key: "view:settings",
         group: "Views",
         label: "Settings",

@@ -5,6 +5,7 @@ import {
   ArrowDownCircle,
   Bookmark,
   CalendarDays,
+  ChartNoAxesCombined,
   ChevronDown,
   ChevronRight,
   Diamond,
@@ -499,6 +500,9 @@ export function Sidebar({
         <RailLink to="/all" label="All tasks">
           <Layers size={18} />
         </RailLink>
+        <RailLink to="/metrics" label="Metrics">
+          <ChartNoAxesCombined size={18} />
+        </RailLink>
         <div className="my-2 h-px w-6 bg-line" />
         {order.map((id, i) => {
           const p = projects[id];
@@ -585,6 +589,9 @@ export function Sidebar({
         </NavItem>
         <NavItem to="/all" icon={<Layers size={17} className="shrink-0" />}>
           All tasks
+        </NavItem>
+        <NavItem to="/metrics" icon={<ChartNoAxesCombined size={17} className="shrink-0" />}>
+          Metrics
         </NavItem>
       </div>
 

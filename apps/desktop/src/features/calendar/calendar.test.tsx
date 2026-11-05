@@ -142,6 +142,36 @@ describe("the calendar", () => {
     expect(screen.queryByRole("button", { name: /^Dentist, / })).toBeNull();
   });
 
+  it("moves a scheduled task from Other tasks to Today", async () => {
+    await renderCalendar();
+    const others = await screen.findByRole("list", { name: "Other tasks" });
+    fireEvent.click(within(others).getByRole("button", { name: "Schedule Fix the gate" }));
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(within(others).queryByText("Fix the gate")).toBeNull();
+    expect(
+      within(screen.getByRole("list", { name: "Today's tasks" })).getByText("Fix the gate"),
+    ).toBeTruthy();
+  });
+
+  it("removes tasks scheduled for another day from the tray and restores them when removed", async () => {
+    localStorage.setItem("task-master.calendar-mode", "day");
+    await renderCalendar();
+    await screen.findByTestId(`time-column-${today}`);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    const others = screen.getByRole("list", { name: "Other tasks" });
+    fireEvent.click(within(others).getByRole("button", { name: "Schedule Fix the gate" }));
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    const tray = screen.getByRole("complementary", { name: "Tasks to schedule" });
+    expect(within(tray).queryByText("Fix the gate")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Fix the gate, / }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Time block" })).getByRole("button", {
+        name: "Remove",
+      }),
+    );
+    await waitFor(() => expect(within(others).getByText("Fix the gate")).toBeTruthy());
+  });
+
   it("opens the task from a block's menu", async () => {
     const router = await renderCalendar();
     fireEvent.click(await screen.findByRole("button", { name: /^Dentist, / }));

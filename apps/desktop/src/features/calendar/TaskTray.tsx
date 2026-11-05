@@ -5,9 +5,10 @@ import { useDraggable } from "@dnd-kit/core";
 import { CalendarPlus, GripVertical } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cx, Dot, FOCUS, IconButton, INPUT, SectionLabel } from "../../components/ui";
-import { blockMinutes, formatDuration } from "../../lib/calendar";
+import { addDays, atMinute, blockMinutes, formatDuration } from "../../lib/calendar";
 import type { Task } from "../../lib/types";
 import { compareTasks, inView, isOpen, type ViewContext } from "../../lib/views";
+import { useStoreState } from "../../store/context";
 import { type DragData, projectColor, useCalendar } from "./shared";
 
 /** Rows shown in "Other tasks"; typing narrows them. Keeps the list short (no virtualizer). */
@@ -15,6 +16,7 @@ const MAX_OTHERS = 50;
 
 export function TaskTray({ onSchedule }: { onSchedule(task: Task): void }) {
   const { tasks, projects, statuses, today } = useCalendar();
+  const timeBlocks = useStoreState((s) => s.time_blocks);
   const [query, setQuery] = useState("");
   const ctx: ViewContext = useMemo(
     () => ({
@@ -26,14 +28,26 @@ export function TaskTray({ onSchedule }: { onSchedule(task: Task): void }) {
     [today, statuses, projects],
   );
   const { todayTasks, others, more } = useMemo(() => {
+    const start = atMinute(today, 0);
+    const end = atMinute(addDays(today, 1), 0);
+    const scheduled = new Set<string>();
+    const scheduledToday = new Set<string>();
+    for (const block of Object.values(timeBlocks)) {
+      if (block.deleted_at !== null || block.outcome === "cancelled" || block.end_at <= start)
+        continue;
+      scheduled.add(block.task_id);
+      if (block.start_at < end) scheduledToday.add(block.task_id);
+    }
     const open = Object.values(tasks).filter((t) => isOpen(t, ctx));
     const todayTasks = open
-      .filter((t) => inView({ kind: "today" }, t, ctx))
+      .filter((t) => scheduledToday.has(t.id) || inView({ kind: "today" }, t, ctx))
       .sort((a, b) => compareTasks(a, b, ctx));
     const inToday = new Set(todayTasks.map((t) => t.id));
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     const matching = open
-      .filter((t) => !inToday.has(t.id))
+      .filter(
+        (t) => !inToday.has(t.id) && !scheduled.has(t.id) && !(t.today_on && t.today_on > today),
+      )
       .filter((t) => words.every((w) => t.title.toLowerCase().includes(w)))
       .sort((a, b) => compareTasks(a, b, ctx));
     return {
@@ -41,7 +55,7 @@ export function TaskTray({ onSchedule }: { onSchedule(task: Task): void }) {
       others: matching.slice(0, MAX_OTHERS),
       more: Math.max(matching.length - MAX_OTHERS, 0),
     };
-  }, [tasks, ctx, query]);
+  }, [tasks, timeBlocks, today, ctx, query]);
 
   return (
     <aside

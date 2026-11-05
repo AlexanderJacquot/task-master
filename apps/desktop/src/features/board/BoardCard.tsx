@@ -1,7 +1,7 @@
-import { Diamond, ListChecks } from "lucide-react";
+import { Clock, Diamond, ListChecks } from "lucide-react";
 import { memo } from "react";
 import { Chip, cx, Dot, PRIORITY_PILL } from "../../components/ui";
-import { formatDue } from "../../lib/dates";
+import { daysFrom, formatDue, isoDate } from "../../lib/dates";
 import type { Epic, Project, Status, Tag, Task } from "../../lib/types";
 
 /** Height of a card plus the gap below it; fixed so columns virtualize without measuring. */
@@ -34,6 +34,8 @@ export const CardFace = memo(function CardFace(p: Props) {
   const category = p.statuses.find((s) => s.id === task.status_id)?.category;
   const done = category === "done" || category === "cancelled";
   const overdue = !done && task.due_date !== null && task.due_date < p.today;
+  const untouchedDays = daysFrom(isoDate(new Date(task.updated_at)), p.today);
+  const stale = !done && untouchedDays >= 30;
   const project = task.project_id ? p.projects[task.project_id] : undefined;
   const epic = task.epic_id ? p.epics[task.epic_id] : undefined;
   const tags = task.tag_ids.flatMap((id) => (p.tags[id] ? [p.tags[id]] : []));
@@ -78,6 +80,16 @@ export const CardFace = memo(function CardFace(p: Props) {
             <Chip key={tag.id}>#{tag.name}</Chip>
           ))}
         </span>
+        {stale && (
+          <span
+            className="flex shrink-0 items-center gap-1 text-ink-3"
+            title={`Not updated for ${untouchedDays} days`}
+          >
+            <Clock size={12} aria-hidden="true" />
+            Stale
+            <span className="sr-only">: not updated for {untouchedDays} days</span>
+          </span>
+        )}
         {p.childCount > 0 && (
           <span className="flex shrink-0 items-center gap-1 tabular-nums" title="Subtasks done">
             <ListChecks size={12} /> {p.childDone}/{p.childCount}

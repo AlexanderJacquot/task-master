@@ -9,6 +9,7 @@ import {
 import { MoreHorizontal } from "lucide-react";
 import { IconButton } from "./components/ui";
 import { CalendarPage } from "./features/calendar/CalendarPage";
+import { MetricsPage } from "./features/metrics/MetricsPage";
 import { EpicPage } from "./features/organize/EpicPage";
 import { ProjectPage } from "./features/organize/ProjectPage";
 import { TagMenu } from "./features/organize/TagMenu";
@@ -61,6 +62,12 @@ const allRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "all",
   component: () => <ViewPage scope={{ kind: "all" }} title="All tasks" />,
+});
+
+const metricsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "metrics",
+  component: MetricsPage,
 });
 
 const projectRoute = createRoute({
@@ -149,6 +156,7 @@ const routeTree = rootRoute.addChildren([
   inboxRoute,
   todayRoute,
   calendarRoute,
+  metricsRoute,
   allRoute,
   projectRoute,
   epicRoute,
