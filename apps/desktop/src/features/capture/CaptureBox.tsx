@@ -1,5 +1,6 @@
+import { Plus } from "lucide-react";
 import { forwardRef, useCallback, useRef, useState } from "react";
-import { Chip, cx, PRIORITY_STYLE } from "../../components/ui";
+import { Button, Chip, cx, PRIORITY_PILL } from "../../components/ui";
 import { formatDue, isoDate } from "../../lib/dates";
 import type { Capture } from "../../lib/types";
 import { captureTask, missingContainers, type NewTaskInput } from "../../store/actions";
@@ -20,8 +21,8 @@ function hasMarkers(c: Capture): boolean {
 
 /** What the line will create, read by the core parser as you type. */
 function Preview({ capture, today }: { capture: Capture; today: string }) {
-  const known = "text-green-700 dark:text-green-400";
-  const unknown = "text-amber-700 dark:text-amber-400";
+  const known = "text-green-800 dark:text-green-300";
+  const unknown = "text-amber-800 dark:text-amber-300";
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-xs" data-testid="capture-preview">
       {capture.project && (
@@ -43,11 +44,11 @@ function Preview({ capture, today }: { capture: Capture; today: string }) {
         </Chip>
       ))}
       {capture.priority && (
-        <Chip className={PRIORITY_STYLE[capture.priority]}>!{capture.priority}</Chip>
+        <Chip className={PRIORITY_PILL[capture.priority]}>!{capture.priority}</Chip>
       )}
       {capture.due_date && <Chip>Due {formatDue(capture.due_date, today)}</Chip>}
       {capture.warnings.map((w) => (
-        <span key={w} className="text-red-600 dark:text-red-400">
+        <span key={w} className="text-danger">
           {w}
         </span>
       ))}
@@ -67,9 +68,14 @@ export const CaptureBox = forwardRef<
     defaults?: Omit<NewTaskInput, "title">;
     placeholder?: string;
     autoFocus?: boolean;
-    onCaptured?(taskId: string): void;
+    /** `open`: Shift+Enter was used, so the caller may open the new task. */
+    onCaptured?(taskId: string, how: { open: boolean }): void;
     onEscape?(): void;
     className?: string;
+    /** `inline`: the row above a list; `dialog` / `window`: large input with a footer. */
+    variant?: "inline" | "dialog" | "window";
+    /** Footer text for the large variants. */
+    footer?: string;
   }
 >(function CaptureBox(p, ref) {
   const store = useTaskStore();
@@ -95,7 +101,7 @@ export const CaptureBox = forwardRef<
     [api],
   );
 
-  const submit = async () => {
+  const submit = async (open = false) => {
     // Parse the exact text being saved, even if a keystroke's parse is still in flight.
     if (!text.trim()) return;
     const result = await parse(text);
@@ -117,23 +123,37 @@ export const CaptureBox = forwardRef<
     setText("");
     setCapture(null);
     setConfirming(false);
-    if (id) p.onCaptured?.(id);
+    if (id) p.onCaptured?.(id, { open });
   };
 
   const missing = capture ? missingContainers(capture) : [];
 
+  const variant = p.variant ?? "inline";
+  const big = variant !== "inline";
+
   return (
-    <div className={cx("flex flex-col gap-1", p.className)}>
-      <div className="flex gap-2">
+    <div className={cx("flex flex-col", big ? "gap-0" : "gap-1.5", p.className)}>
+      <div
+        className={cx(
+          "flex items-center gap-3",
+          variant === "inline" &&
+            "rounded-[10px] border border-dashed border-line-strong px-3.5 py-1.5 transition-colors focus-within:border-solid focus-within:border-accent focus-within:bg-raised/60",
+          big && "border-b border-line px-5 py-4",
+        )}
+      >
+        <Plus aria-hidden size={big ? 18 : 16} strokeWidth={2.3} className="shrink-0 text-accent" />
         <input
           ref={ref}
           id={p.id}
           value={text}
-          // biome-ignore lint/a11y/noAutofocus: the capture window exists to type into
+          // biome-ignore lint/a11y/noAutofocus: the capture window and dialog exist to type into
           autoFocus={p.autoFocus}
           aria-label="New task"
           placeholder={p.placeholder ?? `New task… (press n)   ${CAPTURE_HINT}`}
-          className="min-w-0 flex-1 rounded border border-neutral-300 bg-white px-2 py-1 focus:border-blue-500 focus:outline-none dark:border-neutral-700 dark:bg-neutral-900"
+          className={cx(
+            "min-w-0 flex-1 bg-transparent text-ink placeholder:text-ink-3 focus:outline-none",
+            big ? "text-[19px]" : "py-0.5",
+          )}
           onChange={(e) => {
             setText(e.target.value);
             setConfirming(false);
@@ -147,7 +167,7 @@ export const CaptureBox = forwardRef<
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              void submit();
+              void submit(e.shiftKey);
             } else if (e.key === "Escape") {
               if (confirming) {
                 e.stopPropagation();
@@ -156,25 +176,43 @@ export const CaptureBox = forwardRef<
             }
           }}
         />
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={!text.trim()}
-          className="shrink-0 rounded bg-blue-600 px-3 py-1 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-default disabled:opacity-40"
-        >
-          {confirming ? "Create" : "Add task"}
-        </button>
+        {variant === "inline" && (
+          <Button variant="primary" size="sm" onClick={() => void submit()} disabled={!text.trim()}>
+            {confirming ? "Create" : "Add task"}
+          </Button>
+        )}
       </div>
-      {capture && text.trim() && hasMarkers(capture) && <Preview capture={capture} today={today} />}
-      {error && (
-        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
-          {error}
-        </p>
-      )}
-      {confirming && missing.length > 0 && (
-        <p className="text-xs text-amber-700 dark:text-amber-400" role="alert">
-          Create {missing.join(" and ")}? Enter or Create to confirm, Esc to edit.
-        </p>
+      <div className={cx("flex flex-col gap-1.5", big && "px-5 py-3", !big && "px-1")}>
+        {capture && text.trim() && hasMarkers(capture) ? (
+          <Preview capture={capture} today={today} />
+        ) : (
+          big && <p className="font-mono text-[12px] text-ink-3">{CAPTURE_HINT}</p>
+        )}
+        {error && (
+          <p className="text-[13px] text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        {confirming && missing.length > 0 && (
+          <p className="text-[13px] text-amber-800 dark:text-amber-300" role="alert">
+            Create {missing.join(" and ")}? Enter or Create to confirm, Esc to edit.
+          </p>
+        )}
+      </div>
+      {big && (
+        <div className="flex items-center gap-2.5 border-t border-line bg-hover/50 px-5 py-3 text-[12.5px] text-ink-3">
+          <span className="flex-1">
+            {p.footer ?? "Enter adds · Shift+Enter adds and opens · Esc closes"}
+          </span>
+          {p.onEscape && (
+            <Button size="sm" onClick={p.onEscape}>
+              Cancel
+            </Button>
+          )}
+          <Button variant="primary" size="sm" onClick={() => void submit()} disabled={!text.trim()}>
+            {confirming ? "Create" : "Add task"}
+          </Button>
+        </div>
       )}
     </div>
   );

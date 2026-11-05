@@ -2,8 +2,10 @@
 # mirror only: Forgejo reads .forgejo/workflows and ignores this folder while that exists.
 #
 # Release: bump `version` in apps/desktop/src-tauri/tauri.conf.json, push a `v<version>`
-# tag to Forgejo; the push mirror forwards it here and this builds a draft release.
-# Builds are unsigned (Windows SmartScreen and macOS Gatekeeper will warn).
+# tag to Forgejo; the push mirror forwards it here and this builds and publishes the release.
+# Installed apps update from it (ADR 009): update bundles are signed with the key in the
+# TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) secrets and listed in latest.json. The installers
+# themselves are not code-signed (Windows SmartScreen and macOS Gatekeeper warn once).
 
 name: release
 
@@ -66,14 +68,23 @@ jobs:
       - name: Install JS dependencies
         run: pnpm install --frozen-lockfile
 
+      # `tauri.updater.conf.json` turns on the signed update bundles; tauri-action then
+      # writes latest.json, which the app reads from releases/latest (ADR 009).
       - uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
           tauriScript: pnpm tauri
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
-          releaseBody: Unsigned builds. See the assets for each OS.
-          releaseDraft: true
-          args: ${{ matrix.args }}
+          releaseBody: >-
+            Installed apps (0.2.0 and later) pick this up from Settings → About and updates.
+            New install: Windows setup .exe, macOS .dmg, Linux .AppImage (updates in place)
+            or .deb/.rpm.
+          releaseDraft: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }} --config src-tauri/tauri.updater.conf.json

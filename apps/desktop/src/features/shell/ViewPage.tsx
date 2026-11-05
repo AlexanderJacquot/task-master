@@ -1,10 +1,12 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { Bookmark, Columns3, Filter, List, SlidersHorizontal } from "lucide-react";
+import { Popover } from "radix-ui";
 import { type ReactNode, useCallback, useMemo, useState } from "react";
-import { cx, InlineInput, Select } from "../../components/ui";
+import { Button, cx, FOCUS, InlineInput, Select } from "../../components/ui";
 import { buildBoard } from "../../lib/board";
 import { isoDate } from "../../lib/dates";
 import type { GroupBy, SortBy, Swimlane, TaskChange, View, ViewScope } from "../../lib/types";
-import { buildRows, type ViewContext } from "../../lib/views";
+import { buildRows, filterIsEmpty, type ViewContext } from "../../lib/views";
 import {
   createView,
   deleteView,
@@ -16,7 +18,7 @@ import {
 import { useStoreState, useTaskStore } from "../../store/context";
 import type { CardLookups } from "../board/BoardCard";
 import { BoardView } from "../board/BoardView";
-import { CaptureBox } from "../capture/CaptureBox";
+import { CAPTURE_HINT, CaptureBox } from "../capture/CaptureBox";
 import { TaskList } from "../list/TaskList";
 import { EditableTitle } from "./EditableTitle";
 import { FilterBar } from "./FilterBar";
@@ -77,17 +79,20 @@ export function ViewPage({
   title,
   actions,
   details,
+  eyebrow,
 }: {
   scope: ViewScope;
   title: ReactNode;
   actions?: ReactNode;
   details?: ReactNode;
+  eyebrow?: ReactNode;
 }) {
   const [display, setDisplay] = useViewPrefs(scope);
   return (
     <ViewBody
       scope={scope}
       title={title}
+      eyebrow={eyebrow}
       display={display}
       setDisplay={setDisplay}
       actions={actions}
@@ -160,18 +165,18 @@ export function HeaderButton({
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cx(
-        "rounded px-2 py-0.5 text-xs",
-        primary
-          ? "bg-blue-600 text-white hover:bg-blue-700"
-          : "border border-neutral-300 text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-900",
-      )}
-    >
+    <Button size="sm" variant={primary ? "primary" : "secondary"} onClick={onClick}>
       {children}
-    </button>
+    </Button>
+  );
+}
+
+function DisplayRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-ink-2">{label}</span>
+      {children}
+    </div>
   );
 }
 
@@ -183,9 +188,12 @@ function ViewBody({
   setDisplay,
   actions,
   details,
+  eyebrow,
 }: {
   scope: ViewScope;
   title: ReactNode;
+  /** Small line above the title (a project's area). */
+  eyebrow?: ReactNode;
   display: ViewDisplay;
   setDisplay(patch: Partial<ViewDisplay>): void;
   /** Extra header buttons (saved views: save, revert, delete). */
@@ -204,6 +212,8 @@ function ViewBody({
   const openTask = useOpenTask();
   const board = display.layout === "board";
   const [savingAs, setSavingAs] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const filtersShown = showFilters || !filterIsEmpty(display.filter);
 
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
   const [collapsedTasks, setCollapsedTasks] = useState<ReadonlySet<string>>(new Set());
@@ -249,123 +259,180 @@ function ViewBody({
     [store],
   );
   const onToggleDone = useCallback((id: string) => void toggleDone(store, id), [store]);
+  const onOpenPage = useCallback(
+    (id: string) => void navigate({ to: "/task/$taskId", params: { taskId: id }, search: {} }),
+    [navigate],
+  );
   const onToggleCollapse = useCallback((id: string) => setCollapsedTasks((s) => toggle(s, id)), []);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-        <h1 className="flex min-w-0 flex-1 truncate text-lg font-semibold">{title}</h1>
-        <span className="text-xs text-neutral-500">
-          {taskCount} {taskCount === 1 ? "task" : "tasks"}
-        </span>
-        {board ? (
-          <>
-            <Select
-              aria-label="Swimlanes"
-              value={display.swimlane}
-              onChange={(e) => setDisplay({ swimlane: e.target.value as Swimlane })}
-              className="text-xs text-neutral-600 dark:text-neutral-400"
-            >
-              {SWIMLANES.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </Select>
-            <label className="flex items-center gap-1 text-xs text-neutral-500">
-              <input
-                type="checkbox"
-                checked={display.show_subtasks}
-                onChange={(e) => setDisplay({ show_subtasks: e.target.checked })}
-              />
-              Subtasks
-            </label>
-          </>
-        ) : (
-          <>
-            <Select
-              aria-label="Group by"
-              value={display.group_by}
-              onChange={(e) => setDisplay({ group_by: e.target.value as GroupBy })}
-              className="text-xs text-neutral-600 dark:text-neutral-400"
-            >
-              {GROUPS.map((g) => (
-                <option key={g.value} value={g.value}>
-                  {g.label}
-                </option>
-              ))}
-            </Select>
-            <Select
-              aria-label="Sort"
-              value={display.sort}
-              onChange={(e) => setDisplay({ sort: e.target.value as SortBy })}
-              className="text-xs text-neutral-600 dark:text-neutral-400"
-            >
-              {SORTS.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </Select>
-          </>
-        )}
-        <label className="flex items-center gap-1 text-xs text-neutral-500">
-          <input
-            type="checkbox"
-            checked={display.show_cancelled}
-            onChange={(e) => setDisplay({ show_cancelled: e.target.checked })}
-          />
-          Show cancelled
-        </label>
-        <fieldset
-          aria-label="Layout"
-          className="flex overflow-hidden rounded border border-neutral-300 text-xs dark:border-neutral-700"
-        >
-          {(["list", "board"] as const).map((layout) => (
-            <button
-              key={layout}
-              type="button"
-              aria-pressed={display.layout === layout}
-              onClick={() => setDisplay({ layout })}
-              className={cx(
-                "px-2 py-0.5 capitalize",
-                display.layout === layout
-                  ? "bg-neutral-200 font-medium dark:bg-neutral-800"
-                  : "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900",
-              )}
-            >
-              {layout}
-            </button>
-          ))}
-        </fieldset>
-        {actions}
-        {savingAs ? (
-          <InlineInput
-            initial=""
-            placeholder="Name of the new view"
-            className="w-48"
-            onCommit={async (name) => {
-              setSavingAs(false);
-              const id = await createView(store, name, spec);
-              if (id) void navigate({ to: "/view/$viewId", params: { viewId: id } });
-            }}
-            onCancel={() => setSavingAs(false)}
-          />
-        ) : (
-          <HeaderButton onClick={() => setSavingAs(true)}>Save as view</HeaderButton>
-        )}
+      <header className="flex flex-wrap items-end gap-x-4 gap-y-3 px-10 pt-7 pb-4">
+        <div className="min-w-0 flex-1">
+          {eyebrow && <div className="mb-0.5 text-[13px] text-ink-3">{eyebrow}</div>}
+          <h1 className="flex min-w-0 items-center gap-3 font-display text-[34px] leading-tight font-normal tracking-wide">
+            {title}
+          </h1>
+          <div className="mt-1 text-[13.5px] text-ink-2">
+            {taskCount} {taskCount === 1 ? "task" : "tasks"}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <fieldset aria-label="Layout" className="flex rounded-[9px] bg-hover p-0.5 text-[13px]">
+            {(["list", "board"] as const).map((layout) => (
+              <button
+                key={layout}
+                type="button"
+                aria-pressed={display.layout === layout}
+                onClick={() => setDisplay({ layout })}
+                className={cx(
+                  "flex items-center gap-1.5 rounded-[7px] px-3 py-1 capitalize transition-colors",
+                  FOCUS,
+                  display.layout === layout
+                    ? "bg-selected text-ink shadow-sm"
+                    : "text-ink-2 hover:text-ink",
+                )}
+              >
+                {layout === "list" ? <List size={14} /> : <Columns3 size={14} />}
+                {layout}
+              </button>
+            ))}
+          </fieldset>
+          <Popover.Root>
+            <Popover.Trigger asChild>
+              <Button size="sm">
+                <SlidersHorizontal size={14} />
+                Display
+              </Button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                align="end"
+                sideOffset={6}
+                className="z-40 flex w-64 flex-col gap-3 rounded-xl border border-line-strong bg-overlay p-3 text-sm shadow-xl"
+              >
+                {board ? (
+                  <>
+                    <DisplayRow label="Swimlanes">
+                      <Select
+                        aria-label="Swimlanes"
+                        value={display.swimlane}
+                        onChange={(e) => setDisplay({ swimlane: e.target.value as Swimlane })}
+                        className="w-36 border-line-strong"
+                      >
+                        {SWIMLANES.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </DisplayRow>
+                    <label className="flex items-center justify-between gap-2 text-ink-2">
+                      Show subtasks
+                      <input
+                        type="checkbox"
+                        checked={display.show_subtasks}
+                        onChange={(e) => setDisplay({ show_subtasks: e.target.checked })}
+                        className="accent-accent"
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <DisplayRow label="Group">
+                      <Select
+                        aria-label="Group by"
+                        value={display.group_by}
+                        onChange={(e) => setDisplay({ group_by: e.target.value as GroupBy })}
+                        className="w-36 border-line-strong"
+                      >
+                        {GROUPS.map((g) => (
+                          <option key={g.value} value={g.value}>
+                            {g.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </DisplayRow>
+                    <DisplayRow label="Sort">
+                      <Select
+                        aria-label="Sort"
+                        value={display.sort}
+                        onChange={(e) => setDisplay({ sort: e.target.value as SortBy })}
+                        className="w-36 border-line-strong"
+                      >
+                        {SORTS.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </Select>
+                    </DisplayRow>
+                  </>
+                )}
+                <label className="flex items-center justify-between gap-2 text-ink-2">
+                  Show cancelled
+                  <input
+                    type="checkbox"
+                    checked={display.show_cancelled}
+                    onChange={(e) => setDisplay({ show_cancelled: e.target.checked })}
+                    className="accent-accent"
+                  />
+                </label>
+                <div className="h-px bg-line" />
+                {savingAs ? (
+                  <InlineInput
+                    initial=""
+                    autoFocus
+                    placeholder="Name of the new view"
+                    onCommit={async (name) => {
+                      setSavingAs(false);
+                      const id = await createView(store, name, spec);
+                      if (id) void navigate({ to: "/view/$viewId", params: { viewId: id } });
+                    }}
+                    onCancel={() => setSavingAs(false)}
+                  />
+                ) : (
+                  <Button size="sm" variant="ghost" onClick={() => setSavingAs(true)}>
+                    <Bookmark size={14} />
+                    Save as view
+                  </Button>
+                )}
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
+          <Button
+            size="sm"
+            aria-pressed={filtersShown}
+            onClick={() => setShowFilters((v) => !v)}
+            className={cx(!filterIsEmpty(display.filter) && "border-accent text-accent")}
+          >
+            <Filter size={14} />
+            Filter
+          </Button>
+          {actions}
+        </div>
       </header>
       {details}
-      <FilterBar
-        filter={display.filter}
-        onChange={(filter) => setDisplay({ filter })}
-        statuses={statuses}
-        projects={projects}
-        epics={epics}
-        tags={tags}
-      />
-      <div className="border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-        <CaptureBox id={NEW_TASK_INPUT_ID} defaults={captureDefaults(scope, today)} />
+      {filtersShown && (
+        <FilterBar
+          filter={display.filter}
+          onChange={(filter) => setDisplay({ filter })}
+          statuses={statuses}
+          projects={projects}
+          epics={epics}
+          tags={tags}
+        />
+      )}
+      <div className="px-10 pt-1 pb-2">
+        <CaptureBox
+          id={NEW_TASK_INPUT_ID}
+          defaults={captureDefaults(scope, today)}
+          placeholder={`Add a task${typeof title === "string" ? ` to ${title}` : ""}…   ${CAPTURE_HINT}`}
+          onCaptured={(id, how) => {
+            if (how.open)
+              void navigate({ to: "/task/$taskId", params: { taskId: id }, search: {} });
+          }}
+        />
       </div>
       {boardModel ? (
         <BoardView
@@ -375,7 +442,7 @@ function ViewBody({
           onOpen={openTask}
         />
       ) : rows.length === 0 ? (
-        <p className="p-8 text-center text-neutral-500">
+        <p className="p-10 text-center font-display text-lg text-ink-3">
           {scope.kind === "inbox" ? "Inbox zero. Nothing to triage." : "No tasks here yet."}
         </p>
       ) : (
@@ -385,6 +452,7 @@ function ViewBody({
           collapsedTasks={collapsedTasks}
           onToggleGroup={(id) => setCollapsedGroups((s) => toggle(s, id))}
           onOpen={openTask}
+          onOpenPage={onOpenPage}
           onToggleDone={onToggleDone}
           onToggleCollapse={onToggleCollapse}
           onChange={onChange}

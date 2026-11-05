@@ -41,8 +41,8 @@ function EpicDetails({ epic }: { epic: Epic }) {
   const late = epic.state === "active" && epic.target_date !== null && epic.target_date < isoDate();
 
   return (
-    <div className="flex flex-col gap-2 border-b border-neutral-200 px-4 py-2 text-xs dark:border-neutral-800">
-      <div className="flex flex-wrap items-center gap-3 text-neutral-600 dark:text-neutral-400">
+    <div className="flex flex-col gap-2 px-10 pb-3 text-[13px]">
+      <div className="flex flex-wrap items-center gap-3 text-ink-2">
         <Select
           aria-label="Epic state"
           value={epic.state}
@@ -90,9 +90,9 @@ function EpicDetails({ epic }: { epic: Epic }) {
             ))}
         </Select>
         <span className="ml-auto flex items-center gap-2" title={`${done} of ${total} done`}>
-          <span className="block h-1.5 w-32 overflow-hidden rounded bg-neutral-200 dark:bg-neutral-700">
+          <span className="block h-1.5 w-32 overflow-hidden rounded-full bg-line-strong">
             <span
-              className="block h-full bg-green-500"
+              className="block h-full bg-green-700 dark:bg-green-500"
               style={{ width: total ? `${(100 * done) / total}%` : 0 }}
             />
           </span>
@@ -110,7 +110,7 @@ function EpicDetails({ epic }: { epic: Epic }) {
             void updateEpic(store, epic.id, [{ description }]);
           }
         }}
-        className="w-full resize-y rounded border border-transparent bg-transparent px-1 py-0.5 text-sm text-neutral-700 hover:border-neutral-300 focus:border-blue-500 focus:outline-none dark:text-neutral-300 dark:hover:border-neutral-700"
+        className="w-full resize-y rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-[14.5px] text-ink-2 hover:border-line-strong focus:border-accent focus:outline-none"
       />
     </div>
   );

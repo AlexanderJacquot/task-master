@@ -14,14 +14,10 @@ export function ErrorToast() {
   return (
     <div
       role="alert"
-      className="fixed right-4 bottom-4 z-50 flex max-w-sm items-start gap-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-red-900 shadow-lg dark:border-red-800 dark:bg-red-950 dark:text-red-100"
+      className="fixed right-4 bottom-4 z-50 flex max-w-sm items-start gap-3 rounded-xl border border-danger/40 bg-overlay px-4 py-3 text-ink shadow-xl"
     >
       <span className="flex-1">{error}</span>
-      <button
-        type="button"
-        onClick={dismiss}
-        className="text-red-700 hover:underline dark:text-red-300"
-      >
+      <button type="button" onClick={dismiss} className="text-danger hover:underline">
         Dismiss
       </button>
     </div>

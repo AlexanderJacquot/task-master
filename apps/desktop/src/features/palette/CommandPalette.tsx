@@ -192,10 +192,10 @@ export function CommandPalette({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/30" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="fixed top-[15%] left-1/2 z-50 w-[36rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
+          className="tex-sheet fixed top-[14%] left-1/2 z-50 w-[38rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-2xl border border-line-strong bg-overlay shadow-2xl shadow-black/40"
         >
           <Dialog.Title className="sr-only">Command palette</Dialog.Title>
           <input
@@ -218,16 +218,14 @@ export function CommandPalette({
             }}
             placeholder="Jump to a view, project, epic, tag or task… or run an action"
             aria-label="Command"
-            className="w-full border-b border-neutral-200 bg-transparent px-4 py-3 focus:outline-none dark:border-neutral-800"
+            className="w-full border-b border-line bg-transparent px-5 py-4 text-[17px] text-ink placeholder:text-ink-3 focus:outline-none"
           />
-          <ul ref={listRef} className="max-h-96 overflow-y-auto py-1" aria-label="Results">
-            {results.length === 0 && (
-              <li className="px-4 py-3 text-sm text-neutral-500">No matches</li>
-            )}
+          <ul ref={listRef} className="max-h-96 overflow-y-auto p-1.5" aria-label="Results">
+            {results.length === 0 && <li className="px-4 py-3 text-sm text-ink-3">No matches</li>}
             {results.map((item, i) => (
               <li key={item.key} data-index={i}>
                 {(i === 0 || results[i - 1]?.group !== item.group) && (
-                  <p className="px-4 pt-2 pb-1 text-xs font-semibold text-neutral-400">
+                  <p className="px-3 pt-2.5 pb-1 font-display text-[13px] tracking-wide text-ink-3">
                     {item.group}
                   </p>
                 )}
@@ -237,12 +235,12 @@ export function CommandPalette({
                   onClick={() => item.run()}
                   aria-current={i === current}
                   className={cx(
-                    "flex w-full items-center gap-2 px-4 py-1.5 text-left text-sm",
-                    i === current && "bg-blue-50 dark:bg-blue-950/50",
+                    "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-ink",
+                    i === current && "bg-selected",
                   )}
                 >
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                  {item.hint && <span className="text-xs text-neutral-400">{item.hint}</span>}
+                  {item.hint && <span className="text-xs text-ink-3">{item.hint}</span>}
                 </button>
               </li>
             ))}

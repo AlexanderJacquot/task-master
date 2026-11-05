@@ -4,6 +4,12 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**M7 Redesign**, branch `m7-redesign` (stacked on `m6-ux-feedback`): done, including in-app
+updates (version 0.2.0). Next: release 0.2.0, install it by hand once on Windows, then
+check the redesign in both themes and that 0.2.1 arrives through the update button.
+
+### Previous
+
 **M6 Hardening**, branch `m6-hardening` (stacked on `m5-speed`): done, pending review, the
 GitHub mirror setup and hands-on checks. The MVP milestones are complete; next is using
 the app daily for two weeks before Phase 2 (plan section 10).
@@ -26,6 +32,47 @@ the app daily for two weeks before Phase 2 (plan section 10).
   `pnpm --filter desktop tauri icon src-tauri/app-icon.png`).
 
 Verified locally on Linux: all checks pass; release build produces a 2.9 MiB `.deb`.
+
+### M7 In-app updates and build info (2026-11-05)
+
+ADR `docs/adr/009-in-app-updates.md`; release steps in `docs/release.md`.
+- `tauri-plugin-updater` 2.14.0 + `tauri-plugin-process` 2.4.0 (Rust and JS), capabilities
+  `updater:default`, `process:allow-restart`. Endpoint: GitHub `releases/latest/download/
+  latest.json`; Windows passive install.
+- Signing key in `~/.tauri/task-master.key*` (back it up); public key in `tauri.conf.json`;
+  secrets `TAURI_SIGNING_PRIVATE_KEY(_PASSWORD)` set on the GitHub repo.
+- Update bundles only in releases (`tauri.updater.conf.json` via the release workflow),
+  so Forgejo CI and local builds need no key. Releases now publish automatically.
+- UI: `lib/updater.ts` (UpdateSource + zustand state machine), Settings → About and
+  updates (version, build commit and date, check / download with progress / restart /
+  retry), sidebar "Update to x.y.z" pill; quiet check 10 s after start and every 6 h.
+- Version 0.2.0 (tauri.conf.json, Cargo workspace, package.json).
+- Verified locally: signed release build (`.deb.sig`, `.AppImage.sig`) with the key, and
+  the unsigned CI-style build without it. Tests: 132 Vitest (+8: update store, About UI).
+
+### M7 Redesign (2026-11-05)
+
+From user feedback after the first Windows build; mockup agreed first (claude.ai canvas
+"task-master redesign"). Decisions: `docs/adr/008-redesign.md`.
+- Themes: every color a `--tm-*` variable; semantic Tailwind colors (`canvas`, `ink`,
+  `accent`...); `neutral-*` and `blue-*` remapped per theme. Dark (default, gold accent) and
+  Parchment (light: vellum, brown ink, rubric red, CSS grain). Settings: Dark / Parchment /
+  Follow the system.
+- Type: MedievalSharp (display) + Source Serif 4 (body), bundled. Icons: lucide-react.
+- Sidebar: New task + Jump to, smart lists with icons, projects with hover + and ⋯ menu
+  (rename, color, archive, delete; right-click; double-click renames), foldable Epics /
+  Saved views / Tags, collapsible to a rail. Ctrl+1–9 jump to projects.
+- New task dialog (sidebar, Ctrl+N; takes the current project/epic/tag/Today);
+  Shift+Enter adds and opens. CaptureBox variants: inline, dialog, window.
+- Full task page `/task/$taskId` (panel's Open, Shift+Enter on a row; Esc goes back).
+- View header: big title, List/Board switch, Display and Filter menus. Restyled rows (round
+  status-colored checkbox, selects on hover), board, palette, settings, Plan my day.
+- Capture window 660x230 for the new layout.
+- Tests: 124 Vitest (+6: full page from panel and Shift+Enter, New task dialog with project
+  default, Ctrl+N / Ctrl+2, sidebar rename, dialog defaults); tests updated for the
+  Display/Filter menus and folded sidebar sections. Rust unchanged.
+- New dependencies: `lucide-react` 1.61.0, `@fontsource/medievalsharp` 5.3.0,
+  `@fontsource-variable/source-serif-4` 5.3.0.
 
 ### M6 feedback: discoverability (2026-11-05)
 
@@ -214,7 +261,10 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
-- Rename projects/epics/tags from the sidebar (context menu or F2), not only from the page.
+- Rename epics and tags from the sidebar (projects done in M7).
+- Drop cap on the full task page's description (needs care with CodeMirror measuring).
+- Optional sans body font (one variable, `--font-sans`).
+- Board: Shift+Enter on a card to open the full page.
 
 - Markdown preview: needs a renderer dependency (`marked` + `DOMPurify` or `react-markdown`).
 - List view multi-select and bulk actions (plan section 6), via one `execute` batch.

@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { cx, Dot, InlineInput, Select } from "../../components/ui";
 import { formatAgo, isoDate } from "../../lib/dates";
 import { settingsApi } from "../../lib/settingsApi";
-import { loadTheme, saveTheme, type Theme } from "../../lib/theme";
+import { loadTheme, saveTheme, THEME_LABELS, type Theme } from "../../lib/theme";
 import type {
   BackupStatus,
   ConfigView,
@@ -13,8 +13,9 @@ import type {
 } from "../../lib/types";
 import { createStatus, deleteStatus, moveStatus, updateStatus } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
-import { PROJECT_COLORS } from "../organize/ProjectPage";
+import { PROJECT_COLORS } from "../organize/projectColors";
 import { HeaderButton } from "../shell/ViewPage";
+import { About } from "./About";
 
 const CATEGORIES: Array<{ value: StatusCategory; label: string }> = [
   { value: "backlog", label: "Backlog" },
@@ -26,8 +27,8 @@ const CATEGORIES: Array<{ value: StatusCategory; label: string }> = [
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
-    <section className="flex flex-col gap-2 border-b border-neutral-200 py-5 dark:border-neutral-800">
-      <h2 className="text-base font-semibold">{title}</h2>
+    <section className="flex flex-col gap-2.5 border-b border-line py-6">
+      <h2 className="font-display text-[19px] tracking-wide text-accent">{title}</h2>
       {hint && <p className="text-xs text-neutral-500">{hint}</p>}
       {children}
     </section>
@@ -172,8 +173,8 @@ function Appearance() {
   return (
     <Section title="Appearance">
       <div className="flex gap-3" role="radiogroup" aria-label="Theme">
-        {(["system", "light", "dark"] as const).map((t) => (
-          <label key={t} className="flex items-center gap-1 capitalize">
+        {(["dark", "light", "system"] as const).map((t) => (
+          <label key={t} className="flex items-center gap-1.5">
             <input
               type="radio"
               name="theme"
@@ -182,8 +183,9 @@ function Appearance() {
                 setTheme(t);
                 saveTheme(t);
               }}
+              className="accent-accent"
             />
-            {t}
+            {THEME_LABELS[t]}
           </label>
         ))}
       </div>
@@ -458,10 +460,11 @@ function RemoteBackupForm({
 export function SettingsPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-      <header className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
-        <h1 className="text-lg font-semibold">Settings</h1>
+      <header className="px-10 pt-7 pb-2">
+        <h1 className="font-display text-[34px] leading-tight tracking-wide">Settings</h1>
       </header>
-      <div className="max-w-3xl px-6">
+      <div className="max-w-3xl px-10 pb-10">
+        <About />
         <Workflow />
         <Appearance />
         <Data />

@@ -243,20 +243,17 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
     >
       <div className={cx("min-h-0 flex-1 overflow-auto", lanes ? "" : "flex")} data-testid="board">
         <div className={cx("flex min-w-max flex-col", !lanes && "flex-1")}>
-          <div className="sticky top-0 z-10 flex gap-3 bg-neutral-50 px-4 pt-3 pb-2 dark:bg-neutral-950">
+          <div className="sticky top-0 z-10 flex gap-3.5 bg-canvas px-7 pt-2 pb-2">
             {board.columns.map((column) => (
-              <div
-                key={column.status.id}
-                className="flex w-72 items-center gap-2 text-xs font-semibold text-neutral-600 dark:text-neutral-400"
-              >
+              <div key={column.status.id} className="flex w-[17.5rem] items-center gap-2 px-2.5">
                 <Dot color={column.status.color} />
-                <span>{column.status.name}</span>
+                <span className="font-display text-[15px] tracking-wide text-ink-2">
+                  {column.status.name}
+                </span>
                 <span
                   className={cx(
-                    "font-normal",
-                    column.overLimit
-                      ? "rounded bg-red-100 px-1 font-semibold text-red-700 dark:bg-red-950 dark:text-red-300"
-                      : "text-neutral-400",
+                    "text-[12.5px] tabular-nums",
+                    column.overLimit ? "rounded-md bg-danger/15 px-1.5 text-danger" : "text-ink-3",
                   )}
                   title={column.overLimit ? "Over the WIP limit" : undefined}
                 >
@@ -274,12 +271,12 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
               className={cx("flex flex-col", !lanes && "min-h-0 flex-1")}
             >
               {lanes && (
-                <h2 className="flex items-center gap-2 px-4 pt-3 pb-1 text-xs font-semibold text-neutral-600 dark:text-neutral-400">
+                <h2 className="flex items-center gap-2 px-9 pt-4 pb-1.5 font-display text-[15px] tracking-wide text-ink-2">
                   {lane.color !== null && <Dot color={lane.color} />}
                   {lane.label}
                 </h2>
               )}
-              <div className={cx("flex gap-3 px-4 pb-3", !lanes && "min-h-0 flex-1")}>
+              <div className={cx("flex gap-3.5 px-7 pb-4", !lanes && "min-h-0 flex-1")}>
                 {board.columns.map((column) => {
                   const id = cellId(lane, column.status.id);
                   return (
@@ -305,7 +302,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
       </div>
       <DragOverlay>
         {active && (
-          <div className="w-72">
+          <div className="w-[17.5rem]">
             <CardFace
               {...lookups}
               task={active.task}
@@ -354,9 +351,9 @@ function BoardCell(p: CellProps) {
           setNodeRef(el);
         }}
         className={cx(
-          "w-72 shrink-0 overflow-y-auto rounded-lg bg-neutral-100 p-1.5 dark:bg-neutral-900/50",
+          "w-[17.5rem] shrink-0 overflow-y-auto rounded-[14px] border border-line bg-hover/60 p-2",
           p.bounded ? "max-h-[28rem] min-h-16" : "min-h-0",
-          isOver && "ring-2 ring-blue-400/60",
+          isOver && "ring-2 ring-accent/60",
         )}
       >
         <ul
@@ -427,7 +424,7 @@ const SortableCard = memo(function SortableCard({
         }
         listeners?.onKeyDown?.(e);
       }}
-      className="cursor-grab rounded-md pb-2 outline-none focus-visible:[&>div]:ring-2 focus-visible:[&>div]:ring-blue-500"
+      className="cursor-grab rounded-md pb-2 outline-none focus-visible:[&>div]:ring-2 focus-visible:[&>div]:ring-accent"
       style={{ transform: CSS.Translate.toString(transform), transition }}
     >
       <CardFace

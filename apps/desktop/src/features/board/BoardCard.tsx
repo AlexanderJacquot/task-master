@@ -1,10 +1,11 @@
+import { Diamond, ListChecks } from "lucide-react";
 import { memo } from "react";
-import { Chip, cx, Dot, PRIORITY_STYLE } from "../../components/ui";
+import { Chip, cx, Dot, PRIORITY_PILL } from "../../components/ui";
 import { formatDue } from "../../lib/dates";
 import type { Epic, Project, Status, Tag, Task } from "../../lib/types";
 
 /** Height of a card plus the gap below it; fixed so columns virtualize without measuring. */
-export const CARD_SLOT = 92;
+export const CARD_SLOT = 98;
 
 export interface CardLookups {
   statuses: Status[];
@@ -40,44 +41,50 @@ export const CardFace = memo(function CardFace(p: Props) {
   return (
     <div
       className={cx(
-        "flex h-[84px] flex-col gap-1 overflow-hidden rounded-md border bg-white px-2.5 py-2 text-sm dark:bg-neutral-900",
-        p.selected
-          ? "border-blue-500 ring-1 ring-blue-500"
-          : "border-neutral-200 dark:border-neutral-800",
+        "flex h-[88px] flex-col gap-1.5 overflow-hidden rounded-[11px] border bg-raised px-3 py-2.5 shadow-sm shadow-black/10 transition-colors",
+        p.selected ? "border-accent ring-1 ring-accent" : "border-line hover:border-line-strong",
         p.placeholder && "opacity-40",
-        p.overlay && "shadow-lg",
+        p.overlay && "rotate-1 shadow-xl shadow-black/30",
       )}
     >
       <p
-        className={cx("line-clamp-2 min-h-0 leading-snug", done && "text-neutral-400 line-through")}
-      >
-        {task.priority !== "normal" && (
-          <span className={cx("mr-1 text-xs font-semibold", PRIORITY_STYLE[task.priority])}>
-            {task.priority === "urgent" ? "!!" : task.priority === "high" ? "!" : "↓"}
-          </span>
+        className={cx(
+          "line-clamp-2 min-h-0 leading-snug text-ink",
+          done && "text-ink-3 line-through",
         )}
+      >
         {task.title}
       </p>
-      <div className="mt-auto flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">
+      <div className="mt-auto flex min-w-0 items-center gap-1.5 text-xs text-ink-2">
+        {(task.priority === "urgent" || task.priority === "high") && !done && (
+          <span className={cx("shrink-0 rounded-md px-1.5", PRIORITY_PILL[task.priority])}>
+            {task.priority === "urgent" ? "Urgent" : "High"}
+          </span>
+        )}
         {p.showProject && project && (
           <span className="flex max-w-28 shrink-0 items-center gap-1 truncate">
             <Dot color={project.color} />
             <span className="truncate">{project.name}</span>
           </span>
         )}
-        {epic && <span className="max-w-24 shrink-0 truncate">◆ {epic.name}</span>}
+        {epic && (
+          <span className="flex max-w-24 shrink-0 items-center gap-1 truncate text-violet-800 dark:text-violet-300">
+            <Diamond size={10} className="shrink-0" />
+            <span className="truncate">{epic.name}</span>
+          </span>
+        )}
         <span className="flex min-w-0 flex-1 gap-1 overflow-hidden">
           {tags.map((tag) => (
             <Chip key={tag.id}>#{tag.name}</Chip>
           ))}
         </span>
         {p.childCount > 0 && (
-          <span className="shrink-0" title="Subtasks done">
-            ☑ {p.childDone}/{p.childCount}
+          <span className="flex shrink-0 items-center gap-1 tabular-nums" title="Subtasks done">
+            <ListChecks size={12} /> {p.childDone}/{p.childCount}
           </span>
         )}
         {task.due_date && (
-          <span className={cx("shrink-0", overdue && "font-medium text-red-600 dark:text-red-400")}>
+          <span className={cx("shrink-0 tabular-nums", overdue && "text-danger")}>
             {formatDue(task.due_date, p.today)}
           </span>
         )}

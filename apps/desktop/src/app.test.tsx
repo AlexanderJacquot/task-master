@@ -2,6 +2,7 @@
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { defaultsForPath } from "./features/shell/Layout";
 import type { Api } from "./lib/api";
 import type { Changes, Command, Task } from "./lib/types";
 import { createAppRouter } from "./router";
@@ -77,7 +78,7 @@ describe("the app", () => {
   });
 
   it("captures a task from the input", async () => {
-    const input = screen.getByPlaceholderText(/New task/);
+    const input = screen.getByRole("textbox", { name: "New task" });
     fireEvent.change(input, { target: { value: "Call the bank" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(await screen.findByText("Call the bank")).toBeTruthy();
@@ -92,7 +93,7 @@ describe("the app", () => {
   it("captures a task with the Add task button", async () => {
     const add = screen.getByRole("button", { name: "Add task" }) as HTMLButtonElement;
     expect(add.disabled).toBe(true);
-    fireEvent.change(screen.getByPlaceholderText(/New task/), {
+    fireEvent.change(screen.getByRole("textbox", { name: "New task" }), {
       target: { value: "Water plants" },
     });
     fireEvent.click(add);
@@ -107,7 +108,7 @@ describe("the app", () => {
 
   it("says so when a capture cannot be read, instead of dropping it", async () => {
     fake.api.parseCapture = () => Promise.reject(new Error("ipc down"));
-    const input = screen.getByPlaceholderText(/New task/);
+    const input = screen.getByRole("textbox", { name: "New task" });
     fireEvent.change(input, { target: { value: "Lost task" } });
     fireEvent.click(screen.getByRole("button", { name: "Add task" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/Could not read/);
@@ -203,7 +204,8 @@ describe("the board", () => {
 
   it("splits the board into lanes", async () => {
     await openBoard();
-    fireEvent.change(screen.getByLabelText("Swimlanes"), { target: { value: "priority" } });
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    fireEvent.change(await screen.findByLabelText("Swimlanes"), { target: { value: "priority" } });
     expect(await screen.findByRole("region", { name: "Lane Normal" })).toBeTruthy();
   });
 });
@@ -211,7 +213,8 @@ describe("the board", () => {
 describe("saved views", () => {
   it("saves the current view, reopens it from the sidebar and saves edits", async () => {
     fireEvent.click(screen.getByRole("button", { name: "board" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save as view" }));
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save as view" }));
     const name = screen.getByPlaceholderText("Name of the new view");
     fireEvent.change(name, { target: { value: "Triage board" } });
     fireEvent.keyDown(name, { key: "Enter" });
@@ -226,9 +229,11 @@ describe("saved views", () => {
     });
     expect(await screen.findByRole("button", { name: "Triage board" })).toBeTruthy();
     const nav = screen.getByRole("navigation");
+    fireEvent.click(within(nav).getByRole("button", { name: /Saved views/ }));
     expect(within(nav).getByRole("link", { name: "Triage board" })).toBeTruthy();
 
     // Edits are a draft until saved.
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
     fireEvent.change(screen.getByLabelText("Filter by due date"), { target: { value: "overdue" } });
     fireEvent.click(await screen.findByRole("button", { name: "Save view" }));
     await waitFor(() => expect(fake.executed.at(-1)?.[0]).toMatchObject({ type: "update_view" }));
@@ -285,12 +290,13 @@ describe("organization", () => {
         />
       </StoreProvider>,
     );
-    fireEvent.click(await screen.findByRole("link", { name: /#quick/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Tags/ }));
+    fireEvent.click(await screen.findByRole("link", { name: /quick/ }));
     expect(await screen.findByRole("heading", { name: "#quick" })).toBeTruthy();
     expect(screen.getByText("Tagged one")).toBeTruthy();
     expect(screen.queryByText("Renew passport")).toBeNull();
 
-    const input = screen.getByPlaceholderText(/New task/);
+    const input = screen.getByRole("textbox", { name: "New task" });
     fireEvent.change(input, { target: { value: "Also quick" } });
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() =>
@@ -304,7 +310,7 @@ describe("organization", () => {
 
 describe("speed", () => {
   it("previews capture markers and asks before creating an unknown project", async () => {
-    const input = screen.getByPlaceholderText(/New task/);
+    const input = screen.getByRole("textbox", { name: "New task" });
     fireEvent.change(input, { target: { value: "Plan trip #travel @Holidays !high" } });
     const preview = await screen.findByTestId("capture-preview");
     expect(within(preview).getByText(/@Holidays/).textContent).toContain("new project");
@@ -394,5 +400,97 @@ describe("settings", () => {
     fireEvent.keyDown(name, { key: "Enter" });
     await waitFor(() => expect(fake.executed.at(-1)?.[0]).toMatchObject({ type: "create_status" }));
     expect(screen.getAllByTestId("status-row")).toHaveLength(7);
+  });
+});
+
+/** Renders the app at `path` with these projects (and the usual inbox task). */
+async function renderWith(path: string, projects: ReturnType<typeof project>[] = []) {
+  cleanup();
+  fake = fakeApi(() => store, [existing]);
+  fake.api.snapshot = async () => snapshot({ tasks: [existing], projects });
+  store = createTaskStore(fake.api);
+  await store.getState().hydrate();
+  const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
+  render(
+    <StoreProvider store={store} api={fake.api}>
+      <RouterProvider router={router} />
+    </StoreProvider>,
+  );
+  return router;
+}
+
+describe("redesign", () => {
+  it("gives a new task the page's project, epic, tag or today", () => {
+    expect(defaultsForPath("/project/p1", "2026-11-05")).toEqual({ project_id: "p1" });
+    expect(defaultsForPath("/epic/e1", "2026-11-05")).toEqual({ epic_id: "e1" });
+    expect(defaultsForPath("/tag/t1", "2026-11-05")).toEqual({ tag_ids: ["t1"] });
+    expect(defaultsForPath("/today", "2026-11-05")).toEqual({ today_on: "2026-11-05" });
+    expect(defaultsForPath("/inbox", "2026-11-05")).toEqual({});
+  });
+
+  it("opens a task as a full page from the panel and edits it there", async () => {
+    const router = await renderWith(`/inbox?task=${existing.id}`);
+    const panel = await screen.findByRole("complementary", { name: "Task details" });
+    fireEvent.click(within(panel).getByRole("button", { name: /Open/ }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/task/${existing.id}`));
+    // The page replaces the panel and collapses the sidebar to a rail.
+    expect(screen.queryByRole("complementary", { name: "Task details" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
+    const title = (await screen.findByLabelText("Title")) as HTMLTextAreaElement;
+    expect(title.value).toBe("Renew passport");
+    fireEvent.change(screen.getByLabelText("Priority"), { target: { value: "high" } });
+    await waitFor(() =>
+      expect(fake.executed.at(-1)?.[0]).toMatchObject({
+        type: "update_task",
+        id: existing.id,
+        changes: [{ priority: "high" }],
+      }),
+    );
+  });
+
+  it("opens the full page with Shift+Enter on a list row", async () => {
+    const router = await renderWith("/inbox");
+    const row = await screen.findByRole("button", { name: "Renew passport" });
+    fireEvent.keyDown(row, { key: "Enter", shiftKey: true });
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/task/${existing.id}`));
+  });
+
+  it("adds a task from the sidebar's New task button into the current project", async () => {
+    await renderWith("/project/pw", [project({ id: "pw", name: "Website" })]);
+    fireEvent.click(await screen.findByRole("button", { name: "New task" }));
+    const dialog = await screen.findByRole("dialog", { name: "New task in Website" });
+    const input = within(dialog).getByRole("textbox", { name: "New task" });
+    fireEvent.change(input, { target: { value: "Fix the footer" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(fake.executed.at(-1)?.[0]).toMatchObject({
+        type: "create_task",
+        task: { title: "Fix the footer", project_id: "pw" },
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("opens the New task dialog with Ctrl+N and jumps to projects with Ctrl+1–9", async () => {
+    const router = await renderWith("/inbox", [
+      project({ id: "pa", name: "Alpha", rank: "a1" }),
+      project({ id: "pb", name: "Beta", rank: "a2" }),
+    ]);
+    await screen.findByRole("heading", { name: "Inbox" });
+    fireEvent.keyDown(window, { key: "2", ctrlKey: true });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/project/pb"));
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+    expect(await screen.findByRole("dialog", { name: "New task in Beta" })).toBeTruthy();
+  });
+
+  it("renames a project from the sidebar with a double-click", async () => {
+    await renderWith("/inbox", [project({ id: "pa", name: "Alpha" })]);
+    const nav = await screen.findByRole("navigation");
+    fireEvent.doubleClick(within(nav).getByRole("link", { name: "Alpha" }));
+    const input = within(nav).getByDisplayValue("Alpha");
+    fireEvent.change(input, { target: { value: "Alpha site" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(store.getState().projects.pa?.name).toBe("Alpha site"));
+    expect(fake.executed.at(-1)?.[0]).toMatchObject({ type: "update_project", id: "pa" });
   });
 });

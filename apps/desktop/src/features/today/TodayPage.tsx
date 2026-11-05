@@ -47,10 +47,12 @@ function PlanMyDay({ onClose }: { onClose(): void }) {
   return (
     <section
       aria-label="Plan my day"
-      className="border-b border-neutral-200 bg-amber-50/50 px-4 py-2 dark:border-neutral-800 dark:bg-amber-950/20"
+      className="mx-10 mb-3 rounded-xl border border-amber-700/25 bg-amber-500/8 px-4 py-3 dark:border-amber-400/20"
     >
       <div className="mb-1 flex items-center gap-2">
-        <h2 className="flex-1 text-sm font-semibold">Plan my day</h2>
+        <h2 className="flex-1 font-display text-[17px] tracking-wide text-amber-900 dark:text-amber-200">
+          Plan my day
+        </h2>
         <span className="text-xs text-neutral-500">Press 1–9 to add</span>
         <HeaderButton onClick={onClose}>Done</HeaderButton>
       </div>
@@ -64,7 +66,7 @@ function PlanMyDay({ onClose }: { onClose(): void }) {
             const project = c.task.project_id ? projects[c.task.project_id] : undefined;
             return (
               <li key={c.task.id} className="flex items-center gap-2 py-0.5 text-sm">
-                <kbd className="w-5 rounded border border-neutral-300 text-center text-xs text-neutral-500 dark:border-neutral-700">
+                <kbd className="w-5 rounded border border-line-strong text-center font-mono text-xs text-ink-3">
                   {i + 1}
                 </kbd>
                 <span className="min-w-0 flex-1 truncate">{c.task.title}</span>
@@ -74,14 +76,14 @@ function PlanMyDay({ onClose }: { onClose(): void }) {
                     {project.name}
                   </span>
                 )}
-                <span className="text-xs text-amber-700 dark:text-amber-400">
+                <span className="text-xs text-amber-800 dark:text-amber-300">
                   {c.reasons.join(" · ")}
                 </span>
                 <button
                   type="button"
                   aria-label={`Add ${c.task.title} to today`}
                   onClick={() => void updateTask(store, c.task.id, [{ today_on: today }])}
-                  className="rounded px-1.5 text-xs text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
+                  className="rounded-md px-2 text-xs text-accent hover:bg-hover"
                 >
                   + Today
                 </button>

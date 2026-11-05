@@ -18,6 +18,8 @@ taskmaster-core = { workspace = true, features = ["specta"] }
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8.3"
 tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-process = "2.4.0"
+tauri-plugin-updater = "2.14.0"
 # Remote backup to an S3-compatible store (Garage): request signing + a small HTTP client.
 rusty-s3 = "0.10.2"
 ureq = "3.4.3"

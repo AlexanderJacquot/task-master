@@ -1,27 +1,98 @@
-import { Outlet, useNavigate, useSearch } from "@tanstack/react-router";
+import { Outlet, useNavigate, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
 import { Dialog } from "radix-ui";
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { Kbd } from "../../components/ui";
+import { isoDate } from "../../lib/dates";
+import type { NewTaskInput } from "../../store/actions";
 import { useStoreState } from "../../store/context";
+import { CaptureBox } from "../capture/CaptureBox";
 import { CommandPalette } from "../palette/CommandPalette";
 import { Sidebar } from "../sidebar/Sidebar";
+import { useProjectOrder } from "../sidebar/useProjectOrder";
 import { TaskDetail } from "../task-detail/TaskDetail";
 import { ErrorToast } from "./ErrorToast";
+import { type ShellActions, ShellContext } from "./shellContext";
 import { useOpenTask } from "./useOpenTask";
 import { SHORTCUTS, useShortcuts } from "./useShortcuts";
 
-/** Three panes: sidebar, the current view, and the task detail panel when `?task=` is set. */
+type Defaults = Omit<NewTaskInput, "title">;
+
+/** What a task created from the New task dialog gets, from the page it was opened on. */
+export function defaultsForPath(pathname: string, today: string): Defaults {
+  const [, kind, id] = pathname.split("/");
+  if (kind === "project" && id) return { project_id: id };
+  if (kind === "epic" && id) return { epic_id: id };
+  if (kind === "tag" && id) return { tag_ids: [id] };
+  if (kind === "today") return { today_on: today };
+  return {};
+}
+
+const COLLAPSED_KEY = "task-master.sidebar-collapsed";
+
+function loadCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sidebar, the current page, and the task panel when `?task=` is set. The sidebar shrinks
+ * to a rail on the full task page (and whenever the user collapses it).
+ */
 export function Layout() {
   const ready = useStoreState((s) => s.ready);
   const loadError = useStoreState((s) => s.loadError);
   const { task } = useSearch({ strict: false }) as { task?: string };
+  const pathname = useRouterState({ select: (r) => r.location.pathname });
   const openTask = useOpenTask();
   const navigate = useNavigate();
+  const router = useRouter();
+  const order = useProjectOrder();
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);
+  const [newTask, setNewTask] = useState<Defaults | null>(null);
+  const [collapsedPref, setCollapsedPref] = useState(loadCollapsed);
+  const [expandOnTaskPage, setExpandOnTaskPage] = useState(false);
+  const onTaskPage = pathname.startsWith("/task/");
+  const collapsed = onTaskPage ? !expandOnTaskPage : collapsedPref;
+
+  const toggleCollapsed = () => {
+    if (onTaskPage) {
+      setExpandOnTaskPage((v) => !v);
+      return;
+    }
+    const next = !collapsedPref;
+    setCollapsedPref(next);
+    try {
+      localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+    } catch {
+      // Not remembered; fine.
+    }
+  };
+
+  const openNewTask = useCallback(
+    (defaults?: Defaults) => setNewTask(defaults ?? defaultsForPath(pathname, isoDate())),
+    [pathname],
+  );
+  const shell: ShellActions = useMemo(
+    () => ({ openNewTask, openPalette: () => setPalette(true) }),
+    [openNewTask],
+  );
+
   useShortcuts({
-    closeDetail: () => openTask(null),
+    closeDetail: () => {
+      if (onTaskPage) router.history.back();
+      else openTask(null);
+    },
     openPalette: () => setPalette(true),
     showHelp: () => setHelp(true),
+    newTask: () => openNewTask(),
+    goToProject: (n) => {
+      const id = order[n - 1];
+      if (id) void navigate({ to: "/project/$projectId", params: { projectId: id }, search: {} });
+    },
     go: (to) => void navigate({ to, search: {} }),
   });
 
@@ -31,16 +102,70 @@ export function Layout() {
   if (!ready) return <Centered>Loading…</Centered>;
 
   return (
-    <div className="flex h-full overflow-hidden">
-      <Sidebar />
-      <main className="flex min-w-0 flex-1 flex-col">
-        <Outlet />
-      </main>
-      {task && <TaskDetail key={task} taskId={task} />}
-      <ErrorToast />
-      <CommandPalette open={palette} onOpenChange={setPalette} />
-      <ShortcutHelp open={help} onOpenChange={setHelp} />
-    </div>
+    <ShellContext.Provider value={shell}>
+      <div className="tex-canvas flex h-full overflow-hidden bg-canvas">
+        <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
+        <main className="flex min-w-0 flex-1 flex-col">
+          <Outlet />
+        </main>
+        {task && !onTaskPage && <TaskDetail key={task} taskId={task} />}
+        <ErrorToast />
+        <CommandPalette open={palette} onOpenChange={setPalette} />
+        <ShortcutHelp open={help} onOpenChange={setHelp} />
+        <NewTaskDialog
+          defaults={newTask}
+          onClose={() => setNewTask(null)}
+          onOpenTask={(id) =>
+            void navigate({ to: "/task/$taskId", params: { taskId: id }, search: {} })
+          }
+        />
+      </div>
+    </ShellContext.Provider>
+  );
+}
+
+function NewTaskDialog({
+  defaults,
+  onClose,
+  onOpenTask,
+}: {
+  defaults: Defaults | null;
+  onClose(): void;
+  onOpenTask(id: string): void;
+}) {
+  const projects = useStoreState((s) => s.projects);
+  const project = defaults?.project_id ? projects[defaults.project_id] : undefined;
+  return (
+    <Dialog.Root open={defaults !== null} onOpenChange={(open) => !open && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" />
+        <Dialog.Content
+          aria-describedby={undefined}
+          onEscapeKeyDown={(e) => {
+            // The capture box handles Escape itself (it may only cancel a confirmation).
+            e.preventDefault();
+          }}
+          className="tex-sheet fixed top-[16%] left-1/2 z-50 w-[42rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-2xl border border-line-strong bg-overlay shadow-2xl shadow-black/40"
+        >
+          <Dialog.Title className="px-5 pt-4 font-display text-[15px] tracking-wide text-accent">
+            New task{project ? ` in ${project.name}` : ""}
+          </Dialog.Title>
+          {defaults && (
+            <CaptureBox
+              variant="dialog"
+              autoFocus
+              defaults={defaults}
+              placeholder="What needs doing?"
+              onEscape={onClose}
+              onCaptured={(id, how) => {
+                onClose();
+                if (how.open) onOpenTask(id);
+              }}
+            />
+          )}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -54,19 +179,21 @@ function ShortcutHelp({
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/30" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="fixed top-[15%] left-1/2 z-50 w-[32rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-lg border border-neutral-200 bg-white p-4 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
+          className="tex-sheet fixed top-[12%] left-1/2 z-50 w-[34rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-line-strong bg-overlay p-5 shadow-2xl shadow-black/40"
         >
-          <Dialog.Title className="mb-3 font-semibold">Keyboard shortcuts</Dialog.Title>
-          <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-sm">
+          <Dialog.Title className="mb-4 font-display text-xl tracking-wide text-accent">
+            Keyboard shortcuts
+          </Dialog.Title>
+          <dl className="grid grid-cols-[max-content_1fr] gap-x-5 gap-y-2 text-sm">
             {SHORTCUTS.map((s) => (
               <div key={s.keys} className="contents">
-                <dt className="font-mono text-xs text-neutral-600 dark:text-neutral-300">
-                  {s.keys}
+                <dt>
+                  <Kbd>{s.keys}</Kbd>
                 </dt>
-                <dd className="text-neutral-700 dark:text-neutral-300">{s.what}</dd>
+                <dd className="text-ink-2">{s.what}</dd>
               </div>
             ))}
           </dl>
@@ -78,6 +205,8 @@ function ShortcutHelp({
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-full items-center justify-center p-8 text-neutral-500">{children}</div>
+    <div className="flex h-full items-center justify-center bg-canvas p-8 text-ink-3">
+      {children}
+    </div>
   );
 }

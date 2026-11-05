@@ -5,7 +5,9 @@ import { applyTheme, loadTheme, saveTheme } from "./theme";
 afterEach(() => localStorage.clear());
 
 describe("theme", () => {
-  it("defaults to system and remembers a choice", () => {
+  it("defaults to dark and remembers a choice", () => {
+    expect(loadTheme()).toBe("dark");
+    saveTheme("system");
     expect(loadTheme()).toBe("system");
     saveTheme("dark");
     expect(loadTheme()).toBe("dark");

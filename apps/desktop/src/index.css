@@ -1,15 +1,150 @@
 @import "tailwindcss";
+@import "@fontsource/medievalsharp/latin.css";
+@import "@fontsource-variable/source-serif-4/opsz.css";
+@import "@fontsource-variable/source-serif-4/opsz-italic.css";
 
-/* Theme (settings): `dark` on <html> switches; `lib/theme.ts` sets it from the choice
-   (light, dark, or following the system). */
+/* Theme (settings): `dark` on <html> is the dark theme, its absence the parchment one;
+   `lib/theme.ts` sets it from the choice (dark, parchment, or following the system).
+   ADR 008: every color is a variable that each theme fills in. Components use the
+   semantic names (canvas, ink, accent...); the neutral and blue scales are remapped to
+   each theme's tones so older `neutral-*` / `blue-*` classes follow along. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-:root {
-  color-scheme: light;
+@theme {
+  --font-display: "MedievalSharp", "Source Serif 4 Variable", Georgia, serif;
+  --font-sans: "Source Serif 4 Variable", Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace;
+
+  --color-canvas: var(--tm-canvas);
+  --color-sidebar: var(--tm-sidebar);
+  --color-raised: var(--tm-raised);
+  --color-overlay: var(--tm-overlay);
+  --color-ink: var(--tm-ink);
+  --color-ink-2: var(--tm-ink-2);
+  --color-ink-3: var(--tm-ink-3);
+  --color-line: var(--tm-line);
+  --color-line-strong: var(--tm-line-strong);
+  --color-hover: var(--tm-hover);
+  --color-selected: var(--tm-selected);
+  --color-accent: var(--tm-accent);
+  --color-accent-hover: var(--tm-accent-hover);
+  --color-accent-ink: var(--tm-accent-ink);
+  --color-danger: var(--tm-danger);
+  --color-white: var(--tm-white);
+
+  --color-neutral-50: var(--tm-n-50);
+  --color-neutral-100: var(--tm-n-100);
+  --color-neutral-200: var(--tm-n-200);
+  --color-neutral-300: var(--tm-n-300);
+  --color-neutral-400: var(--tm-n-400);
+  --color-neutral-500: var(--tm-n-500);
+  --color-neutral-600: var(--tm-n-600);
+  --color-neutral-700: var(--tm-n-700);
+  --color-neutral-800: var(--tm-n-800);
+  --color-neutral-900: var(--tm-n-900);
+  --color-neutral-950: var(--tm-n-950);
+
+  --color-blue-50: var(--tm-a-50);
+  --color-blue-100: var(--tm-a-100);
+  --color-blue-200: var(--tm-a-200);
+  --color-blue-300: var(--tm-a-300);
+  --color-blue-400: var(--tm-a-400);
+  --color-blue-500: var(--tm-a-500);
+  --color-blue-600: var(--tm-a-600);
+  --color-blue-700: var(--tm-a-700);
+  --color-blue-800: var(--tm-a-800);
+  --color-blue-900: var(--tm-a-900);
+  --color-blue-950: var(--tm-a-950);
 }
 
+/* Parchment: warm vellum, brown-black ink, rubric red. */
+:root {
+  color-scheme: light;
+  --tm-canvas: #f3eada;
+  --tm-sidebar: #eadcbf;
+  --tm-raised: #f9f2e3;
+  --tm-overlay: #fbf6ea;
+  --tm-ink: #2b2116;
+  --tm-ink-2: #5c4a36;
+  --tm-ink-3: #6e5a44;
+  --tm-line: rgb(90 60 20 / 0.15);
+  --tm-line-strong: rgb(90 60 20 / 0.26);
+  --tm-hover: rgb(90 60 20 / 0.06);
+  --tm-selected: rgb(90 60 20 / 0.1);
+  --tm-accent: #8b2e1f;
+  --tm-accent-hover: #74261a;
+  --tm-accent-ink: #f8f1e1;
+  --tm-danger: #a3301f;
+  --tm-white: #fbf6ea;
+
+  --tm-n-50: #f8f0df;
+  --tm-n-100: #efe3cb;
+  --tm-n-200: #e3d3b2;
+  --tm-n-300: #d0bc96;
+  --tm-n-400: #a8926f;
+  --tm-n-500: #6e5a44;
+  --tm-n-600: #5c4a36;
+  --tm-n-700: #4a3a29;
+  --tm-n-800: #3d3022;
+  --tm-n-900: #2b2116;
+  --tm-n-950: #1e170f;
+
+  --tm-a-50: #f6e6df;
+  --tm-a-100: #eed0c5;
+  --tm-a-200: #dea594;
+  --tm-a-300: #c97a65;
+  --tm-a-400: #b0503b;
+  --tm-a-500: #9c3a28;
+  --tm-a-600: #8b2e1f;
+  --tm-a-700: #74261a;
+  --tm-a-800: #5c1f15;
+  --tm-a-900: #451710;
+  --tm-a-950: #2c0e09;
+}
+
+/* Dark: near-black layers, soft white ink, gold. */
 :root.dark {
   color-scheme: dark;
+  --tm-canvas: #0e0e10;
+  --tm-sidebar: #141416;
+  --tm-raised: #1b1b1f;
+  --tm-overlay: #1d1d21;
+  --tm-ink: #ededf0;
+  --tm-ink-2: #a8a8b3;
+  --tm-ink-3: #8a8a95;
+  --tm-line: rgb(255 255 255 / 0.07);
+  --tm-line-strong: rgb(255 255 255 / 0.13);
+  --tm-hover: rgb(255 255 255 / 0.05);
+  --tm-selected: rgb(255 255 255 / 0.08);
+  --tm-accent: #d9a54a;
+  --tm-accent-hover: #e6b660;
+  --tm-accent-ink: #1a1408;
+  --tm-danger: #f2857a;
+  --tm-white: #f5f5f7;
+
+  --tm-n-50: #f5f5f7;
+  --tm-n-100: #ededf0;
+  --tm-n-200: #d4d4da;
+  --tm-n-300: #b4b4bd;
+  --tm-n-400: #9a9aa4;
+  --tm-n-500: #84848e;
+  --tm-n-600: #5f5f68;
+  --tm-n-700: #3a3a41;
+  --tm-n-800: #26262b;
+  --tm-n-900: #18181b;
+  --tm-n-950: #0e0e10;
+
+  --tm-a-50: #fbf3e1;
+  --tm-a-100: #f5e3b8;
+  --tm-a-200: #ecd08c;
+  --tm-a-300: #e4bd66;
+  --tm-a-400: #ddb055;
+  --tm-a-500: #d9a54a;
+  --tm-a-600: #c48f35;
+  --tm-a-700: #a3742a;
+  --tm-a-800: #7d5920;
+  --tm-a-900: #4f3915;
+  --tm-a-950: #2e210c;
 }
 
 html,
@@ -19,8 +154,57 @@ body,
 }
 
 body {
-  @apply bg-white text-sm text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  @apply bg-canvas font-sans text-ink antialiased;
+  font-size: 14.5px;
+  line-height: 1.45;
+  font-optical-sizing: auto;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--tm-accent) 30%, transparent);
+}
+
+/* Parchment texture: a lighter middle, darker edges and a faint grain, all CSS. The dark
+   theme stays flat. */
+:root:not(.dark) .tex-canvas {
+  background-image:
+    radial-gradient(
+      ellipse 120% 90% at 50% 40%,
+      rgb(255 251 240 / 0.6) 0%,
+      rgb(255 251 240 / 0) 60%
+    ),
+    radial-gradient(ellipse 140% 120% at 50% 50%, rgb(0 0 0 / 0) 60%, rgb(120 80 30 / 0.12) 100%),
+    repeating-linear-gradient(93deg, rgb(110 80 40 / 0.022) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(1.5deg, rgb(110 80 40 / 0.018) 0 1px, transparent 1px 6px);
+  background-attachment: fixed;
+}
+
+:root:not(.dark) .tex-sidebar {
+  background-image:
+    radial-gradient(
+      ellipse 160% 100% at 0% 50%,
+      rgb(255 250 235 / 0.35) 0%,
+      rgb(255 250 235 / 0) 70%
+    ),
+    repeating-linear-gradient(91deg, rgb(110 80 40 / 0.03) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(-1deg, rgb(110 80 40 / 0.022) 0 1px, transparent 1px 5px);
+}
+
+:root:not(.dark) .tex-sheet {
+  background-image:
+    radial-gradient(
+      ellipse 110% 80% at 50% 30%,
+      rgb(255 252 243 / 0.7) 0%,
+      rgb(255 252 243 / 0) 65%
+    ),
+    radial-gradient(ellipse 130% 110% at 50% 50%, rgb(0 0 0 / 0) 70%, rgb(140 95 35 / 0.09) 100%),
+    repeating-linear-gradient(92deg, rgb(110 80 40 / 0.018) 0 1px, transparent 1px 4px);
+}
+
+/* Thin, quiet scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--tm-line-strong) transparent;
 }
 
 /* Native date inputs: keep the picker icon legible in dark mode. */

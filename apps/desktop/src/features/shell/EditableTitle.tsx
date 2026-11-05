@@ -1,3 +1,4 @@
+import { Pencil } from "lucide-react";
 import { useState } from "react";
 import { InlineInput } from "../../components/ui";
 
@@ -21,6 +22,7 @@ export function EditableTitle({
         initial={value}
         placeholder={placeholder}
         autoFocus
+        className="font-display text-[28px]"
         onCommit={(name) => {
           setEditing(false);
           if (name.trim() && name.trim() !== value) onRename(name.trim());
@@ -35,7 +37,7 @@ export function EditableTitle({
         type="button"
         onClick={() => setEditing(true)}
         title="Click to rename"
-        className="truncate rounded px-1 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800"
+        className="truncate rounded-lg px-1 text-left hover:bg-hover"
       >
         {value}
       </button>
@@ -44,9 +46,9 @@ export function EditableTitle({
         onClick={() => setEditing(true)}
         aria-label={`Rename ${value}`}
         title="Rename"
-        className="shrink-0 rounded px-1 text-sm font-normal text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200"
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-3 opacity-60 hover:bg-hover hover:text-ink hover:opacity-100 focus-visible:opacity-100"
       >
-        ✎
+        <Pencil size={15} />
       </button>
     </span>
   );

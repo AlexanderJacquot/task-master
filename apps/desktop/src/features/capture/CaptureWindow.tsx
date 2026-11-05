@@ -2,7 +2,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
 import { events } from "../../bindings";
 import { useStoreState } from "../../store/context";
-import { CAPTURE_HINT, CaptureBox } from "./CaptureBox";
+import { CaptureBox } from "./CaptureBox";
 
 /**
  * The quick-capture window (global hotkey, plan section 6): one input, then out of the way.
@@ -34,14 +34,16 @@ export function CaptureWindow() {
   const hide = () => void getCurrentWindow().hide();
 
   return (
-    <div className="flex h-full flex-col gap-2 rounded-lg border border-neutral-300 bg-white p-3 dark:border-neutral-700 dark:bg-neutral-900">
-      <p className="text-xs font-semibold text-neutral-500">Quick capture</p>
+    <div className="tex-sheet flex h-full flex-col overflow-hidden border border-line-strong bg-overlay">
+      <p className="px-5 pt-3 font-display text-[15px] tracking-wide text-accent">Quick capture</p>
       {ready ? (
         <CaptureBox
           key={round}
           ref={input}
           autoFocus
-          placeholder={`What needs doing?   ${CAPTURE_HINT}`}
+          variant="window"
+          placeholder="What needs doing?"
+          footer={saved ? "Saved to Task Master ✓" : "Enter to save · Esc to close"}
           onEscape={hide}
           onCaptured={(id) => {
             setSaved(id);
@@ -49,11 +51,8 @@ export function CaptureWindow() {
           }}
         />
       ) : (
-        <p className="text-sm text-neutral-500">Loading…</p>
+        <p className="px-5 py-4 text-ink-3">Loading…</p>
       )}
-      <p className="mt-auto text-xs text-neutral-400">
-        {saved ? "Saved to task-master ✓" : "Enter to save · Esc to close"}
-      </p>
     </div>
   );
 }

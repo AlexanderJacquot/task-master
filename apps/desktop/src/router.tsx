@@ -11,6 +11,7 @@ import { ProjectPage } from "./features/organize/ProjectPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { Layout } from "./features/shell/Layout";
 import { SavedViewPage, ViewPage } from "./features/shell/ViewPage";
+import { TaskPage } from "./features/task-detail/TaskDetail";
 import { TodayPage } from "./features/today/TodayPage";
 import { useStoreState } from "./store/context";
 
@@ -97,6 +98,15 @@ const savedViewRoute = createRoute({
   },
 });
 
+const taskRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "task/$taskId",
+  component: function TaskView() {
+    const { taskId } = taskRoute.useParams();
+    return <TaskPage key={taskId} taskId={taskId} />;
+  },
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "settings",
@@ -104,7 +114,7 @@ const settingsRoute = createRoute({
 });
 
 function Missing({ what }: { what: string }) {
-  return <p className="p-8 text-neutral-500">{what} not found. It may have been deleted.</p>;
+  return <p className="p-8 text-ink-3">{what} not found. It may have been deleted.</p>;
 }
 
 const routeTree = rootRoute.addChildren([
@@ -116,6 +126,7 @@ const routeTree = rootRoute.addChildren([
   epicRoute,
   tagRoute,
   savedViewRoute,
+  taskRoute,
   settingsRoute,
 ]);
 

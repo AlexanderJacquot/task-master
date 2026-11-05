@@ -1,4 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { useRef } from "react";
 import { Dot } from "../../components/ui";
 import type { Row } from "../../lib/views";
@@ -12,7 +13,7 @@ interface Props extends RowHandlers, RowLookups {
 }
 
 const ROW_HEIGHT = 36;
-const GROUP_HEIGHT = 32;
+const GROUP_HEIGHT = 44;
 
 /** Virtualized rows: only what is on screen is rendered, however long the list. */
 export function TaskList({ rows, selectedId, collapsedTasks, onToggleGroup, ...rowProps }: Props) {
@@ -30,7 +31,7 @@ export function TaskList({ rows, selectedId, collapsedTasks, onToggleGroup, ...r
   });
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto pb-8">
       <ul style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((item) => {
           const row = rows[item.index];
@@ -51,12 +52,18 @@ export function TaskList({ rows, selectedId, collapsedTasks, onToggleGroup, ...r
                 <button
                   type="button"
                   onClick={() => onToggleGroup(row.group.key)}
-                  className="flex h-8 w-full items-center gap-2 bg-neutral-50 px-3 text-left text-xs font-semibold text-neutral-600 dark:bg-neutral-900 dark:text-neutral-400"
+                  aria-expanded={!row.collapsed}
+                  className="mx-6 flex h-full w-[calc(100%-3rem)] items-end gap-2.5 px-2 pb-1.5 text-left"
                 >
-                  <span className="w-3">{row.collapsed ? "▸" : "▾"}</span>
-                  <Dot color={row.group.color} />
-                  {row.group.label}
-                  <span className="font-normal text-neutral-400">{row.count}</span>
+                  <span className="mb-[3px] flex w-4 justify-center text-ink-3">
+                    {row.collapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+                  </span>
+                  <Dot color={row.group.color} className="mb-[5px]" />
+                  <span className="font-display text-[15px] tracking-wide text-ink-2">
+                    {row.group.label}
+                  </span>
+                  <span className="mb-px text-[12.5px] text-ink-3 tabular-nums">{row.count}</span>
+                  <span className="mb-[9px] h-px flex-1 bg-line" />
                 </button>
               ) : (
                 <TaskRow

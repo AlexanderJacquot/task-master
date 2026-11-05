@@ -29,10 +29,10 @@ function MultiPick({
       <Popover.Trigger
         aria-label={`Filter by ${label.toLowerCase()}`}
         className={cx(
-          "max-w-48 truncate rounded border px-2 py-0.5 text-xs",
+          "max-w-52 truncate rounded-full border px-3 py-0.5 text-[13px]",
           selected.length
-            ? "border-blue-400 bg-blue-50 text-blue-800 dark:border-blue-700 dark:bg-blue-950 dark:text-blue-200"
-            : "border-neutral-300 text-neutral-500 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900",
+            ? "border-accent/60 bg-accent/10 text-accent"
+            : "border-line-strong text-ink-2 hover:bg-hover",
         )}
       >
         {label}
@@ -43,15 +43,13 @@ function MultiPick({
         <Popover.Content
           align="start"
           sideOffset={4}
-          className="z-50 max-h-72 w-56 overflow-y-auto rounded-md border border-neutral-200 bg-white p-1 text-sm shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
+          className="z-50 max-h-72 w-56 overflow-y-auto rounded-xl border border-line-strong bg-overlay p-1 text-sm shadow-xl"
         >
-          {options.length === 0 && (
-            <p className="px-2 py-1 text-xs text-neutral-400">Nothing yet</p>
-          )}
+          {options.length === 0 && <p className="px-2 py-1 text-xs text-ink-3">Nothing yet</p>}
           {options.map((o) => (
             <label
               key={o.value}
-              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-hover"
             >
               <input
                 type="checkbox"
@@ -95,8 +93,8 @@ export function FilterBar({
   const set = (patch: Partial<ViewFilter>) => onChange({ ...filter, ...patch });
   const byRank = <T extends { rank: string }>(a: T, b: T) => (a.rank < b.rank ? -1 : 1);
   return (
-    <div className="flex flex-wrap items-center gap-1.5 border-b border-neutral-200 px-4 py-1.5 dark:border-neutral-800">
-      <span className="text-xs text-neutral-400">Filter</span>
+    <div className="flex flex-wrap items-center gap-2 px-10 pb-2">
+      <span className="text-[13px] text-ink-3">Filter by</span>
       <MultiPick
         label="Status"
         options={statuses.map((s) => ({ value: s.id, label: s.name, color: s.color }))}
@@ -139,8 +137,10 @@ export function FilterBar({
         value={filter.due ?? ""}
         onChange={(e) => set({ due: (e.target.value || null) as DueFilter | null })}
         className={cx(
-          "text-xs",
-          filter.due ? "text-blue-700 dark:text-blue-300" : "text-neutral-500",
+          "rounded-full border px-2 text-[13px]",
+          filter.due
+            ? "border-accent/60 bg-accent/10 text-accent"
+            : "border-line-strong text-ink-2",
         )}
       >
         {DUE_OPTIONS.map((o) => (
@@ -153,7 +153,7 @@ export function FilterBar({
         <button
           type="button"
           onClick={() => onChange(EMPTY_FILTER)}
-          className="text-xs text-neutral-500 underline hover:text-neutral-800 dark:hover:text-neutral-200"
+          className="text-[13px] text-ink-3 underline hover:text-ink"
         >
           Clear
         </button>

@@ -6,11 +6,14 @@ export const NEW_TASK_INPUT_ID = "new-task-input";
 /** Every app-wide key, for the `?` overlay. Board keys live on the cards. */
 export const SHORTCUTS: Array<{ keys: string; what: string }> = [
   { keys: "Ctrl+Shift+Space", what: "Quick capture from any app (where the desktop allows it)" },
-  { keys: "n", what: "New task in the current view" },
-  { keys: "Ctrl+K", what: "Command palette: jump anywhere, search tasks, run actions" },
+  { keys: "Ctrl+N", what: "New task (in the current project, epic, tag or Today)" },
+  { keys: "n", what: "Type into the Add task line of the current view" },
+  { keys: "Ctrl+K", what: "Jump to anything: projects, views, tasks, actions" },
+  { keys: "Ctrl+1 … Ctrl+9", what: "Jump to the first nine projects in the sidebar" },
+  { keys: "Shift+Enter", what: "Open a task as a full page (in a list, or when adding one)" },
   { keys: "g i / g t / g a / g s", what: "Go to Inbox / Today / All tasks / Settings" },
   { keys: "Ctrl+Z / Ctrl+Shift+Z", what: "Undo / redo the last action" },
-  { keys: "Esc", what: "Leave a field, or close the task panel" },
+  { keys: "Esc", what: "Leave a field, close the task panel, or leave the full task page" },
   { keys: "Alt+← / Alt+→", what: "Board: move the focused card to the previous / next column" },
   { keys: "Space, arrows", what: "Board: pick up a card and move it with the keyboard" },
   { keys: "1–9", what: "Plan my day: add the numbered suggestion to Today" },
@@ -31,13 +34,17 @@ export interface ShortcutActions {
   closeDetail(): void;
   openPalette(): void;
   showHelp(): void;
+  newTask(): void;
+  /** 1-based position in the sidebar's project order. */
+  goToProject(n: number): void;
   go(to: "/inbox" | "/today" | "/all" | "/settings"): void;
 }
 
 /**
  * App-wide keys. Text fields keep their own keys (Ctrl+K still opens the palette);
- * elsewhere Ctrl+Z / Ctrl+Shift+Z undo and redo, `n` starts a new task, `g` + a letter
- * navigates and Escape closes the detail panel.
+ * so do Ctrl+N (new task) and Ctrl+1–9 (projects). Elsewhere Ctrl+Z / Ctrl+Shift+Z undo
+ * and redo, `n` starts a new task, `g` + a letter navigates and Escape closes the detail
+ * panel or leaves the full task page.
  */
 export function useShortcuts(actions: ShortcutActions) {
   const store = useTaskStore();
@@ -54,6 +61,16 @@ export function useShortcuts(actions: ShortcutActions) {
       if (mod && key === "k") {
         e.preventDefault();
         a.openPalette();
+        return;
+      }
+      if (mod && !e.shiftKey && !e.altKey && key === "n") {
+        e.preventDefault();
+        a.newTask();
+        return;
+      }
+      if (mod && !e.shiftKey && !e.altKey && /^[1-9]$/.test(e.key)) {
+        e.preventDefault();
+        a.goToProject(Number(e.key));
         return;
       }
       if (e.key === "Escape") {
@@ -79,7 +96,9 @@ export function useShortcuts(actions: ShortcutActions) {
         pendingG = Date.now();
       } else if (key === "n") {
         e.preventDefault();
-        document.getElementById(NEW_TASK_INPUT_ID)?.focus();
+        const input = document.getElementById(NEW_TASK_INPUT_ID);
+        if (input) input.focus();
+        else a.newTask();
       } else if (e.key === "?") {
         e.preventDefault();
         a.showHelp();

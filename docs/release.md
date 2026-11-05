@@ -6,7 +6,8 @@ runners, through a push mirror of this repo.
 
 ## One-time setup (by hand)
 
-1. Create an empty GitHub repository, e.g. `task-master` (private is fine).
+1. Create an empty GitHub repository, e.g. `task-master`. It must be **public**: installed
+   apps download updates from its releases without logging in (ADR 009).
 2. In Forgejo: repository → Settings → Repository → Mirror settings → *Push mirror*,
    "Use SSH authentication", URL `ssh://git@github.com/<you>/task-master.git` (an https
    URL makes Forgejo push over HTTPS and fail with "could not read Username"), sync on
@@ -15,18 +16,30 @@ runners, through a push mirror of this repo.
 Forgejo then forwards branches and tags. GitHub runs `.github/workflows/release.yml`
 (Forgejo ignores that folder while `.forgejo/workflows` exists).
 
+3. Update signing (done 2026-11-05): `pnpm --filter desktop exec tauri signer generate -w
+   ~/.tauri/task-master.key -p <password> --ci`, public key in `tauri.conf.json` →
+   `plugins.updater.pubkey`, and the secrets:
+   `gh secret set TAURI_SIGNING_PRIVATE_KEY -R AlexanderJacquot/task-master < ~/.tauri/task-master.key`
+   and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` from `~/.tauri/task-master.key.password`.
+   **Back up `~/.tauri/task-master.key*`** (password manager): without the key, installed
+   apps cannot be updated.
+
 ## Cutting a release
 
-1. Bump `version` in `apps/desktop/src-tauri/tauri.conf.json` (and the workspace
-   `Cargo.toml` version) on `main`.
+1. Bump `version` in `apps/desktop/src-tauri/tauri.conf.json`, the workspace `Cargo.toml`
+   and `apps/desktop/package.json` on `main`. The version must grow: the app only offers
+   a release newer than itself.
 2. `git tag v0.2.0 && git push origin v0.2.0`. The mirror forwards the tag to GitHub.
 3. Start the build: tags pushed by the Forgejo mirror did not trigger the workflow for
    v0.1.0, so run it on the tag by hand:
    `gh workflow run release.yml -R AlexanderJacquot/task-master --ref v0.2.0`
    (or Actions → release → Run workflow, choosing the tag).
 4. On GitHub, the *release* workflow builds Linux (.deb, .AppImage, .rpm), Windows
-   (.msi, setup .exe) and macOS (arm64 and x86_64 .dmg) into a **draft** release
-   (about 30–40 minutes on a cold cache). Review it and publish.
+   (.msi, setup .exe) and macOS (arm64 and x86_64 .dmg), plus signed update bundles and
+   `latest.json`, and **publishes** the release (about 30–40 minutes on a cold cache).
+5. Installed apps see it within six hours, or at once from Settings → About and updates →
+   Check for updates. Check that `latest.json` in the release lists `windows-x86_64`,
+   `darwin-aarch64`, `darwin-x86_64` and `linux-x86_64`; re-run a failed job otherwise.
 
-Builds are unsigned: Windows SmartScreen and macOS Gatekeeper warn on first launch
-(macOS: right-click → Open). Signing is a later step.
+Installers are not code-signed: Windows SmartScreen and macOS Gatekeeper warn on the first
+manual install (macOS: right-click → Open). Updates themselves are signed and verified.
