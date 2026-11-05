@@ -4,8 +4,8 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**M10 Google Calendar sync**, branch `m10-google-calendar` (from `main` after M9 was
-merged), not committed yet. Next: the user creates their OAuth client
+**M10 Google Calendar sync**, branch `m10-google-calendar`: merged to `main` with M9 and
+released as **v0.4.0** (2026-11-05). Next: the user creates their OAuth client
 (`docs/google-calendar.md`) and tries it in the real app; see "Not yet verified".
 
 **M9 Calendar**: merged to `main` (`c9dc9b6`, not pushed). Plan Phase 4 started early at
