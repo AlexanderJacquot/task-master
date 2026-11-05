@@ -1,5 +1,5 @@
-import { Plus } from "lucide-react";
 import { forwardRef, useCallback, useRef, useState } from "react";
+import { AddIcon as Plus } from "../../components/TaskIcons";
 import { Button, Chip, cx, PRIORITY_PILL } from "../../components/ui";
 import { formatDue, isoDate } from "../../lib/dates";
 import type { Capture } from "../../lib/types";
@@ -141,7 +141,12 @@ export const CaptureBox = forwardRef<
           big && "border-b border-line px-5 py-4",
         )}
       >
-        <Plus aria-hidden size={big ? 18 : 16} strokeWidth={2.3} className="shrink-0 text-accent" />
+        <Plus
+          aria-hidden
+          size={big ? 18 : 16}
+          strokeWidth={1.75}
+          className="shrink-0 text-accent"
+        />
         <input
           ref={ref}
           id={p.id}

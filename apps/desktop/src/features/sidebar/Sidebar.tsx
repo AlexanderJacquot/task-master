@@ -10,20 +10,24 @@ import {
   ChevronRight,
   Diamond,
   Hash,
-  Inbox,
   Layers,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
-  Plus,
   Search,
-  Settings2,
   Sun,
   Trash2,
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useMemo, useState } from "react";
+import appIcon from "../../assets/brand/app-icon.svg";
+import {
+  InboxIcon as Inbox,
+  AddIcon as Plus,
+  ProjectsIcon,
+  SettingsIcon as Settings2,
+} from "../../components/TaskIcons";
 import {
   cx,
   FOCUS,
@@ -473,6 +477,7 @@ export function Sidebar({
         style={{ width: SIDEBAR_WIDTH.rail }}
         className="tex-sidebar flex shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-line bg-sidebar py-4"
       >
+        <img src={appIcon} width={30} height={30} alt="Task Master" className="mb-1 shrink-0" />
         <IconButton label="Expand sidebar" onClick={onToggleCollapsed} className="mb-1 size-8">
           <PanelLeftOpen size={17} />
         </IconButton>
@@ -486,7 +491,7 @@ export function Sidebar({
             FOCUS,
           )}
         >
-          <Plus size={18} strokeWidth={2.4} />
+          <Plus size={18} strokeWidth={1.75} />
         </button>
         <RailLink to="/inbox" label="Inbox">
           <Inbox size={18} className="text-sky-700 dark:text-sky-300" />
@@ -535,6 +540,7 @@ export function Sidebar({
       className="tex-sidebar flex shrink-0 flex-col overflow-y-auto border-r border-line bg-sidebar px-3 pt-4 pb-3"
     >
       <div className="flex items-center gap-2 px-2 pb-3">
+        <img src={appIcon} width={30} height={30} alt="" className="shrink-0" />
         <span className="flex-1 font-display text-[21px] tracking-wide text-accent">
           Task Master
         </span>
@@ -552,7 +558,7 @@ export function Sidebar({
             FOCUS,
           )}
         >
-          <Plus size={16} strokeWidth={2.4} />
+          <Plus size={16} strokeWidth={1.75} />
           New task
         </button>
         <button
@@ -597,7 +603,10 @@ export function Sidebar({
 
       <section className="mt-5">
         <div className="group/section flex items-center justify-between px-2.5 pb-1.5">
-          <span className="font-display text-[14px] tracking-wide text-rubric">Projects</span>
+          <span className="flex items-center gap-2 font-display text-[14px] tracking-wide text-rubric">
+            <ProjectsIcon size={16} />
+            Projects
+          </span>
           <IconButton label="New project" onClick={() => setAdding("project")} className="size-6">
             <Plus size={14} />
           </IconButton>

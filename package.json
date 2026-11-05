@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter desktop tauri dev",
+    "assets:generate": "node scripts/generate-ui-icons.mjs && node scripts/generate-app-icons.mjs",
     "build": "pnpm --filter desktop tauri build",
     "lint": "biome check .",
     "format": "biome check --write .",

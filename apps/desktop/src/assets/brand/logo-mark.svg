@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" fill="none">
+  <defs>
+    <linearGradient id="tile" x1="70" y1="24" x2="421" y2="488" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3C3028"/><stop offset=".48" stop-color="#241D18"/><stop offset="1" stop-color="#15110F"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="70" y1="25" x2="423" y2="489" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F5D89C"/><stop offset=".28" stop-color="#B78739"/><stop offset=".6" stop-color="#634621"/><stop offset="1" stop-color="#D4A241"/>
+    </linearGradient>
+    <radialGradient id="halo" cx=".44" cy=".31" r=".66">
+      <stop stop-color="#B17D38" stop-opacity=".18"/><stop offset="1" stop-color="#B17D38" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="paper" x1="149" y1="155" x2="378" y2="325" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C18A42"/><stop offset=".07" stop-color="#E4B77B"/><stop offset=".22" stop-color="#F5E0B4"/><stop offset=".55" stop-color="#F9E9C9"/><stop offset=".83" stop-color="#EAC68D"/><stop offset="1" stop-color="#BD8037"/>
+    </linearGradient>
+    <linearGradient id="paper-light" x1="253" y1="150" x2="253" y2="382" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B551F" stop-opacity=".52"/><stop offset=".13" stop-color="#FFEED0" stop-opacity="0"/><stop offset=".65" stop-color="#FFEED0" stop-opacity="0"/><stop offset="1" stop-color="#9A5A24" stop-opacity=".45"/>
+    </linearGradient>
+    <linearGradient id="roll" x1="238" y1="105" x2="238" y2="166" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A05A19"/><stop offset=".12" stop-color="#E3AF59"/><stop offset=".32" stop-color="#FFF0CB"/><stop offset=".52" stop-color="#F2D4A0"/><stop offset=".79" stop-color="#D89C49"/><stop offset="1" stop-color="#8B4B16"/>
+    </linearGradient>
+    <linearGradient id="foot" x1="229" y1="344" x2="229" y2="401" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9E5B1C"/><stop offset=".2" stop-color="#E4AC55"/><stop offset=".48" stop-color="#F8DAA0"/><stop offset=".75" stop-color="#D79A43"/><stop offset="1" stop-color="#8D4816"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="108" y1="128" x2="149" y2="157" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE4A0"/><stop offset=".36" stop-color="#D79A35"/><stop offset=".67" stop-color="#8B4510"/><stop offset="1" stop-color="#F2C168"/>
+    </linearGradient>
+    <linearGradient id="curl" x1="111" y1="132" x2="145" y2="149" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#6A300D"/><stop offset=".55" stop-color="#A95B18"/><stop offset="1" stop-color="#E4AF52"/>
+    </linearGradient>
+    <linearGradient id="lower-curl" x1="113" y1="363" x2="149" y2="375" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#63300F"/><stop offset=".5" stop-color="#A45D1D"/><stop offset="1" stop-color="#E4AF52"/>
+    </linearGradient>
+    <linearGradient id="ribbon" x1="325" y1="385" x2="374" y2="447" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5D1712"/><stop offset=".4" stop-color="#B34125"/><stop offset=".7" stop-color="#8B2A26"/><stop offset="1" stop-color="#5F1B15"/>
+    </linearGradient>
+    <radialGradient id="wax" cx=".32" cy=".2" r=".85">
+      <stop stop-color="#E17A42"/><stop offset=".27" stop-color="#B84A2B"/><stop offset=".57" stop-color="#8B2A26"/><stop offset=".83" stop-color="#5D1916"/><stop offset="1" stop-color="#A63B23"/>
+    </radialGradient>
+    <linearGradient id="seal-face" x1="323" y1="334" x2="365" y2="390" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#672019"/><stop offset=".45" stop-color="#9F3522"/><stop offset="1" stop-color="#B34D29"/>
+    </linearGradient>
+    <linearGradient id="crown" x1="333" y1="345" x2="356" y2="379" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE5A2"/><stop offset=".46" stop-color="#E8B75B"/><stop offset="1" stop-color="#B97822"/>
+    </linearGradient>
+    <filter id="shadow" x="-.3" y="-.25" width="1.6" height="1.65" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="9" flood-color="#080503" flood-opacity=".65"/>
+    </filter>
+    <filter id="seal-shadow" x="-.35" y="-.25" width="1.7" height="1.7" color-interpolation-filters="sRGB">
+      <feDropShadow dx="1" dy="5" stdDeviation="3" flood-color="#43190D" flood-opacity=".6"/>
+    </filter>
+    <clipPath id="paper-clip"><path d="M150 143C151 184 147 207 153 243C159 279 166 314 154 353C151 365 143 380 132 391L341 391C367 385 380 370 375 348C367 312 361 285 364 253C367 213 373 179 363 143Z"/></clipPath>
+  </defs>
+
+  <!-- A quiet ink tile lets the parchment silhouette carry the mark. -->
+  
+  
+  
+  
+
+  <g transform="rotate(-12 256 256)">
+    <g filter="url(#shadow)">
+      <!-- The lower roll sits behind the flowing sheet. -->
+      <path d="M130 344H340C359 344 365 356 365 369C365 385 354 398 338 399H130C112 399 102 386 102 371C102 356 113 344 130 344Z" fill="url(#foot)" stroke="#8E541F" stroke-width="1.5"/>
+      <path d="M138 348H339C352 348 358 355 359 364" stroke="#FFE4AF" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+      <path d="M150 143C151 184 147 207 153 243C159 279 166 314 154 353C151 365 143 380 132 391L341 391C367 385 380 370 375 348C367 312 361 285 364 253C367 213 373 179 363 143Z" fill="url(#paper)" stroke="#9F692F" stroke-width="1.8" stroke-linejoin="round"/>
+      <path d="M150 143C151 184 147 207 153 243C159 279 166 314 154 353C151 365 143 380 132 391L341 391C367 385 380 370 375 348C367 312 361 285 364 253C367 213 373 179 363 143Z" fill="url(#paper-light)"/>
+      <path d="M155 166C156 197 153 221 158 244C165 281 171 320 159 355" stroke="#FFF0CE" stroke-opacity=".65" stroke-width="2"/>
+      <path d="M359 163C366 194 361 225 359 251C355 284 362 320 369 348C372 364 365 376 353 382" stroke="#8F5926" stroke-opacity=".38" stroke-width="2"/>
+
+      <!-- Sparse fibers and worn edges remain unobtrusive at small sizes. -->
+      <g clip-path="url(#paper-clip)" stroke="#99692F" stroke-linecap="round" opacity=".17">
+        <path d="m163 180 9 1m-12 13 5 1m-3 28 6-2m-3 34 6 2m-2 37 7-2m-7 23 5 1m-5 26 7-1m-4 30 5-2m185-184-7 1m7 27-6 2m1 31-5-1m2 29-5 1m8 28-6 2m9 29-4-1m10 23-6 2m-40 32 9-1m-116-5 10 1m-15-213 14-1"/>
+        <path d="m180 172 1 5m-4 119 1 5m160-115-1 4m10 117 1 5m-61 53 6 1m-91-12 4-1" stroke-width="1.5"/>
+      </g>
+      <g fill="#A37236" opacity=".2">
+        <circle cx="180" cy="187" r="1.2"/><circle cx="335" cy="201" r="1"/><circle cx="174" cy="263" r="1.3"/><circle cx="348" cy="281" r="1.2"/><circle cx="194" cy="350" r="1"/><circle cx="308" cy="346" r="1.3"/><circle cx="322" cy="175" r=".8"/>
+      </g>
+
+      <!-- Broad ink strokes keep the checklist legible in the sidebar. -->
+      <g fill="#302218">
+        <path d="M183 220C181 218 181 215 184 213C186 212 188 213 190 215L197 224L216 204C218 201 222 202 221 206L201 236C199 239 197 239 195 236Z"/>
+        <path d="M238 214L323 211C329 211 329 217 324 218L239 222C234 222 234 215 238 214Z"/>
+        <path d="M189 278C187 276 187 273 190 271C192 270 194 271 196 273L203 282L222 262C224 259 228 260 227 264L207 294C205 297 203 297 201 294Z"/>
+        <path d="M244 272L324 269C330 269 330 275 325 276L245 280C240 280 240 273 244 272Z"/>
+      </g>
+      <path d="m245 237 57-2m-51 60 47-2" stroke="#65482C" stroke-width="3" stroke-linecap="round" opacity=".55"/>
+
+      <!-- The illuminated upper roll and its open spiral. -->
+      <path d="M128 106H351C369 106 379 118 379 134C379 150 371 161 358 164H131Z" fill="url(#roll)" stroke="#8C501C" stroke-width="1.8"/>
+      <path d="M131 109H349C363 109 371 118 372 130" stroke="#FFF0CB" stroke-width="2" stroke-linecap="round"/>
+      <path d="M149 153H356" stroke="#8C511E" stroke-width="1.5" opacity=".5"/>
+      <path d="M347 109C361 121 362 144 352 160" stroke="#A76A28" stroke-width="1.2" opacity=".55"/>
+      <ellipse cx="129" cy="136" rx="23" ry="30" fill="url(#gold)" stroke="#8E4F17" stroke-width="1.6"/>
+      <ellipse cx="130" cy="139" rx="16" ry="23" fill="url(#curl)" stroke="#F4CA79" stroke-width="1.5"/>
+      <path d="M126 155C135 159 142 151 142 140C142 130 137 124 131 125C125 126 122 132 123 138C124 144 130 146 133 142C136 138 133 133 130 134" stroke="#F4C774" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M117 119C111 125 109 137 112 147" stroke="#FFF0BC" stroke-width="2" stroke-linecap="round" opacity=".8"/>
+
+      <!-- The lower left curl turns forward over the bottom edge. -->
+      <ellipse cx="130" cy="371" rx="24" ry="28" fill="url(#foot)" stroke="#92531D" stroke-width="1.5"/>
+      <ellipse cx="131" cy="369" rx="17" ry="21" fill="url(#lower-curl)" stroke="#F3C575" stroke-width="1.6"/>
+      <path d="M126 385C136 390 143 381 143 371C143 363 139 356 133 357C127 358 124 364 125 370" stroke="#F0C478" stroke-width="2" stroke-linecap="round"/>
+      <path d="M131 350C144 352 150 365 145 379C141 389 132 394 123 389" stroke="#FFE1A4" stroke-width="2" stroke-linecap="round"/>
+      <path d="M117 354C111 363 112 377 118 383" stroke="#AC6A25" stroke-width="2" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- Embossed crown in a poured wax seal, with two cut ribbon tails. -->
+  <g filter="url(#seal-shadow)">
+    <path d="M321 385L305 442L327 431L339 450L350 396Z" fill="url(#ribbon)" stroke="#B95C32" stroke-width="1.3" stroke-linejoin="round"/>
+    <path d="M346 394L361 448L374 428L395 437L373 383Z" fill="url(#ribbon)" stroke="#B95C32" stroke-width="1.3" stroke-linejoin="round"/>
+    <path d="m325 398-12 34m56-36 17 32" stroke="#E08042" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/>
+    <path d="M342 316C352 313 358 319 366 321C378 321 381 328 385 336C393 343 391 352 393 360C396 372 389 377 385 384C382 395 373 397 364 398C354 405 346 400 338 401C327 403 320 395 314 389C304 384 306 374 302 366C297 357 303 348 306 341C307 330 316 328 324 325C330 318 334 317 342 316Z" fill="url(#wax)" stroke="#6C2118" stroke-width="1.5"/>
+    <path d="M309 345C311 333 320 333 328 328C334 321 341 319 349 322M358 324C369 328 376 326 381 339" stroke="#F29256" stroke-opacity=".72" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M312 376C315 386 325 390 333 394C340 399 347 396 355 397C367 399 370 392 379 388" stroke="#C35B32" stroke-opacity=".7" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="347" cy="360" r="32" fill="url(#seal-face)" stroke="#5F1B15" stroke-width="2.5"/>
+    <path d="M318 361A29 29 0 0 1 370 343M376 360A29 29 0 0 1 324 377" stroke="#E38446" stroke-opacity=".7" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="m326 350 12 8 10-17 10 17 12-8-5 24h-34Z" fill="#5C1B12" transform="translate(0 2)"/>
+    <path d="m326 348 12 8 9-17 10 17 12-8-5 24h-33Z" fill="url(#crown)" stroke="#EBC477" stroke-width="1" stroke-linejoin="round"/>
+    <path d="M333 377H362" stroke="#52180F" stroke-width="4" stroke-linecap="round"/>
+    <path d="M333 375H362" stroke="#E3AE54" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="m333 363 4 6h21l5-14" stroke="#FFF0B5" stroke-opacity=".55" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="347" cy="338" r="2.5" fill="#F8D78D"/>
+    <circle cx="325" cy="347" r="2" fill="#E8B65E"/>
+    <circle cx="370" cy="347" r="2" fill="#E8B65E"/>
+  </g>
+</svg>
