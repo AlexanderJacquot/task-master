@@ -31,6 +31,22 @@ export function formatDue(iso: string, today: string): string {
   });
 }
 
+/** Due date for a property pill: "Due today", "Due tomorrow", or "Due Fri, Nov 6". */
+export function formatDueLong(iso: string, today: string): string {
+  const days = daysFrom(today, iso);
+  if (days === 0) return "Due today";
+  if (days === 1) return "Due tomorrow";
+  if (days === -1) return "Due yesterday";
+  const sameYear = iso.slice(0, 4) === today.slice(0, 4);
+  const label = parseIso(iso).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+  return `Due ${label}`;
+}
+
 /** "just now", "5 min ago", "3 h ago", or a date. */
 export function formatAgo(ms: number, now: number = Date.now()): string {
   const s = Math.round((now - ms) / 1000);

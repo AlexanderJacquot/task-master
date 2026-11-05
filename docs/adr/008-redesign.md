@@ -62,7 +62,11 @@ Save as view) and Filter (shows the filter bar; it also shows whenever a filter 
 
 - Colors are themable in one place; a third theme is a block of variables.
 - The `neutral`/`blue` remap is a bridge: new markup should use the semantic names.
-- Drop caps from the mockup are left out: CodeMirror measures lines, and a floated first
-  letter would break cursor placement. Noted under Later.
+- Drop caps from the mockup were left out at first (CodeMirror measures lines). Since M8
+  the description is rendered markdown until clicked, so the full page now has one
+  (`.tm-dropcap`, rendered view only; added 2026-11-05).
+- Page properties follow the mockup (added 2026-11-05): set values are tinted pills with
+  no icons ("In progress", "High", "Due Fri, Nov 6", "◆ Launch v2", "#copy"); unset ones
+  follow as quiet labels. Each pill keeps a native control laid invisibly over it.
 - Serif body text at list density is a deliberate choice of the user; a sans option can
   be added later as one variable (`--font-sans`).

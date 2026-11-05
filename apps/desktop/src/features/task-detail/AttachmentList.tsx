@@ -70,6 +70,9 @@ export function AttachmentList({
   const fromPaths = useRef(files.fromPaths);
   fromPaths.current = files.fromPaths;
 
+  // Re-attached when the layout switches (the compact page line is another element).
+  const compact = page === true && attachments.length === 0;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `compact` swaps the element
   useEffect(() => {
     const el = section.current;
     if (!el) return;
@@ -80,9 +83,38 @@ export function AttachmentList({
     };
     el.addEventListener(FILE_DROP_EVENT, onDrop);
     return () => el.removeEventListener(FILE_DROP_EVENT, onDrop);
-  }, []);
+  }, [compact]);
 
   if (!files.available && attachments.length === 0) return null;
+
+  const attach = files.available && (
+    <button
+      type="button"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        void files.pick().finally(() => setBusy(false));
+      }}
+      className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] text-ink-2 hover:bg-hover hover:text-ink disabled:opacity-60"
+    >
+      <Paperclip size={13} /> {busy ? "Attaching…" : "Attach file"}
+    </button>
+  );
+
+  // The page without files: one quiet line instead of an empty section.
+  if (compact) {
+    return (
+      <section
+        ref={section}
+        aria-label="Attachments"
+        data-file-drop=""
+        className="-ml-2 flex items-center gap-2 rounded-lg py-1 pl-10 text-ink-3 data-[drop-active]:outline-2 data-[drop-active]:outline-dashed data-[drop-active]:outline-accent"
+      >
+        {attach}
+        <span className="text-[12.5px]">or drop files here</span>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -107,19 +139,7 @@ export function AttachmentList({
           <span className="text-[12px] text-ink-3">{attachments.length}</span>
         )}
         <span className="flex-1" />
-        {files.available && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              void files.pick().finally(() => setBusy(false));
-            }}
-            className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] text-ink-2 hover:bg-hover hover:text-ink disabled:opacity-60"
-          >
-            <Paperclip size={13} /> {busy ? "Attaching…" : "Attach file"}
-          </button>
-        )}
+        {attach}
       </div>
       {attachments.length === 0 ? (
         <p className="text-[13px] text-ink-3">

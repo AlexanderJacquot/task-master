@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysFrom, formatAgo, formatDue, isoDate } from "./dates";
+import { daysFrom, formatAgo, formatDue, formatDueLong, isoDate } from "./dates";
 
 describe("dates", () => {
   it("formats local dates as ISO", () => {
@@ -16,6 +16,15 @@ describe("dates", () => {
     expect(formatDue("2026-11-05", "2026-11-04")).toBe("Tomorrow");
     expect(formatDue("2026-11-03", "2026-11-04")).toBe("Yesterday");
     expect(formatDue("2027-01-10", "2026-11-04")).toContain("2027");
+  });
+
+  it("labels due dates for the task page", () => {
+    expect(formatDueLong("2026-11-04", "2026-11-04")).toBe("Due today");
+    expect(formatDueLong("2026-11-05", "2026-11-04")).toBe("Due tomorrow");
+    const later = formatDueLong("2026-11-13", "2026-11-04");
+    expect(later.startsWith("Due ")).toBe(true);
+    expect(later).toContain("13");
+    expect(formatDueLong("2027-01-10", "2026-11-04")).toContain("2027");
   });
 
   it("formats relative times", () => {

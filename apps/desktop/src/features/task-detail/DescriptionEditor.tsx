@@ -214,13 +214,18 @@ export function DescriptionEditor({
         ...actions,
         toggleTask: (line, checked) => commit(toggleTaskItem(saved.current, line, checked)),
       }}
-      className={page ? "text-[17px] leading-[1.75]" : "text-[14px] leading-[1.55]"}
+      className={page ? "tm-dropcap text-[17px] leading-[1.75]" : "text-[14px] leading-[1.55]"}
     />
   ) : (
     <p className="text-ink-3 italic">
-      {page ? "Write freely… click to start." : "Add a description…"}
+      {page ? "Write freely… Markdown works." : "Add a description…"}
     </p>
   );
+  // On the page, an invitation to keep going below the text, as in the mockup.
+  const more =
+    page && value.trim() ? (
+      <p className="mt-3 text-[17px] text-ink-3 italic">Keep writing… Markdown works.</p>
+    ) : null;
 
   return (
     <div
@@ -229,7 +234,7 @@ export function DescriptionEditor({
       className={cx(
         "group relative",
         page
-          ? "min-h-72"
+          ? "min-h-12"
           : "min-h-24 rounded-lg border border-line-strong bg-raised/60 focus-within:border-accent",
         "data-[drop-active]:outline-2 data-[drop-active]:outline-dashed data-[drop-active]:outline-accent",
       )}
@@ -249,6 +254,7 @@ export function DescriptionEditor({
           }}
         >
           {shown}
+          {more}
         </div>
       )}
       {!editing && (

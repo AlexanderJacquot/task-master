@@ -7,7 +7,7 @@ import type { Activity, Attachment, Changes, Command, StoredUpload, Task } from 
 import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore, type TaskStore } from "../../store/store";
-import { attachment, fakeParse, snapshot, task } from "../../test/fixtures";
+import { attachment, fakeParse, STATUS, snapshot, task } from "../../test/fixtures";
 import { dispatchFileDrop } from "../shell/useFileDrop";
 
 /** Records every call; plain functions, as CLAUDE.md asks for mocks. */
@@ -49,11 +49,16 @@ function fakeFiles() {
 
 let store: TaskStore;
 
-async function renderTask(t: Task, attachments: Attachment[] = [], activity: Activity[] = []) {
+async function renderTask(
+  t: Task,
+  attachments: Attachment[] = [],
+  activity: Activity[] = [],
+  others: Task[] = [],
+) {
   const executed: Command[][] = [];
   const { files, calls } = fakeFiles();
   const api: Api = {
-    snapshot: async () => snapshot({ tasks: [t], attachments }),
+    snapshot: async () => snapshot({ tasks: [t, ...others], attachments }),
     execute: async (commands) => {
       executed.push(commands);
       return {
@@ -227,5 +232,32 @@ describe("attachment list", () => {
     fireEvent.click(screen.getByText("Activity"));
     expect(await screen.findByText("Attached a.pdf")).toBeTruthy();
     expect(screen.getByText("Renamed the attachment a.pdf → b.pdf")).toBeTruthy();
+  });
+});
+
+describe("task page look (mockup)", () => {
+  it("shows set properties as pills, unset ones as quiet labels", async () => {
+    const t = task({ priority: "high", description: "The current page explains every plan." });
+    await renderTask(t);
+    const priority = screen.getByLabelText("Priority") as HTMLSelectElement;
+    expect(priority.closest("span")?.textContent?.startsWith("HighUrgent")).toBe(true);
+    expect(screen.getByLabelText("Due date").closest("span")?.textContent).toBe("Due date");
+    expect(screen.getByText("Keep writing… Markdown works.")).toBeTruthy();
+    expect(document.querySelector(".tm-dropcap")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add an estimate" }));
+    const estimate = screen.getByLabelText("Estimate in minutes");
+    fireEvent.change(estimate, { target: { value: "30" } });
+    fireEvent.blur(estimate);
+    expect(await screen.findByRole("button", { name: "Estimate: 30 minutes" })).toBeTruthy();
+  });
+
+  it("counts finished subtasks above the checklist", async () => {
+    const t = task();
+    const kids = [task({ parent_id: t.id, status_id: STATUS.done }), task({ parent_id: t.id })];
+    await renderTask(t, [], [], kids);
+    const bar = screen.getByRole("progressbar", { name: "Subtasks done" });
+    expect(bar.getAttribute("aria-valuenow")).toBe("1");
+    expect(screen.getByText("1 of 2")).toBeTruthy();
   });
 });

@@ -1,3 +1,4 @@
+import { Check } from "lucide-react";
 import { useMemo } from "react";
 import { Checkbox, cx, InlineInput } from "../../components/ui";
 import type { Task } from "../../lib/types";
@@ -6,8 +7,53 @@ import { createTask, moveSubtask, setParent, toggleDone } from "../../store/acti
 import { useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
 
-/** Checklist of direct subtasks: add, tick off, reorder, open, promote to a full task. */
-export function SubtaskList({ parent }: { parent: Task }) {
+/** The full page's subtask box: square, filled with the done green when ticked. */
+function SquareCheck({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: () => void;
+  label: string;
+}) {
+  return (
+    <span
+      className={cx(
+        "relative inline-flex size-[18px] shrink-0 items-center justify-center rounded-[4px] border-[1.5px] transition-colors",
+        checked ? "border-done bg-done" : "border-ink-3",
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onChange}
+        aria-label={label}
+        className="absolute inset-0 cursor-pointer appearance-none rounded-[4px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      />
+      {checked && (
+        <Check
+          aria-hidden
+          size={12}
+          strokeWidth={3.2}
+          className="pointer-events-none text-canvas"
+        />
+      )}
+    </span>
+  );
+}
+
+/**
+ * Checklist of direct subtasks: add, tick off, reorder, open, promote to a full task.
+ * `page`: the full page's look, with a "2 of 4" progress header as in the mockup.
+ */
+export function SubtaskList({
+  parent,
+  variant = "panel",
+}: {
+  parent: Task;
+  variant?: "panel" | "page";
+}) {
   const store = useTaskStore();
   const tasks = useStoreState((s) => s.tasks);
   const statuses = useStoreState((s) => s.statuses);
@@ -24,15 +70,47 @@ export function SubtaskList({ parent }: { parent: Task }) {
     return c === "done" || c === "cancelled";
   };
 
+  const page = variant === "page";
+  const doneCount = children.filter(isDone).length;
+  const Box = page ? SquareCheck : Checkbox;
+
   return (
     <div>
+      {page && (
+        <div className="mb-1 flex items-center gap-3 border-b border-line pb-2">
+          <span className="font-display text-[17px] tracking-wide text-rubric">Subtasks</span>
+          {children.length > 0 && (
+            <>
+              <span className="text-[13px] text-ink-3">
+                {doneCount} of {children.length}
+              </span>
+              <span
+                role="progressbar"
+                aria-label="Subtasks done"
+                aria-valuemin={0}
+                aria-valuemax={children.length}
+                aria-valuenow={doneCount}
+                className="h-[3px] flex-1 overflow-hidden rounded-full bg-line"
+              >
+                <span
+                  className="block h-full rounded-full bg-done transition-[width]"
+                  style={{ width: `${(doneCount / children.length) * 100}%` }}
+                />
+              </span>
+            </>
+          )}
+        </div>
+      )}
       <ul className="flex flex-col">
         {children.map((child, i) => (
           <li
             key={child.id}
-            className="group flex items-center gap-2 rounded px-1 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-900"
+            className={cx(
+              "group flex items-center rounded hover:bg-hover",
+              page ? "gap-3 px-0.5 py-1.5 text-[15.5px]" : "gap-2 px-1 py-1",
+            )}
           >
-            <Checkbox
+            <Box
               checked={isDone(child)}
               onChange={() => void toggleDone(store, child.id)}
               label={`Done: ${child.title}`}
@@ -42,7 +120,7 @@ export function SubtaskList({ parent }: { parent: Task }) {
               onClick={() => openTask(child.id)}
               className={cx(
                 "min-w-0 flex-1 truncate text-left",
-                isDone(child) && "text-neutral-400 line-through",
+                isDone(child) && "text-ink-3 line-through",
               )}
             >
               {child.title}
@@ -82,7 +160,11 @@ export function SubtaskList({ parent }: { parent: Task }) {
         initial=""
         clearOnCommit
         placeholder="Add subtask…"
-        className="mt-1"
+        className={
+          page
+            ? "mt-1 border-transparent bg-transparent px-0.5 hover:border-line focus:px-2.5"
+            : "mt-1"
+        }
         onCommit={(title) => void createTask(store, { title, parent_id: parent.id })}
       />
     </div>

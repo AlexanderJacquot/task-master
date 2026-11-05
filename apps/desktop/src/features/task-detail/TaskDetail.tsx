@@ -1,25 +1,11 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  CalendarDays,
-  ChevronRight,
-  Clock,
-  Diamond,
-  Flag,
-  FolderOpen,
-  Maximize2,
-  Sun,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ChevronRight, Maximize2, Sun, Trash2, X } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import {
   cx,
   Dot,
   IconButton,
   PRIORITIES,
-  PRIORITY_PILL,
   PRIORITY_STYLE,
   SectionLabel,
   Select,
@@ -33,6 +19,7 @@ import { useOpenTask } from "../shell/useOpenTask";
 import { ActivityFeed } from "./ActivityFeed";
 import { AttachmentList } from "./AttachmentList";
 import { DescriptionEditor } from "./DescriptionEditor";
+import { PropertyPills } from "./PropertyPills";
 import { SubtaskList } from "./SubtaskList";
 import { TagPicker } from "./TagPicker";
 import { useTaskAttachments, useTaskFiles } from "./useTaskFiles";
@@ -51,31 +38,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 const fieldInput =
   "w-full rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-ink hover:border-line-strong focus:border-accent focus:outline-none";
 
-/** A property shown as a pill on the full page; the control inside stays native. */
-function Pill({
-  icon,
-  className,
-  children,
-}: {
-  icon?: ReactNode;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <span
-      className={cx(
-        "inline-flex h-[30px] items-center gap-1.5 rounded-full bg-hover px-3 text-[13.5px] text-ink transition-colors focus-within:ring-2 focus-within:ring-accent hover:bg-selected",
-        className,
-      )}
-    >
-      {icon}
-      {children}
-    </span>
-  );
-}
-
-const pillControl = "appearance-none bg-transparent outline-none [&>option]:bg-overlay";
-
 function useProjectOptions(task: Task | undefined) {
   const projects = useStoreState((s) => s.projects);
   return useMemo(() => {
@@ -86,11 +48,16 @@ function useProjectOptions(task: Task | undefined) {
       .filter((p) => p.parent_id === null)
       .sort((a, b) => (a.rank < b.rank ? -1 : 1));
     return areas.flatMap((area) => [
-      { id: area.id, label: area.name },
+      { id: area.id, label: area.name, name: area.name, color: area.color },
       ...list
         .filter((p) => p.parent_id === area.id)
         .sort((a, b) => (a.rank < b.rank ? -1 : 1))
-        .map((p) => ({ id: p.id, label: `  ${area.name} / ${p.name}` })),
+        .map((p) => ({
+          id: p.id,
+          label: `  ${area.name} / ${p.name}`,
+          name: p.name,
+          color: p.color,
+        })),
     ]);
   }, [projects, task?.project_id]);
 }
@@ -169,114 +136,15 @@ function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
   );
 
   const properties = page ? (
-    <div className="flex flex-wrap gap-2 pl-10">
-      <Pill icon={<Dot color={status?.color ?? null} />}>
-        <select
-          value={task.status_id}
-          onChange={(e) => change([{ status_id: e.target.value }])}
-          aria-label="Status"
-          className={pillControl}
-        >
-          {statuses.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </Pill>
-      <Pill icon={<Flag size={13} />} className={PRIORITY_PILL[task.priority]}>
-        <select
-          value={task.priority}
-          onChange={(e) => change([{ priority: e.target.value as Priority }])}
-          aria-label="Priority"
-          className={pillControl}
-        >
-          {PRIORITIES.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label} priority
-            </option>
-          ))}
-        </select>
-      </Pill>
-      <Pill icon={<CalendarDays size={13} />}>
-        <input
-          type="date"
-          aria-label="Due date"
-          value={task.due_date ?? ""}
-          onChange={(e) => change([{ due_date: e.target.value || null }])}
-          className={cx(pillControl, "w-[8.5rem]")}
-        />
-      </Pill>
-      <button
-        type="button"
-        aria-pressed={pickedToday}
-        onClick={() => change([{ today_on: pickedToday ? null : today }])}
-        className={cx(
-          "inline-flex h-[30px] items-center gap-1.5 rounded-full px-3 text-[13.5px] transition-colors",
-          pickedToday
-            ? "bg-amber-600/15 text-amber-800 dark:bg-amber-400/15 dark:text-amber-200"
-            : "bg-hover text-ink-2 hover:bg-selected",
-        )}
-      >
-        <Sun size={13} />
-        {pickedToday ? "On Today" : "Add to Today"}
-      </button>
-      <Pill icon={<FolderOpen size={13} />}>
-        <select
-          value={task.project_id ?? ""}
-          onChange={(e) => change([{ project_id: e.target.value || null }])}
-          aria-label="Project"
-          className={pillControl}
-        >
-          <option value="">Inbox</option>
-          {projectOptions.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </Pill>
-      <Pill
-        icon={<Diamond size={12} />}
-        className={task.epic_id ? "text-violet-800 dark:text-violet-300" : "text-ink-2"}
-      >
-        <select
-          value={task.epic_id ?? ""}
-          onChange={(e) => change([{ epic_id: e.target.value || null }])}
-          aria-label="Epic"
-          className={pillControl}
-        >
-          <option value="">No epic</option>
-          {epicOptions.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name}
-            </option>
-          ))}
-        </select>
-      </Pill>
-      <Pill icon={<Clock size={13} />} className="text-ink-2">
-        <input
-          key={`estimate-${task.updated_at}`}
-          type="number"
-          min={0}
-          step={5}
-          aria-label="Estimate in minutes"
-          placeholder="—"
-          defaultValue={task.estimate_min ?? ""}
-          onBlur={(e) => {
-            const raw = e.currentTarget.value;
-            const value = raw === "" ? null : Math.max(0, Math.round(Number(raw)));
-            if (value !== task.estimate_min && !Number.isNaN(value))
-              change([{ estimate_min: value }]);
-          }}
-          className={cx(pillControl, "w-12 text-right")}
-        />
-        min
-      </Pill>
-      <div className="flex min-w-0 basis-full items-center gap-2 pt-1">
-        <span className="text-[13px] text-ink-3">Tags</span>
-        <TagPicker task={task} />
-      </div>
+    <div className="pl-10">
+      <PropertyPills
+        task={task}
+        today={today}
+        change={change}
+        statuses={statuses}
+        epics={epicOptions}
+        projects={projectOptions}
+      />
     </div>
   ) : (
     <div>
@@ -374,6 +242,26 @@ function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
     </div>
   );
 
+  const attachmentList = (
+    <AttachmentList
+      key="attachments"
+      attachments={attachments}
+      files={files}
+      page={page}
+      onInsert={(markdown) => {
+        const text = task.description.replace(/\s+$/, "");
+        change([{ description: text ? `${text}\n\n${markdown}` : markdown }]);
+      }}
+    />
+  );
+
+  const subtasks = (
+    <section key="subtasks" aria-label="Subtasks" className={page ? "pl-10" : undefined}>
+      {!page && <SectionLabel className="mb-1.5 block">Subtasks</SectionLabel>}
+      <SubtaskList parent={task} variant={variant} />
+    </section>
+  );
+
   return (
     <div className={cx("flex flex-col", page ? "gap-7" : "gap-5")}>
       {title}
@@ -398,21 +286,8 @@ function TaskEditor({ task, variant }: { task: Task; variant: Variant }) {
           upload={files.uploader}
         />
       </section>
-      <AttachmentList
-        attachments={attachments}
-        files={files}
-        page={page}
-        onInsert={(markdown) => {
-          const text = task.description.replace(/\s+$/, "");
-          change([{ description: text ? `${text}\n\n${markdown}` : markdown }]);
-        }}
-      />
-      <section aria-label="Subtasks" className={page ? "pl-10" : undefined}>
-        <SectionLabel className={cx("mb-1.5 block", page && "text-[17px] text-rubric")}>
-          Subtasks
-        </SectionLabel>
-        <SubtaskList parent={task} />
-      </section>
+      {/* The page follows the mockup: subtasks right under the text, files after. */}
+      {page ? [subtasks, attachmentList] : [attachmentList, subtasks]}
       {page ? (
         <details className="pl-10">
           <summary className="cursor-pointer font-display text-[15px] tracking-wide text-ink-2">

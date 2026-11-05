@@ -1,12 +1,17 @@
 import { Popover } from "radix-ui";
 import { useMemo, useState } from "react";
-import { Chip } from "../../components/ui";
+import { Chip, cx } from "../../components/ui";
 import type { Tag, Task } from "../../lib/types";
 import { createTagOnTask, setTagged } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { GHOST, PILL, SET } from "./pill";
 
-/** Task tags as chips, plus a popover to toggle existing tags or create one. */
-export function TagPicker({ task }: { task: Task }) {
+/**
+ * Task tags as chips, plus a popover to toggle existing tags or create one. `pill`: the
+ * full page's look, tags flowing in the parent's row of property pills.
+ */
+export function TagPicker({ task, variant = "chips" }: { task: Task; variant?: "chips" | "pill" }) {
+  const pill = variant === "pill";
   const store = useTaskStore();
   const tags = useStoreState((s) => s.tags);
   const [query, setQuery] = useState("");
@@ -29,24 +34,45 @@ export function TagPicker({ task }: { task: Task }) {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      {task.tag_ids.map((id) =>
-        tags[id] ? (
+    <div className={pill ? "contents" : "flex flex-wrap items-center gap-1"}>
+      {task.tag_ids.map((id) => {
+        const tag = tags[id];
+        if (!tag) return null;
+        const remove = (
+          <button
+            key="remove"
+            type="button"
+            aria-label={`Remove tag ${tag.name}`}
+            onClick={() => void setTagged(store, task.id, id, false)}
+            className={
+              pill
+                ? "-mr-1.5 w-3 text-ink-3 opacity-0 group-hover/tag:opacity-100 hover:text-danger focus-visible:opacity-100"
+                : "hover:text-red-600"
+            }
+          >
+            ×
+          </button>
+        );
+        return pill ? (
+          <span key={id} className={cx(PILL, SET, "group/tag")}>
+            #{tag.name}
+            {remove}
+          </span>
+        ) : (
           <Chip key={id}>
-            #{tags[id].name}
-            <button
-              type="button"
-              aria-label={`Remove tag ${tags[id].name}`}
-              onClick={() => void setTagged(store, task.id, id, false)}
-              className="hover:text-red-600"
-            >
-              ×
-            </button>
+            #{tag.name}
+            {remove}
           </Chip>
-        ) : null,
-      )}
+        );
+      })}
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger className="rounded px-1.5 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800">
+        <Popover.Trigger
+          className={
+            pill
+              ? cx(PILL, GHOST)
+              : "rounded px-1.5 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+          }
+        >
           + Tag
         </Popover.Trigger>
         <Popover.Portal>

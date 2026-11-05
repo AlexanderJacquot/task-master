@@ -151,8 +151,8 @@ export function TaskCheck({
   return (
     <span
       className={cx(
-        "relative inline-flex shrink-0 items-center justify-center rounded-full border-[1.6px] transition-colors",
-        size === "lg" ? "size-6" : "size-[19px]",
+        "relative inline-flex shrink-0 items-center justify-center rounded-full transition-colors",
+        size === "lg" ? "size-6 border-2" : "size-[19px] border-[1.6px]",
       )}
       style={{ borderColor: ring, background: checked ? ring : "transparent" }}
     >
