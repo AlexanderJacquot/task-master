@@ -2,6 +2,7 @@
 // immediately. Ids and ranks are computed here and sent, so local and confirmed rows agree.
 
 import { ranksForDrop } from "../lib/board";
+import type { RestorePlan } from "../lib/history";
 import { rankBetween } from "../lib/rank";
 import type {
   Attachment,
@@ -164,6 +165,24 @@ export function updateTask(store: TaskStore, id: string, changes: TaskChange[]) 
   if (!task || !changes.length) return Promise.resolve(null);
   const updated = applyTaskChanges(task, changes, s.statuses, Date.now());
   return s.mutate([{ type: "update_task", id, changes }], { upsert: { tasks: [updated] } });
+}
+
+/** Puts a task back to an earlier version (lib/history.ts) as one undoable batch. */
+export function restoreTask(store: TaskStore, id: string, plan: RestorePlan) {
+  const s = store.getState();
+  const task = s.tasks[id];
+  if (!task) return Promise.resolve(null);
+  const commands: Command[] = [];
+  if (plan.changes.length) commands.push({ type: "update_task", id, changes: plan.changes });
+  for (const tag_id of plan.addTags) commands.push({ type: "tag_task", task_id: id, tag_id });
+  for (const tag_id of plan.removeTags) commands.push({ type: "untag_task", task_id: id, tag_id });
+  if (!commands.length) return Promise.resolve(null);
+  const updated = applyTaskChanges(task, plan.changes, s.statuses, Date.now());
+  const tag_ids = [
+    ...updated.tag_ids.filter((t) => !plan.removeTags.includes(t)),
+    ...plan.addTags.filter((t) => !updated.tag_ids.includes(t)),
+  ].sort();
+  return s.mutate(commands, { upsert: { tasks: [{ ...updated, tag_ids }] } });
 }
 
 /** Checkbox: open → first `done` status; done → first `todo` status. */

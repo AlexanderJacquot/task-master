@@ -31,6 +31,17 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Task history: undo, diffs, restore (2026-11-05)
+
+Branch `task-history` (stacked on `remappable-shortcuts`). In a task's Activity: a quiet
+"Undo last change" link, "Restore" on hover for any entry (puts the task back as it was
+right after it), and description edits expand into a line diff. UI only: `lib/history.ts`
+works out the old values from the activity's before/after and `restoreTask` sends one
+ordinary batch (update_task + tag_task/untag_task), so the restore shows in the activity
+and Ctrl+Z undoes it. Not put back (and said so): files, calendar blocks, the parent,
+values pointing at deleted statuses/projects/epics/tags. Only the last 50 changes are
+listed. Tests: `lib/history.test.ts`, attachments.test "task history".
+
 ### Remappable keyboard shortcuts (2026-11-05)
 
 Branch `remappable-shortcuts` (stacked on `delete-tags`). `lib/keymap.ts`: the
