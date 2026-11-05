@@ -16,7 +16,12 @@ export function useOpenTask(): (taskId: string | null) => void {
       if (override) return override(taskId);
       void router.navigate({
         to: ".",
-        search: (prev: Record<string, unknown>) => ({ ...prev, task: taskId ?? undefined }),
+        // `focus` belongs to the task that was just created, never to the next one opened.
+        search: (prev: Record<string, unknown>) => ({
+          ...prev,
+          task: taskId ?? undefined,
+          focus: undefined,
+        }),
       });
     },
     [override, router],

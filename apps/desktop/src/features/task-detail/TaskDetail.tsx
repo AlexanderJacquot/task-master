@@ -315,7 +315,14 @@ export function TaskEditor({
 }
 
 /** Right-hand panel for one task, opened with `?task=<id>`. Every field saves on change. */
-export function TaskDetail({ taskId }: { taskId: string }) {
+export function TaskDetail({
+  taskId,
+  focusDescription = false,
+}: {
+  taskId: string;
+  /** Opens with the cursor in the description (a task just created). */
+  focusDescription?: boolean;
+}) {
   const store = useTaskStore();
   const task = useStoreState((s) => s.tasks[taskId]);
   const parent = useStoreState((s) => (task?.parent_id ? s.tasks[task.parent_id] : undefined));
@@ -380,7 +387,7 @@ export function TaskDetail({ taskId }: { taskId: string }) {
         </IconButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
-        <TaskEditor task={task} variant="panel" />
+        <TaskEditor task={task} variant="panel" focusDescription={focusDescription} />
       </div>
     </aside>
   );

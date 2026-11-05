@@ -53,6 +53,10 @@ dependencies.
   on the task page; `DescriptionEditor` `autoFocus`). Opening an existing task does not.
   Starting an edit now puts the cursor at the end of the text (was the start). Tests:
   app.test +2, the capture window test checks it, and the row test checks it does not.
+- A task added from a view's top row (plain Enter) opens in the side panel with the
+  cursor in its description. Settings → Adding tasks turns it off (per machine,
+  `lib/capturePrefs.ts`, on by default). `useOpenTask` drops `focus` so the next task
+  opened does not take the cursor. Tests: app.test +2.
 
 ### M11 Sync core (2026-11-05)
 

@@ -2,6 +2,7 @@ import { useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { type ReactNode, useEffect, useState } from "react";
 import { cx, Dot, InlineInput, Select } from "../../components/ui";
+import { loadOpenInPanel, saveOpenInPanel } from "../../lib/capturePrefs";
 import { formatAgo, isoDate } from "../../lib/dates";
 import { settingsApi } from "../../lib/settingsApi";
 import { loadTheme, saveTheme, THEME_LABELS, type Theme } from "../../lib/theme";
@@ -190,6 +191,26 @@ function Appearance() {
           </label>
         ))}
       </div>
+    </Section>
+  );
+}
+
+function AddingTasks() {
+  const [open, setOpen] = useState(loadOpenInPanel);
+  return (
+    <Section title="Adding tasks" hint="Remembered on this computer.">
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={open}
+          onChange={(e) => {
+            setOpen(e.target.checked);
+            saveOpenInPanel(e.target.checked);
+          }}
+          className="accent-accent"
+        />
+        Open a task added from a view's top row in the side panel, ready to describe
+      </label>
     </Section>
   );
 }
@@ -488,6 +509,7 @@ export function SettingsPage() {
         <About />
         <Workflow />
         <Appearance />
+        <AddingTasks />
         <Shortcuts />
         <CalendarSettings />
         <Data />
