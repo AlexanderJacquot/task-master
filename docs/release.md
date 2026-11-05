@@ -29,11 +29,11 @@ that folder while `.forgejo/workflows` exists, which is why its manual-only stub
 1. Bump `version` in `apps/desktop/src-tauri/tauri.conf.json`, the workspace `Cargo.toml`
    and `apps/desktop/package.json` on `main`. The version must grow: the app only offers
    a release newer than itself.
-2. `git tag v0.2.0 && git push origin v0.2.0`. The mirror forwards the tag to GitHub.
-3. Start the build: tags pushed by the Forgejo mirror did not trigger the workflow for
-   v0.1.0, so run it on the tag by hand:
-   `gh workflow run release.yml -R AlexanderJacquot/task-master --ref v0.2.0`
-   (or Actions → release → Run workflow, choosing the tag).
+2. `git tag -a v0.3.0 -m … && git push origin v0.3.0`. The mirror forwards the tag to GitHub.
+3. The tag push starts the *release* workflow on GitHub (it did for v0.2.0 and v0.3.0;
+   check `gh run list -R AlexanderJacquot/task-master -L 3`). Only if no run appears,
+   start it by hand: `gh workflow run release.yml -R AlexanderJacquot/task-master --ref
+   v0.3.0`. Do not do both: two runs publish to the same release.
 4. On GitHub, the *release* workflow builds Linux (.deb, .AppImage, .rpm), Windows
    (.msi, setup .exe) and macOS (arm64 and x86_64 .dmg), plus signed update bundles and
    `latest.json`, and **publishes** the release (about 30–40 minutes on a cold cache).
