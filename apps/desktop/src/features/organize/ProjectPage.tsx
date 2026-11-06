@@ -1,6 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
-import { Archive, ArchiveRestore, MoreHorizontal, Trash2 } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import { DropdownMenu, Popover } from "radix-ui";
+import {
+  ArchiveIcon as Archive,
+  UnarchiveIcon as ArchiveRestore,
+  DeleteIcon as Trash2,
+} from "../../components/TaskIcons";
 import { cx, IconButton, MENU, MENU_DANGER, MENU_ITEM, Select } from "../../components/ui";
 import type { Project } from "../../lib/types";
 import { deleteProject, moveProject, updateProject } from "../../store/actions";

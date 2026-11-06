@@ -1,5 +1,6 @@
-import { Clock, ListChecks } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import { memo } from "react";
+import { EstimateIcon as Clock } from "../../components/TaskIcons";
 import { Chip, cx, Dot, PRIORITY_PILL } from "../../components/ui";
 import { daysFrom, formatDue, isoDate } from "../../lib/dates";
 import type { Epic, Project, Status, Tag, Task } from "../../lib/types";

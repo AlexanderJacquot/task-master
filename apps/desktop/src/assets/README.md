@@ -4,17 +4,38 @@ These are original vector assets rebuilt using the two supplied Medieval Brand A
 
 ## UI icons
 
-`icons/add.svg`, `inbox.svg`, `projects.svg`, `due-date.svg`, and `settings.svg` are standalone, path-only SVGs. All use a 24 × 24 viewBox, a 1.75-unit stroke, rounded caps and joins, no fill, and `currentColor`. There are no embedded images, fonts, or external dependencies. Use at 24 px where possible; the proof sheet also shows 16 and 32 px.
+`icons/*.svg` are standalone, path-only SVGs. All use a 24 × 24 viewBox, a 1.75-unit stroke, rounded caps and joins, no fill, and `currentColor`. There are no embedded images, fonts, or external dependencies. Use at 24 px where possible; the proof sheet also shows 16 and 32 px.
 
-- **Add:** cross with small manuscript-style terminals.
-- **Inbox:** a receiving tray with a folio line.
-- **Projects:** a tabbed folio/folder.
-- **Due Date:** a bound calendar with a completion tick.
-- **Settings:** a rounded six-tooth cog.
+Every icon follows the medieval theme:
+
+| Icon                    | Motif                           | Used for                        |
+| ----------------------- | ------------------------------- | ------------------------------- |
+| `add`                   | cross with manuscript terminals | new task, add buttons           |
+| `inbox`                 | sealed letter                   | Inbox                           |
+| `projects`              | castle keep                     | Projects heading                |
+| `due-date`              | hourglass                       | due dates                       |
+| `settings`              | anvil                           | Settings                        |
+| `search`                | lantern                         | search fields                   |
+| `delete`                | brazier                         | delete / remove                 |
+| `agents`                | knight's great helm             | agents, agent tasks             |
+| `calendar`              | open almanac                    | Calendar                        |
+| `all-tasks`             | open scroll                     | All tasks                       |
+| `archive` / `unarchive` | closed chest / open chest       | archive, unarchive              |
+| `priority`              | swallowtail pennant             | priority flag, epic "flag" mark |
+| `bookmark`              | gonfalon banner                 | saved views                     |
+| `edit`                  | quill                           | rename / edit                   |
+| `metrics`               | balance scales                  | Metrics                         |
+| `lineage`               | oak tree                        | Lineage                         |
+| `send`                  | fletched arrow                  | send to agent                   |
+| `estimate`              | candle clock                    | estimates, worked time, stale   |
+| `done`                  | wax seal with a tick            | up to date                      |
+| `crown`, `shield`       | crown, heater shield            | extra epic marks                |
+
+Navigation and control glyphs (chevrons, close, check, grip, more) stay as lucide icons for legibility at small sizes.
 
 The canonical path data is `icons/paths.json`. React components in `components/TaskIcons.tsx` consume it directly, and `scripts/generate-ui-icons.mjs` produces matching SVG files. Pass `size`, `className`, and standard SVG props to the components. They inherit text color and are decorative by default; name the surrounding button or link for assistive technology.
 
-In the app, these replace Add, Inbox, and Settings controls, the Projects heading mark, and the due-date picker icon. Project-specific emoji and color choices remain available.
+Call sites import them under the lucide name they replaced (`DeleteIcon as Trash2`). Project-specific emoji and color choices remain available.
 
 ## Brand
 
@@ -34,4 +55,4 @@ From the repository root, with dependencies installed:
 pnpm assets:generate
 ```
 
-This exports the five SVGs, the transparent logo mark, the proof sheet, every native icon via the installed Tauri CLI, and the 1024 px `src-tauri/app-icon.png`. Edit `icons/paths.json` for UI geometry, and `brand/app-icon.svg` for the logo, then regenerate. Native PNG/ICO/ICNS files are raster platform deliverables; the UI icon SVGs remain pure vector.
+This exports the icon SVGs, the transparent logo mark, the proof sheet, every native icon via the installed Tauri CLI, and the 1024 px `src-tauri/app-icon.png`. Edit `icons/paths.json` for UI geometry, and `brand/app-icon.svg` for the logo, then regenerate. Native PNG/ICO/ICNS files are raster platform deliverables; the UI icon SVGs remain pure vector.

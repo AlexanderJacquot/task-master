@@ -1,6 +1,7 @@
-import { ChevronDown, ChevronRight, Flag } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { memo, useState } from "react";
 import { DatePicker } from "../../components/DatePicker";
+import { PriorityIcon as Flag } from "../../components/TaskIcons";
 import { Chip, cx, Dot, PRIORITIES, PRIORITY_STYLE, Select, TaskCheck } from "../../components/ui";
 import { formatDue } from "../../lib/dates";
 import type { Project, Status, Tag, Task, TaskChange } from "../../lib/types";

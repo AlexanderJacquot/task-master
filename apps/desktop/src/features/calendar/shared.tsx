@@ -1,8 +1,8 @@
 // Pieces shared by the calendar's grids and task tray.
 
 import { useDraggable } from "@dnd-kit/core";
-import { Flag } from "lucide-react";
 import { createContext, useContext } from "react";
+import { DueDateIcon as Flag } from "../../components/TaskIcons";
 import { cx, Dot, FOCUS } from "../../components/ui";
 import type { Project, Status, Task, TimeBlock } from "../../lib/types";
 
