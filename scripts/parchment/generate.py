@@ -187,7 +187,139 @@ def folio(rng, w=1920, h=1200):
     return to_rgba(np.clip(dark, 0, 1), light, fox)
 
 
-OPTIONS = {"vellum": vellum, "laid": laid, "calfskin": calfskin, "folio": folio}
+# Weathering layers. They go over a base tile as separate CSS layers, because a stain in a
+# repeating tile would repeat with it. Full-window ones are stretched to the window
+# (background-size: 100% 100%) so edges and folds always meet the window's edges; the
+# coffee stain is placed at its own size.
+
+COFFEE = np.array([122, 62, 16], dtype=np.float64)
+CHAR = np.array([34, 18, 8], dtype=np.float64)
+SCORCH = np.array([128, 62, 18], dtype=np.float64)
+TIDE = np.array([118, 80, 34], dtype=np.float64)
+
+
+def compose(layers, shape):
+    """Over-composite (colour, alpha map) layers, first one at the bottom."""
+    h, w = shape
+    rgb = np.zeros((h, w, 3))
+    a = np.zeros((h, w))
+    for col, al in layers:
+        al = np.clip(al, 0, 1)
+        na = al + a * (1 - al)
+        rgb = (col * al[..., None] + rgb * (a * (1 - al))[..., None]) / np.maximum(na, 1e-9)[
+            ..., None
+        ]
+        a = na
+    out = np.dstack([rgb, a * 255])
+    return Image.fromarray(np.clip(np.round(out), 0, 255).astype(np.uint8), "RGBA")
+
+
+def noise1d(rng, n, beta, hi=0.5):
+    """Periodic 1D noise (for values around a circle)."""
+    f = np.fft.rfftfreq(n)
+    f[0] = 1
+    amp = f ** (-beta / 2)
+    amp[f > hi] = 0
+    amp[0] = 0
+    x = np.fft.rfft(rng.standard_normal(n)) * amp
+    return norm(np.fft.irfft(x, n))
+
+
+def ring(rng, h, w, cx, cy, radius, arc=None):
+    """One cup ring: sharp dark outer rim, softer inward, faint fill, gaps along it."""
+    y, x = np.mgrid[0:h, 0:w].astype(np.float64)
+    dx, dy = x - cx, y - cy
+    r = np.hypot(dx, dy)
+    th = np.arctan2(dy, dx)
+    idx = ((th + np.pi) / (2 * np.pi) * 720).astype(int) % 720
+    wob = noise1d(rng, 720, 3.0, hi=0.02)[idx] * radius * 0.025
+    wob += noise1d(rng, 720, 1.5, hi=0.1)[idx] * 1.2
+    dr = r - (radius + wob)
+    rim = np.where(dr < 0, np.exp(-((dr / 5.0) ** 2)), np.exp(-((dr / 1.4) ** 2)))
+    inner = 0.45 * np.exp(-(((dr + radius * 0.09) / 2.5) ** 2))  # second, fainter ring
+    strength = np.clip(0.55 + 0.45 * noise1d(rng, 720, 2.0, hi=0.03)[idx], 0.05, 1)
+    fill = (dr < 0) * (0.35 + 0.25 * fbm(rng, h, w, 2.5, hi=0.03)) * smoothstep(0, 30, -dr)
+    a = 0.38 * rim * strength + 0.12 * inner * strength + 0.07 * fill
+    if arc is not None:  # keep only part of the ring: (centre angle, half width), radians
+        c, half = arc
+        dth = np.angle(np.exp(1j * (th - c)))
+        a *= 1 - smoothstep(half - 0.35, half, np.abs(dth))
+    return a
+
+
+def coffee(rng, w=600, h=480):
+    a = ring(rng, h, w, 330, 270, 150)
+    a = np.maximum(a, ring(rng, h, w, 205, 175, 142, arc=(np.pi * 0.85, 1.7)))
+    drips = spots(rng, h, w, 7, [2.5, 4.0], jitter=0.4)
+    near = np.exp(-((np.hypot(*np.mgrid[0:h, 0:w] - np.array([270, 330])[:, None, None]) - 185) / 40) ** 2)
+    a = np.maximum(a, 0.28 * drips * near)
+    return compose([(COFFEE, a)], (h, w))
+
+
+def edge_distance(rng, h, w, soft=45.0):
+    """Distance in px to the window edge, rounded into the corners and made ragged."""
+    y, x = np.mgrid[0:h, 0:w].astype(np.float64)
+    ds = np.stack([x, w - 1 - x, y, h - 1 - y])
+    d = -soft * np.log(np.exp(-ds / soft).sum(0))
+    d += 7 + 10 * fbm(rng, h, w, 3.0, hi=0.006) + 4 * fbm(rng, h, w, 2.2, lo=0.004, hi=0.05)
+    d += 1.2 * fbm(rng, h, w, 1.0, lo=0.05, hi=0.3)
+    return d
+
+
+def burnt(rng, w=1920, h=1200):
+    d = edge_distance(rng, h, w)
+    char = 0.85 * (1 - smoothstep(0, 5, d))
+    scorch = 0.42 * np.exp(-np.maximum(d, 0) / 16)
+    halo = 0.10 * np.exp(-np.maximum(d, 0) / 110)
+    return compose([(INK, halo), (SCORCH, scorch), (CHAR, char)], (h, w))
+
+
+def water(rng, w=1920, h=1200):
+    n = fbm(rng, h, w, 3.3, lo=1 / 1800, hi=0.01)
+    n = n + 0.12 * fbm(rng, h, w, 2.6, lo=1 / 400, hi=0.015)  # uneven outlines
+    fill = 0.08 * smoothstep(0.85, 1.5, n)
+    rims = sum(
+        k * np.exp(-(((n - t) / 0.012) ** 2)) for t, k in ((0.9, 0.16), (1.15, 0.11), (1.4, 0.08))
+    )
+    rims = blur(rims, 1.6) * np.clip(0.6 + 0.4 * fbm(rng, h, w, 2.0, hi=0.02), 0, 1)
+    fox = spots(rng, h, w, 140, [1.3, 2.5, 5.0], jitter=0.6)
+    clusters = smoothstep(0.3, 1.4, fbm(rng, h, w, 3.0, hi=0.008))  # foxing comes in patches
+    return compose([(TIDE, fill + rims), (FOX, 0.55 * fox * (0.15 + 0.85 * clusters))], (h, w))
+
+
+def fold(rng, w=1920, h=1200):
+    y, x = np.mgrid[0:h, 0:w].astype(np.float64)
+    dark = np.zeros((h, w))
+    light = np.zeros((h, w))
+    for pos, along, size in ((x, y, w), (y, x, h)):
+        wob = 3 * np.sin(along / 260 + rng.uniform(0, 6)) + 1.5 * np.sin(along / 71 + rng.uniform(0, 6))
+        dd = pos - (size / 2 + wob)
+        crease = np.exp(-((dd / 1.1) ** 2))
+        shadow = np.exp(-(np.maximum(-dd, 0) / 22)) * (dd < 0)
+        highlight = np.exp(-(((dd - 2.5) / 2.2) ** 2))
+        fade = np.clip(0.75 + 0.25 * fbm(rng, h, w, 2.5, hi=0.01), 0, 1)
+        dark += (0.22 * crease + 0.07 * shadow) * fade
+        light += 0.40 * highlight * fade
+        # Grime that collects along the fold.
+        dark += 0.09 * np.exp(-np.abs(dd) / 40) * np.clip(fbm(rng, h, w, 2.2, hi=0.04), 0, None)
+    # Rubbed, grubby corners.
+    corner = np.exp(-np.minimum.reduce([np.hypot(x - cx, y - cy) for cx in (0, w) for cy in (0, h)]) / 260)
+    dark += 0.14 * corner * np.clip(0.6 + 0.5 * fbm(rng, h, w, 2.0, hi=0.03), 0, 1.4)
+    return compose([(CREAM, light), (INK, dark)], (h, w))
+
+
+OPTIONS = {
+    "vellum": vellum,
+    "laid": laid,
+    "calfskin": calfskin,
+    "folio": folio,
+    "coffee": coffee,
+    "burnt": burnt,
+    "water": water,
+    "fold": fold,
+}
+
+TILES = {"vellum", "laid", "calfskin", "folio"}
 
 
 def main():
@@ -197,7 +329,8 @@ def main():
     for i, name in enumerate(names):
         img = OPTIONS[name](np.random.default_rng(1000 + list(OPTIONS).index(name)))
         path = out / f"parchment-{name}.webp"
-        img.save(path, "WEBP", quality=72, alpha_quality=60, method=6)
+        aq = 60 if name in TILES else 100  # quantised alpha bands smooth weathering
+        img.save(path, "WEBP", quality=72, alpha_quality=aq, method=6)
         print(f"{path} {img.size[0]}x{img.size[1]} {path.stat().st_size // 1024} KB")
 
 
