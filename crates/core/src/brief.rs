@@ -7,7 +7,7 @@ use std::fmt::Write as _;
 use rusqlite::Connection;
 
 use crate::error::{Error, Result};
-use crate::model::{Id, SessionState, StatusCategory, Task, TaskOwner};
+use crate::model::{Id, StatusCategory, Task, TaskOwner};
 use crate::query;
 
 /// `writeln!` into a `String`, which cannot fail, as a core `Result` so `?` reads alike.
@@ -167,10 +167,7 @@ pub(crate) fn brief(conn: &Connection, task_id: &str) -> Result<String> {
     }
 
     let sessions = query::task_sessions(conn, &task.id)?;
-    let finished: Vec<_> = sessions
-        .iter()
-        .filter(|s| s.state != SessionState::Running)
-        .collect();
+    let finished: Vec<_> = sessions.iter().filter(|s| !s.state.is_active()).collect();
     if !finished.is_empty() {
         section(&mut out, "Earlier agent sessions")?;
         for session in finished {

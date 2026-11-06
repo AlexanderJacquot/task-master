@@ -170,6 +170,53 @@ fn a_session_runs_ends_and_resumes_outside_the_undo_history() {
 }
 
 #[test]
+fn a_session_in_a_terminal_is_active_until_it_ends() {
+    let mut s = store();
+    let task = add_task(&mut s, titled("Draw the icons"));
+    let session = start(&mut s, &task.id);
+    let state = |s: &mut Store, state| {
+        update(s, &session.id, vec![AgentSessionChange::State(state)])
+            .unwrap()
+            .agent_sessions
+            .remove(0)
+    };
+    let interrupted = state(&mut s, SessionState::Interrupted);
+    assert!(interrupted.ended_at.is_some());
+
+    // Opened in a terminal: going again, so not ended, not removable, not in the brief.
+    let terminal = state(&mut s, SessionState::Terminal);
+    assert_eq!(terminal.ended_at, None);
+    assert!(
+        s.execute(Command::DeleteAgentSession {
+            id: session.id.clone()
+        })
+        .is_err()
+    );
+    assert!(
+        !s.agent_brief(&task.id)
+            .unwrap()
+            .contains("Earlier agent sessions")
+    );
+    let ends = |s: &Store| {
+        s.task_activity(&task.id, 50)
+            .unwrap()
+            .iter()
+            .filter(|a| a.kind == "agent_end")
+            .count()
+    };
+    // Being interrupted and ending show in the activity; moving to the terminal does not.
+    assert_eq!(ends(&s), 1);
+
+    let done = state(&mut s, SessionState::Done);
+    assert!(done.ended_at.is_some());
+    assert_eq!(ends(&s), 2);
+    assert_eq!(
+        SessionState::parse("terminal"),
+        Some(SessionState::Terminal)
+    );
+}
+
+#[test]
 fn notes_are_recorded_on_the_session_task_and_listed_oldest_first() {
     let mut s = store();
     let task = add_task(&mut s, titled("Write docs"));

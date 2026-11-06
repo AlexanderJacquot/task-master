@@ -345,6 +345,9 @@ pub enum SessionState {
     Cancelled,
     /// The app quit or crashed while it ran.
     Interrupted,
+    /// Continued by hand in a terminal (`claude --resume`), outside the app's control. Ends
+    /// when the agent records its summary, the terminal closes, or the user marks it done.
+    Terminal,
 }
 
 impl SessionState {
@@ -355,7 +358,13 @@ impl SessionState {
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
             Self::Interrupted => "interrupted",
+            Self::Terminal => "terminal",
         }
+    }
+
+    /// Still going: a headless run of the app, or a conversation open in a terminal.
+    pub fn is_active(self) -> bool {
+        matches!(self, Self::Running | Self::Terminal)
     }
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -365,6 +374,7 @@ impl SessionState {
             "failed" => Self::Failed,
             "cancelled" => Self::Cancelled,
             "interrupted" => Self::Interrupted,
+            "terminal" => Self::Terminal,
             _ => return None,
         })
     }

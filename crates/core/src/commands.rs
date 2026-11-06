@@ -1625,13 +1625,15 @@ fn update_agent_session(
     for change in changes {
         let (key, value) = match change {
             AgentSessionChange::State(s) => {
-                let running = s == SessionState::Running;
-                if running != (session.state == SessionState::Running) {
+                // `ended_at` is set when a session stops being active (running or in a
+                // terminal) and cleared when it becomes active again.
+                let active = s.is_active();
+                if active != session.state.is_active() {
                     patch.insert(
                         "ended_at".into(),
-                        if running { Value::Null } else { json!(b.now) },
+                        if active { Value::Null } else { json!(b.now) },
                     );
-                    ended = !running;
+                    ended = !active;
                 }
                 ("state", json!(s.as_str()))
             }
@@ -1667,8 +1669,10 @@ fn update_agent_session(
 
 fn delete_agent_session(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
     let session = own_session(b, id)?;
-    if session.state == SessionState::Running {
-        return Err(Error::invalid("stop the session before removing it"));
+    if session.state.is_active() {
+        return Err(Error::invalid(
+            "stop the session (or mark it done) before removing it",
+        ));
     }
     for note_id in ids(
         b,

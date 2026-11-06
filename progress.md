@@ -7,9 +7,9 @@ Running log for task-master. Read at the start of every session; update at the e
 **M16 Agent sessions**, branch `m16-agent-sessions` (from `main`, ADR 017): "Send to
 Claude" from a task, headless Claude Code runs with a live status, an MCP server for
 agents to track their work, and agent-owned tasks hidden from the user's views. Steps 1
-(core), 2 (`crates/mcp`) and 3 (desktop shell) done; next step 4, the UI: Send to Claude
-dialog, session chips and panel, Agents section, owner filter, Settings → Agents, project
-folder. Not yet verified: the WSL runtime and Windows Terminal on Windows (unit-tested
+(core), 2 (`crates/mcp`), 3 (desktop shell), 4 (UI) and 5 (packaging, docs) done.
+Left: a manual check of the UI in the running app (step 4 is covered by component tests
+only), and the Windows/macOS installers, which only CI builds. Not yet verified: the WSL runtime and Windows Terminal on Windows (unit-tested
 command lines only; this environment cannot run `wsl.exe`). Note: migration 0010 bumps the schema,
 so the sync server must be upgraded with the desktop (replicas sync only at one version).
 
@@ -43,6 +43,76 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### Medieval icon set (2026-11-06)
+
+- `assets/icons/paths.json` now holds 22 medieval icons in the style of the cross `add`:
+  letter (inbox), castle (projects), hourglass (due), anvil (settings), lantern (search),
+  brazier (delete), great helm (agents), almanac (calendar), scroll (all tasks),
+  chest / open chest (archive / unarchive), pennant (priority), gonfalon (saved views),
+  quill (edit), scales (metrics), oak (lineage), arrow (send), candle (estimate),
+  wax seal (done), crown and shield (new epic marks). `components/TaskIcons.tsx` exports
+  each; call sites import them under the lucide name they replaced. Labelled icons get
+  a `<title>` and `role="img"`.
+- `scripts/generate-ui-icons.mjs` lays out the proof sheet for any number of icons.
+  Chevrons, close, check, grip and more stay lucide for legibility.
+
+### M16 fixes from the first hand check (2026-11-06)
+
+- Open in terminal on Linux: detects an installed terminal (`x-terminal-emulator`, kitty,
+  alacritty, wezterm, ghostty, foot, konsole, gnome-terminal, xfce4-terminal, xterm),
+  each with its "run" flag; `$TERMINAL` uses the same table. Arch has no
+  `x-terminal-emulator`.
+- New session state `terminal` ("In terminal"): an ended session opened in a terminal.
+  The terminal gets the session's MCP config. It ends when the agent calls
+  `complete_session`, when a followable terminal (≥ 3 s) exits, or with **Mark done**.
+  `running` and `terminal` are "active" (`SessionState::is_active`) for `ended_at`,
+  removal, the brief and the activity feed. No migration (`state` has no CHECK).
+- `complete_session` marks a non-running session done: a run that outlived the app (dev
+  restart) had left "Interrupted" with a "Done" summary.
+- **Resume** on interrupted sessions sends a pick-up-where-you-left-off follow-up.
+- Tests: core (terminal lifecycle), MCP (ending non-running sessions), launch (resume
+  args with MCP config, terminal detection), UI (Resume, In terminal, Mark done).
+
+### M16 step 5: sidecar packaging and docs (2026-11-06)
+
+- `src-tauri/tauri.sidecar.conf.json`: `externalBin: binaries/task-master-mcp`, and a
+  `beforeBuildCommand` that also runs `scripts/sidecar.mjs` (builds `taskmaster-mcp` for
+  `TAURI_ENV_TARGET_TRIPLE`, release unless `TAURI_ENV_DEBUG`, copies it to
+  `binaries/task-master-mcp-<triple>`, gitignored). Kept out of `tauri.conf.json`:
+  tauri-build fails any desktop build whose `externalBin` file is missing, which would
+  break plain `cargo clippy`/`test` and `tauri dev`. CI's deb build and release.yml pass
+  it with a second `--config`.
+- `docs/agents.md`: setup, sending, permission modes, follow-ups, agent tasks, how it
+  works, troubleshooting, development. ADR 017 records the packaging.
+- Verified: a local `tauri build --bundles deb` with the config installs
+  `/usr/bin/task-master-mcp` next to `/usr/bin/taskmaster-desktop` (where the app looks);
+  the bundled binary runs. Clippy passes without the sidecar file present. Windows
+  (`.exe` suffix, WSL interop path) and the macOS cross targets are only exercised by
+  release.yml.
+
+### M16 step 4: the UI (2026-11-06)
+
+- `features/agents/`: Send to Claude dialog (folder prefilled from the task's last
+  session, the project's or area's folder on this device, then the latest; picker and
+  recents; permission mode with a confirmation for "Everything"; instructions; brief
+  preview), session chip on board cards and list rows, Sessions panel on the task (state,
+  duration, cost, turns, summary, notes, error; Open in terminal, Stop, follow-up, remove),
+  `/agents` page (running, recent, agent tasks grouped under the user's task they serve,
+  "Make it mine"), project folder button on the project page, Settings → Agents.
+- Views: `show_agent_tasks` (default off) in the view options; agent subtasks count under
+  their parent and carry a bot mark in the subtask list; sidebar counts skip agent tasks.
+- Store: `agent_sessions` entities, `agentActivity` from the `AgentActivity` event and
+  `agent_live` on connect, `record()` for sessions the shell wrote. Quitting with running
+  sessions asks first.
+- The Agents page caps its lists (50 ended sessions, 100 agent tasks) with a note when
+  more exist, instead of virtualizing (ADR updated).
+- Tests: `sessions.test.ts` (helpers), `store/agents.test.ts`, `agents.test.tsx` (start
+  flow, bypass confirmation, follow-up and terminal, row chip, Agents page and adopt),
+  `agentSettings.test.tsx`, a views test for the owner filter; `test/fakeAgents.ts` and an
+  `agentSession` fixture. The BoardCard test now renders inside a `StoreProvider`.
+- Verified: workspace Clippy (`-D warnings`), rustfmt, all Rust tests, TypeScript, Biome
+  and 275 frontend tests. Not yet run by hand in the app.
 
 ### M16 step 3: spawning sessions from the desktop shell (2026-11-05)
 

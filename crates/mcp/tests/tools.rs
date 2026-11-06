@@ -365,6 +365,36 @@ async fn notes_and_the_summary_land_on_the_session() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_session_the_app_is_not_running_ends_with_its_summary() {
+    // Resumed in a terminal, or still going after the app quit (then marked interrupted):
+    // nothing else would record its end.
+    for state in [SessionState::Terminal, SessionState::Interrupted] {
+        let mut f = fixture();
+        f.store
+            .execute_without_undo(vec![Command::UpdateAgentSession {
+                id: f.session.clone(),
+                changes: vec![AgentSessionChange::State(state)],
+            }])
+            .unwrap();
+        let session = f.session.clone();
+        let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+        let client = connect(server.clone()).await;
+        let reply = ok(
+            &client,
+            "complete_session",
+            json!({ "summary": "Finished." }),
+        )
+        .await;
+        assert!(reply.contains("marked done"), "{reply}");
+        client.cancel().await.unwrap();
+        let stored = with_store(&server, |s| s.agent_session(&session));
+        assert_eq!(stored.state, SessionState::Done, "from {state:?}");
+        assert_eq!(stored.summary.as_deref(), Some("Finished."));
+        assert!(stored.ended_at.is_some());
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn without_a_session_it_reads_and_tracks_only_agent_tasks() {
     let f = fixture();
     let task = f.task.clone();

@@ -1,11 +1,17 @@
 // A task's Claude sessions (ADR 017): status, summary, notes and the actions on each.
 
-import { Bot, Send, Square, SquareTerminal, Trash2 } from "lucide-react";
+import { Play, Square, SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
+import {
+  AgentsIcon as Bot,
+  DoneIcon,
+  SendIcon as Send,
+  DeleteIcon as Trash2,
+} from "../../components/TaskIcons";
 import { Button, cx, IconButton, INPUT, SectionLabel } from "../../components/ui";
 import { formatAgo } from "../../lib/dates";
 import type { AgentNote, AgentSession, Task } from "../../lib/types";
-import { removeAgentSession } from "../../store/actions";
+import { markSessionDone, removeAgentSession } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { SendToClaudeDialog } from "./SendToClaudeDialog";
 import { STATE_TONE } from "./SessionChip";
@@ -14,6 +20,7 @@ import {
   formatCost,
   formatDuration,
   PERMISSION_MODES,
+  RESUME_MESSAGE,
   STATE_LABEL,
   sessionsOf,
 } from "./sessions";
@@ -75,8 +82,10 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(Date.now());
   const running = session.state === "running";
+  const inTerminal = session.state === "terminal";
 
   // Notes change while it runs; reload them with the session.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: updated_at is the reload trigger (each note bumps it).
   useEffect(() => {
     if (!open || !api) return;
     let live = true;
@@ -139,6 +148,16 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
         >
           <SquareTerminal size={15} />
         </IconButton>
+        {session.state === "interrupted" && (
+          <Button
+            size="sm"
+            disabled={!!busy}
+            onClick={() => void act("resume", () => api.send(session.id, RESUME_MESSAGE))}
+          >
+            <Play size={13} />
+            {busy === "resume" ? "Resuming…" : "Resume"}
+          </Button>
+        )}
         {running ? (
           <IconButton
             label="Stop"
@@ -146,6 +165,14 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
             onClick={() => void act("stop", () => api.cancel(session.id))}
           >
             <Square size={14} />
+          </IconButton>
+        ) : inTerminal ? (
+          <IconButton
+            label="Mark done"
+            disabled={!!busy}
+            onClick={() => void act("done", () => markSessionDone(store, session.id))}
+          >
+            <DoneIcon size={14} />
           </IconButton>
         ) : (
           <IconButton
@@ -162,6 +189,13 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
         <p role="status" className="flex items-center gap-1.5 truncate text-accent">
           <Bot size={13} className="shrink-0 animate-pulse" aria-hidden />
           {activity ?? "Running on another device"}
+        </p>
+      )}
+      {inTerminal && (
+        <p role="status" className="flex items-center gap-1.5 text-accent">
+          <SquareTerminal size={13} className="shrink-0" aria-hidden />
+          Continuing in a terminal. It ends when Claude records its summary or the terminal closes;
+          mark it done if it does not.
         </p>
       )}
 
@@ -197,7 +231,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
             {session.turns !== null && `${session.turns} turns · `}
             {session.runtime === "wsl" ? "WSL" : "native"}
           </p>
-          {!running && (
+          {!running && !inTerminal && (
             <form
               className="flex gap-2"
               onSubmit={(e) => {

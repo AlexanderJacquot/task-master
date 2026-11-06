@@ -651,7 +651,8 @@ fn agent_entry(
         )),
         ("agent_session", "update") => {
             let state = patch.get("state")?.as_str()?;
-            if state == SessionState::Running.as_str() {
+            // Only an end is news; starting again or moving to a terminal is not.
+            if SessionState::parse(state).is_none_or(SessionState::is_active) {
                 return None;
             }
             Some((

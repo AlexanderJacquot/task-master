@@ -1,7 +1,7 @@
 // The small Claude status on a task card or row (ADR 017): what a running session is
 // doing, or how the last one ended.
 
-import { Bot } from "lucide-react";
+import { AgentsIcon as Bot } from "../../components/TaskIcons";
 import { cx } from "../../components/ui";
 import type { SessionState } from "../../lib/types";
 import { useStoreState } from "../../store/context";
@@ -13,6 +13,7 @@ export const STATE_TONE: Record<SessionState, string> = {
   failed: "bg-red-600/12 text-red-800 dark:bg-red-400/12 dark:text-red-200",
   cancelled: "bg-hover text-ink-3",
   interrupted: "bg-amber-600/12 text-amber-800 dark:bg-amber-400/12 dark:text-amber-200",
+  terminal: "bg-accent/12 text-accent",
 };
 
 export function SessionChip({ taskId, className }: { taskId: string; className?: string }) {

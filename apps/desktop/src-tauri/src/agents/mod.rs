@@ -572,10 +572,20 @@ pub fn agent_cancel(state: State<'_, AppState>, session_id: Id) -> CommandResult
     Ok(())
 }
 
-/// Opens a terminal running `claude --resume` in the session's folder.
+/// A terminal that closes sooner than this after opening was a launcher handing the window
+/// to a terminal server (gnome-terminal, `wt.exe`, `osascript`), not the conversation ending.
+const TERMINAL_LAUNCHER: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// Opens a terminal running `claude --resume` in the session's folder, with the session's
+/// MCP config. A session the app is not running becomes `terminal` until the agent records
+/// its summary, the user marks it done, or the terminal closes (when it can be followed).
 #[tauri::command]
 #[specta::specta]
-pub fn agent_open_terminal(state: State<'_, AppState>, session_id: Id) -> CommandResult<()> {
+pub fn agent_open_terminal(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: Id,
+) -> CommandResult<()> {
     let settings = settings(&state)?;
     let (session, device) = with_store(&state, |s| {
         Ok((s.agent_session(&session_id)?, s.device_id().to_owned()))
@@ -584,39 +594,120 @@ pub fn agent_open_terminal(state: State<'_, AppState>, session_id: Id) -> Comman
         return Err(invalid("this session ran on another device; open it there"));
     }
     let os = Os::current();
-    let env_terminal = std::env::var("TERMINAL").ok();
+    let default_terminal = match os {
+        Os::Linux => std::env::var("TERMINAL")
+            .ok()
+            .filter(|t| !t.trim().is_empty())
+            .map(|t| launch::linux_terminal_prefix(&t))
+            .or_else(|| launch::detect_linux_terminal(on_path)),
+        _ => None,
+    };
+    let config = state
+        .data_dir
+        .join("agents")
+        .join(&session.id)
+        .join("mcp.json");
+    let config = config
+        .is_file()
+        .then(|| runtime_path(&config, session.runtime).ok())
+        .flatten();
+    let resume = launch::resume_args(&session.claude_session_id, config.as_deref());
     let launch = launch::terminal_command(
         &settings,
         session.runtime,
         &session.folder,
-        &session.claude_session_id,
+        &resume,
         os,
-        env_terminal.as_deref(),
+        default_terminal.as_deref(),
     );
     let started = process(&launch)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
-    match started {
-        Ok(_) => Ok(()),
+    let child = match started {
+        Ok(child) => child,
         Err(_) if os == Os::Windows => {
             let fallback = launch::windows_console_fallback(
                 &settings,
                 session.runtime,
                 &session.folder,
-                &session.claude_session_id,
+                &resume,
             );
             hidden(&mut process(&fallback))
                 .spawn()
-                .map(|_| ())
-                .map_err(|e| internal(format!("cannot open a terminal: {e}")))
+                .map_err(|e| internal(format!("cannot open a terminal: {e}")))?
         }
-        Err(e) => Err(internal(format!(
-            "cannot open a terminal ({}): {e}; set one in Settings → Agents",
-            launch.program
-        ))),
+        Err(e) => {
+            return Err(internal(format!(
+                "cannot open a terminal ({}): {e}; set one in Settings → Agents (e.g. `kitty` \
+                 or `gnome-terminal --`)",
+                launch.program
+            )));
+        }
+    };
+    // A running headless run stays the app's: the terminal forks its conversation.
+    if !is_live(&state, &session.id)? && session.state != SessionState::Terminal {
+        with_store(&state, |s| {
+            s.execute_without_undo(vec![Command::UpdateAgentSession {
+                id: session.id.clone(),
+                changes: vec![AgentSessionChange::State(SessionState::Terminal)],
+            }])
+        })?;
     }
+    follow_terminal(app, session.id, child);
+    Ok(())
+}
+
+/// Ends a `terminal` session when its terminal window closes. Terminals that return at once
+/// (launchers) cannot be followed; the agent's summary or the user ends those.
+fn follow_terminal(app: AppHandle, session_id: Id, mut child: Child) {
+    let opened = std::time::Instant::now();
+    let spawned = std::thread::Builder::new()
+        .name("agent-terminal".into())
+        .spawn(move || {
+            let _ = child.wait();
+            if opened.elapsed() < TERMINAL_LAUNCHER {
+                return;
+            }
+            let state = app.state::<AppState>();
+            let ended = with_store(&state, |s| {
+                if s.agent_session(&session_id)?.state != SessionState::Terminal {
+                    return Ok(());
+                }
+                s.execute_without_undo(vec![Command::UpdateAgentSession {
+                    id: session_id.clone(),
+                    changes: vec![AgentSessionChange::State(SessionState::Done)],
+                }])
+                .map(|_| ())
+            });
+            if let Err(e) = ended {
+                eprintln!("cannot end agent session {session_id}: {}", e.message);
+            }
+        });
+    if let Err(e) = spawned {
+        eprintln!("cannot follow the terminal of agent session: {e}");
+    }
+}
+
+/// Whether an executable `name` is in a directory of this process's `PATH`.
+fn on_path(name: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|path| {
+        std::env::split_paths(&path).any(|dir| {
+            std::fs::metadata(dir.join(name)).is_ok_and(|m| m.is_file() && is_executable(&m))
+        })
+    })
+}
+
+#[cfg(unix)]
+fn is_executable(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    meta.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn is_executable(_: &std::fs::Metadata) -> bool {
+    true
 }
 
 /// What each running session is doing, for a window that just opened.

@@ -1,8 +1,9 @@
 // /agents (ADR 017): what Claude is doing and did, and the agents' own tasks, kept apart
 // from the user's views. Lists are capped (50 sessions, 100 tasks), so none is virtualized.
 
-import { Bot, Square } from "lucide-react";
+import { Square } from "lucide-react";
 import { useMemo, useState } from "react";
+import { AgentsIcon as Bot } from "../../components/TaskIcons";
 import { cx, IconButton, SectionLabel, TaskCheck } from "../../components/ui";
 import { formatAgo } from "../../lib/dates";
 import type { AgentSession, Task } from "../../lib/types";
@@ -11,7 +12,7 @@ import { adoptTask, toggleDone } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
 import { STATE_TONE } from "./SessionChip";
-import { folderName, formatCost, STATE_LABEL, sortedSessions } from "./sessions";
+import { folderName, formatCost, isActive, STATE_LABEL, sortedSessions } from "./sessions";
 
 const MAX_SESSIONS = 50;
 const MAX_TASKS = 100;
@@ -26,15 +27,16 @@ export function AgentsPage() {
     [statuses],
   );
   const all = sortedSessions(sessions);
-  const running = all.filter((s) => s.state === "running");
-  const recent = all.filter((s) => s.state !== "running").slice(0, MAX_SESSIONS);
+  const active = all.filter(isActive);
+  const ended = all.filter((s) => !isActive(s));
+  const recent = ended.slice(0, MAX_SESSIONS);
 
   // Agent tasks under the user's task they belong to (the nearest non-agent ancestor).
-  const groups = useMemo(() => {
-    const agentTasks = Object.values(tasks)
+  const { groups, totalTasks } = useMemo(() => {
+    const matching = Object.values(tasks)
       .filter((t) => t.owner === "agent" && (showClosed || isOpen(t, ctx)))
-      .sort((a, b) => b.updated_at - a.updated_at)
-      .slice(0, MAX_TASKS);
+      .sort((a, b) => b.updated_at - a.updated_at);
+    const agentTasks = matching.slice(0, MAX_TASKS);
     const owner = (t: Task): Task | undefined => {
       let parent = t.parent_id ? tasks[t.parent_id] : undefined;
       for (let i = 0; parent && parent.owner === "agent" && i < 64; i++) {
@@ -50,7 +52,7 @@ export function AgentsPage() {
       group.items.push(task);
       map.set(key, group);
     }
-    return [...map.values()];
+    return { groups: [...map.values()], totalTasks: matching.length };
   }, [tasks, ctx, showClosed]);
 
   return (
@@ -65,13 +67,13 @@ export function AgentsPage() {
         </p>
       </header>
 
-      <section aria-label="Running" className="mb-7 flex flex-col gap-2">
-        <SectionLabel>Running</SectionLabel>
-        {running.length === 0 ? (
+      <section aria-label="Active" className="mb-7 flex flex-col gap-2">
+        <SectionLabel>Active</SectionLabel>
+        {active.length === 0 ? (
           <p className="text-xs text-ink-3">Nothing running. Use "Send to Claude" on a task.</p>
         ) : (
           <ul className="flex flex-col gap-1">
-            {running.map((s) => (
+            {active.map((s) => (
               <SessionRow key={s.id} session={s} task={tasks[s.task_id]} />
             ))}
           </ul>
@@ -88,6 +90,11 @@ export function AgentsPage() {
               <SessionRow key={s.id} session={s} task={tasks[s.task_id]} />
             ))}
           </ul>
+        )}
+        {ended.length > MAX_SESSIONS && (
+          <p className="text-xs text-ink-3">
+            The latest {MAX_SESSIONS} of {ended.length}; older ones stay on their tasks.
+          </p>
         )}
       </section>
 
@@ -111,6 +118,11 @@ export function AgentsPage() {
             <AgentTaskGroup key={group.root?.id ?? "none"} root={group.root} items={group.items} />
           ))
         )}
+        {totalTasks > MAX_TASKS && (
+          <p className="text-xs text-ink-3">
+            The {MAX_TASKS} most recently updated of {totalTasks}; search finds the others.
+          </p>
+        )}
       </section>
     </div>
   );
@@ -124,7 +136,9 @@ function SessionRow({ session, task }: { session: AgentSession; task: Task | und
   const cost = formatCost(session.cost_usd_micros);
   const detail = running
     ? (activity ?? "Running on another device")
-    : (session.summary ?? session.error ?? "");
+    : session.state === "terminal"
+      ? (session.summary ?? "Continuing in a terminal")
+      : (session.summary ?? session.error ?? "");
   return (
     <li className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-[13px] hover:bg-hover">
       <span

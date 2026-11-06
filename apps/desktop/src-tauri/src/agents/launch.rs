@@ -131,17 +131,85 @@ fn wsl_prefix(settings: &AgentSettings) -> Vec<String> {
     }
 }
 
-/// A visible terminal running `claude --resume <id>` in the session's folder, so the user
-/// can take over the conversation.
+/// Linux terminals tried in order when neither the setting nor `$TERMINAL` names one, with
+/// what each needs before the command it runs. Debian's chosen default first, then ones
+/// people install on purpose, then desktop defaults, then xterm. (Arch, Fedora and others
+/// have no `x-terminal-emulator`.)
+pub const LINUX_TERMINALS: &[(&str, &str)] = &[
+    ("x-terminal-emulator", "-e"),
+    ("kitty", ""),
+    ("alacritty", "-e"),
+    ("wezterm", "start --"),
+    ("ghostty", "-e"),
+    ("foot", ""),
+    ("konsole", "-e"),
+    ("gnome-terminal", "--"),
+    ("xfce4-terminal", "-x"),
+    ("xterm", "-e"),
+];
+
+/// The command prefix that runs a program in `terminal`, a command such as `$TERMINAL`:
+/// the known flag for a known terminal, else `-e`.
+pub fn linux_terminal_prefix(terminal: &str) -> String {
+    let terminal = terminal.trim();
+    let name = terminal.rsplit('/').next().unwrap_or(terminal);
+    match LINUX_TERMINALS.iter().find(|(known, _)| *known == name) {
+        Some((_, "")) => terminal.to_owned(),
+        Some((_, flag)) => format!("{terminal} {flag}"),
+        None => format!("{terminal} -e"),
+    }
+}
+
+/// The first of [`LINUX_TERMINALS`] that `installed` finds, as a command prefix.
+pub fn detect_linux_terminal(installed: impl Fn(&str) -> bool) -> Option<String> {
+    LINUX_TERMINALS
+        .iter()
+        .find(|(name, _)| installed(name))
+        .map(|(name, _)| linux_terminal_prefix(name))
+}
+
+/// `claude` arguments that continue a session by hand: `--resume <id>`, plus the session's
+/// MCP config (as the runtime sees it), so the agent keeps its task-master tools and can
+/// add notes and record its summary from the terminal too.
+pub fn resume_args(claude_session_id: &str, mcp_config: Option<&str>) -> Vec<String> {
+    let mut args = vec!["--resume".to_owned(), claude_session_id.to_owned()];
+    if let Some(config) = mcp_config {
+        args.extend([
+            "--mcp-config".into(),
+            config.to_owned(),
+            "--allowedTools".into(),
+            format!("mcp__{MCP_SERVER}"),
+        ]);
+    }
+    args
+}
+
+/// `cd <folder> && exec <claude> <args>` for a POSIX shell, every word quoted.
+fn resume_script(settings: &AgentSettings, folder: &str, resume: &[String]) -> String {
+    let mut script = format!(
+        "cd {} && exec {}",
+        sh_quote(folder),
+        sh_quote(&settings.claude_path)
+    );
+    for arg in resume {
+        script.push(' ');
+        script.push_str(&sh_quote(arg));
+    }
+    script
+}
+
+/// A visible terminal running `claude <resume>` (see [`resume_args`]) in the session's
+/// folder, so the user can take over the conversation. On Linux, `default_terminal` is the
+/// command prefix to use when the settings name none (`$TERMINAL`, else a detected one).
 pub fn terminal_command(
     settings: &AgentSettings,
     runtime: AgentRuntime,
     folder: &str,
-    claude_session_id: &str,
+    resume: &[String],
     os: Os,
-    env_terminal: Option<&str>,
+    default_terminal: Option<&str>,
 ) -> Launch {
-    let resume = vec!["--resume".to_owned(), claude_session_id.to_owned()];
+    let resume = resume.to_vec();
     match os {
         Os::Windows => {
             // Windows Terminal: `wt -d <dir> <command…>`; WSL sets its folder with --cd.
@@ -165,12 +233,7 @@ pub fn terminal_command(
             }
         }
         Os::Mac => {
-            let script = format!(
-                "cd {} && exec {} --resume {}",
-                sh_quote(folder),
-                sh_quote(&settings.claude_path),
-                sh_quote(claude_session_id)
-            );
+            let script = resume_script(settings, folder, &resume);
             Launch {
                 program: "osascript".into(),
                 args: vec![
@@ -189,17 +252,12 @@ pub fn terminal_command(
             let prefix = settings
                 .terminal
                 .clone()
-                .or_else(|| env_terminal.map(|t| format!("{t} -e")))
+                .or_else(|| default_terminal.map(str::to_owned))
                 .unwrap_or_else(|| "x-terminal-emulator -e".into());
             let mut parts = prefix.split_whitespace().map(str::to_owned);
             let program = parts.next().unwrap_or_else(|| "x-terminal-emulator".into());
             let mut args: Vec<String> = parts.collect();
-            let script = format!(
-                "cd {} && exec {} --resume {}",
-                sh_quote(folder),
-                sh_quote(&settings.claude_path),
-                sh_quote(claude_session_id)
-            );
+            let script = resume_script(settings, folder, &resume);
             args.extend(["sh".into(), "-c".into(), script]);
             Launch {
                 program,
@@ -215,9 +273,9 @@ pub fn windows_console_fallback(
     settings: &AgentSettings,
     runtime: AgentRuntime,
     folder: &str,
-    claude_session_id: &str,
+    resume: &[String],
 ) -> Launch {
-    let resume = vec!["--resume".to_owned(), claude_session_id.to_owned()];
+    let resume = resume.to_vec();
     let mut args = vec!["/c".to_owned(), "start".into(), String::new()];
     match runtime {
         AgentRuntime::Wsl => {
@@ -463,11 +521,12 @@ mod tests {
     fn terminals_resume_the_session_on_each_os() {
         let id = "0199a000-0000-7000-8000-00000000abcd";
         let folder = "/home/alex/it's here";
+        let resume = resume_args(id, None);
         let wt = terminal_command(
             &settings(AgentRuntime::Wsl),
             AgentRuntime::Wsl,
             folder,
-            id,
+            &resume,
             Os::Windows,
             None,
         );
@@ -482,7 +541,7 @@ mod tests {
             &settings(AgentRuntime::Native),
             AgentRuntime::Native,
             r"C:\dev\app",
-            id,
+            &resume,
             Os::Windows,
             None,
         );
@@ -492,7 +551,7 @@ mod tests {
             &settings(AgentRuntime::Native),
             AgentRuntime::Native,
             folder,
-            id,
+            &resume,
             Os::Mac,
             None,
         );
@@ -500,7 +559,7 @@ mod tests {
         assert_eq!(
             mac.args[1],
             format!(
-                r#"tell application "Terminal" to do script "cd '/home/alex/it'\\''s here' && exec 'claude' --resume '{id}'""#
+                r#"tell application "Terminal" to do script "cd '/home/alex/it'\\''s here' && exec 'claude' '--resume' '{id}'""#
             )
         );
 
@@ -508,15 +567,15 @@ mod tests {
             &settings(AgentRuntime::Native),
             AgentRuntime::Native,
             folder,
-            id,
+            &resume,
             Os::Linux,
             Some("kitty"),
         );
         assert_eq!(linux.program, "kitty");
-        assert_eq!(linux.args[..3], ["-e", "sh", "-c"]);
+        assert_eq!(linux.args[..2], ["sh", "-c"]);
         assert_eq!(
-            linux.args[3],
-            format!("cd '/home/alex/it'\\''s here' && exec 'claude' --resume '{id}'")
+            linux.args[2],
+            format!("cd '/home/alex/it'\\''s here' && exec 'claude' '--resume' '{id}'")
         );
         let mut custom = settings(AgentRuntime::Native);
         custom.terminal = Some("gnome-terminal --".into());
@@ -524,7 +583,7 @@ mod tests {
             &custom,
             AgentRuntime::Native,
             folder,
-            id,
+            &resume,
             Os::Linux,
             Some("kitty"),
         );
@@ -534,25 +593,77 @@ mod tests {
             &settings(AgentRuntime::Native),
             AgentRuntime::Native,
             folder,
-            id,
+            &resume,
             Os::Linux,
             None,
         );
         assert_eq!(fallback.program, "x-terminal-emulator");
 
-        let console =
-            windows_console_fallback(&settings(AgentRuntime::Wsl), AgentRuntime::Wsl, folder, id);
+        // Without a setting or `$TERMINAL`, the first known terminal installed, with its flag.
+        assert_eq!(linux_terminal_prefix("kitty"), "kitty");
+        assert_eq!(
+            linux_terminal_prefix("/usr/bin/konsole"),
+            "/usr/bin/konsole -e"
+        );
+        assert_eq!(linux_terminal_prefix("wezterm"), "wezterm start --");
+        assert_eq!(linux_terminal_prefix("st"), "st -e");
+        let arch = |name: &str| ["xterm", "konsole", "kitty"].contains(&name);
+        assert_eq!(detect_linux_terminal(arch).as_deref(), Some("kitty"));
+        let plasma = |name: &str| ["xterm", "konsole"].contains(&name);
+        assert_eq!(detect_linux_terminal(plasma).as_deref(), Some("konsole -e"));
+        let debian = |name: &str| ["x-terminal-emulator", "kitty"].contains(&name);
+        assert_eq!(
+            detect_linux_terminal(debian).as_deref(),
+            Some("x-terminal-emulator -e")
+        );
+        assert_eq!(detect_linux_terminal(|_| false), None);
+
+        let console = windows_console_fallback(
+            &settings(AgentRuntime::Wsl),
+            AgentRuntime::Wsl,
+            folder,
+            &resume,
+        );
         assert_eq!(console.program, "cmd.exe");
         assert_eq!(console.args[..4], ["/c", "start", "", "wsl.exe"]);
         let console = windows_console_fallback(
             &settings(AgentRuntime::Native),
             AgentRuntime::Native,
             r"C:\dev",
-            id,
+            &resume,
         );
         assert_eq!(
             console.args[3..],
             ["/D", r"C:\dev", "claude", "--resume", id]
+        );
+
+        // With the session's MCP config, the terminal keeps the task-master tools.
+        let with_tools = resume_args(id, Some("/data/agents/s1/mcp.json"));
+        assert_eq!(
+            with_tools,
+            [
+                "--resume",
+                id,
+                "--mcp-config",
+                "/data/agents/s1/mcp.json",
+                "--allowedTools",
+                "mcp__task-master"
+            ]
+        );
+        let kitty = terminal_command(
+            &settings(AgentRuntime::Native),
+            AgentRuntime::Native,
+            "/srv/app",
+            &with_tools,
+            Os::Linux,
+            Some("kitty"),
+        );
+        assert_eq!(
+            kitty.args[2],
+            format!(
+                "cd '/srv/app' && exec 'claude' '--resume' '{id}' '--mcp-config' \
+                 '/data/agents/s1/mcp.json' '--allowedTools' 'mcp__task-master'"
+            )
         );
     }
 

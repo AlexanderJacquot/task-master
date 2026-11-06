@@ -452,11 +452,22 @@ impl TaskServer {
         if p.summary.trim().is_empty() {
             return Err("the summary cannot be empty".into());
         }
+        // A headless run is ended by the app when Claude exits. Any other session (resumed
+        // in a terminal, or still going after the app quit) ends here, or nothing would.
+        let state = self.with_store(|s| s.agent_session(&session.id))?.state;
+        let mut changes = vec![AgentSessionChange::Summary(Some(p.summary))];
+        if state != SessionState::Running {
+            changes.push(AgentSessionChange::State(SessionState::Done));
+        }
         self.write(vec![Command::UpdateAgentSession {
             id: session.id.clone(),
-            changes: vec![AgentSessionChange::Summary(Some(p.summary))],
+            changes,
         }])?;
-        Ok("Summary recorded. The session ends when you finish your turn.".into())
+        Ok(if state == SessionState::Running {
+            "Summary recorded. The session ends when you finish your turn.".into()
+        } else {
+            "Summary recorded and the session marked done.".into()
+        })
     }
 }
 

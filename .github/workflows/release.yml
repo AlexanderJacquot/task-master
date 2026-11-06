@@ -74,6 +74,8 @@ jobs:
 
       # `tauri.updater.conf.json` turns on the signed update bundles; tauri-action then
       # writes latest.json, which the app reads from releases/latest (ADR 009).
+      # `tauri.sidecar.conf.json` builds the MCP server for the target and installs it next
+      # to the app as `task-master-mcp` (ADR 017).
       - uses: tauri-apps/tauri-action@v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -95,4 +97,4 @@ jobs:
           releaseDraft: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
-          args: ${{ matrix.args }} --config src-tauri/tauri.updater.conf.json
+          args: ${{ matrix.args }} --config src-tauri/tauri.updater.conf.json --config src-tauri/tauri.sidecar.conf.json

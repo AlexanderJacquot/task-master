@@ -174,7 +174,7 @@ export function AgentSettings() {
           <input
             value={draft.terminal ?? ""}
             onChange={(e) => edit({ terminal: e.target.value || null })}
-            placeholder="$TERMINAL -e, else x-terminal-emulator -e"
+            placeholder="$TERMINAL, else the first one found (kitty, konsole, …)"
             aria-label="Terminal command"
             className={cx(INPUT, "w-80 py-1 font-mono text-[12.5px]")}
           />

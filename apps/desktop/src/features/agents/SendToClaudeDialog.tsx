@@ -148,7 +148,10 @@ export function SendToClaudeDialog({
             </div>
           </label>
           {recents.length > 0 && (
-            <div className="-mt-2 flex flex-wrap gap-1.5" aria-label="Recent folders">
+            <fieldset
+              className="-mt-2 flex flex-wrap gap-1.5 border-0 p-0"
+              aria-label="Recent folders"
+            >
               {recents.map((path) => (
                 <button
                   key={path}
@@ -165,7 +168,7 @@ export function SendToClaudeDialog({
                   {folderName(path)}
                 </button>
               ))}
-            </div>
+            </fieldset>
           )}
 
           <div className="flex flex-col gap-1 text-xs">

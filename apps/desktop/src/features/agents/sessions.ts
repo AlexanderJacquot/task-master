@@ -10,6 +10,16 @@ import type {
   Task,
 } from "../../lib/types";
 
+/** Still going: a headless run, or a conversation continued in a terminal. */
+export function isActive(session: AgentSession): boolean {
+  return session.state === "running" || session.state === "terminal";
+}
+
+/** The follow-up the Resume button sends to an interrupted session. */
+export const RESUME_MESSAGE =
+  "You were interrupted before you finished. Check your notes and agent subtasks on this " +
+  "task, then pick up where you left off.";
+
 /** A task's live sessions, newest first. */
 export function sessionsOf(sessions: Record<string, AgentSession>, taskId: string): AgentSession[] {
   return Object.values(sessions)
@@ -17,20 +27,19 @@ export function sessionsOf(sessions: Record<string, AgentSession>, taskId: strin
     .sort((a, b) => b.started_at - a.started_at || (a.id < b.id ? 1 : -1));
 }
 
-/** The session a task's chip shows: a running one, else the newest. */
+/** The session a task's chip shows: an active one, else the newest. */
 export function shownSession(
   sessions: Record<string, AgentSession>,
   taskId: string,
 ): AgentSession | undefined {
   const list = sessionsOf(sessions, taskId);
-  return list.find((s) => s.state === "running") ?? list[0];
+  return list.find(isActive) ?? list[0];
 }
 
-/** Every session, running ones first, then newest first. */
+/** Every session, active ones first, then newest first. */
 export function sortedSessions(sessions: Record<string, AgentSession>): AgentSession[] {
   return Object.values(sessions).sort(
-    (a, b) =>
-      Number(b.state === "running") - Number(a.state === "running") || b.started_at - a.started_at,
+    (a, b) => Number(isActive(b)) - Number(isActive(a)) || b.started_at - a.started_at,
   );
 }
 
@@ -81,6 +90,7 @@ export const STATE_LABEL: Record<SessionState, string> = {
   failed: "Failed",
   cancelled: "Stopped",
   interrupted: "Interrupted",
+  terminal: "In terminal",
 };
 
 export const PERMISSION_MODES: Array<{ value: string; label: string; hint: string }> = [

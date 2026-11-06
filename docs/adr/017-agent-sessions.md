@@ -1,6 +1,6 @@
 # ADR 017: Agent sessions (Claude Code from a task)
 
-Date: 2026-11-05 · Status: accepted (M16, branch `m16-agent-sessions`); steps 1 to 3 done
+Date: 2026-11-05 · Status: accepted (M16, branch `m16-agent-sessions`); steps 1 to 5 done (manual Windows + WSL check pending)
 
 ## Context
 
@@ -34,8 +34,9 @@ in the same space without cluttering the user's views. Decided with the user:
 - `agent_sessions(id, task_id, device_id, claude_session_id, folder, runtime,
   permission_mode, prompt, state, started_at, ended_at, summary, cost_usd_micros, turns,
   error, timestamps, deleted_at)`. `state` is `running | done | failed | cancelled |
-  interrupted`; leaving `running` sets `ended_at`, a follow-up turn back to `running`
-  clears it. Rows go through `CreateAgentSession` / `UpdateAgentSession` /
+  interrupted | terminal`. `running` and `terminal` (continued by hand in a terminal) are
+  *active*: becoming inactive sets `ended_at`, becoming active again clears it; active
+  sessions cannot be removed and stay out of the brief's earlier sessions. Rows go through `CreateAgentSession` / `UpdateAgentSession` /
   `DeleteAgentSession` and sync, so other devices see the history, but the commands refuse
   a session whose `device_id` is not this device's. Cost is stored in millionths of a
   dollar (an integer, so entities stay `Eq` and exact).
@@ -98,9 +99,18 @@ in the same space without cluttering the user's views. Decided with the user:
   MCP) is a follow-up, noted under Later.
 - **Open in terminal** runs `claude --resume <id>` in the folder: `wt.exe wsl.exe -d … --cd
   … --exec claude --resume <id>` on Windows (a `cmd /c start` console without Windows
-  Terminal), Terminal.app through `osascript` on macOS, the setting, `$TERMINAL -e` or
-  `x-terminal-emulator -e` on Linux. Allowed while running (it forks the conversation in
-  Claude Code) but the UI suggests waiting or cancelling.
+  Terminal), Terminal.app through `osascript` on macOS, the setting, `$TERMINAL`, else the
+  first installed of a known list (`x-terminal-emulator`, kitty, alacritty, wezterm, ghostty,
+  foot, konsole, gnome-terminal, xfce4-terminal, xterm; each with its own "run" flag) on
+  Linux, since Arch and Fedora have no `x-terminal-emulator`. The terminal gets the
+  session's `--mcp-config` and `--allowedTools mcp__task-master`, so notes and the
+  summary still land. Allowed while running (it forks the conversation in Claude Code)
+  but the UI suggests waiting or cancelling; a running session stays `running`. Any other
+  becomes `terminal`, which ends (`done`) when the agent calls `complete_session`, when
+  the terminal process exits at least 3 s after opening (launchers such as gnome-terminal,
+  `wt.exe` and `osascript` return at once and cannot be followed), or with the card's
+  **Mark done** (a user edit, undoable). An `interrupted` session has **Resume**: a
+  follow-up asking the agent to pick up where it left off.
 - Sessions are children of the app: on exit the shell marks running ones `interrupted`
   and kills them (the confirmation before quitting is the UI's, step 4).
 
@@ -109,9 +119,15 @@ in the same space without cluttering the user's views. Decided with the user:
 - Stdio MCP server built on the core, opening the **same local database** (ADR 015's
   local mode). The desktop already reloads on outside writes (`PRAGMA data_version`), so
   agent edits appear live. It writes through `core::execute`, so undo, ops and sync apply.
-- Bundled as a Tauri `externalBin` sidecar. Under WSL, claude starts the Windows `.exe`
-  through WSL interop (`/mnt/c/...`), so the database stays on the Windows side with one
-  writer process model and no network.
+- Bundled as a Tauri `externalBin` sidecar, declared in `src-tauri/tauri.sidecar.conf.json`
+  (passed with `--config` by CI and release.yml), whose `beforeBuildCommand` runs
+  `scripts/sidecar.mjs`: `cargo build -p taskmaster-mcp --target $TAURI_ENV_TARGET_TRIPLE`
+  copied to `binaries/task-master-mcp-<triple>`. Not in `tauri.conf.json`: tauri-build
+  fails any build of the desktop crate whose `externalBin` file is missing, which would
+  break plain `cargo clippy`/`cargo test` and `tauri dev`. The installed app finds it
+  next to its executable; the dev app in `target/debug/`. Under WSL, claude starts the
+  Windows `.exe` through WSL interop (`/mnt/c/...`), so the database stays on the Windows
+  side with one writer process model and no network.
 - Binary `task-master-mcp --db <path> [--session <id>]`. The per-session `--mcp-config`
   file passes both as arguments (no environment variables, which `wsl.exe` interop does
   not forward by default); the task comes from the session row. A missing database file
@@ -125,9 +141,11 @@ in the same space without cluttering the user's views. Decided with the user:
   from the parent, else the session task; status by name or category; `depends_on`),
   `update_task` (agent tasks: status, title, description or `append_description`,
   priority, prerequisites; the user's tasks: status only, and only the session's task and
-  its subtasks at any depth), `add_note`, `complete_session` (stores the summary; the
-  session's state is still set by the shell when the run ends, which keeps the agent's
-  summary over Claude's last message).
+  its subtasks at any depth), `add_note`, `complete_session` (stores the summary; for a
+  `running` session the shell still sets the state when the run ends, which keeps the
+  agent's summary over Claude's last message; any other session, in a terminal or
+  outliving an app that quit and marked it `interrupted`, is marked `done` here, since
+  nothing else would end it).
 - Server instructions tell the agent how to track its work and which task it is on.
 - **Dependency: `rmcp` 3.9** (official Rust MCP SDK; features `server`, `macros`,
   `transport-io`) rather than a hand-written JSON-RPC loop.
@@ -153,7 +171,9 @@ in the same space without cluttering the user's views. Decided with the user:
   done / failed / interrupted. Task page: a Sessions section (state, duration, cost,
   summary, notes, denials) with Open in terminal, Send follow-up, Cancel.
 - Sidebar **Agents** section: running sessions first, then recent ones, and an "Agent
-  tasks" list grouped by session task. Virtualized.
+  tasks" list grouped by the user's task they serve. Capped instead of virtualized (the
+  latest 50 ended sessions, the 100 most recently updated agent tasks, with a note when
+  more exist); each task's page keeps its full session history.
 - Views get `owner` in `ViewSpec` (default `me`); a toggle "Show agent tasks" in the view
   options. Agent subtasks of the user's tasks are counted but collapsed, with an agent mark.
 - Settings → Agents: runtime (`wsl` + distro picked from `wsl.exe -l -q`, or `native`),

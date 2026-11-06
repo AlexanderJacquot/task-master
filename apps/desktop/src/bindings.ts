@@ -111,7 +111,11 @@ export const commands = {
 	agentSend: (sessionId: string, message: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_send", { sessionId, message })),
 	/**  Stops a running session. One left `running` by a crash is marked cancelled. */
 	agentCancel: (sessionId: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_cancel", { sessionId })),
-	/**  Opens a terminal running `claude --resume` in the session's folder. */
+	/**
+	 *  Opens a terminal running `claude --resume` in the session's folder, with the session's
+	 *  MCP config. A session the app is not running becomes `terminal` until the agent records
+	 *  its summary, the user marks it done, or the terminal closes (when it can be followed).
+	 */
 	agentOpenTerminal: (sessionId: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_open_terminal", { sessionId })),
 	/**  What each running session is doing, for a window that just opened. */
 	agentLive: () => typedError<AgentActivity_Serialize[], CommandError>(__TAURI_INVOKE("agent_live")),
@@ -1238,7 +1242,12 @@ export type SessionState = "running" |
 /**  Stopped by the user. */
 "cancelled" | 
 /**  The app quit or crashed while it ran. */
-"interrupted";
+"interrupted" | 
+/**
+ *  Continued by hand in a terminal (`claude --resume`), outside the app's control. Ends
+ *  when the agent records its summary, the terminal closes, or the user marks it done.
+ */
+"terminal";
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
 export type Snapshot = Snapshot_Serialize | Snapshot_Deserialize;

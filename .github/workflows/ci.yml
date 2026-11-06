@@ -68,6 +68,7 @@ jobs:
       - name: TS tests
         run: pnpm test
 
-      # Unsigned: update bundles are only made by release.yml (ADR 009).
+      # Unsigned: update bundles are only made by release.yml (ADR 009). The sidecar config
+      # builds the MCP server and bundles it next to the app (ADR 017).
       - name: Tauri build
-        run: pnpm --filter desktop tauri build --bundles deb
+        run: pnpm --filter desktop tauri build --bundles deb --config src-tauri/tauri.sidecar.conf.json
