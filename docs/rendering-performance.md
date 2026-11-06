@@ -45,6 +45,20 @@ Times are the average per frame.
 | `filter: drop-shadow()` on every card | 16.7 ms | 17 ms* |
 | Two-layer `box-shadow` (12/40 px) on every card | 16.7 ms | 31 ms |
 
+The parchment theme's WebPs (2026-11-06, 0.7.0 AppImage, painting forced onto the CPU with
+`WEBKIT_SKIA_ENABLE_CPU_RENDERING=1`, canvas and sidebar textured as in `src/index.css`):
+
+| Background | System, CPU forced | AppImage, CPU forced |
+|---|---|---|
+| Flat colours (baseline) | 16.8 ms | 43.5 to 44.8 ms |
+| Calfskin 1024 px tile (the default) | 16.7 ms | 49 ms |
+| Calfskin + all four weathering layers | 27 ms | 50.4 ms |
+
+Without forcing, both WebKits painted these pages on the GPU at 16.7 to 17.4 ms. The
+weathering cost on the system CPU path comes from the three window-sized layers being
+rescaled on every repaint (~3 ms each), not from `background-attachment: fixed` (26 ms
+without it). That is why weathering is opt-in and off by default.
+
 \* These pages switched the bundled WebKit to GPU painting, so they say little about the
 CPU cost. Treat them as "fine", not as a speed-up to rely on.
 
@@ -63,7 +77,11 @@ catastrophic: their cost scales with the number of stripes in the repainted area
    WebP for photographic textures (a 1600x1000 parchment: 5 KB WebP vs 340 KB PNG). Keep
    the source image in the repo and bundle it with Vite (`url(./assets/...)`), never a
    remote URL. Size a full-window image for the largest common screen (2560 px wide at
-   most) so it is not decoded larger than needed.
+   most) so it is not decoded larger than needed. A full-window image is rescaled on each
+   CPU repaint (~3 ms per layer above); stack few of them, and prefer tiles drawn at their
+   own size. Optional layers go behind a CSS variable that stays `none` until enabled, so
+   they are never fetched or decoded while off (see the weathering in `src/index.css`).
+   `scripts/parchment/generate.py` makes the parchment textures.
 3. **`background-attachment: fixed` is allowed but pointless** on elements that do not
    scroll (the app root is `h-full overflow-hidden`). Leave it out unless the element
    scrolls and the texture must stay put.
@@ -85,6 +103,9 @@ catastrophic: their cost scales with the number of stripes in the repainted area
 # Images it references by relative url() must sit next to it.
 scripts/paint-bench/run.sh candidate.css ~/Downloads/task-master_<version>_amd64.AppImage
 ```
+
+To measure the CPU path even when WebKit picks the GPU for the page (the runs marked *
+above), prefix the command with `WEBKIT_SKIA_ENABLE_CPU_RENDERING=1`.
 
 It needs gcc and the webkit2gtk-4.1 development files (on Arch, `webkit2gtk-4.1`). It
 opens a window for about 10 s per run and prints, for the baseline and for your CSS, the

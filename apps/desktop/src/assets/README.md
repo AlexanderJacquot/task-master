@@ -48,6 +48,16 @@ Palette: ink `#1F1A16`, parchment `#F5E8D0`, aged gold `#D4A241`, wax red `#8B2A
 
 The app logo is wired into the sidebar, About panel, and web favicon. Tauri's configured native icon paths now contain generated PNG, Windows ICO, and macOS ICNS exports (along with its platform-specific sizes). These are the logo files used for the next built installer/application; an already installed build must be rebuilt/reinstalled to receive them. The browser and in-app logo use the SVG directly.
 
+## Parchment textures
+
+`parchment/*.webp` are the light theme's background: `parchment-calfskin.webp` (1024 px
+seamless tile, always on) and the optional weathering layers `parchment-burnt`,
+`-coffee`, `-water` and `-fold` (Settings → Appearance). Each is a translucent brown and
+cream overlay that sits on a surface's colour token. They are generated, deterministic
+and seamless (FFT noise): `python3 -I scripts/parchment/generate.py
+apps/desktop/src/assets/parchment calfskin burnt coffee water fold`. The script also has
+the unused `vellum`, `laid` and `folio` options from the first review.
+
 ## Regenerate
 
 From the repository root, with dependencies installed:

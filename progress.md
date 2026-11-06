@@ -45,6 +45,29 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Parchment background as WebP, with optional weathering (2026-11-06)
+
+Branch `worktree-parchment-background` (on top of `worktree-perf-texture-tiles`).
+
+- Generated candidate textures with `scripts/parchment/generate.py` (numpy + Pillow, FFT
+  noise, seamless tiles) and reviewed them on a mock of the app: vellum, laid paper,
+  calfskin, aged folio; then weathering layers over calfskin. The user picked calfskin as
+  the base, with weathering as settings.
+- `.tex-canvas`, `.tex-sidebar`, `.tex-sheet` now use `assets/parchment/
+  parchment-calfskin.webp` (282 KB) under the existing vignettes, in place of the SVG
+  fibre tile. Each WebP is a translucent overlay, so the colour tokens are unchanged.
+- Settings → Appearance → "Parchment weathering": burnt edges, coffee rings, water
+  damage, folded in four, any combination, per machine (`lib/weathering.ts`, localStorage
+  like the theme, `wx-*` classes on <html>). Off by default; a layer that is off is a
+  `none` variable, so its image is never loaded.
+- Paint bench, 0.7.0 AppImage: calfskin and all layers run at 17 ms on the normal path;
+  with painting forced onto the CPU, calfskin costs +5.5 ms on the AppImage and nothing
+  on system WebKit, all four layers +6 ms (AppImage) and +10 ms (system). Recorded in
+  docs/rendering-performance.md.
+- Biome, tsc, Vite build (bundles all five WebPs) and 292 Vitest tests pass.
+- Not yet verified: the look in the real app (the review used a mock), and on Windows
+  and macOS. Possible tweak: the window-sized layers stretch on unusual aspect ratios.
+
 ### Lag on Linux: parchment texture repaints (2026-11-06)
 
 - Profiled the running 0.7.0 AppImage on the Arch laptop (Iris Xe, KWin Wayland, 15 GB

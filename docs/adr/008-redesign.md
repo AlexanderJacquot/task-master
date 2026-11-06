@@ -23,8 +23,10 @@ and the `blue-*` scale (only ever used as the accent) to the accent ramp.
 - **Dark** (default): near-black layers (#0e0e10 / #141416 / #1b1b1f), soft white ink,
   faint white borders, gold accent (#d9a54a).
 - **Parchment** (the light theme, stored as `light`): warm vellum (#f3eada), brown-black
-  ink (#2b2116), rubric red accent (#8b2e1f). Texture is CSS only (`tex-canvas`,
-  `tex-sidebar`, `tex-sheet`: radial vignettes and faint repeating grain), no image.
+  ink (#2b2116), rubric red accent (#8b2e1f). Texture was CSS only at first
+  (radial vignettes and faint repeating grain). Since 2026-11-06 `tex-canvas`,
+  `tex-sidebar` and `tex-sheet` use a pre-rendered calfskin WebP tile under the vignettes,
+  with optional weathering layers chosen in Settings (docs/rendering-performance.md).
 - Headings (list groups, board columns, section labels, description headings) use
   `--tm-rubric`: rubric red on parchment, bright ink in the dark, as in the mockups.
   Priorities use `--tm-urgent` and `--tm-high`, tuned per theme (added 2026-11-05).

@@ -13,6 +13,13 @@ import type {
   Status,
   StatusCategory,
 } from "../../lib/types";
+import {
+  loadWeathering,
+  saveWeathering,
+  WEATHERING,
+  WEATHERING_LABELS,
+  type Weathering,
+} from "../../lib/weathering";
 import { createStatus, deleteStatus, moveStatus, updateStatus } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { PROJECT_COLORS } from "../organize/projectColors";
@@ -193,7 +200,39 @@ function Appearance() {
           </label>
         ))}
       </div>
+      <WeatheringChoice dark={theme === "dark"} />
     </Section>
+  );
+}
+
+/** Optional age marks on the parchment theme; any combination. */
+function WeatheringChoice({ dark }: { dark: boolean }) {
+  const [on, setOn] = useState<Weathering[]>(loadWeathering);
+  const toggle = (w: Weathering, checked: boolean) => {
+    const next = WEATHERING.filter((x) => (x === w ? checked : on.includes(x)));
+    setOn(next);
+    saveWeathering(next);
+  };
+  return (
+    <fieldset className="mt-2 flex flex-col gap-1.5">
+      <legend className="mb-1 text-sm text-ink-2">
+        Parchment weathering
+        {dark && <span className="text-neutral-500"> (shows with the Parchment theme)</span>}
+      </legend>
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+        {WEATHERING.map((w) => (
+          <label key={w} className="flex items-center gap-1.5">
+            <input
+              type="checkbox"
+              checked={on.includes(w)}
+              onChange={(e) => toggle(w, e.target.checked)}
+              className="accent-accent"
+            />
+            {WEATHERING_LABELS[w]}
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 

@@ -8,11 +8,13 @@ import { CaptureWindow, tauriCaptureControls } from "./features/capture/CaptureW
 import { tauriApi } from "./lib/api";
 import { applyTheme, loadTheme } from "./lib/theme";
 import { createUpdateStore, tauriUpdates, UpdateProvider } from "./lib/updater";
+import { applyWeathering, loadWeathering } from "./lib/weathering";
 import { createAppRouter } from "./router";
 import { StoreProvider } from "./store/context";
 import { createTaskStore } from "./store/store";
 
 applyTheme(loadTheme());
+applyWeathering(loadWeathering());
 
 const store = createTaskStore(tauriApi);
 void store.getState().hydrate();
