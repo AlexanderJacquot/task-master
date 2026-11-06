@@ -15,8 +15,9 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { CalendarIcon as CalendarDays } from "../../components/TaskIcons";
 import { Button, cx, Dot, FOCUS, IconButton } from "../../components/ui";
 import {
   atMinute,

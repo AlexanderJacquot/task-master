@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { MoreHorizontal } from "lucide-react";
 import { IconButton } from "./components/ui";
+import { AgentsPage } from "./features/agents/AgentsPage";
 import { CalendarPage } from "./features/calendar/CalendarPage";
 import { LineagePage } from "./features/lineage/LineagePage";
 import { MetricsPage } from "./features/metrics/MetricsPage";
@@ -71,6 +72,12 @@ const lineageRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lineage",
   component: LineagePage,
+});
+
+const agentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "agents",
+  component: AgentsPage,
 });
 
 const metricsRoute = createRoute({
@@ -168,6 +175,7 @@ const routeTree = rootRoute.addChildren([
   calendarRoute,
   metricsRoute,
   lineageRoute,
+  agentsRoute,
   allRoute,
   projectRoute,
   epicRoute,

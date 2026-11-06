@@ -1,5 +1,5 @@
-import { ChartNoAxesCombined } from "lucide-react";
 import { useMemo, useState } from "react";
+import { MetricsIcon as ChartNoAxesCombined } from "../../components/TaskIcons";
 import { FOCUS, Select } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
 import type { Task } from "../../lib/types";

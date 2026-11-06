@@ -1,9 +1,11 @@
-import { ChevronDown, ChevronRight, Flag } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { memo, useState } from "react";
 import { DatePicker } from "../../components/DatePicker";
+import { PriorityIcon as Flag } from "../../components/TaskIcons";
 import { Chip, cx, Dot, PRIORITIES, PRIORITY_STYLE, Select, TaskCheck } from "../../components/ui";
 import { formatDue } from "../../lib/dates";
 import type { Project, Status, Tag, Task, TaskChange } from "../../lib/types";
+import { SessionChip } from "../agents/SessionChip";
 
 export interface RowHandlers {
   onOpen(id: string): void;
@@ -118,6 +120,7 @@ export const TaskRow = memo(function TaskRow(p: Props) {
           {p.childDone}/{p.childCount}
         </span>
       )}
+      <SessionChip taskId={task.id} className="max-w-52" />
       {task.tag_ids.map((id) => (p.tags[id] ? <Chip key={id}>#{p.tags[id].name}</Chip> : null))}
       {p.showProject && project && (
         <span className="hidden max-w-36 items-center gap-1.5 truncate text-[12.5px] text-ink-3 md:flex">

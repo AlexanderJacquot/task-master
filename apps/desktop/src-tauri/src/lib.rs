@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+mod agents;
 mod backups;
 mod calendar_sync;
 mod config;
@@ -50,6 +51,9 @@ struct AppState {
     store: Mutex<Store>,
     /// The folder holding the database and `backups/`.
     data_dir: PathBuf,
+    /// The database file (the MCP server of agent sessions opens it too).
+    db_path: PathBuf,
+    agents: agents::AgentRunner,
     config_path: PathBuf,
     config: Mutex<AppConfig>,
     backup: Mutex<BackupStatus>,
@@ -81,7 +85,7 @@ pub struct StoreChanged(Changed);
 type CommandResult<T> = Result<T, CommandError>;
 
 fn with_store<T>(
-    state: &State<'_, AppState>,
+    state: &AppState,
     f: impl FnOnce(&mut Store) -> taskmaster_core::Result<T>,
 ) -> CommandResult<T> {
     let mut store = state
@@ -581,13 +585,27 @@ fn specta_builder() -> Builder<tauri::Wry> {
             server_sync::sync_sign_in,
             server_sync::sync_join,
             server_sync::sync_now,
-            server_sync::sync_disconnect
+            server_sync::sync_disconnect,
+            agents::agent_start,
+            agents::agent_send,
+            agents::agent_cancel,
+            agents::agent_open_terminal,
+            agents::agent_live,
+            agents::agent_brief,
+            agents::agent_notes,
+            agents::agent_settings,
+            agents::set_agent_settings,
+            agents::detect_claude,
+            agents::list_wsl_distros,
+            agents::project_folders,
+            agents::set_project_folder
         ])
         .events(collect_events![
             StoreChanged,
             CaptureOpened,
             calendar_sync::CalendarSynced,
-            server_sync::SyncChanged
+            server_sync::SyncChanged,
+            agents::AgentActivity
         ])
         // Timestamps (Unix ms) and op sequence numbers stay far below 2^53.
         .dangerously_cast_bigints_to_number()
@@ -666,6 +684,10 @@ pub fn run() {
             let path: PathBuf = std::env::var_os("TASK_MASTER_DB").map_or(path, Into::into);
             let data_dir = path.parent().map_or(data_dir, PathBuf::from);
             let mut store = Store::open(&path)?;
+            // No run of a previous start survives it (ADR 017).
+            if let Err(e) = store.interrupt_running_sessions() {
+                eprintln!("cannot mark old agent sessions interrupted: {e}");
+            }
             let changes = store.subscribe();
             let handle = app.handle().clone();
             let (calendar, kicks) = calendar_sync::CalendarRuntime::new();
@@ -690,6 +712,8 @@ pub fn run() {
             app.manage(AppState {
                 store: Mutex::new(store),
                 data_dir,
+                db_path: path,
+                agents: agents::AgentRunner::default(),
                 config_path,
                 config: Mutex::new(config),
                 backup: Mutex::new(BackupStatus::default()),
@@ -740,8 +764,14 @@ pub fn run() {
                 })?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running task-master");
+        .build(tauri::generate_context!())
+        .expect("error while building task-master")
+        .run(|app, event| {
+            // Agent runs are children of the app: stop them, marked interrupted.
+            if let tauri::RunEvent::Exit = event {
+                agents::shutdown(app);
+            }
+        });
 }
 
 #[cfg(test)]

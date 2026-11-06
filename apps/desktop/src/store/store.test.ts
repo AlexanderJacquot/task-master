@@ -50,6 +50,8 @@ class FakeCore implements Api {
       views: [],
       attachments: [],
       time_blocks: [],
+      agent_sessions: [],
+      agent_notes: [],
       statuses: [],
       ...partial,
     });
@@ -244,6 +246,8 @@ describe("history and events", () => {
       views: [],
       attachments: [],
       time_blocks: [],
+      agent_sessions: [],
+      agent_notes: [],
       statuses: [],
     };
     await store.getState().undo();

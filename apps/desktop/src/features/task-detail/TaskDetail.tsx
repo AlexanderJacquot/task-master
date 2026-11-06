@@ -1,7 +1,8 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ArrowUpRight, ChevronRight, Maximize2, Sun, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ChevronRight, Maximize2, Sun, X } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { DatePicker } from "../../components/DatePicker";
+import { AgentsIcon as Bot, DeleteIcon as Trash2 } from "../../components/TaskIcons";
 import {
   cx,
   Dot,
@@ -14,8 +15,9 @@ import {
 } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
 import type { Task, TaskChange } from "../../lib/types";
-import { deleteTask, setParent, toggleDone, updateTask } from "../../store/actions";
+import { adoptTask, deleteTask, setParent, toggleDone, updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { SessionsPanel } from "../agents/SessionsPanel";
 import { ProjectMark } from "../organize/ProjectMark";
 import { useOpenTask } from "../shell/useOpenTask";
 import { ActivityFeed } from "./ActivityFeed";
@@ -272,6 +274,26 @@ export function TaskEditor({
   return (
     <div className={cx("flex flex-col", page ? "gap-7" : "gap-5")}>
       {title}
+      {task.owner === "agent" && (
+        <p
+          className={cx(
+            "flex items-center gap-2 rounded-lg bg-accent/8 px-2.5 py-1.5 text-[13px] text-ink-2",
+            page && "ml-10",
+          )}
+        >
+          <Bot size={14} className="shrink-0 text-accent" aria-hidden />
+          <span className="flex-1">
+            An agent's own task: hidden from your views unless you show agent tasks.
+          </span>
+          <button
+            type="button"
+            onClick={() => void adoptTask(store, task.id)}
+            className="text-accent hover:underline"
+          >
+            Make it mine
+          </button>
+        </p>
+      )}
       {properties}
       {parent && (
         <button
@@ -296,6 +318,7 @@ export function TaskEditor({
       </section>
       {/* The page follows the mockup: subtasks right under the text, files after. */}
       {page ? [subtasks, attachmentList] : [attachmentList, subtasks]}
+      <SessionsPanel task={task} page={page} />
       {page ? (
         <details className="pl-10">
           <summary className="cursor-pointer font-display text-[15px] tracking-wide text-ink-2">

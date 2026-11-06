@@ -1,5 +1,5 @@
-import { Pencil } from "lucide-react";
 import { useState } from "react";
+import { EditIcon as Pencil } from "../../components/TaskIcons";
 import { InlineInput } from "../../components/ui";
 
 /**

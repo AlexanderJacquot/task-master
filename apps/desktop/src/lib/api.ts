@@ -3,15 +3,22 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import { commands, events } from "../bindings";
 import type {
   Activity,
+  AgentActivity,
+  AgentNote,
+  AgentSession,
+  AgentSettings,
+  AgentStart,
   CalendarEvent,
   CalendarStatus,
   Capture,
   Changed,
   Changes,
+  ClaudeCheck,
   Command,
   CommandError,
   EventRange,
   JoinMode,
+  ProjectFolder,
   Snapshot,
   StoredUpload,
   SyncStatus,
@@ -56,7 +63,63 @@ export interface Api {
   calendar?: CalendarApi;
   /** The sync server (ADR 015); absent in tests that do not need it. */
   sync?: SyncApi;
+  /** Claude Code sessions (ADR 017); absent in tests that do not need it. */
+  agents?: AgentsApi;
 }
+
+/** Claude Code sessions started from tasks, their settings and project folders. */
+export interface AgentsApi {
+  /** Starts a session; it is recorded (as failed) even when Claude Code cannot start. */
+  start(input: AgentStart): Promise<AgentSession>;
+  /** A follow-up message to an ended session. */
+  send(sessionId: string, message: string): Promise<void>;
+  cancel(sessionId: string): Promise<void>;
+  openTerminal(sessionId: string): Promise<void>;
+  /** What running sessions are doing now. */
+  live(): Promise<AgentActivity[]>;
+  /** The opening context a session on this task would get. */
+  brief(taskId: string): Promise<string>;
+  notes(taskId: string, sessionId: string | null, limit: number): Promise<AgentNote[]>;
+  settings(): Promise<AgentSettings>;
+  saveSettings(settings: AgentSettings): Promise<AgentSettings>;
+  /** Checks Claude Code runs with these settings (not saved). */
+  detect(settings: AgentSettings): Promise<ClaudeCheck>;
+  /** Installed WSL distributions (empty outside Windows). */
+  distros(): Promise<string[]>;
+  folders(): Promise<ProjectFolder[]>;
+  setFolder(projectId: string, path: string | null): Promise<ProjectFolder[]>;
+  /** Asks for a folder; null when cancelled. */
+  pickFolder(): Promise<string | null>;
+  /** Called with each activity update (`activity: null` when a run stopped). */
+  onActivity(handler: (event: AgentActivity) => void): Promise<() => void>;
+}
+
+export const tauriAgents: AgentsApi = {
+  start: (input) => unwrap(commands.agentStart(input)),
+  send: async (sessionId, message) => {
+    await unwrap(commands.agentSend(sessionId, message));
+  },
+  cancel: async (sessionId) => {
+    await unwrap(commands.agentCancel(sessionId));
+  },
+  openTerminal: async (sessionId) => {
+    await unwrap(commands.agentOpenTerminal(sessionId));
+  },
+  live: () => unwrap(commands.agentLive()),
+  brief: (taskId) => unwrap(commands.agentBrief(taskId)),
+  notes: (taskId, sessionId, limit) => unwrap(commands.agentNotes(taskId, sessionId, limit)),
+  settings: () => unwrap(commands.agentSettings()),
+  saveSettings: (settings) => unwrap(commands.setAgentSettings(settings)),
+  detect: (settings) => unwrap(commands.detectClaude(settings)),
+  distros: () => commands.listWslDistros(),
+  folders: () => unwrap(commands.projectFolders()),
+  setFolder: (projectId, path) => unwrap(commands.setProjectFolder(projectId, path)),
+  pickFolder: async () => {
+    const picked = await open({ directory: true, multiple: false });
+    return typeof picked === "string" ? picked : null;
+  },
+  onActivity: (handler) => events.agentActivity.listen((event) => handler(event.payload)),
+};
 
 /** Sync with a task-master server: connect, sign in, join, status. */
 export interface SyncApi {
@@ -167,4 +230,5 @@ export const tauriApi: Api = {
   files: tauriFiles,
   calendar: tauriCalendar,
   sync: tauriSync,
+  agents: tauriAgents,
 };

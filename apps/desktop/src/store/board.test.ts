@@ -27,6 +27,8 @@ function confirmingApi(getStore: () => TaskStore, tasks: Task[]) {
         views: [],
         attachments: [],
         time_blocks: [],
+        agent_sessions: [],
+        agent_notes: [],
         statuses: [],
       } as Changes;
     },
@@ -56,6 +58,7 @@ function boardColumns(store: TaskStore): string[][] {
       swimlane: "none",
       show_subtasks: true,
       show_cancelled: false,
+      show_agent_tasks: false,
     },
     ctx,
     statuses,

@@ -1,5 +1,6 @@
 import { RouterProvider } from "@tanstack/react-router";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ask } from "@tauri-apps/plugin-dialog";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
@@ -22,6 +23,19 @@ if (!root) throw new Error("#root element missing from index.html");
 
 // Both windows load this page; the quick-capture one renders only the capture box.
 const isCapture = getCurrentWindow().label === "capture";
+
+// Agent runs are children of the app (ADR 017): ask before quitting stops them.
+if (!isCapture) {
+  void getCurrentWindow().onCloseRequested(async (event) => {
+    const running = Object.keys(store.getState().agentActivity).length;
+    if (running === 0) return;
+    const quit = await ask(
+      `${running === 1 ? "A Claude session is" : `${running} Claude sessions are`} still running. Quitting stops ${running === 1 ? "it" : "them"}; you can continue later with a follow-up.`,
+      { title: "Quit task-master?", kind: "warning", okLabel: "Quit", cancelLabel: "Keep running" },
+    );
+    if (!quit) event.preventDefault();
+  });
+}
 
 // Updates (ADR 009): a quiet check shortly after start and then every six hours, in the
 // main window only. Settings has the button; the sidebar shows when one is available.

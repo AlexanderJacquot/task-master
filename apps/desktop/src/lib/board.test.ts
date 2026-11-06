@@ -40,6 +40,7 @@ function build(
       swimlane: o.swimlane,
       show_subtasks: o.showSubtasks,
       show_cancelled: o.showCancelled,
+      show_agent_tasks: false,
     },
     c,
     list,

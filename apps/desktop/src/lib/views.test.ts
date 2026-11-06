@@ -20,6 +20,7 @@ function q(scope: ViewScope, extra: Partial<ViewQuery> = {}): ViewQuery {
     group_by: "status",
     sort: "default",
     show_cancelled: false,
+    show_agent_tasks: false,
     ...extra,
   };
 }
@@ -147,6 +148,29 @@ describe("buildRows", () => {
     expect(collapsed).toEqual([
       expect.objectContaining({ type: "group", count: 1, collapsed: true }),
     ]);
+  });
+});
+
+describe("agent tasks (ADR 017)", () => {
+  it("stay out of the user's views unless shown, but count under their parent", () => {
+    const mine = task({ title: "Mine" });
+    const step = task({ title: "Agent step", parent_id: mine.id, owner: "agent" });
+    const loose = task({ title: "Agent note", owner: "agent" });
+    expect(inView({ kind: "inbox" }, loose, ctx())).toBe(false);
+    expect(inView({ kind: "inbox" }, loose, ctx(), { showAgentTasks: true })).toBe(true);
+
+    const hidden = buildRows([mine, step, loose], q({ kind: "all" }), ctx(), statuses, noCollapse);
+    expect(hidden.map(label)).toEqual(["# To do", "Mine"]);
+    expect(hidden[1]).toMatchObject({ childCount: 1, visibleChildren: 0 });
+
+    const shown = buildRows(
+      [mine, step, loose],
+      q({ kind: "all" }, { show_agent_tasks: true }),
+      ctx(),
+      statuses,
+      noCollapse,
+    );
+    expect(shown.map(label)).toEqual(["# To do", "Mine", "Agent step", "Agent note"]);
   });
 });
 

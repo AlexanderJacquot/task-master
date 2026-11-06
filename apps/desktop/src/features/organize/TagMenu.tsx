@@ -1,7 +1,7 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { Trash2 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import type { ReactNode } from "react";
+import { DeleteIcon as Trash2 } from "../../components/TaskIcons";
 import { cx, MENU, MENU_DANGER, MENU_ITEM, MENU_LABEL } from "../../components/ui";
 import type { Tag } from "../../lib/types";
 import { deleteTag } from "../../store/actions";

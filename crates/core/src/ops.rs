@@ -49,6 +49,8 @@ pub enum EntityKind {
     Status,
     Attachment,
     TimeBlock,
+    AgentSession,
+    AgentNote,
 }
 
 /// What an op targets. `TaskTag` rows are links: `entity_id` is the task, the patch holds
@@ -64,11 +66,15 @@ pub(crate) enum Entity {
     TaskTag,
     Attachment,
     TimeBlock,
+    AgentSession,
+    AgentNote,
 }
 
 impl Entity {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
+            Self::AgentSession => "agent_session",
+            Self::AgentNote => "agent_note",
             Self::Task => "task",
             Self::Project => "project",
             Self::Epic => "epic",
@@ -92,6 +98,8 @@ impl Entity {
             "task_tag" => Self::TaskTag,
             "attachment" => Self::Attachment,
             "time_block" => Self::TimeBlock,
+            "agent_session" => Self::AgentSession,
+            "agent_note" => Self::AgentNote,
             other => return Err(Error::invalid(format!("unknown op entity '{other}'"))),
         })
     }
@@ -107,6 +115,8 @@ impl Entity {
             Self::TaskTag => "task_tags",
             Self::Attachment => "attachments",
             Self::TimeBlock => "time_blocks",
+            Self::AgentSession => "agent_sessions",
+            Self::AgentNote => "agent_notes",
         }
     }
 
@@ -115,6 +125,7 @@ impl Entity {
         match self {
             Self::Task => &[
                 "dependency_ids",
+                "owner",
                 "id",
                 "project_id",
                 "epic_id",
@@ -208,6 +219,35 @@ impl Entity {
                 "updated_at",
                 "deleted_at",
             ],
+            Self::AgentSession => &[
+                "id",
+                "task_id",
+                "device_id",
+                "claude_session_id",
+                "folder",
+                "runtime",
+                "permission_mode",
+                "prompt",
+                "state",
+                "started_at",
+                "ended_at",
+                "summary",
+                "cost_usd_micros",
+                "turns",
+                "error",
+                "created_at",
+                "updated_at",
+                "deleted_at",
+            ],
+            Self::AgentNote => &[
+                "id",
+                "session_id",
+                "task_id",
+                "body",
+                "created_at",
+                "updated_at",
+                "deleted_at",
+            ],
         }
     }
 
@@ -221,6 +261,8 @@ impl Entity {
             Self::Status => EntityKind::Status,
             Self::Attachment => EntityKind::Attachment,
             Self::TimeBlock => EntityKind::TimeBlock,
+            Self::AgentSession => EntityKind::AgentSession,
+            Self::AgentNote => EntityKind::AgentNote,
         }
     }
 }
@@ -322,6 +364,11 @@ impl<'t, 'c> Batch<'t, 'c> {
             touched: BTreeSet::new(),
             last_seq: None,
         }
+    }
+
+    /// The device writing this batch.
+    pub(crate) fn device_id(&self) -> &str {
+        self.device_id
     }
 
     /// Applies a change and records it. Links that already exist (or unlinks of missing

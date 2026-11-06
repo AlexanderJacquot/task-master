@@ -4,10 +4,18 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**v0.6.0** is the latest release. `main` additionally includes the freeform Lineage
-canvas, responsive sidebar shortcuts, calendar popup fixes and public OAuth project
-pages. These latest UI changes are source changes for the next release. Google Calendar
-setup and enabling GitHub Pages remain user configuration steps (see the guides below).
+**M16 Agent sessions** (ADR 017) is merged into `main` (from `m16-agent-sessions`):
+"Send to Claude" from a task, headless Claude Code runs with a live status, an MCP server
+for agents to track their work, and agent-owned tasks hidden from the user's views. Steps
+1 to 5 done and checked by hand on Linux. Not yet verified: the WSL runtime and Windows
+Terminal on Windows (unit-tested command lines only), and the Windows/macOS installers
+with the sidecar, which only release.yml builds. Migration 0010 bumps the schema, so the
+sync server must be upgraded with the desktops (replicas sync only at one version).
+
+**v0.6.0** is the latest release. `main` also includes, for the next release, the
+freeform Lineage canvas, responsive sidebar shortcuts, calendar popup fixes, public OAuth
+project pages and the medieval icon set. Google Calendar setup and enabling GitHub Pages
+remain user configuration steps (see the guides below).
 
 **M10 Google Calendar sync**, branch `m10-google-calendar`: merged to `main` with M9 and
 released as **v0.4.0** (2026-11-05). Next: the user creates their OAuth client
@@ -35,6 +43,129 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### Medieval icon set (2026-11-06)
+
+- `assets/icons/paths.json` now holds 22 medieval icons in the style of the cross `add`:
+  letter (inbox), castle (projects), hourglass (due), anvil (settings), lantern (search),
+  brazier (delete), great helm (agents), almanac (calendar), scroll (all tasks),
+  chest / open chest (archive / unarchive), pennant (priority), gonfalon (saved views),
+  quill (edit), scales (metrics), oak (lineage), arrow (send), candle (estimate),
+  wax seal (done), crown and shield (new epic marks). `components/TaskIcons.tsx` exports
+  each; call sites import them under the lucide name they replaced. Labelled icons get
+  a `<title>` and `role="img"`.
+- `scripts/generate-ui-icons.mjs` lays out the proof sheet for any number of icons.
+  Chevrons, close, check, grip and more stay lucide for legibility.
+
+### M16 fixes from the first hand check (2026-11-06)
+
+- Open in terminal on Linux: detects an installed terminal (`x-terminal-emulator`, kitty,
+  alacritty, wezterm, ghostty, foot, konsole, gnome-terminal, xfce4-terminal, xterm),
+  each with its "run" flag; `$TERMINAL` uses the same table. Arch has no
+  `x-terminal-emulator`.
+- New session state `terminal` ("In terminal"): an ended session opened in a terminal.
+  The terminal gets the session's MCP config. It ends when the agent calls
+  `complete_session`, when a followable terminal (≥ 3 s) exits, or with **Mark done**.
+  `running` and `terminal` are "active" (`SessionState::is_active`) for `ended_at`,
+  removal, the brief and the activity feed. No migration (`state` has no CHECK).
+- `complete_session` marks a non-running session done: a run that outlived the app (dev
+  restart) had left "Interrupted" with a "Done" summary.
+- **Resume** on interrupted sessions sends a pick-up-where-you-left-off follow-up.
+- Tests: core (terminal lifecycle), MCP (ending non-running sessions), launch (resume
+  args with MCP config, terminal detection), UI (Resume, In terminal, Mark done).
+
+### M16 step 5: sidecar packaging and docs (2026-11-06)
+
+- `src-tauri/tauri.sidecar.conf.json`: `externalBin: binaries/task-master-mcp`, and a
+  `beforeBuildCommand` that also runs `scripts/sidecar.mjs` (builds `taskmaster-mcp` for
+  `TAURI_ENV_TARGET_TRIPLE`, release unless `TAURI_ENV_DEBUG`, copies it to
+  `binaries/task-master-mcp-<triple>`, gitignored). Kept out of `tauri.conf.json`:
+  tauri-build fails any desktop build whose `externalBin` file is missing, which would
+  break plain `cargo clippy`/`test` and `tauri dev`. CI's deb build and release.yml pass
+  it with a second `--config`.
+- `docs/agents.md`: setup, sending, permission modes, follow-ups, agent tasks, how it
+  works, troubleshooting, development. ADR 017 records the packaging.
+- Verified: a local `tauri build --bundles deb` with the config installs
+  `/usr/bin/task-master-mcp` next to `/usr/bin/taskmaster-desktop` (where the app looks);
+  the bundled binary runs. Clippy passes without the sidecar file present. Windows
+  (`.exe` suffix, WSL interop path) and the macOS cross targets are only exercised by
+  release.yml.
+
+### M16 step 4: the UI (2026-11-06)
+
+- `features/agents/`: Send to Claude dialog (folder prefilled from the task's last
+  session, the project's or area's folder on this device, then the latest; picker and
+  recents; permission mode with a confirmation for "Everything"; instructions; brief
+  preview), session chip on board cards and list rows, Sessions panel on the task (state,
+  duration, cost, turns, summary, notes, error; Open in terminal, Stop, follow-up, remove),
+  `/agents` page (running, recent, agent tasks grouped under the user's task they serve,
+  "Make it mine"), project folder button on the project page, Settings → Agents.
+- Views: `show_agent_tasks` (default off) in the view options; agent subtasks count under
+  their parent and carry a bot mark in the subtask list; sidebar counts skip agent tasks.
+- Store: `agent_sessions` entities, `agentActivity` from the `AgentActivity` event and
+  `agent_live` on connect, `record()` for sessions the shell wrote. Quitting with running
+  sessions asks first.
+- The Agents page caps its lists (50 ended sessions, 100 agent tasks) with a note when
+  more exist, instead of virtualizing (ADR updated).
+- Tests: `sessions.test.ts` (helpers), `store/agents.test.ts`, `agents.test.tsx` (start
+  flow, bypass confirmation, follow-up and terminal, row chip, Agents page and adopt),
+  `agentSettings.test.tsx`, a views test for the owner filter; `test/fakeAgents.ts` and an
+  `agentSession` fixture. The BoardCard test now renders inside a `StoreProvider`.
+- Verified: workspace Clippy (`-D warnings`), rustfmt, all Rust tests, TypeScript, Biome
+  and 275 frontend tests. Not yet run by hand in the app.
+
+### M16 step 3: spawning sessions from the desktop shell (2026-11-05)
+
+- `src-tauri/src/agents/`: `launch.rs` (claude command for native and WSL through
+  `wsl.exe --exec`, Windows → WSL paths, resume-in-terminal for Windows Terminal / cmd,
+  macOS Terminal and Linux, `wsl -l -q` UTF-16 parsing, login-shell lookup of `claude`),
+  `stream.rs` (stream-json → activity, denials, result; tested on a recorded 2.1.318
+  run), `mod.rs` (runs, threads, outcome, IPC). Settings → `config.json` `agents`.
+- IPC: `agent_start`, `agent_send`, `agent_cancel`, `agent_open_terminal`, `agent_live`,
+  `agent_brief`, `agent_notes`, `agent_settings`, `set_agent_settings`, `detect_claude`,
+  `list_wsl_distros`, `project_folders`, `set_project_folder`; event `AgentActivity`.
+  Start-up marks old running sessions interrupted; exit marks live ones interrupted and
+  kills them. CLAUDE.md's IPC list updated.
+- Checked by hand with the installed Claude Code: `--append-system-prompt-file` works on a
+  new session, `-p --resume <id>` continues it (and keeps its first system prompt).
+- Tests: 14 unit tests, plus an opt-in real run (`cargo build -p taskmaster-mcp && cargo
+  test -p taskmaster-desktop real_claude -- --ignored`): Claude Code (Haiku) added a note,
+  created and finished an agent subtask and recorded its summary through our MCP, live
+  activity read "Noting: …", "Planning: Step one", and the outcome was recorded as done.
+- Verified: workspace Clippy, rustfmt, 184 Rust tests (3 opt-in ignored), TypeScript,
+  Biome and 259 frontend tests. Bindings regenerated (new commands, event and types).
+
+### M16 step 2: MCP server (2026-11-05)
+
+- New crate `crates/mcp` (`task-master-mcp --db <path> [--session <id>]`, rmcp 3.9, stdio)
+  with `get_task`, `list_tasks`, `list_projects`, `search`, `create_task`, `update_task`,
+  `add_note`, `complete_session`. Agent tasks are editable; the user's tasks only change
+  status, and only within the session's task and its subtasks.
+- Core: outside writes keep the undo history unless they touch a field undo would write
+  back; write transactions are `BEGIN IMMEDIATE` so the desktop and an agent writing at
+  the same moment wait instead of failing.
+- Tests: 7 end-to-end MCP tests (rmcp client over an in-memory pipe), one core test with
+  two stores on one file. Smoke: the real binary over stdio on a seeded database, and the
+  installed Claude Code (2.1.318, Haiku, `--mcp-config`) connected and called
+  `list_projects` with the right count.
+- Verified: workspace Clippy (`-D warnings`), rustfmt, 170 Rust tests. No frontend changes.
+
+### M16 step 1: agent sessions in the core (2026-11-05)
+
+- Migration 0010: `tasks.owner` (`me | agent`), `agent_sessions`, `agent_notes`, and the
+  device-local `project_folders`. Commands `CreateAgentSession`, `UpdateAgentSession`,
+  `DeleteAgentSession`, `AddAgentNote`, `TaskChange::Owner`, `NewTask.owner`; only the
+  session's own device may change it. `Store::execute_without_undo` keeps session
+  bookkeeping out of Ctrl+Z; `interrupt_running_sessions` for start-up.
+- Sessions in the snapshot and `Changes`; notes read per task; activity entries
+  `agent_start`, `agent_end`, `agent_note`; export/import carry both tables.
+- `Store::agent_brief(task)`: markdown context (task facts, project/area, epic, subtasks,
+  prerequisites, dependents, attachments, earlier sessions, notes), two insta snapshots.
+- Tests: `crates/core/tests/agents.rs` (13). Bindings regenerated; TS fixtures and test
+  `Changes` literals gained the new fields, optimistic tasks are `owner: "me"`. The UI does
+  not use sessions yet (step 4).
+- Verified: full Rust suite, workspace Clippy (all targets, `-D warnings`), rustfmt,
+  TypeScript, Biome and all 259 frontend tests pass.
 
 ### Source handoff checkpoint (2026-11-06)
 

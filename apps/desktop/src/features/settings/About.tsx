@@ -1,5 +1,6 @@
-import { CheckCircle2, Download, Loader2, RefreshCw, RotateCcw } from "lucide-react";
+import { Download, Loader2, RefreshCw, RotateCcw } from "lucide-react";
 import appIcon from "../../assets/brand/app-icon.svg";
+import { DoneIcon as CheckCircle2 } from "../../components/TaskIcons";
 import { Button } from "../../components/ui";
 import { BUILD, useUpdates } from "../../lib/updater";
 

@@ -23,7 +23,7 @@ export type { Swimlane };
  */
 export type BoardQuery = Pick<
   ViewSpec,
-  "scope" | "filter" | "swimlane" | "show_subtasks" | "show_cancelled"
+  "scope" | "filter" | "swimlane" | "show_subtasks" | "show_cancelled" | "show_agent_tasks"
 >;
 
 export interface Card {
@@ -143,7 +143,14 @@ export function buildBoard(
   const children = childrenByParent(all);
   // Unlike the list, a card dropped on Done in the Inbox or Today stays for the day.
   const visible = new Set(
-    all.filter((t) => matchesQuery(query, t, ctx, { keepClosedToday: true })).map((t) => t.id),
+    all
+      .filter((t) =>
+        matchesQuery(query, t, ctx, {
+          keepClosedToday: true,
+          showAgentTasks: query.show_agent_tasks,
+        }),
+      )
+      .map((t) => t.id),
   );
   const { status_ids } = query.filter;
   const shownStatuses = statuses.filter(

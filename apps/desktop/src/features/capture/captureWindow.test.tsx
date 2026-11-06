@@ -51,6 +51,8 @@ async function renderWindow({ failDelete = false } = {}) {
         views: [],
         attachments: [],
         time_blocks: [],
+        agent_sessions: [],
+        agent_notes: [],
         statuses: [],
       } as Changes;
     },

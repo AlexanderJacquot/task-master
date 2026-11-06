@@ -1,4 +1,5 @@
-import { Circle, Diamond, Flag, Hexagon, Square, Star, Triangle } from "lucide-react";
+import { Circle, Diamond, Hexagon, Square, Star, Triangle } from "lucide-react";
+import { CrownIcon, PriorityIcon, ShieldIcon } from "../../components/TaskIcons";
 import type { Epic } from "../../lib/types";
 
 export const EPIC_SHAPES = {
@@ -8,7 +9,9 @@ export const EPIC_SHAPES = {
   triangle: Triangle,
   hexagon: Hexagon,
   star: Star,
-  flag: Flag,
+  flag: PriorityIcon,
+  crown: CrownIcon,
+  shield: ShieldIcon,
 };
 
 export function EpicMark({ epic, size = 13 }: { epic: Epic; size?: number }) {

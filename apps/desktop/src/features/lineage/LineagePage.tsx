@@ -1,6 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowRight, GitBranch, X } from "lucide-react";
+import { ArrowRight, X } from "lucide-react";
 import { type ReactNode, useMemo, useRef, useState } from "react";
+import { LineageIcon as GitBranch } from "../../components/TaskIcons";
 import { cx, FOCUS, IconButton, Select } from "../../components/ui";
 import { updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";

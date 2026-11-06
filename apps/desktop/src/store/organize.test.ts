@@ -22,6 +22,8 @@ async function setup(data: { tasks?: Task[]; projects?: Project[]; epics?: Epic[
         views: [],
         attachments: [],
         time_blocks: [],
+        agent_sessions: [],
+        agent_notes: [],
         statuses: [],
       } as Changes;
     },

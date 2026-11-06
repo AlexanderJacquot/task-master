@@ -22,7 +22,10 @@ import type {
 export type ViewKey = ViewScope;
 
 /** The parts of a spec that decide which tasks show and in what order. */
-export type ViewQuery = Pick<ViewSpec, "scope" | "filter" | "group_by" | "sort" | "show_cancelled">;
+export type ViewQuery = Pick<
+  ViewSpec,
+  "scope" | "filter" | "group_by" | "sort" | "show_cancelled" | "show_agent_tasks"
+>;
 
 export interface ViewContext {
   today: string;
@@ -74,6 +77,13 @@ export interface InViewOptions {
    * so a card dropped on the board's Done column stays there until tomorrow.
    */
   keepClosedToday?: boolean;
+  /** Agents' own tasks (ADR 017) are left out of the user's views unless asked for. */
+  showAgentTasks?: boolean;
+}
+
+/** An agent's own task, kept apart from the user's (ADR 017). */
+export function isAgentTask(task: Task): boolean {
+  return task.owner === "agent";
 }
 
 /** Whether `task` belongs in a view's scope, ignoring filters and the tree. */
@@ -83,6 +93,7 @@ export function inView(
   ctx: ViewContext,
   options: InViewOptions = {},
 ): boolean {
+  if (isAgentTask(task) && !options.showAgentTasks) return false;
   const open = () => isOpen(task, ctx) || (!!options.keepClosedToday && closedToday(task, ctx));
   switch (view.kind) {
     case "inbox":
@@ -327,7 +338,8 @@ export function buildRows(
   const all = Array.from(tasks);
   const children = childrenByParent(all);
   const shown = (t: Task) =>
-    matchesQuery(query, t, ctx) && (query.show_cancelled || categoryOf(t, ctx) !== "cancelled");
+    matchesQuery(query, t, ctx, { showAgentTasks: query.show_agent_tasks }) &&
+    (query.show_cancelled || categoryOf(t, ctx) !== "cancelled");
   const visible = new Set(all.filter(shown).map((t) => t.id));
   const { keyOf, groups } = grouping(query.group_by, ctx, statuses);
 

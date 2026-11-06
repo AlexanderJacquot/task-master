@@ -18,6 +18,7 @@ import { useStoreState, useTaskStore } from "../../store/context";
 import { PROJECT_COLORS } from "../organize/projectColors";
 import { HeaderButton } from "../shell/ViewPage";
 import { About } from "./About";
+import { AgentSettings } from "./AgentSettings";
 import { CalendarSettings } from "./CalendarSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SyncSettings } from "./SyncSettings";
@@ -514,6 +515,7 @@ export function SettingsPage() {
         <Shortcuts />
         <SyncSettings />
         <CalendarSettings />
+        <AgentSettings />
         <Data />
       </div>
     </div>

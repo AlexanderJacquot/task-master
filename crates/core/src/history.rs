@@ -31,6 +31,15 @@ impl History {
         self.redo.clear();
     }
 
+    /// Every batch undo or redo may replay.
+    pub(crate) fn batches(&self) -> impl Iterator<Item = &str> {
+        self.undo.iter().chain(&self.redo).map(String::as_str)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.undo.is_empty() && self.redo.is_empty()
+    }
+
     pub(crate) fn next_undo(&self) -> Option<&str> {
         self.undo.last().map(String::as_str)
     }

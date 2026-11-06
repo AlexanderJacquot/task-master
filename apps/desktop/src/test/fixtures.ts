@@ -1,4 +1,13 @@
-import type { Attachment, Capture, Project, Snapshot, Status, Task, TimeBlock } from "../lib/types";
+import type {
+  AgentSession,
+  Attachment,
+  Capture,
+  Project,
+  Snapshot,
+  Status,
+  Task,
+  TimeBlock,
+} from "../lib/types";
 
 export const STATUS = {
   backlog: "00000000-0000-7000-8000-000000000001",
@@ -91,6 +100,7 @@ export function task(overrides: Partial<Task> = {}): Task {
     status_id: STATUS.todo,
     title: `Task ${counter}`,
     description: "",
+    owner: "me",
     priority: "normal",
     due_date: null,
     today_on: null,
@@ -157,6 +167,32 @@ export function timeBlock(overrides: Partial<TimeBlock> = {}): TimeBlock {
   };
 }
 
+/** A Claude Code session of this device on `task_id` (ADR 017), done unless overridden. */
+export function agentSession(overrides: Partial<AgentSession> = {}): AgentSession {
+  counter += 1;
+  return {
+    id: `s${counter}`,
+    task_id: "t0",
+    device_id: "this-device",
+    claude_session_id: `c${counter}`,
+    folder: "/home/me/code/app",
+    runtime: "native",
+    permission_mode: "acceptEdits",
+    prompt: "",
+    state: "done",
+    started_at: 1_000 + counter,
+    ended_at: 61_000 + counter,
+    summary: null,
+    cost_usd_micros: null,
+    turns: null,
+    error: null,
+    created_at: counter,
+    updated_at: counter,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
 export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
   return {
     tasks: [],
@@ -167,6 +203,7 @@ export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     views: [],
     attachments: [],
     time_blocks: [],
+    agent_sessions: [],
     ...overrides,
   };
 }

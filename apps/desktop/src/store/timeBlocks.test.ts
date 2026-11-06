@@ -22,6 +22,8 @@ function setup(data: { tasks?: Task[]; time_blocks?: TimeBlock[] }, refuse = fal
         views: [],
         attachments: [],
         time_blocks: [],
+        agent_sessions: [],
+        agent_notes: [],
         statuses: [],
       } as Changes);
     },

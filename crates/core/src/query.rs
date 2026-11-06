@@ -6,12 +6,14 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter, types::ToSq
 
 use crate::error::{Error, Result};
 use crate::model::{
-    Attachment, BlockOutcome, Epic, EpicState, Id, Priority, Project, Snapshot, Status,
-    StatusCategory, Tag, Task, TimeBlock, View,
+    AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, Epic, EpicState, Id, Priority,
+    Project, ProjectFolder, SessionState, Snapshot, Status, StatusCategory, Tag, Task, TaskOwner,
+    TimeBlock, View,
 };
 
 const TASK_COLS: &str = "id, project_id, epic_id, parent_id, status_id, title, description, \
-    priority, due_date, today_on, estimate_min, rank, created_at, updated_at, completed_at, deleted_at, dependency_ids";
+    priority, due_date, today_on, estimate_min, rank, created_at, updated_at, completed_at, deleted_at, dependency_ids, \
+    owner";
 const PROJECT_COLS: &str =
     "id, parent_id, name, color, icon, rank, archived_at, created_at, updated_at, deleted_at";
 const EPIC_COLS: &str = "id, project_id, name, description, target_date, state, rank, \
@@ -26,6 +28,13 @@ const ATTACHMENT_COLS: &str =
 const TIME_BLOCK_COLS: &str =
     "id, task_id, start_at, end_at, outcome, created_at, updated_at, deleted_at";
 
+const SESSION_COLS: &str = "s.id, s.task_id, s.device_id, s.claude_session_id, s.folder, \
+    s.runtime, s.permission_mode, s.prompt, s.state, s.started_at, s.ended_at, s.summary, \
+    s.cost_usd_micros, s.turns, s.error, s.created_at, s.updated_at, s.deleted_at";
+
+const NOTE_COLS: &str =
+    "n.id, n.session_id, n.task_id, n.body, n.created_at, n.updated_at, n.deleted_at";
+
 fn bad_value(col: usize, value: String) -> rusqlite::Error {
     rusqlite::Error::FromSqlConversionFailure(
         col,
@@ -37,7 +46,9 @@ fn bad_value(col: usize, value: String) -> rusqlite::Error {
 fn task_row(r: &Row<'_>) -> rusqlite::Result<Task> {
     let priority: i64 = r.get(7)?;
     let dependencies: String = r.get(16)?;
+    let owner: String = r.get(17)?;
     Ok(Task {
+        owner: TaskOwner::parse(&owner).ok_or_else(|| bad_value(17, owner))?,
         dependency_ids: serde_json::from_str(&dependencies).map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(16, rusqlite::types::Type::Text, Box::new(e))
         })?,
@@ -147,6 +158,121 @@ fn time_block_row(r: &Row<'_>) -> rusqlite::Result<TimeBlock> {
         updated_at: r.get(6)?,
         deleted_at: r.get(7)?,
     })
+}
+
+fn session_row(r: &Row<'_>) -> rusqlite::Result<AgentSession> {
+    let runtime: String = r.get(5)?;
+    let state: String = r.get(8)?;
+    Ok(AgentSession {
+        id: r.get(0)?,
+        task_id: r.get(1)?,
+        device_id: r.get(2)?,
+        claude_session_id: r.get(3)?,
+        folder: r.get(4)?,
+        runtime: AgentRuntime::parse(&runtime).ok_or_else(|| bad_value(5, runtime))?,
+        permission_mode: r.get(6)?,
+        prompt: r.get(7)?,
+        state: SessionState::parse(&state).ok_or_else(|| bad_value(8, state))?,
+        started_at: r.get(9)?,
+        ended_at: r.get(10)?,
+        summary: r.get(11)?,
+        cost_usd_micros: r.get(12)?,
+        turns: r.get(13)?,
+        error: r.get(14)?,
+        created_at: r.get(15)?,
+        updated_at: r.get(16)?,
+        deleted_at: r.get(17)?,
+    })
+}
+
+fn note_row(r: &Row<'_>) -> rusqlite::Result<AgentNote> {
+    Ok(AgentNote {
+        id: r.get(0)?,
+        session_id: r.get(1)?,
+        task_id: r.get(2)?,
+        body: r.get(3)?,
+        created_at: r.get(4)?,
+        updated_at: r.get(5)?,
+        deleted_at: r.get(6)?,
+    })
+}
+
+/// Any agent session, including soft-deleted ones.
+pub(crate) fn agent_session(conn: &Connection, id: &str) -> Result<AgentSession> {
+    conn.query_row(
+        &format!("SELECT {SESSION_COLS} FROM agent_sessions s WHERE s.id = ?1"),
+        [id],
+        session_row,
+    )
+    .optional()?
+    .ok_or_else(|| Error::not_found("agent session", id))
+}
+
+/// Any agent note, including soft-deleted ones.
+pub(crate) fn agent_note(conn: &Connection, id: &str) -> Result<AgentNote> {
+    conn.query_row(
+        &format!("SELECT {NOTE_COLS} FROM agent_notes n WHERE n.id = ?1"),
+        [id],
+        note_row,
+    )
+    .optional()?
+    .ok_or_else(|| Error::not_found("agent note", id))
+}
+
+/// Live sessions of a task, oldest first.
+pub(crate) fn task_sessions(conn: &Connection, task_id: &str) -> Result<Vec<AgentSession>> {
+    query(
+        conn,
+        &format!(
+            "SELECT {SESSION_COLS} FROM agent_sessions s
+             WHERE s.task_id = ?1 AND s.deleted_at IS NULL ORDER BY s.started_at, s.id"
+        ),
+        &[&task_id],
+        session_row,
+    )
+}
+
+/// Live notes of a task (`session_id` narrows to one session), oldest first, the newest
+/// `limit`.
+pub(crate) fn agent_notes(
+    conn: &Connection,
+    task_id: &str,
+    session_id: Option<&str>,
+    limit: u32,
+) -> Result<Vec<AgentNote>> {
+    let mut notes = query(
+        conn,
+        &format!(
+            "SELECT {NOTE_COLS} FROM agent_notes n JOIN agent_sessions s ON s.id = n.session_id
+             WHERE n.task_id = ?1 AND (?2 IS NULL OR n.session_id = ?2)
+               AND n.deleted_at IS NULL AND s.deleted_at IS NULL
+             ORDER BY n.created_at DESC, n.id DESC LIMIT ?3"
+        ),
+        &[&task_id, &session_id, &limit],
+        note_row,
+    )?;
+    notes.reverse();
+    Ok(notes)
+}
+
+/// This device's project folders, for projects that still exist.
+pub(crate) fn project_folders(conn: &Connection) -> Result<Vec<ProjectFolder>> {
+    query(
+        conn,
+        "SELECT f.project_id, f.path, f.runtime, f.updated_at FROM project_folders f
+         JOIN projects p ON p.id = f.project_id WHERE p.deleted_at IS NULL
+         ORDER BY f.project_id",
+        &[],
+        |r| {
+            let runtime: String = r.get(2)?;
+            Ok(ProjectFolder {
+                project_id: r.get(0)?,
+                path: r.get(1)?,
+                runtime: AgentRuntime::parse(&runtime).ok_or_else(|| bad_value(2, runtime))?,
+                updated_at: r.get(3)?,
+            })
+        },
+    )
 }
 
 fn status_row(r: &Row<'_>) -> rusqlite::Result<Status> {
@@ -338,6 +464,16 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
             &[],
             time_block_row,
         )?,
+        agent_sessions: query(
+            conn,
+            &format!(
+                "SELECT {SESSION_COLS} FROM agent_sessions s JOIN tasks t ON t.id = s.task_id
+                 WHERE s.deleted_at IS NULL AND t.deleted_at IS NULL
+                 ORDER BY s.started_at, s.id"
+            ),
+            &[],
+            session_row,
+        )?,
     })
 }
 
@@ -375,7 +511,8 @@ pub struct Activity {
     /// `create`, `update`, `delete`, `restore`, `link` (tag added), `unlink` (tag removed),
     /// or for attachments `attach`, `detach` and `rename_attachment` (field `name`), or for
     /// time blocks `schedule`, `unschedule`, `reschedule` (fields `start_at`, `end_at`) and
-    /// `block_outcome` (field `outcome`).
+    /// `block_outcome` (field `outcome`), or for agent sessions `agent_start` (field
+    /// `folder`), `agent_end` (fields `state`, `summary`) and `agent_note` (field `body`).
     pub kind: String,
     pub fields: Vec<FieldChange>,
 }
@@ -410,6 +547,10 @@ pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Res
                 AND entity_id IN (SELECT id FROM attachments WHERE task_id = ?1))
             OR (entity = 'time_block'
                 AND entity_id IN (SELECT id FROM time_blocks WHERE task_id = ?1))
+            OR (entity = 'agent_session'
+                AND entity_id IN (SELECT id FROM agent_sessions WHERE task_id = ?1))
+            OR (entity = 'agent_note'
+                AND entity_id IN (SELECT id FROM agent_notes WHERE task_id = ?1))
          ORDER BY seq DESC LIMIT ?2",
         &[&task_id, &(limit * 2)],
         |r| {
@@ -436,6 +577,11 @@ pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Res
             }
         } else if entity == "time_block" {
             match time_block_entry(conn, &entity_id, &kind, &patch, &inverse)? {
+                Some(entry) => entry,
+                None => continue,
+            }
+        } else if entity == "agent_session" || entity == "agent_note" {
+            match agent_entry(&entity, &kind, &patch) {
                 Some(entry) => entry,
                 None => continue,
             }
@@ -482,6 +628,46 @@ pub(crate) fn task_activity(conn: &Connection, task_id: &str, limit: u32) -> Res
         }
     }
     Ok(out)
+}
+
+/// An agent op as an activity entry: `agent_start` (field `folder`), `agent_end` (when a
+/// session leaves `running`; fields `state` and `summary`) or `agent_note` (field `body`).
+fn agent_entry(
+    entity: &str,
+    kind: &str,
+    patch: &serde_json::Map<String, serde_json::Value>,
+) -> Option<(String, Vec<FieldChange>)> {
+    let field = |name: &str| {
+        patch.get(name).map(|after| FieldChange {
+            field: name.to_owned(),
+            before: "null".to_owned(),
+            after: after.to_string(),
+        })
+    };
+    match (entity, kind) {
+        ("agent_session", "create") => Some((
+            "agent_start".to_owned(),
+            field("folder").into_iter().collect(),
+        )),
+        ("agent_session", "update") => {
+            let state = patch.get("state")?.as_str()?;
+            // Only an end is news; starting again or moving to a terminal is not.
+            if SessionState::parse(state).is_none_or(SessionState::is_active) {
+                return None;
+            }
+            Some((
+                "agent_end".to_owned(),
+                [field("state"), field("summary")]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
+            ))
+        }
+        ("agent_note", "create") => {
+            Some(("agent_note".to_owned(), field("body").into_iter().collect()))
+        }
+        _ => None,
+    }
 }
 
 /// An attachment op as an activity entry: `attach` (created or restored), `detach`, or

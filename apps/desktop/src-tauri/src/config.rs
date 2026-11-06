@@ -50,8 +50,77 @@ pub struct SyncAccount {
     pub joined: bool,
 }
 
+/// How this device runs Claude Code for agent sessions (ADR 017).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct AgentSettings {
+    #[serde(default)]
+    pub runtime: taskmaster_core::AgentRuntime,
+    /// WSL distribution (`wsl.exe -d`); the default one when `None`.
+    #[serde(default)]
+    pub wsl_distro: Option<String>,
+    /// `claude`, or an absolute path (as the runtime sees it) when it is not on the PATH
+    /// a GUI app or `wsl.exe --exec` gets.
+    #[serde(default = "default_claude")]
+    pub claude_path: String,
+    /// Linux only: the terminal command that runs what follows it, e.g. `kitty` or
+    /// `gnome-terminal --`. `$TERMINAL -e`, else `x-terminal-emulator -e`, when `None`.
+    #[serde(default)]
+    pub terminal: Option<String>,
+    /// Default `--permission-mode` for new sessions.
+    #[serde(default = "default_permission_mode")]
+    pub permission_mode: String,
+    /// `--model` for sessions; Claude Code's default when `None`.
+    #[serde(default)]
+    pub model: Option<String>,
+}
+
+fn default_claude() -> String {
+    "claude".into()
+}
+
+fn default_permission_mode() -> String {
+    "acceptEdits".into()
+}
+
+impl Default for AgentSettings {
+    fn default() -> Self {
+        Self {
+            runtime: taskmaster_core::AgentRuntime::Native,
+            wsl_distro: None,
+            claude_path: default_claude(),
+            terminal: None,
+            permission_mode: default_permission_mode(),
+            model: None,
+        }
+    }
+}
+
+impl AgentSettings {
+    /// Trims fields and checks the permission mode.
+    pub fn normalized(mut self) -> Result<Self, String> {
+        let blank_to_none =
+            |v: Option<String>| v.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+        self.wsl_distro = blank_to_none(self.wsl_distro);
+        self.terminal = blank_to_none(self.terminal);
+        self.model = blank_to_none(self.model);
+        self.claude_path = self.claude_path.trim().to_owned();
+        if self.claude_path.is_empty() {
+            self.claude_path = default_claude();
+        }
+        if !taskmaster_core::PERMISSION_MODES.contains(&self.permission_mode.as_str()) {
+            return Err(format!(
+                "unknown permission mode '{}'",
+                self.permission_mode
+            ));
+        }
+        Ok(self)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default)]
+    pub agents: AgentSettings,
     /// A data folder chosen in settings; the OS app-data folder when `None`.
     #[serde(default)]
     pub data_dir: Option<PathBuf>,
@@ -195,6 +264,11 @@ mod tests {
         let path = dir.join("config.json");
         assert_eq!(AppConfig::load(&path), AppConfig::default());
         let config = AppConfig {
+            agents: AgentSettings {
+                runtime: taskmaster_core::AgentRuntime::Wsl,
+                wsl_distro: Some("Ubuntu".into()),
+                ..AgentSettings::default()
+            },
             data_dir: Some(dir.join("data")),
             remote: Some(RemoteBackup {
                 enabled: true,

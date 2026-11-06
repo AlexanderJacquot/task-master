@@ -1,7 +1,8 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { Bookmark, Columns3, Filter, List, Search, SlidersHorizontal } from "lucide-react";
+import { Columns3, Filter, List, SlidersHorizontal } from "lucide-react";
 import { Popover } from "radix-ui";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { BookmarkIcon as Bookmark, SearchIcon as Search } from "../../components/TaskIcons";
 import { Button, cx, FOCUS, InlineInput, Select } from "../../components/ui";
 import { buildBoard } from "../../lib/board";
 import { loadOpenInPanel } from "../../lib/capturePrefs";
@@ -400,6 +401,15 @@ function ViewBody({
                     type="checkbox"
                     checked={display.show_cancelled}
                     onChange={(e) => setDisplay({ show_cancelled: e.target.checked })}
+                    className="accent-accent"
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2 text-ink-2">
+                  Show agent tasks
+                  <input
+                    type="checkbox"
+                    checked={display.show_agent_tasks}
+                    onChange={(e) => setDisplay({ show_agent_tasks: e.target.checked })}
                     className="accent-accent"
                   />
                 </label>

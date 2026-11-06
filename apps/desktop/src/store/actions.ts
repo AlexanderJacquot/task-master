@@ -88,6 +88,7 @@ export async function createTask(
   );
   const task: Task = {
     id,
+    owner: "me",
     project_id: input.project_id ?? parent?.project_id ?? null,
     epic_id: input.epic_id ?? parent?.epic_id ?? null,
     parent_id: input.parent_id ?? null,
@@ -170,6 +171,7 @@ export function applyTaskChanges(
   for (const change of changes) {
     if ("dependency_ids" in change && change.dependency_ids !== undefined)
       next.dependency_ids = [...new Set(change.dependency_ids)].sort();
+    else if ("owner" in change && change.owner !== undefined) next.owner = change.owner;
     else if ("title" in change && change.title !== undefined) next.title = change.title.trim();
     else if ("description" in change && change.description !== undefined)
       next.description = change.description;
@@ -907,6 +909,39 @@ export function setBlockOutcome(store: TaskStore, id: string, outcome: BlockOutc
       time_blocks: [{ ...block, outcome, updated_at: now }],
       ...(task && { tasks: [{ ...task, updated_at: now }] }),
     },
+  });
+}
+
+// ---------------------------------------------------------------------------------------
+// Agent sessions (ADR 017). Runs start and end through the shell (`api.agents`); these are
+// the user's own edits, so they are undoable.
+
+/** Makes an agent's task the user's own, so it shows in their views. */
+export function adoptTask(store: TaskStore, id: string) {
+  return updateTask(store, id, [{ owner: "me" }]);
+}
+
+/** Ends a session continued in a terminal that the app could not follow to its end. */
+export function markSessionDone(store: TaskStore, id: string) {
+  const s = store.getState();
+  const session = s.agent_sessions[id];
+  if (session?.state !== "terminal") return Promise.resolve(null);
+  const now = Date.now();
+  return s.mutate([{ type: "update_agent_session", id, changes: [{ state: "done" }] }], {
+    upsert: { agent_sessions: [{ ...session, state: "done", ended_at: now, updated_at: now }] },
+  });
+}
+
+/** Removes an ended session (and its notes) from the task's history. */
+export function removeAgentSession(store: TaskStore, id: string) {
+  const s = store.getState();
+  const session = s.agent_sessions[id];
+  if (!session || session.state === "running" || session.state === "terminal")
+    return Promise.resolve(null);
+  const task = s.tasks[session.task_id];
+  return s.mutate([{ type: "delete_agent_session", id }], {
+    remove: { agent_sessions: [id] },
+    ...(task && { upsert: { tasks: [{ ...task, updated_at: Date.now() }] } }),
   });
 }
 

@@ -1,32 +1,33 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  Archive,
-  ArchiveRestore,
   ArrowDownCircle,
-  Bookmark,
-  CalendarDays,
-  ChartNoAxesCombined,
   ChevronDown,
   ChevronRight,
-  GitBranch,
   Hash,
-  Layers,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
-  Pencil,
-  Search,
   Sun,
-  Trash2,
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useMemo, useState } from "react";
 import appIcon from "../../assets/brand/app-icon.svg";
 import {
+  ArchiveIcon as Archive,
+  UnarchiveIcon as ArchiveRestore,
+  BookmarkIcon as Bookmark,
+  AgentsIcon as Bot,
+  CalendarIcon as CalendarDays,
+  MetricsIcon as ChartNoAxesCombined,
+  LineageIcon as GitBranch,
   InboxIcon as Inbox,
+  AllTasksIcon as Layers,
+  EditIcon as Pencil,
   AddIcon as Plus,
   ProjectsIcon,
+  SearchIcon as Search,
   SettingsIcon as Settings2,
+  DeleteIcon as Trash2,
 } from "../../components/TaskIcons";
 import {
   cx,
@@ -415,6 +416,11 @@ export function Sidebar({
   const tags = useStoreState((s) => s.tags);
   const views = useStoreState((s) => s.views);
   const statusList = useStoreState((s) => s.statuses);
+  const runningAgents = useStoreState(
+    (s) =>
+      Object.values(s.agent_sessions).filter((a) => a.state === "running" || a.state === "terminal")
+        .length,
+  );
   const [adding, setAdding] = useState<"project" | "epic" | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const order = useProjectOrder();
@@ -435,6 +441,8 @@ export function Sidebar({
     const perEpic = new Map<string, { done: number; total: number }>();
     const perTag = new Map<string, number>();
     for (const t of all) {
+      // Agents' own tasks stay out of the user's counts (ADR 017).
+      if (t.owner === "agent") continue;
       if (t.project_id && open(t))
         perProject.set(t.project_id, (perProject.get(t.project_id) ?? 0) + 1);
       if (t.epic_id && ctx.statuses[t.status_id]?.category !== "cancelled") {
@@ -533,6 +541,9 @@ export function Sidebar({
         </RailLink>
         <RailLink to="/lineage" label="Lineage">
           <GitBranch size={18} />
+        </RailLink>
+        <RailLink to="/agents" label="Agents">
+          <Bot size={18} className={cx(runningAgents > 0 && "animate-pulse text-accent")} />
         </RailLink>
         <RailLink to="/metrics" label="Metrics">
           <ChartNoAxesCombined size={18} />
@@ -655,6 +666,14 @@ export function Sidebar({
       <div className="mt-2 flex flex-col gap-px">
         <NavItem to="/lineage" icon={<GitBranch size={17} className="shrink-0" />}>
           Lineage
+        </NavItem>
+        <NavItem
+          to="/agents"
+          count={runningAgents || undefined}
+          title={runningAgents ? `${runningAgents} active` : undefined}
+          icon={<Bot size={17} className={cx("shrink-0", runningAgents > 0 && "text-accent")} />}
+        >
+          Agents
         </NavItem>
         <NavItem to="/metrics" icon={<ChartNoAxesCombined size={17} className="shrink-0" />}>
           Metrics

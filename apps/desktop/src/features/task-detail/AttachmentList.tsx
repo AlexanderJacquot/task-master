@@ -5,12 +5,11 @@ import {
   FileText,
   MoreHorizontal,
   Paperclip,
-  Pencil,
   TextCursorInput,
-  Trash2,
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useRef, useState } from "react";
+import { EditIcon as Pencil, DeleteIcon as Trash2 } from "../../components/TaskIcons";
 import { cx, IconButton, InlineInput, MENU, MENU_DANGER, MENU_ITEM } from "../../components/ui";
 import { attachmentMarkdown, formatSize, isImage } from "../../lib/attachments";
 import type { Attachment } from "../../lib/types";
