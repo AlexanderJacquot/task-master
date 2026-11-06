@@ -168,6 +168,19 @@ pub struct ConfigView {
     /// Whether it was chosen in settings (vs the OS default).
     pub custom_data_dir: bool,
     pub remote: Option<RemoteView>,
+    /// Set when a system package manager owns this install (ADR 018): the in-app updater
+    /// then stays off and the text names where updates come from.
+    pub managed_by: Option<String>,
+}
+
+/// The package manager that owns this install, from the marker a distribution package
+/// puts at `<prefix>/share/task-master/managed-by` next to `<prefix>/bin/<exe>` (the AUR
+/// package, ADR 018). Release bundles (AppImage, .deb, .rpm) ship no marker.
+pub fn managed_by(exe: &Path) -> Option<String> {
+    let prefix = exe.parent()?.parent()?;
+    let text = std::fs::read_to_string(prefix.join("share/task-master/managed-by")).ok()?;
+    let line = text.lines().next()?.trim();
+    (!line.is_empty()).then(|| line.chars().take(200).collect())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -256,6 +269,25 @@ mod tests {
         assert_eq!(merged.region, "garage");
         assert_eq!(merged.prefix, "task-master");
         assert!(RemoteView::from(&merged).has_secret);
+    }
+
+    #[test]
+    fn the_package_marker_names_who_manages_updates() {
+        let prefix = std::env::temp_dir().join(format!("tm-prefix-{}", taskmaster_core::new_id()));
+        let exe = prefix.join("bin/taskmaster-desktop");
+        assert_eq!(managed_by(&exe), None);
+
+        let marker = prefix.join("share/task-master/managed-by");
+        std::fs::create_dir_all(marker.parent().unwrap()).unwrap();
+        std::fs::write(&marker, "  the AUR package task-master-bin \nignored\n").unwrap();
+        assert_eq!(
+            managed_by(&exe).as_deref(),
+            Some("the AUR package task-master-bin")
+        );
+
+        std::fs::write(&marker, "\n").unwrap();
+        assert_eq!(managed_by(&exe), None);
+        std::fs::remove_dir_all(prefix).unwrap();
     }
 
     #[test]

@@ -1,0 +1,40 @@
+# Maintainer: Alexander Jacquot
+#
+# task-master for Arch Linux (ADR 018). Repackages the release .deb: its binary links
+# against the system WebKitGTK, unlike the AppImage, which bundles its own. The release
+# workflow updates pkgver and the checksum, then pushes this file and .SRCINFO to the AUR.
+# Edit it here, never in the AUR repository.
+
+pkgname=task-master-bin
+pkgver=0.7.0
+pkgrel=1
+pkgdesc="Local-first task manager with boards, calendar sync and agent sessions"
+arch=('x86_64')
+url="https://github.com/AlexanderJacquot/task-master"
+license=('LicenseRef-UNLICENSED')
+depends=(
+  'cairo'
+  'dbus'
+  'gcc-libs'
+  'gdk-pixbuf2'
+  'glib2'
+  'glibc'
+  'gtk3'
+  'hicolor-icon-theme'
+  'libsoup3'
+  'webkit2gtk-4.1'
+)
+provides=('task-master')
+conflicts=('task-master')
+options=('!strip' '!debug')
+source_x86_64=("task-master_${pkgver}_amd64.deb::${url}/releases/download/v${pkgver}/task-master_${pkgver}_amd64.deb")
+sha256sums_x86_64=('b6478bcb15e5b25bf537348982582225d173b38ad1820825bae4bb6e189caef5')
+
+package() {
+  bsdtar -xf data.tar.* -C "$pkgdir"
+  chmod 755 "$pkgdir/usr/bin/taskmaster-desktop" "$pkgdir/usr/bin/task-master-mcp"
+
+  # Tells the app that pacman owns this install: the in-app updater stays off (ADR 018).
+  install -dm755 "$pkgdir/usr/share/task-master"
+  printf '%s\n' 'the AUR package task-master-bin' > "$pkgdir/usr/share/task-master/managed-by"
+}

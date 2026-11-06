@@ -68,9 +68,17 @@ the app daily for two weeks before Phase 2 (plan section 10).
   CLAUDE.md), from a second round of measurements: PNG/WebP textures (full window,
   fixed or tiled), radial vignettes, blur and shadows on the CPU path. Benchmark tool in
   `scripts/paint-bench/run.sh` (system WebKit and an extracted AppImage).
-- Packaging (to decide, then an ADR): the updater plugin 2.14 also updates .deb/.rpm in
-  place (pkexec dpkg/rpm), which ADR 009 does not say. Options for Arch: an AUR package
-  built from source (no bundle type, so the in-app updater must step aside for pacman).
+- Packaging decided in ADR 018: AUR `task-master-bin` repackages the release .deb (its
+  binary links only system libraries; checked against Arch with ldd). `packaging/aur/
+  PKGBUILD` built locally with makepkg from the 0.7.0 .deb. The `aur` job in release.yml
+  sets the version and checksum, builds, installs and ldd-checks the package in an Arch
+  container, and pushes to the AUR when `AUR_SSH_PRIVATE_KEY` is set. The package installs
+  `/usr/share/task-master/managed-by`; `ConfigView.managed_by` carries it and the update
+  store then stays off ("managed" status in Settings → About). Rust test for the marker,
+  two updater store tests.
+- Not yet verified: the `aur` job on GitHub (no Docker daemon here to run its container);
+  the AUR account, SSH key and secret (docs/release.md, setup step 4) are the user's to do.
+  First AUR version: the next release (0.7.0 binaries do not read the marker).
 
 ### Release 0.7.0 integration (2026-11-06)
 

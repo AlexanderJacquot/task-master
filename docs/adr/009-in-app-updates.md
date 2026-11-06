@@ -30,7 +30,8 @@ This signs updates only; the installers are still not code-signed for Windows/ma
 **Update bundles only in releases.** `bundle.createUpdaterArtifacts` stays off in
 `tauri.conf.json` so Forgejo CI and local builds need no key; the release workflow adds
 `--config src-tauri/tauri.updater.conf.json`. tauri-action uploads `latest.json` (Windows
-entry: the NSIS setup, `updaterJsonPreferNsis`). Linux updates in place for the AppImage.
+entry: the NSIS setup, `updaterJsonPreferNsis`). Linux updates in place for the AppImage
+(and, since plugin 2.14, the .deb and .rpm; the AUR package defers to pacman: ADR 018).
 
 **Publishing.** Releases are published as soon as the workflow finishes (no more drafts),
 so pushing a version tag ships the update. The app checks quietly 10 s after start and

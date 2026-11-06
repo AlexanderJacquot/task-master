@@ -789,6 +789,11 @@ export type ConfigView_Deserialize = {
 	/**  Whether it was chosen in settings (vs the OS default). */
 	custom_data_dir: boolean,
 	remote?: RemoteView | null,
+	/**
+	 *  Set when a system package manager owns this install (ADR 018): the in-app updater
+	 *  then stays off and the text names where updates come from.
+	 */
+	managed_by?: string | null,
 };
 
 /**  What the settings screen shows: never the secret itself. */
@@ -798,6 +803,11 @@ export type ConfigView_Serialize = {
 	/**  Whether it was chosen in settings (vs the OS default). */
 	custom_data_dir: boolean,
 	remote: RemoteView | null,
+	/**
+	 *  Set when a system package manager owns this install (ADR 018): the in-app updater
+	 *  then stays off and the text names where updates come from.
+	 */
+	managed_by: string | null,
 };
 
 export type DueFilter = 

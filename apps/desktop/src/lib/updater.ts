@@ -7,6 +7,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { createContext, useContext } from "react";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
+import { settingsApi } from "./settingsApi";
 
 /** This build, baked in by Vite (`vite.config.ts`). */
 export const BUILD = {
@@ -27,6 +28,8 @@ export interface UpdateSource {
   /** The newer release, or null when this build is the latest. */
   check(): Promise<AvailableUpdate | null>;
   relaunch(): Promise<void>;
+  /** Who updates this install instead of the app (a distribution package, ADR 018), or null. */
+  managedBy?(): Promise<string | null>;
 }
 
 export const tauriUpdates: UpdateSource = {
@@ -55,10 +58,13 @@ export const tauriUpdates: UpdateSource = {
     };
   },
   relaunch: () => relaunch(),
+  managedBy: async () => (await settingsApi.getConfig()).managed_by,
 };
 
 export type UpdateStatus =
   | { kind: "idle" }
+  /** A package manager owns this install (the AUR package): no in-app updates. */
+  | { kind: "managed"; by: string }
   | { kind: "checking" }
   | { kind: "current"; checkedAt: number }
   | { kind: "available"; update: AvailableUpdate }
@@ -83,13 +89,25 @@ function message(err: unknown): string {
 export function createUpdateStore(source: UpdateSource): UpdateStore {
   // The update an install failed on, so "Try again" can retry it.
   let lastUpdate: AvailableUpdate | null = null;
+  // Asked once: whether the install is managed cannot change while the app runs.
+  let managed: Promise<string | null> | null = null;
+  const managedBy = () => {
+    managed ??= source.managedBy ? source.managedBy().catch(() => null) : Promise.resolve(null);
+    return managed;
+  };
   return createStore<UpdateState>()((set, get) => ({
     status: { kind: "idle" },
     async check({ quiet = false } = {}) {
       const before = get().status.kind;
       if (before === "checking" || before === "installing" || before === "ready") return;
+      if (before === "managed") return;
       set({ status: { kind: "checking" } });
       try {
+        const by = await managedBy();
+        if (by) {
+          set({ status: { kind: "managed", by } });
+          return;
+        }
         const update = await source.check();
         set({
           status: update

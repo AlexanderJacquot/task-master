@@ -23,6 +23,19 @@ that folder while `.forgejo/workflows` exists, which is why its manual-only stub
    and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` from `~/.tauri/task-master.key.password`.
    **Back up `~/.tauri/task-master.key*`** (password manager): without the key, installed
    apps cannot be updated.
+4. AUR package `task-master-bin` (ADR 018). Until this is done, the `aur` job builds and
+   checks the package but does not publish it.
+   1. Make a key for the AUR only: `ssh-keygen -t ed25519 -N '' -C task-master-aur -f
+      ~/.ssh/aur-task-master`.
+   2. Register at https://aur.archlinux.org/register and paste
+      `~/.ssh/aur-task-master.pub` under *SSH Public Key* (My Account).
+   3. `gh secret set AUR_SSH_PRIVATE_KEY -R AlexanderJacquot/task-master <
+      ~/.ssh/aur-task-master`.
+   4. The next stable tag creates the AUR repository on first push. Versions before 0.7.1
+      are not published there: their release runs have no `aur` job, and their binaries
+      do not read the package marker, so their update button would fail.
+   Install it with `yay -S task-master-bin` (or `paru`); later versions arrive with
+   `yay -Syu`, not from the in-app button.
 
 ## Cutting a release
 
@@ -46,6 +59,8 @@ bump) together with the desktops.
 4. On GitHub, the *release* workflow builds Linux (.deb, .AppImage, .rpm), Windows
    (.msi, setup .exe) and macOS (arm64 and x86_64 .dmg), plus signed update bundles and
    `latest.json`, and **publishes** the release (about 30–40 minutes on a cold cache).
+   Then the `aur` job repackages the .deb as `task-master-bin`, installs and checks it in
+   an Arch container, and pushes it to the AUR (`packaging/aur/PKGBUILD`, ADR 018).
 5. Installed apps see it within six hours, or at once from Settings → About →
    Check for updates. Check that `latest.json` in the release lists `windows-x86_64`,
    `darwin-aarch64`, `darwin-x86_64` and `linux-x86_64`; re-run a failed job otherwise.
