@@ -26,14 +26,17 @@ binaries link only against system libraries (webkit2gtk-4.1, gtk3, libsoup3, gli
 gdk-pixbuf2, dbus, glibc 2.34+), so the Ubuntu-built binary runs on Arch's WebKitGTK. No
 compilation on the user's machine; the package is a few MB on top of the system engine.
 
-**Released by CI.** A third job in `release.yml`, `aur`, runs after the build in an
-`archlinux:base-devel` container: it sets `pkgver` and the checksum from the .deb the
-release just published, builds the package, installs it with its real dependencies and
-fails if a library does not resolve, then pushes `PKGBUILD` and `.SRCINFO` to
-`ssh://aur@aur.archlinux.org/task-master-bin.git` with the `AUR_SSH_PRIVATE_KEY` secret.
-Without the secret it builds and checks only. Stable `v*` tags only (`pkgver` cannot hold
-a pre-release suffix). The repository copy of the PKGBUILD is the source of truth; never
-edit the AUR repository by hand.
+**Released by CI.** The reusable workflow `aur.yml` runs after each stable release
+(`release.yml` calls it once the build has published) and by hand for an existing tag
+(`workflow_dispatch`). In an `archlinux:base-devel` container it sets `pkgver` and the
+checksum from the release's .deb, builds the package, installs it with its real
+dependencies and fails if a library does not resolve, then pushes `PKGBUILD` and
+`.SRCINFO` to `ssh://aur@aur.archlinux.org/task-master-bin.git` with the
+`AUR_SSH_PRIVATE_KEY` secret. Without the secret the publish step fails on purpose: AUR
+registration was closed when this was written, and a red run keeps the missing step
+visible; the release itself is already out by then. Stable `v*` tags only (`pkgver`
+cannot hold a pre-release suffix). The repository copy of the PKGBUILD is the source of
+truth; never edit the AUR repository by hand.
 
 **pacman owns updates for that install.** Tauri stamps the bundle type into the binary,
 so the repackaged binary still believes it came from a .deb and its updater would run

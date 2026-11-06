@@ -45,5 +45,6 @@ The full plan is in docs/plan.md. Architecture decisions are in docs/adr/.
 - The repo lives on Forgejo, push-mirrored to a public GitHub repo where all workflows run
   (ADR 010): `.github/workflows/ci.yml` (lint, tests, Linux Tauri build on every push) and
   `release.yml` (installers for 3 OSes and signed in-app updates on `v*` tags; docs/release.md,
-  ADR 009; then the AUR package `task-master-bin` from `packaging/aur/PKGBUILD`, ADR 018). Keep `.forgejo/workflows/ci.yml` as the manual-only stub: removing it makes
+  ADR 009; then `aur.yml`, the AUR package `task-master-bin` from `packaging/aur/PKGBUILD`,
+  ADR 018: it fails at its publish step by design until the AUR account exists). Keep `.forgejo/workflows/ci.yml` as the manual-only stub: removing it makes
   Forgejo run the GitHub workflows.

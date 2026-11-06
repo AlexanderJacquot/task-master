@@ -1,0 +1,98 @@
+# Arch Linux package task-master-bin (ADR 018). Repackages the .deb of a published release,
+# so the app runs on the system WebKitGTK instead of the AppImage's bundled one: builds,
+# installs and checks the package in an Arch container, then pushes PKGBUILD and .SRCINFO to
+# the AUR with the AUR_SSH_PRIVATE_KEY secret.
+#
+# Called by release.yml after each stable release. Also runs by hand for an existing
+# release, e.g. once the AUR account exists:
+#   gh workflow run aur.yml -R AlexanderJacquot/task-master -f tag=v0.7.1
+# The packaging files come from the branch it runs on (main by default), so a fixed
+# PKGBUILD can republish an old release. Use releases from 0.7.1 on: older binaries do not
+# read the package marker and their update button would fail.
+#
+# Without the secret the publish step fails on purpose (docs/release.md, setup step 4), so
+# a release run shows red until the AUR is set up.
+
+name: aur
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, e.g. v0.7.1
+        type: string
+        required: true
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Check the tag
+        run: |
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "::error::'$TAG' is not a release tag like v0.7.1"; exit 1 ;;
+          esac
+          case "$TAG" in
+            *-*) echo "::error::pre-release tags cannot be packaged: pkgver has no suffix"; exit 1 ;;
+          esac
+
+      - name: Tools
+        run: pacman -Syu --noconfirm --needed git openssh
+
+      - uses: actions/checkout@v6.1.0
+
+      - name: Point the PKGBUILD at the release
+        run: |
+          version="${TAG#v}"
+          deb="task-master_${version}_amd64.deb"
+          curl -fsSL -o "/tmp/$deb" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/$deb"
+          sum=$(sha256sum "/tmp/$deb" | cut -d' ' -f1)
+          sed -i -e "s/^pkgver=.*/pkgver=${version}/" -e "s/^pkgrel=.*/pkgrel=1/" \
+            -e "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${sum}')/" packaging/aur/PKGBUILD
+
+      # makepkg refuses to run as root. Installing with the real dependencies and checking
+      # that every library resolves catches a dependency the PKGBUILD does not list yet.
+      - name: Build, install and check the package
+        run: |
+          useradd -m builder
+          chown -R builder packaging/aur
+          cd packaging/aur
+          su builder -c 'makepkg --printsrcinfo > .SRCINFO && makepkg -f --noconfirm --nodeps'
+          pacman -U --noconfirm task-master-bin-*.pkg.tar.zst
+          test -s /usr/share/task-master/managed-by
+          for bin in /usr/bin/taskmaster-desktop /usr/bin/task-master-mcp; do
+            if ldd "$bin" | grep 'not found'; then echo "::error::$bin has missing libraries"; exit 1; fi
+          done
+
+      - name: Publish to the AUR
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$AUR_SSH_PRIVATE_KEY" ]; then
+            echo "::error::Not published: the AUR_SSH_PRIVATE_KEY secret is missing (AUR account pending, docs/release.md setup step 4). The package built and passed its checks; the release itself is unaffected."
+            exit 1
+          fi
+          install -dm700 ~/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND="ssh -i $HOME/.ssh/aur -o IdentitiesOnly=yes"
+          git clone ssh://aur@aur.archlinux.org/task-master-bin.git /tmp/aur
+          cp packaging/aur/PKGBUILD packaging/aur/.SRCINFO /tmp/aur/
+          cd /tmp/aur
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then echo "The AUR already has this version."; exit 0; fi
+          git commit -m "Update to ${TAG#v}"
+          git push origin HEAD:master

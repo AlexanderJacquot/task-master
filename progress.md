@@ -76,9 +76,14 @@ the app daily for two weeks before Phase 2 (plan section 10).
   `/usr/share/task-master/managed-by`; `ConfigView.managed_by` carries it and the update
   store then stays off ("managed" status in Settings → About). Rust test for the marker,
   two updater store tests.
-- Not yet verified: the `aur` job on GitHub (no Docker daemon here to run its container);
-  the AUR account, SSH key and secret (docs/release.md, setup step 4) are the user's to do.
-  First AUR version: the next release (0.7.0 binaries do not read the marker).
+- Not yet verified: the `aur` job on GitHub (no Docker daemon here to run its container).
+- **Pending: AUR registration is closed** (2026-11-06). The job lives in `aur.yml`
+  (called by release.yml, also `workflow_dispatch` with a tag) and fails on purpose at
+  "Publish to the AUR" while `AUR_SSH_PRIVATE_KEY` is missing; release runs show red
+  until then, with the release itself unaffected. When registration reopens: account, key,
+  secret, then `gh workflow run aur.yml -f tag=v<latest>` and restore the AUR mention in
+  the release body (docs/release.md, setup step 4). First AUR version: 0.7.1 or later
+  (0.7.0 binaries do not read the marker).
 
 ### Release 0.7.0 integration (2026-11-06)
 
