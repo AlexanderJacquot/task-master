@@ -24,6 +24,9 @@ The full plan is in docs/plan.md. Architecture decisions are in docs/adr/.
   in `src/store/actions.ts`: build the command and the optimistic entity together; send
   client-generated ids and ranks.
 - Virtualize any list that can exceed 100 rows.
+- Backgrounds, textures and effects follow docs/rendering-performance.md: no fine
+  repeating gradients on large surfaces (use an image tile); measure new ones with
+  `scripts/paint-bench/run.sh` against the release AppImage.
 - Tests: plain functions (not `vi.fn`) for mocks that return rejected promises; component
   tests opt into jsdom with `// @vitest-environment jsdom` (stubs in `src/test/setup.ts`).
 

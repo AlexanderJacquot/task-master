@@ -64,6 +64,13 @@ the app daily for two weeks before Phase 2 (plan section 10).
 - Not yet verified: the look side by side in the real app, and the feel in a rebuilt
   AppImage. The CI-built AppImage stays slower than Arch's own WebKit in general (flat
   background: 39 ms vs 17 ms per frame); on Arch, a native build is the faster runtime.
+- Guidelines for backgrounds and effects in `docs/rendering-performance.md` (pointer in
+  CLAUDE.md), from a second round of measurements: PNG/WebP textures (full window,
+  fixed or tiled), radial vignettes, blur and shadows on the CPU path. Benchmark tool in
+  `scripts/paint-bench/run.sh` (system WebKit and an extracted AppImage).
+- Packaging (to decide, then an ADR): the updater plugin 2.14 also updates .deb/.rpm in
+  place (pkexec dpkg/rpm), which ADR 009 does not say. Options for Arch: an AUR package
+  built from source (no bundle type, so the in-app updater must step aside for pacman).
 
 ### Release 0.7.0 integration (2026-11-06)
 
