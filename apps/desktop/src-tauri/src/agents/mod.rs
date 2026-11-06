@@ -10,12 +10,13 @@
 pub mod launch;
 pub mod stream;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command as Process, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use taskmaster_core::{
@@ -41,12 +42,30 @@ pub struct AgentActivity {
 #[derive(Default)]
 pub struct AgentRunner {
     live: Mutex<HashMap<Id, Live>>,
+    /// Sessions whose terminal is being watched (`watch_terminal`), one watcher each.
+    watched: Mutex<HashSet<Id>>,
 }
 
 struct Live {
     child: Arc<Mutex<Child>>,
     cancelled: Arc<AtomicBool>,
     activity: Arc<Mutex<Option<String>>>,
+}
+
+/// In the session's folder: a readable log of the current run, for "Watch in terminal".
+const RUN_LOG_FILE: &str = "run.log";
+/// How long a watch window stays after the run ended.
+const WATCH_CLOSE_AFTER: u32 = 15;
+
+fn state_label(state: SessionState) -> &'static str {
+    match state {
+        SessionState::Running => "Running",
+        SessionState::Done => "Done",
+        SessionState::Failed => "Failed",
+        SessionState::Cancelled => "Stopped",
+        SessionState::Interrupted => "Interrupted",
+        SessionState::Terminal => "In terminal",
+    }
 }
 
 /// Kept of a run's stderr, for the error message when it fails.
@@ -94,7 +113,8 @@ pub fn session_rules(task_title: &str, task_id: &str) -> String {
          Track your work with those tools as you go: create agent tasks for the steps you \
          plan (they become subtasks of this task), move them to in_progress and done, add \
          short notes for findings and decisions, and call complete_session with a summary \
-         (done, left, to check) before you finish.\n\n\
+         (done, left, to check) before you finish. That moves this task to Review for the \
+         user to check: do not mark it done yourself.\n\n\
          You run in the background: nobody can answer a question or approve a tool while \
          you work. If you need a decision, stop, say what you need in your final message and \
          in complete_session; the user will reply with a follow-up message.\n"
@@ -161,7 +181,7 @@ pub fn outcome(
             result
                 .and_then(|r| r.text.clone())
                 .or(failure)
-                .unwrap_or_else(|| "Claude Code stopped without a result".into()),
+                .unwrap_or_else(|| "The agent stopped without a result".into()),
         ),
     };
     changes.push(AgentSessionChange::Error(error));
@@ -201,11 +221,34 @@ fn hidden(process: &mut Process) -> &mut Process {
     process
 }
 
+/// What a running Claude Code session sets for its own child processes. The app inherits
+/// them when it is started from inside one (a dev build run by an agent, or a terminal
+/// where Claude Code runs); passed on, they make every spawned `claude` a sub-session of
+/// that one: transcripts off (so `--resume`, follow-ups and Resume find nothing), and
+/// that session's id and messaging socket handed to our agents. Only these markers go;
+/// the user's own configuration (API keys, `CLAUDE_CONFIG_DIR`, provider and model
+/// settings) is passed on as is.
+const INHERITED_SESSION_VARS: &[&str] = &[
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PID",
+];
+
 fn process(launch: &Launch) -> Process {
     let mut p = Process::new(&launch.program);
     p.args(&launch.args);
     if let Some(cwd) = &launch.cwd {
         p.current_dir(cwd);
+    }
+    for var in INHERITED_SESSION_VARS {
+        p.env_remove(var);
     }
     p
 }
@@ -249,6 +292,18 @@ fn spawn_run(
             rules: &runtime_path(&rules_file, runtime)?,
         },
     );
+    // A readable log of this run, for "Watch in terminal" (one run at a time).
+    let mut run_log = std::fs::File::create(dir.join(RUN_LOG_FILE)).ok();
+    if let Some(log) = run_log.as_mut() {
+        let header = if resume {
+            format!("● Your message:\n{}\n\n", prompt.trim())
+        } else if session.prompt.trim().is_empty() {
+            "● Sent from the task\n\n".to_owned()
+        } else {
+            format!("● Sent from the task:\n{}\n\n", session.prompt.trim())
+        };
+        let _ = log.write_all(header.as_bytes());
+    }
     let mut child = hidden(&mut process(&launch))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -259,7 +314,7 @@ fn spawn_run(
         (child.stdin.take(), child.stdout.take(), child.stderr.take())
     else {
         let _ = child.kill();
-        return Err("cannot talk to Claude Code".into());
+        return Err("cannot talk to the agent".into());
     };
     let live = Live {
         child: Arc::new(Mutex::new(child)),
@@ -295,6 +350,11 @@ fn spawn_run(
             let mut denied = Vec::new();
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
+                if let Some(log) = run_log.as_mut() {
+                    for text in stream::readable(&line) {
+                        let _ = writeln!(log, "{text}");
+                    }
+                }
                 match stream::parse_line(&line) {
                     Event::Activity(text) => {
                         if let Ok(mut a) = activity.lock() {
@@ -313,7 +373,7 @@ fn spawn_run(
                 .ok()
                 .map(|t| t.trim().to_owned())
                 .filter(|t| !t.is_empty())
-                .or_else(|| status.map(|s| format!("Claude Code exited ({s})")));
+                .or_else(|| status.map(|s| format!("The agent exited ({s})")));
             finish(
                 &app,
                 &id,
@@ -322,6 +382,13 @@ fn spawn_run(
                 &denied,
                 failure,
             );
+            if let Some(log) = run_log.as_mut() {
+                let state = app.state::<AppState>();
+                let ended = with_store(&state, |s| s.agent_session(&id))
+                    .map(|s| state_label(s.state))
+                    .unwrap_or("ended");
+                let _ = writeln!(log, "\n{}: {ended} ===", launch::RUN_END_PREFIX);
+            }
         })
         .map_err(|e| format!("cannot watch the run: {e}"))?;
     Ok(())
@@ -429,7 +496,7 @@ pub fn shutdown(app: &AppHandle) {
 // ---------------------------------------------------------------------------------------
 // IPC (ADR 017)
 
-/// What "Send to Claude" sends.
+/// What "Send to agent" sends.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct AgentStart {
     pub task_id: Id,
@@ -574,7 +641,7 @@ pub fn agent_cancel(state: State<'_, AppState>, session_id: Id) -> CommandResult
 
 /// A terminal that closes sooner than this after opening was a launcher handing the window
 /// to a terminal server (gnome-terminal, `wt.exe`, `osascript`), not the conversation ending.
-const TERMINAL_LAUNCHER: std::time::Duration = std::time::Duration::from_secs(3);
+const TERMINAL_LAUNCHER: Duration = Duration::from_secs(3);
 
 /// Opens a terminal running `claude --resume` in the session's folder, with the session's
 /// MCP config. A session the app is not running becomes `terminal` until the agent records
@@ -602,6 +669,55 @@ pub fn agent_open_terminal(
             .or_else(|| launch::detect_linux_terminal(on_path)),
         _ => None,
     };
+    // A run in progress cannot be joined (`claude --resume` would fork it and show none of
+    // its current turn), so the terminal follows its log instead, read-only.
+    if is_live(&state, &session.id)? {
+        let log = state
+            .data_dir
+            .join("agents")
+            .join(&session.id)
+            .join(RUN_LOG_FILE);
+        let script = launch::watch_script(
+            &runtime_path(&log, session.runtime).map_err(invalid)?,
+            WATCH_CLOSE_AFTER,
+        );
+        let watch = launch::shell_terminal(
+            &settings,
+            session.runtime,
+            &script,
+            os,
+            default_terminal.as_deref(),
+        )
+        .ok_or_else(|| {
+            invalid("watching a run needs a POSIX shell (WSL, macOS or Linux); wait for it to end")
+        })?;
+        let started = process(&watch)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        return match started {
+            Ok(_) => Ok(()),
+            Err(_) if watch.program == "wt.exe" => {
+                // No Windows Terminal: the same command in a console window.
+                let mut args = vec!["/c".to_owned(), "start".into(), String::new()];
+                args.extend(watch.args);
+                let console = Launch {
+                    program: "cmd.exe".into(),
+                    args,
+                    cwd: None,
+                };
+                hidden(&mut process(&console))
+                    .spawn()
+                    .map(|_| ())
+                    .map_err(|e| internal(format!("cannot open a terminal: {e}")))
+            }
+            Err(e) => Err(internal(format!(
+                "cannot open a terminal ({}): {e}; set one in Settings → Agents",
+                watch.program
+            ))),
+        };
+    }
     let config = state
         .data_dir
         .join("agents")
@@ -611,12 +727,47 @@ pub fn agent_open_terminal(
         .is_file()
         .then(|| runtime_path(&config, session.runtime).ok())
         .flatten();
+    // A running headless run stays the app's: the terminal forks its conversation and is
+    // the user's to close. Any other session is continued here, and watched.
+    let takes_over = !is_live(&state, &session.id)?;
+    let pid_file = state
+        .data_dir
+        .join("agents")
+        .join(&session.id)
+        .join(TERMINAL_PID_FILE);
+    if takes_over && session.state == SessionState::Terminal {
+        let open = read_pid(&pid_file).is_some_and(|pid| {
+            claude_alive(
+                &settings,
+                session.runtime,
+                os,
+                pid,
+                &session.claude_session_id,
+            ) == Some(true)
+        });
+        if open {
+            return Err(invalid(
+                "this session is already open in a terminal; finish it there or mark it done",
+            ));
+        }
+    }
+    let _ = std::fs::remove_file(&pid_file);
+    // Native Windows runs claude without a shell, so nothing can record its pid.
+    let record_pid = takes_over
+        && !(os == Os::Windows && session.runtime == AgentRuntime::Native)
+        && pid_file.parent().is_some_and(Path::is_dir);
+    let pid_path = if record_pid {
+        Some(runtime_path(&pid_file, session.runtime).map_err(invalid)?)
+    } else {
+        None
+    };
     let resume = launch::resume_args(&session.claude_session_id, config.as_deref());
     let launch = launch::terminal_command(
         &settings,
         session.runtime,
         &session.folder,
         &resume,
+        pid_path.as_deref(),
         os,
         default_terminal.as_deref(),
     );
@@ -633,6 +784,7 @@ pub fn agent_open_terminal(
                 session.runtime,
                 &session.folder,
                 &resume,
+                pid_path.as_deref(),
             );
             hidden(&mut process(&fallback))
                 .spawn()
@@ -646,8 +798,10 @@ pub fn agent_open_terminal(
             )));
         }
     };
-    // A running headless run stays the app's: the terminal forks its conversation.
-    if !is_live(&state, &session.id)? && session.state != SessionState::Terminal {
+    if !takes_over {
+        return Ok(());
+    }
+    if session.state != SessionState::Terminal {
         with_store(&state, |s| {
             s.execute_without_undo(vec![Command::UpdateAgentSession {
                 id: session.id.clone(),
@@ -655,38 +809,237 @@ pub fn agent_open_terminal(
             }])
         })?;
     }
-    follow_terminal(app, session.id, child);
+    watch_terminal(&app, &session, Some(child));
     Ok(())
 }
 
-/// Ends a `terminal` session when its terminal window closes. Terminals that return at once
-/// (launchers) cannot be followed; the agent's summary or the user ends those.
-fn follow_terminal(app: AppHandle, session_id: Id, mut child: Child) {
-    let opened = std::time::Instant::now();
+// ---------------------------------------------------------------------------------------
+// Terminal sessions: no loose terminals once the work is done
+
+/// In the session's folder: claude's pid, written by the terminal's shell before `exec`.
+const TERMINAL_PID_FILE: &str = "terminal.pid";
+/// How often a watcher reads the session's state.
+const TERMINAL_POLL: Duration = Duration::from_secs(1);
+/// Every this many polls, a watcher also checks claude is still running.
+const TERMINAL_PROBE_EVERY: u32 = 5;
+/// After the session is done, time for Claude's last message before its terminal closes.
+const TERMINAL_CLOSE_GRACE: Duration = Duration::from_secs(8);
+/// Between SIGTERM and SIGKILL.
+const TERMINAL_KILL_WAIT: Duration = Duration::from_secs(3);
+
+/// What a terminal watcher does next.
+#[derive(Debug, PartialEq, Eq)]
+enum Watch {
+    Keep,
+    /// Claude or its window is gone while the session is in the terminal: mark it done.
+    Done,
+    /// The session ended (agent summary, Mark done, removed): stop claude.
+    Close,
+    /// Nothing left to do.
+    Stop,
+}
+
+/// `state`: the session's (`None` once removed). `window_closed`: the terminal process the
+/// app started exited after [`TERMINAL_LAUNCHER`] (launchers exit at once and say nothing).
+/// `claude`: whether the recorded pid still runs this session's claude, when known.
+fn watch_step(state: Option<SessionState>, window_closed: bool, claude: Option<bool>) -> Watch {
+    let gone = claude == Some(false) || (claude.is_none() && window_closed);
+    match state {
+        Some(SessionState::Terminal) if gone => Watch::Done,
+        Some(SessionState::Terminal) => Watch::Keep,
+        _ if gone => Watch::Stop,
+        _ => Watch::Close,
+    }
+}
+
+fn read_pid(path: &Path) -> Option<u32> {
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+/// Whether `pid` runs claude for this session (its command line names the Claude session
+/// id, so a reused pid is never mistaken for it); `None` when it cannot be checked.
+fn claude_alive(
+    settings: &AgentSettings,
+    runtime: AgentRuntime,
+    os: Os,
+    pid: u32,
+    claude_session_id: &str,
+) -> Option<bool> {
+    let probe = launch::probe_command(settings, runtime, os, pid)?;
+    let output = hidden(&mut process(&probe))
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    Some(String::from_utf8_lossy(&output.stdout).contains(claude_session_id))
+}
+
+/// Stops this session's claude (SIGTERM, then SIGKILL), which closes most terminals, and
+/// the terminal process the app started if it is still there.
+fn close_terminal(
+    settings: &AgentSettings,
+    session: &AgentSession,
+    os: Os,
+    pid: Option<u32>,
+    child: Option<&mut Child>,
+) {
+    let alive = |pid| {
+        claude_alive(
+            settings,
+            session.runtime,
+            os,
+            pid,
+            &session.claude_session_id,
+        ) == Some(true)
+    };
+    if let Some(pid) = pid.filter(|pid| alive(*pid)) {
+        for signal in ["TERM", "KILL"] {
+            if let Some(kill) = launch::signal_command(settings, session.runtime, os, pid, signal) {
+                let _ = hidden(&mut process(&kill))
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status();
+            }
+            let sent = Instant::now();
+            while alive(pid) && sent.elapsed() < TERMINAL_KILL_WAIT {
+                std::thread::sleep(Duration::from_millis(200));
+            }
+            if !alive(pid) {
+                break;
+            }
+        }
+    }
+    if let Some(child) = child
+        && matches!(child.try_wait(), Ok(None))
+    {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+/// Watches a session continued in a terminal: marks it done when claude or its window goes
+/// away, and once it is done (the agent's summary, Mark done) or removed, stops claude so
+/// no terminal is left behind. `child` is the terminal process when this app started it.
+fn watch_terminal(app: &AppHandle, session: &AgentSession, child: Option<Child>) {
+    let state = app.state::<AppState>();
+    let first = state
+        .agents
+        .watched
+        .lock()
+        .is_ok_and(|mut watched| watched.insert(session.id.clone()));
+    if !first {
+        return;
+    }
+    let app = app.clone();
+    let id = session.id.clone();
+    let session = session.clone();
     let spawned = std::thread::Builder::new()
         .name("agent-terminal".into())
         .spawn(move || {
-            let _ = child.wait();
-            if opened.elapsed() < TERMINAL_LAUNCHER {
-                return;
-            }
             let state = app.state::<AppState>();
-            let ended = with_store(&state, |s| {
-                if s.agent_session(&session_id)?.state != SessionState::Terminal {
-                    return Ok(());
-                }
-                s.execute_without_undo(vec![Command::UpdateAgentSession {
-                    id: session_id.clone(),
-                    changes: vec![AgentSessionChange::State(SessionState::Done)],
-                }])
-                .map(|_| ())
-            });
-            if let Err(e) = ended {
-                eprintln!("cannot end agent session {session_id}: {}", e.message);
+            run_watch(&state, &session, child);
+            if let Ok(mut watched) = state.agents.watched.lock() {
+                watched.remove(&session.id);
             }
         });
     if let Err(e) = spawned {
-        eprintln!("cannot follow the terminal of agent session: {e}");
+        eprintln!("cannot watch the terminal of agent session {id}: {e}");
+        if let Ok(mut watched) = state.agents.watched.lock() {
+            watched.remove(&id);
+        }
+    }
+}
+
+fn run_watch(state: &AppState, session: &AgentSession, mut child: Option<Child>) {
+    let os = Os::current();
+    let opened = Instant::now();
+    let pid_file = state
+        .data_dir
+        .join("agents")
+        .join(&session.id)
+        .join(TERMINAL_PID_FILE);
+    let mut window_closed = false;
+    let mut claude = None;
+    for tick in 1u32.. {
+        std::thread::sleep(TERMINAL_POLL);
+        if let Some(c) = child.as_mut()
+            && let Ok(Some(_)) = c.try_wait()
+        {
+            window_closed = opened.elapsed() >= TERMINAL_LAUNCHER;
+            child = None;
+        }
+        let Ok(settings) = settings(state) else {
+            return;
+        };
+        let current = with_store(state, |s| s.agent_session(&session.id))
+            .ok()
+            .filter(|s| s.deleted_at.is_none())
+            .map(|s| s.state);
+        let pid = read_pid(&pid_file);
+        // Check the process when it matters: periodically, and before acting on an end.
+        if current != Some(SessionState::Terminal) || tick % TERMINAL_PROBE_EVERY == 0 {
+            claude = pid.and_then(|pid| {
+                claude_alive(
+                    &settings,
+                    session.runtime,
+                    os,
+                    pid,
+                    &session.claude_session_id,
+                )
+            });
+        }
+        match watch_step(current, window_closed, claude) {
+            Watch::Keep => {}
+            Watch::Done => {
+                let ended = with_store(state, |s| {
+                    s.execute_without_undo(vec![Command::UpdateAgentSession {
+                        id: session.id.clone(),
+                        changes: vec![AgentSessionChange::State(SessionState::Done)],
+                    }])
+                });
+                if let Err(e) = ended {
+                    eprintln!("cannot end agent session {}: {}", session.id, e.message);
+                }
+                break;
+            }
+            Watch::Close => {
+                std::thread::sleep(TERMINAL_CLOSE_GRACE);
+                close_terminal(&settings, session, os, pid, child.as_mut());
+                break;
+            }
+            Watch::Stop => break,
+        }
+    }
+    let _ = std::fs::remove_file(&pid_file);
+}
+
+/// At start-up: watch again the terminal sessions of this device that recorded claude's
+/// pid, so an app restart never leaves a finished one open.
+pub fn watch_terminals(app: &AppHandle) {
+    let state = app.state::<AppState>();
+    let sessions = with_store(&state, |s| {
+        let device = s.device_id().to_owned();
+        Ok(s.snapshot()?
+            .agent_sessions
+            .into_iter()
+            .filter(|a| a.state == SessionState::Terminal && a.device_id == device)
+            .collect::<Vec<_>>())
+    });
+    match sessions {
+        Ok(sessions) => {
+            for session in sessions {
+                let pid_file = state
+                    .data_dir
+                    .join("agents")
+                    .join(&session.id)
+                    .join(TERMINAL_PID_FILE);
+                if pid_file.is_file() {
+                    watch_terminal(app, &session, None);
+                }
+            }
+        }
+        Err(e) => eprintln!("cannot list terminal sessions: {}", e.message),
     }
 }
 
@@ -811,9 +1164,9 @@ pub fn detect_claude(settings: AgentSettings) -> CommandResult<ClaudeCheck> {
     )))
     .stdin(Stdio::null())
     .output()
-    .map_err(|e| invalid(format!("cannot look for Claude Code: {e}")))?;
+    .map_err(|e| invalid(format!("cannot look for the agent: {e}")))?;
     let found = launch::found_path(&String::from_utf8_lossy(&lookup.stdout))
-        .ok_or_else(|| invalid("Claude Code was not found; install it, or give its full path"))?;
+        .ok_or_else(|| invalid("The agent was not found; install it, or give its full path"))?;
     let v = version(&found).map_err(|e| invalid(format!("{found} does not run: {e}")))?;
     Ok(ClaudeCheck {
         path: found,
@@ -887,6 +1240,119 @@ mod tests {
             updated_at: 1,
             deleted_at: None,
         }
+    }
+
+    #[test]
+    fn spawned_claudes_are_not_sub_sessions_of_the_one_that_started_the_app() {
+        let launch = Launch {
+            program: "claude".into(),
+            args: vec![],
+            cwd: None,
+        };
+        let p = process(&launch);
+        let removed: Vec<_> = p
+            .get_envs()
+            .filter(|(_, value)| value.is_none())
+            .map(|(key, _)| key.to_string_lossy().into_owned())
+            .collect();
+        for var in [
+            "CLAUDE_CODE_CHILD_SESSION",
+            "CLAUDE_CODE_SESSION_ID",
+            "CLAUDECODE",
+        ] {
+            assert!(removed.iter().any(|r| r == var), "{var} is removed");
+        }
+        // The user's own configuration passes through.
+        for kept in [
+            "ANTHROPIC_API_KEY",
+            "CLAUDE_CONFIG_DIR",
+            "CLAUDE_CODE_USE_BEDROCK",
+        ] {
+            assert!(!removed.iter().any(|r| r == kept), "{kept} is kept");
+        }
+    }
+
+    #[test]
+    fn a_terminal_watcher_ends_and_closes_at_the_right_moments() {
+        use SessionState::{Done, Terminal};
+        // In the terminal: keep going while claude runs or cannot be checked.
+        assert_eq!(watch_step(Some(Terminal), false, Some(true)), Watch::Keep);
+        assert_eq!(watch_step(Some(Terminal), false, None), Watch::Keep);
+        // Claude exited (/exit in a launcher terminal) or its window closed: done.
+        assert_eq!(watch_step(Some(Terminal), false, Some(false)), Watch::Done);
+        assert_eq!(watch_step(Some(Terminal), true, None), Watch::Done);
+        // The agent recorded its summary, or the user marked it done or removed it: close
+        // what is still open, also when only the window is known to be there.
+        assert_eq!(watch_step(Some(Done), false, Some(true)), Watch::Close);
+        assert_eq!(watch_step(Some(Done), false, None), Watch::Close);
+        assert_eq!(watch_step(None, false, Some(true)), Watch::Close);
+        // Nothing left running.
+        assert_eq!(watch_step(Some(Done), false, Some(false)), Watch::Stop);
+        assert_eq!(watch_step(Some(Done), true, None), Watch::Stop);
+    }
+
+    /// The real thing on this machine: the terminal script records the pid of what it
+    /// `exec`s, the check recognises it by the Claude session id, and closing stops it.
+    #[cfg(unix)]
+    #[test]
+    fn a_finished_terminal_session_is_stopped_by_its_recorded_pid() {
+        let dir = std::env::temp_dir().join(format!("tm-terminal-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pid_file = dir.join(TERMINAL_PID_FILE);
+        let mut session = session();
+        session.claude_session_id = format!("0199a000-test-{}", std::process::id());
+        // `claude` stands in as `sh -c 'while :; do sleep 1; done' <session id>`, so its
+        // command line carries the id like `claude --resume <id>` does (a lone `sleep`
+        // would be exec'd and drop it), and no long sleep outlives the test.
+        let settings = AgentSettings {
+            claude_path: "sh".into(),
+            ..AgentSettings::default()
+        };
+        let resume = vec![
+            "-c".into(),
+            "while :; do sleep 1; done".into(),
+            session.claude_session_id.clone(),
+        ];
+        let launch = launch::terminal_command(
+            &settings,
+            AgentRuntime::Native,
+            dir.to_str().unwrap(),
+            &resume,
+            pid_file.to_str(),
+            Os::Linux,
+            Some("env"),
+        );
+        let mut window = process(&launch).spawn().unwrap();
+        let mut pid = None;
+        for _ in 0..50 {
+            pid = read_pid(&pid_file);
+            if pid.is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let pid = pid.expect("the script writes the pid");
+        assert_eq!(pid, window.id(), "exec keeps the pid");
+        let os = Os::current();
+        let id = session.claude_session_id.clone();
+        assert_eq!(
+            claude_alive(&settings, AgentRuntime::Native, os, pid, &id),
+            Some(true)
+        );
+        // Another session's id never matches, so a reused pid is left alone.
+        assert_eq!(
+            claude_alive(&settings, AgentRuntime::Native, os, pid, "other"),
+            Some(false)
+        );
+
+        close_terminal(&settings, &session, os, Some(pid), None);
+        let status = window.wait().unwrap();
+        assert!(!status.success(), "stopped by a signal");
+        assert_eq!(
+            claude_alive(&settings, AgentRuntime::Native, os, pid, &id),
+            Some(false)
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn result(is_error: bool) -> RunResult {

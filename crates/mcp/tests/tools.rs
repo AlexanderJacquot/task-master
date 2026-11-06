@@ -279,9 +279,19 @@ async fn the_users_tasks_are_mostly_off_limits() {
     ok(
         &client,
         "update_task",
-        json!({ "task_id": sub, "status": "done" }),
+        json!({ "task_id": sub, "status": "in_progress" }),
     )
     .await;
+    // Closing them is the user's call, after review.
+    for status in ["done", "Cancelled"] {
+        let message = refused(
+            &client,
+            "update_task",
+            json!({ "task_id": sub, "status": status }),
+        )
+        .await;
+        assert!(message.contains("Review"), "{message}");
+    }
     // Another task of the user's is not.
     let message = refused(
         &client,
@@ -322,7 +332,7 @@ async fn the_users_tasks_are_mostly_off_limits() {
     let snapshot = server_snapshot(&server);
     let find = |id: &str| snapshot.tasks.iter().find(|t| t.id == id).unwrap().clone();
     assert_eq!(find(&task).status_id, IN_PROGRESS);
-    assert_eq!(find(&sub).status_id, DONE);
+    assert_eq!(find(&sub).status_id, IN_PROGRESS, "not closed by the agent");
     assert_eq!(
         find(&other).status_id,
         "00000000-0000-7000-8000-000000000002"
@@ -392,6 +402,57 @@ async fn a_session_the_app_is_not_running_ends_with_its_summary() {
         assert_eq!(stored.summary.as_deref(), Some("Finished."));
         assert!(stored.ended_at.is_some());
     }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn reporting_done_moves_the_users_task_to_review() {
+    let f = fixture();
+    let (task, session) = (f.task.clone(), f.session.clone());
+    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    let client = connect(server.clone()).await;
+    let reply = ok(
+        &client,
+        "complete_session",
+        json!({ "summary": "Implemented; check the migration." }),
+    )
+    .await;
+    assert!(reply.contains("moved to Review"), "{reply}");
+    let (snapshot, stored) =
+        with_store(&server, |s| Ok((s.snapshot()?, s.agent_session(&session)?)));
+    let moved = snapshot.tasks.iter().find(|t| t.id == task).unwrap();
+    assert_eq!(moved.status_id, REVIEW_STATUS_ID);
+    // A running session still ends when the run does.
+    assert_eq!(stored.state, SessionState::Running);
+
+    // Reporting again (a follow-up) leaves it in Review, without a second move.
+    let again = ok(
+        &client,
+        "complete_session",
+        json!({ "summary": "Also docs." }),
+    )
+    .await;
+    assert!(!again.contains("moved"), "{again}");
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn a_task_the_user_already_closed_stays_closed() {
+    let mut f = fixture();
+    f.store
+        .execute(Command::UpdateTask {
+            id: f.task.clone(),
+            changes: vec![TaskChange::StatusId(DONE.into())],
+        })
+        .unwrap();
+    let task = f.task.clone();
+    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    let client = connect(server.clone()).await;
+    let reply = ok(&client, "complete_session", json!({ "summary": "Done." })).await;
+    assert!(!reply.contains("Review"), "{reply}");
+    client.cancel().await.unwrap();
+    let snapshot = server_snapshot(&server);
+    let kept = snapshot.tasks.iter().find(|t| t.id == task).unwrap();
+    assert_eq!(kept.status_id, DONE);
 }
 
 #[tokio::test(flavor = "current_thread")]

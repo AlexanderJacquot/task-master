@@ -7,7 +7,6 @@ import {
   MoreHorizontal,
   PanelLeftClose,
   PanelLeftOpen,
-  Sun,
 } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useMemo, useState } from "react";
@@ -27,6 +26,7 @@ import {
   ProjectsIcon,
   SearchIcon as Search,
   SettingsIcon as Settings2,
+  TodayIcon as Sun,
   DeleteIcon as Trash2,
 } from "../../components/TaskIcons";
 import {
@@ -69,7 +69,6 @@ function NavItem({
   children,
   count,
   title,
-  tile = false,
 }: {
   to: string;
   params?: Record<string, string>;
@@ -77,7 +76,6 @@ function NavItem({
   children: ReactNode;
   count?: number;
   title?: string;
-  tile?: boolean;
 }) {
   return (
     <Link
@@ -85,35 +83,13 @@ function NavItem({
       params={params as never}
       search={{}}
       title={title}
-      className={cx(
-        tile
-          ? "group relative flex min-w-0 items-center gap-2.5 rounded-xl border border-transparent px-2.5 py-[5px] text-ink-2 transition-colors hover:bg-hover hover:text-ink @[216px]/sidebar:aspect-square @[216px]/sidebar:flex-col @[216px]/sidebar:items-start @[216px]/sidebar:justify-between @[216px]/sidebar:gap-3 @[216px]/sidebar:border-line @[216px]/sidebar:bg-raised/40 @[216px]/sidebar:p-3 @[216px]/sidebar:hover:bg-hover"
-          : rowClass,
-        FOCUS,
-      )}
-      activeProps={{
-        className: tile ? "border-accent/30! bg-accent/10! text-accent!" : activeClass,
-      }}
+      className={cx(rowClass, FOCUS)}
+      activeProps={{ className: activeClass }}
     >
       {icon}
-      <span
-        className={cx(
-          "min-w-0 flex-1 truncate",
-          tile &&
-            "@[216px]/sidebar:flex-none @[216px]/sidebar:text-[13px] @[216px]/sidebar:font-medium",
-        )}
-      >
-        {children}
-      </span>
+      <span className="min-w-0 flex-1 truncate">{children}</span>
       {count !== undefined && count > 0 && (
-        <span
-          className={cx(
-            "text-[12.5px] text-ink-3 tabular-nums",
-            tile && "@[216px]/sidebar:absolute @[216px]/sidebar:top-3 @[216px]/sidebar:right-3",
-          )}
-        >
-          {count}
-        </span>
+        <span className="text-[12.5px] text-ink-3 tabular-nums">{count}</span>
       )}
     </Link>
   );
@@ -167,7 +143,16 @@ function TagRow({ tag, count }: { tag: Tag; count?: number }) {
 }
 
 /** The "?" box: opens the keyboard shortcuts overlay. */
-function ShortcutsButton({ onClick, className }: { onClick(): void; className?: string }) {
+function ShortcutsButton({
+  onClick,
+  className,
+  matchRow,
+}: {
+  onClick(): void;
+  className?: string;
+  /** Square, as tall as the neighbouring row, instead of a fixed size. */
+  matchRow?: boolean;
+}) {
   const keymap = useKeymap();
   return (
     <button
@@ -176,7 +161,8 @@ function ShortcutsButton({ onClick, className }: { onClick(): void; className?: 
       title={withKeys(keymap, "help", "Keyboard shortcuts")}
       onClick={onClick}
       className={cx(
-        "inline-flex size-7 shrink-0 items-center justify-center rounded-md border border-line-strong font-mono text-[13px] text-ink-3 transition-colors hover:border-ink-3 hover:bg-hover hover:text-ink",
+        matchRow ? "self-stretch aspect-square" : "size-7",
+        "inline-flex shrink-0 items-center justify-center rounded-md border border-line-strong font-display text-[15px] text-ink-3 transition-colors hover:border-ink-3 hover:bg-hover hover:text-ink",
         FOCUS,
         className,
       )}
@@ -525,7 +511,7 @@ export function Sidebar({
             FOCUS,
           )}
         >
-          <Plus size={18} strokeWidth={1.75} />
+          <Plus size={18} />
         </button>
         <RailLink to="/inbox" label="Inbox">
           <Inbox size={18} className="text-sky-700 dark:text-sky-300" />
@@ -604,7 +590,7 @@ export function Sidebar({
             FOCUS,
           )}
         >
-          <Plus size={16} strokeWidth={1.75} />
+          <Plus size={16} />
           New task
         </button>
         <button
@@ -617,53 +603,31 @@ export function Sidebar({
             FOCUS,
           )}
         >
-          <Search size={16} />
+          <Search size={26} />
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-1 @[216px]/sidebar:grid-cols-2 @[216px]/sidebar:gap-2">
+      <div className="flex flex-col gap-px">
         <NavItem
           to="/inbox"
-          tile
           count={counts.inbox}
-          icon={
-            <Inbox
-              size={17}
-              className="shrink-0 text-sky-700 @[216px]/sidebar:size-6 dark:text-sky-300"
-            />
-          }
+          icon={<Inbox size={17} className="shrink-0 text-sky-700 dark:text-sky-300" />}
         >
           Inbox
         </NavItem>
         <NavItem
           to="/today"
-          tile
           count={counts.today}
-          icon={
-            <Sun
-              size={17}
-              className="shrink-0 text-amber-700 @[216px]/sidebar:size-6 dark:text-amber-300"
-            />
-          }
+          icon={<Sun size={17} className="shrink-0 text-amber-700 dark:text-amber-300" />}
         >
           Today
         </NavItem>
-        <NavItem
-          to="/calendar"
-          tile
-          icon={<CalendarDays size={17} className="shrink-0 text-rubric @[216px]/sidebar:size-6" />}
-        >
+        <NavItem to="/calendar" icon={<CalendarDays size={17} className="shrink-0 text-rubric" />}>
           Calendar
         </NavItem>
-        <NavItem
-          to="/all"
-          tile
-          icon={<Layers size={17} className="shrink-0 @[216px]/sidebar:size-6" />}
-        >
+        <NavItem to="/all" icon={<Layers size={17} className="shrink-0" />}>
           All tasks
         </NavItem>
-      </div>
-      <div className="mt-2 flex flex-col gap-px">
         <NavItem to="/lineage" icon={<GitBranch size={17} className="shrink-0" />}>
           Lineage
         </NavItem>
@@ -833,17 +797,17 @@ export function Sidebar({
 
       <div className="mt-auto flex flex-col gap-1 pt-4">
         <UpdatePill />
-        <div className="flex items-center gap-1">
+        <div className="flex items-stretch gap-1">
           <div className="min-w-0 flex-1">
             <NavItem
               to="/settings"
-              icon={<Settings2 size={16} className="shrink-0" />}
+              icon={<Settings2 size={20} className="shrink-0" />}
               title={withKeys(keymap, "goSettings", "Settings")}
             >
-              Settings
+              <span className="font-display text-[15px] tracking-wide">Settings</span>
             </NavItem>
           </div>
-          <ShortcutsButton onClick={shell.showShortcuts} />
+          <ShortcutsButton onClick={shell.showShortcuts} matchRow />
         </div>
       </div>
     </nav>

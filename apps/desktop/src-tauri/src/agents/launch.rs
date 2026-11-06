@@ -184,13 +184,23 @@ pub fn resume_args(claude_session_id: &str, mcp_config: Option<&str>) -> Vec<Str
     args
 }
 
-/// `cd <folder> && exec <claude> <args>` for a POSIX shell, every word quoted.
-fn resume_script(settings: &AgentSettings, folder: &str, resume: &[String]) -> String {
-    let mut script = format!(
-        "cd {} && exec {}",
-        sh_quote(folder),
-        sh_quote(&settings.claude_path)
-    );
+/// `[cd <folder> && ][echo $$ > <pid file> && ]exec <claude> <args>` for a POSIX shell,
+/// every word quoted. `exec` keeps the shell's pid, so the pid file names claude itself
+/// (the app stops it once the session is done; see `agents::watch_terminal`).
+fn resume_script(
+    settings: &AgentSettings,
+    folder: Option<&str>,
+    resume: &[String],
+    pid_file: Option<&str>,
+) -> String {
+    let mut script = String::new();
+    if let Some(folder) = folder {
+        script.push_str(&format!("cd {} && ", sh_quote(folder)));
+    }
+    if let Some(pid_file) = pid_file {
+        script.push_str(&format!("echo $$ > {} && ", sh_quote(pid_file)));
+    }
+    script.push_str(&format!("exec {}", sh_quote(&settings.claude_path)));
     for arg in resume {
         script.push(' ');
         script.push_str(&sh_quote(arg));
@@ -198,14 +208,41 @@ fn resume_script(settings: &AgentSettings, folder: &str, resume: &[String]) -> S
     script
 }
 
+/// `claude <resume>` inside WSL in `folder`: through `sh -c` when it records its pid,
+/// directly (`--exec`, no shell) otherwise.
+fn wsl_resume(
+    settings: &AgentSettings,
+    folder: &str,
+    resume: &[String],
+    pid_file: Option<&str>,
+) -> Launch {
+    let runtime = AgentRuntime::Wsl;
+    match pid_file {
+        Some(_) => {
+            let script = resume_script(settings, None, resume, pid_file);
+            in_runtime(settings, runtime, folder, "sh", vec!["-c".into(), script])
+        }
+        None => in_runtime(
+            settings,
+            runtime,
+            folder,
+            &settings.claude_path,
+            resume.to_vec(),
+        ),
+    }
+}
+
 /// A visible terminal running `claude <resume>` (see [`resume_args`]) in the session's
 /// folder, so the user can take over the conversation. On Linux, `default_terminal` is the
 /// command prefix to use when the settings name none (`$TERMINAL`, else a detected one).
+/// With `pid_file` (as the runtime sees it), claude's pid is written there first; native
+/// Windows cannot (no shell runs claude), so callers pass `None` for it.
 pub fn terminal_command(
     settings: &AgentSettings,
     runtime: AgentRuntime,
     folder: &str,
     resume: &[String],
+    pid_file: Option<&str>,
     os: Os,
     default_terminal: Option<&str>,
 ) -> Launch {
@@ -216,8 +253,7 @@ pub fn terminal_command(
             let mut args = Vec::new();
             match runtime {
                 AgentRuntime::Wsl => {
-                    let inner =
-                        in_runtime(settings, runtime, folder, &settings.claude_path, resume);
+                    let inner = wsl_resume(settings, folder, &resume, pid_file);
                     args.push(inner.program);
                     args.extend(inner.args);
                 }
@@ -233,7 +269,7 @@ pub fn terminal_command(
             }
         }
         Os::Mac => {
-            let script = resume_script(settings, folder, &resume);
+            let script = resume_script(settings, Some(folder), &resume, pid_file);
             Launch {
                 program: "osascript".into(),
                 args: vec![
@@ -257,7 +293,7 @@ pub fn terminal_command(
             let mut parts = prefix.split_whitespace().map(str::to_owned);
             let program = parts.next().unwrap_or_else(|| "x-terminal-emulator".into());
             let mut args: Vec<String> = parts.collect();
-            let script = resume_script(settings, folder, &resume);
+            let script = resume_script(settings, Some(folder), &resume, pid_file);
             args.extend(["sh".into(), "-c".into(), script]);
             Launch {
                 program,
@@ -268,18 +304,103 @@ pub fn terminal_command(
     }
 }
 
+/// Starts the line that ends a run log; the watch script stops at it.
+pub const RUN_END_PREFIX: &str = "=== Run ended";
+
+/// A POSIX script that shows a run log as it grows (read-only), stops at the line
+/// starting with [`RUN_END_PREFIX`], then closes after `close_after` seconds.
+pub fn watch_script(log: &str, close_after: u32) -> String {
+    format!(
+        "log={log}; n=0\n\
+         echo 'Watching the background run of this session (read only).'\n\
+         echo 'This window closes when it ends.'\n\
+         echo\n\
+         while :; do\n\
+         \x20 if [ -f \"$log\" ]; then\n\
+         \x20   ended=0; grep -q '^{end}' \"$log\" && ended=1\n\
+         \x20   total=$(wc -l < \"$log\" | tr -d ' ')\n\
+         \x20   if [ \"$total\" -gt \"$n\" ]; then sed -n \"$((n + 1)),${{total}}p\" \"$log\"; n=$total; fi\n\
+         \x20   [ \"$ended\" = 1 ] && break\n\
+         \x20 fi\n\
+         \x20 sleep 1\n\
+         done\n\
+         echo\n\
+         echo 'To continue this conversation: send a follow-up on the task, or Open in terminal.'\n\
+         echo 'This window closes in {close_after} seconds.'\n\
+         sleep {close_after}\n",
+        log = sh_quote(log),
+        end = RUN_END_PREFIX,
+    )
+}
+
+/// A visible terminal running a POSIX `script` where claude runs (inside WSL for the WSL
+/// runtime). `None` for native Windows, which has no POSIX shell.
+pub fn shell_terminal(
+    settings: &AgentSettings,
+    runtime: AgentRuntime,
+    script: &str,
+    os: Os,
+    default_terminal: Option<&str>,
+) -> Option<Launch> {
+    let sh = vec!["sh".to_owned(), "-c".into(), script.to_owned()];
+    match (runtime, os) {
+        (AgentRuntime::Wsl, _) => {
+            let mut args = vec!["wsl.exe".to_owned()];
+            args.extend(wsl_prefix(settings));
+            args.push("--exec".into());
+            args.extend(sh);
+            Some(Launch {
+                program: "wt.exe".into(),
+                args,
+                cwd: None,
+            })
+        }
+        (AgentRuntime::Native, Os::Windows) => None,
+        (AgentRuntime::Native, Os::Mac) => Some(Launch {
+            program: "osascript".into(),
+            args: vec![
+                "-e".into(),
+                format!(
+                    "tell application \"Terminal\" to do script \"{}\"",
+                    applescript_escape(&format!("sh -c {}", sh_quote(script)))
+                ),
+                "-e".into(),
+                "tell application \"Terminal\" to activate".into(),
+            ],
+            cwd: None,
+        }),
+        (AgentRuntime::Native, Os::Linux) => {
+            let prefix = settings
+                .terminal
+                .clone()
+                .or_else(|| default_terminal.map(str::to_owned))
+                .unwrap_or_else(|| "x-terminal-emulator -e".into());
+            let mut parts = prefix.split_whitespace().map(str::to_owned);
+            let program = parts.next().unwrap_or_else(|| "x-terminal-emulator".into());
+            let mut args: Vec<String> = parts.collect();
+            args.extend(sh);
+            Some(Launch {
+                program,
+                args,
+                cwd: None,
+            })
+        }
+    }
+}
+
 /// Windows without Windows Terminal: a console window through `cmd /c start`.
 pub fn windows_console_fallback(
     settings: &AgentSettings,
     runtime: AgentRuntime,
     folder: &str,
     resume: &[String],
+    pid_file: Option<&str>,
 ) -> Launch {
     let resume = resume.to_vec();
     let mut args = vec!["/c".to_owned(), "start".into(), String::new()];
     match runtime {
         AgentRuntime::Wsl => {
-            let inner = in_runtime(settings, runtime, folder, &settings.claude_path, resume);
+            let inner = wsl_resume(settings, folder, &resume, pid_file);
             args.push(inner.program);
             args.extend(inner.args);
         }
@@ -292,6 +413,69 @@ pub fn windows_console_fallback(
         program: "cmd.exe".into(),
         args,
         cwd: None,
+    }
+}
+
+/// Prints the command line of process `pid` in the runtime (`ps -p <pid> -o args=`),
+/// nothing when it is gone. Not available for native Windows (`None`).
+pub fn probe_command(
+    settings: &AgentSettings,
+    runtime: AgentRuntime,
+    os: Os,
+    pid: u32,
+) -> Option<Launch> {
+    in_unix(
+        settings,
+        runtime,
+        os,
+        ["ps", "-p", &pid.to_string(), "-o", "args="],
+    )
+}
+
+/// Sends `signal` (`TERM`, `KILL`) to process `pid` in the runtime. Not available for
+/// native Windows (`None`).
+pub fn signal_command(
+    settings: &AgentSettings,
+    runtime: AgentRuntime,
+    os: Os,
+    pid: u32,
+    signal: &str,
+) -> Option<Launch> {
+    in_unix(
+        settings,
+        runtime,
+        os,
+        ["kill", &format!("-{signal}"), &pid.to_string()],
+    )
+}
+
+/// A POSIX tool run where claude runs: directly on macOS/Linux, through `wsl.exe --exec`.
+fn in_unix<const N: usize>(
+    settings: &AgentSettings,
+    runtime: AgentRuntime,
+    os: Os,
+    command: [&str; N],
+) -> Option<Launch> {
+    let [program, args @ ..] = command.as_slice() else {
+        return None;
+    };
+    match (runtime, os) {
+        (AgentRuntime::Wsl, _) => {
+            let mut wsl = wsl_prefix(settings);
+            wsl.push("--exec".into());
+            wsl.extend(command.iter().map(|w| (*w).to_owned()));
+            Some(Launch {
+                program: "wsl.exe".into(),
+                args: wsl,
+                cwd: None,
+            })
+        }
+        (AgentRuntime::Native, Os::Windows) => None,
+        (AgentRuntime::Native, _) => Some(Launch {
+            program: (*program).to_owned(),
+            args: args.iter().map(|w| (*w).to_owned()).collect(),
+            cwd: None,
+        }),
     }
 }
 
@@ -527,6 +711,7 @@ mod tests {
             AgentRuntime::Wsl,
             folder,
             &resume,
+            None,
             Os::Windows,
             None,
         );
@@ -542,6 +727,7 @@ mod tests {
             AgentRuntime::Native,
             r"C:\dev\app",
             &resume,
+            None,
             Os::Windows,
             None,
         );
@@ -552,6 +738,7 @@ mod tests {
             AgentRuntime::Native,
             folder,
             &resume,
+            None,
             Os::Mac,
             None,
         );
@@ -568,6 +755,7 @@ mod tests {
             AgentRuntime::Native,
             folder,
             &resume,
+            None,
             Os::Linux,
             Some("kitty"),
         );
@@ -584,6 +772,7 @@ mod tests {
             AgentRuntime::Native,
             folder,
             &resume,
+            None,
             Os::Linux,
             Some("kitty"),
         );
@@ -594,6 +783,7 @@ mod tests {
             AgentRuntime::Native,
             folder,
             &resume,
+            None,
             Os::Linux,
             None,
         );
@@ -623,6 +813,7 @@ mod tests {
             AgentRuntime::Wsl,
             folder,
             &resume,
+            None,
         );
         assert_eq!(console.program, "cmd.exe");
         assert_eq!(console.args[..4], ["/c", "start", "", "wsl.exe"]);
@@ -631,6 +822,7 @@ mod tests {
             AgentRuntime::Native,
             r"C:\dev",
             &resume,
+            None,
         );
         assert_eq!(
             console.args[3..],
@@ -655,6 +847,7 @@ mod tests {
             AgentRuntime::Native,
             "/srv/app",
             &with_tools,
+            None,
             Os::Linux,
             Some("kitty"),
         );
@@ -665,6 +858,159 @@ mod tests {
                  '/data/agents/s1/mcp.json' '--allowedTools' 'mcp__task-master'"
             )
         );
+    }
+
+    #[test]
+    fn terminals_record_claudes_pid_so_the_app_can_stop_it() {
+        let id = "0199a000-0000-7000-8000-00000000abcd";
+        let resume = resume_args(id, None);
+        let linux = terminal_command(
+            &settings(AgentRuntime::Native),
+            AgentRuntime::Native,
+            "/srv/app",
+            &resume,
+            Some("/data/agents/s1/terminal.pid"),
+            Os::Linux,
+            Some("kitty"),
+        );
+        assert_eq!(
+            linux.args[2],
+            format!(
+                "cd '/srv/app' && echo $$ > '/data/agents/s1/terminal.pid' && exec 'claude' \
+                 '--resume' '{id}'"
+            )
+        );
+        // WSL goes through sh only to write the pid; --cd still sets the folder.
+        let wt = terminal_command(
+            &settings(AgentRuntime::Wsl),
+            AgentRuntime::Wsl,
+            "/home/alex/app",
+            &resume,
+            Some("/mnt/c/agents/s1/terminal.pid"),
+            Os::Windows,
+            None,
+        );
+        assert_eq!(
+            wt.args,
+            [
+                "wsl.exe",
+                "-d",
+                "Ubuntu",
+                "--cd",
+                "/home/alex/app",
+                "--exec",
+                "sh",
+                "-c",
+                &format!(
+                    "echo $$ > '/mnt/c/agents/s1/terminal.pid' && exec 'claude' '--resume' '{id}'"
+                ),
+            ]
+        );
+        let console = windows_console_fallback(
+            &settings(AgentRuntime::Wsl),
+            AgentRuntime::Wsl,
+            "/home/alex/app",
+            &resume,
+            Some("/mnt/c/agents/s1/terminal.pid"),
+        );
+        assert_eq!(console.args[3..10], wt.args[..7]);
+
+        let native = settings(AgentRuntime::Native);
+        let probe = probe_command(&native, AgentRuntime::Native, Os::Linux, 4242).unwrap();
+        assert_eq!(probe.program, "ps");
+        assert_eq!(probe.args, ["-p", "4242", "-o", "args="]);
+        let term = signal_command(&native, AgentRuntime::Native, Os::Mac, 4242, "TERM").unwrap();
+        assert_eq!(
+            (term.program.as_str(), &term.args[..]),
+            ("kill", &["-TERM".to_owned(), "4242".to_owned()][..])
+        );
+        let wsl = signal_command(
+            &settings(AgentRuntime::Wsl),
+            AgentRuntime::Wsl,
+            Os::Windows,
+            7,
+            "KILL",
+        )
+        .unwrap();
+        assert_eq!(wsl.program, "wsl.exe");
+        assert_eq!(wsl.args, ["-d", "Ubuntu", "--exec", "kill", "-KILL", "7"]);
+        assert!(probe_command(&native, AgentRuntime::Native, Os::Windows, 1).is_none());
+    }
+
+    #[test]
+    fn a_running_session_is_watched_read_only_in_a_terminal() {
+        let script = watch_script("/data/agents/s1/run.log", 15);
+        assert!(
+            script.starts_with("log='/data/agents/s1/run.log'; n=0\n"),
+            "{script}"
+        );
+        assert!(script.contains("grep -q '^=== Run ended'"), "{script}");
+        assert!(script.ends_with("sleep 15\n"), "{script}");
+        let linux = shell_terminal(
+            &settings(AgentRuntime::Native),
+            AgentRuntime::Native,
+            &script,
+            Os::Linux,
+            Some("kitty"),
+        )
+        .unwrap();
+        assert_eq!(linux.program, "kitty");
+        assert_eq!(linux.args[..2], ["sh", "-c"]);
+        let wsl = shell_terminal(
+            &settings(AgentRuntime::Wsl),
+            AgentRuntime::Wsl,
+            &script,
+            Os::Windows,
+            None,
+        )
+        .unwrap();
+        assert_eq!(wsl.program, "wt.exe");
+        assert_eq!(
+            wsl.args[..6],
+            ["wsl.exe", "-d", "Ubuntu", "--exec", "sh", "-c"]
+        );
+        assert!(
+            shell_terminal(
+                &settings(AgentRuntime::Native),
+                AgentRuntime::Native,
+                &script,
+                Os::Windows,
+                None,
+            )
+            .is_none()
+        );
+    }
+
+    /// The script itself, run by `sh` on a log that grows and then ends.
+    #[cfg(unix)]
+    #[test]
+    fn the_watch_script_shows_the_log_and_stops_at_its_end() {
+        let dir = std::env::temp_dir().join(format!("tm-watch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("run.log");
+        std::fs::write(&log, "● Agent started\n  → Running `ls`\n").unwrap();
+        let script = watch_script(log.to_str().unwrap(), 0);
+        let child = std::process::Command::new("sh")
+            .args(["-c", &script])
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let mut more = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
+        use std::io::Write as _;
+        writeln!(more, "Done.\n{RUN_END_PREFIX}: Done ===").unwrap();
+        let output = child.wait_with_output().unwrap();
+        let shown = String::from_utf8_lossy(&output.stdout);
+        let started = shown.find("● Agent started").unwrap();
+        let done = shown.find("Done.").unwrap();
+        assert!(started < done, "{shown}");
+        assert!(shown.contains("=== Run ended: Done ==="), "{shown}");
+        assert_eq!(
+            shown.matches("Running `ls`").count(),
+            1,
+            "each line once: {shown}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

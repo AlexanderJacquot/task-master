@@ -1,4 +1,4 @@
-// /agents (ADR 017): what Claude is doing and did, and the agents' own tasks, kept apart
+// /agents (ADR 017): what the agent is doing and did, and the agents' own tasks, kept apart
 // from the user's views. Lists are capped (50 sessions, 100 tasks), so none is virtualized.
 
 import { Square } from "lucide-react";
@@ -63,14 +63,14 @@ export function AgentsPage() {
           Agents
         </h1>
         <p className="mt-1 text-sm text-ink-3">
-          Claude sessions started from your tasks, and the tasks agents keep for themselves.
+          agent sessions started from your tasks, and the tasks agents keep for themselves.
         </p>
       </header>
 
       <section aria-label="Active" className="mb-7 flex flex-col gap-2">
         <SectionLabel>Active</SectionLabel>
         {active.length === 0 ? (
-          <p className="text-xs text-ink-3">Nothing running. Use "Send to Claude" on a task.</p>
+          <p className="text-xs text-ink-3">Nothing running. Use "Send to agent" on a task.</p>
         ) : (
           <ul className="flex flex-col gap-1">
             {active.map((s) => (

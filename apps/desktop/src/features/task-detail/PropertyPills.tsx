@@ -1,4 +1,4 @@
-import { Diamond, Sun } from "lucide-react";
+import { Diamond } from "lucide-react";
 import { Select as RadixSelect } from "radix-ui";
 import { type CSSProperties, type ReactNode, useState } from "react";
 import { DatePicker } from "../../components/DatePicker";
@@ -6,6 +6,7 @@ import {
   DueDateIcon as CalendarDays,
   EstimateIcon as Clock,
   PriorityIcon as Flag,
+  TodayIcon as Sun,
 } from "../../components/TaskIcons";
 import {
   cx,

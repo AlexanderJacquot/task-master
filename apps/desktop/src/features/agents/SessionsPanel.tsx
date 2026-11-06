@@ -1,4 +1,4 @@
-// A task's Claude sessions (ADR 017): status, summary, notes and the actions on each.
+// A task's agent sessions (ADR 017): status, summary, notes and the actions on each.
 
 import { Play, Square, SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -13,7 +13,7 @@ import { formatAgo } from "../../lib/dates";
 import type { AgentNote, AgentSession, Task } from "../../lib/types";
 import { markSessionDone, removeAgentSession } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
-import { SendToClaudeDialog } from "./SendToClaudeDialog";
+import { SendToAgentDialog } from "./SendToAgentDialog";
 import { STATE_TONE } from "./SessionChip";
 import {
   folderName,
@@ -29,8 +29,8 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** The "Send to Claude" button with its dialog. */
-export function SendToClaudeButton({ task, className }: { task: Task; className?: string }) {
+/** The "Send to agent" button with its dialog. */
+export function SendToAgentButton({ task, className }: { task: Task; className?: string }) {
   const api = useApi().agents;
   const [open, setOpen] = useState(false);
   if (!api) return null;
@@ -38,9 +38,9 @@ export function SendToClaudeButton({ task, className }: { task: Task; className?
     <>
       <Button size="sm" className={className} onClick={() => setOpen(true)}>
         <Bot size={14} />
-        Send to Claude
+        Send to agent
       </Button>
-      <SendToClaudeDialog task={task} open={open} onOpenChange={setOpen} />
+      <SendToAgentDialog task={task} open={open} onOpenChange={setOpen} />
     </>
   );
 }
@@ -51,14 +51,14 @@ export function SessionsPanel({ task, page }: { task: Task; page: boolean }) {
   const sessions = sessionsOf(all, task.id);
   if (!api) return null;
   return (
-    <section aria-label="Claude sessions" className={cx("flex flex-col gap-2", page && "pl-10")}>
+    <section aria-label="agent sessions" className={cx("flex flex-col gap-2", page && "pl-10")}>
       <div className="flex items-center justify-between gap-2">
-        <SectionLabel>Claude</SectionLabel>
-        <SendToClaudeButton task={task} />
+        <SectionLabel>Agent</SectionLabel>
+        <SendToAgentButton task={task} />
       </div>
       {sessions.length === 0 ? (
         <p className="text-xs text-ink-3">
-          No sessions yet. Claude works in the background and reports here.
+          No sessions yet. The agent works in the background and reports here.
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
@@ -142,7 +142,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           {cost && ` · ${cost}`}
         </button>
         <IconButton
-          label="Open in terminal"
+          label={running ? "Watch in terminal" : "Open in terminal"}
           disabled={!!busy}
           onClick={() => void act("terminal", () => api.openTerminal(session.id))}
         >
@@ -194,8 +194,8 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
       {inTerminal && (
         <p role="status" className="flex items-center gap-1.5 text-accent">
           <SquareTerminal size={13} className="shrink-0" aria-hidden />
-          Continuing in a terminal. It ends when Claude records its summary or the terminal closes;
-          mark it done if it does not.
+          Continuing in a terminal. When the agent records its summary, or you mark it done, the
+          terminal closes a few seconds later.
         </p>
       )}
 

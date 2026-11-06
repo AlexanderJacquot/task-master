@@ -167,7 +167,7 @@ export function timeBlock(overrides: Partial<TimeBlock> = {}): TimeBlock {
   };
 }
 
-/** A Claude Code session of this device on `task_id` (ADR 017), done unless overridden. */
+/** An agent session of this device on `task_id` (ADR 017), done unless overridden. */
 export function agentSession(overrides: Partial<AgentSession> = {}): AgentSession {
   counter += 1;
   return {

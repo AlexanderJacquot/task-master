@@ -1,4 +1,4 @@
-// A project's working folder on this device (ADR 017): where "Send to Claude" starts its
+// A project's working folder on this device (ADR 017): where "Send to agent" starts its
 // tasks by default. Device configuration, never synced.
 
 import { FolderOpen, FolderX } from "lucide-react";
@@ -50,7 +50,7 @@ export function ProjectFolderButton({ projectId }: { projectId: string }) {
         <DropdownMenu.Content align="end" sideOffset={6} className={cx(MENU, "max-w-96 min-w-56")}>
           <div className={MENU_LABEL}>Folder on this device</div>
           <div className="truncate px-2.5 pb-1.5 font-mono text-[12px] text-ink-2" title={folder}>
-            {folder ?? "None: Send to Claude asks each time"}
+            {folder ?? "None: Send to agent asks each time"}
           </div>
           {error && (
             <div role="alert" className="px-2.5 pb-1.5 text-xs text-red-700 dark:text-red-300">

@@ -63,10 +63,16 @@ turns, the summary Claude wrote, its notes, and errors or refused tools.
 - **Open in terminal** runs `claude --resume <session>` in the folder, in a real terminal
   (Windows Terminal when installed, else a console; Terminal on macOS; the setting on
   Linux), with task-master's tools, so Claude can still add notes and record its summary.
-  Better after the run ended: opening a running one forks the conversation. An ended
-  session then shows **In terminal** until Claude records its summary, the terminal
-  closes (kitty, konsole and other terminals the app starts directly; not launchers such
-  as gnome-terminal or Windows Terminal), or you click **Mark done**.
+  While a run is going, the button is **Watch in terminal**: a read-only window that
+  follows the run live (Claude's messages and each tool it uses) and closes 15 seconds
+  after it ends. Claude Code cannot join a run in progress. An ended
+  session then shows **In terminal** until Claude records its summary, you click **Mark
+  done**, or you quit Claude there (`/exit`, or closing the window). Once it is done, the
+  app stops that Claude about 8 seconds later (time for its last message), which closes
+  the terminal, so finished sessions never pile up. This also holds across an app
+  restart. Not with a native Windows install of Claude Code, where the app cannot tell
+  which process is Claude: close those yourself. A session already open in a terminal
+  cannot be opened in a second one.
 - The bin icon removes an ended session from the task's history (undoable).
 
 Sessions run as children of the app. Quitting asks first when some are running, and stops
@@ -85,7 +91,17 @@ sent. They belong to the agent and stay out of your views:
 - A view's options have **Show agent tasks** to see them in place.
 
 Claude can edit its own tasks freely. Of your tasks, it can only change the status, and
-only of the task you sent and its subtasks.
+only of the task you sent and its subtasks, and it never closes them (Done, Cancelled):
+that is yours to decide.
+
+## 5. Review
+
+When Claude reports the work done (it records its summary), the task you sent moves to
+**Review**, a status of the default workflow between Waiting and Done, so finished agent
+work waits for you on the board instead of being marked done unseen. Read the summary on
+the task, then move it to Done, or send a follow-up. A task you already closed stays
+closed. Review is an ordinary status: rename, recolor or reorder it in Settings. If you
+delete it, tasks stay where they are when Claude finishes.
 
 ## How it works
 

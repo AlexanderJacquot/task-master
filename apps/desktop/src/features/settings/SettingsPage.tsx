@@ -1,4 +1,4 @@
-import { useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { type ReactNode, useEffect, useState } from "react";
 import { cx, Dot, InlineInput, Select } from "../../components/ui";
@@ -485,11 +485,6 @@ function RemoteBackupForm({
 }
 
 function Shortcuts() {
-  // Opened from the shortcuts overlay ("Change shortcuts"): bring the section into view.
-  const hash = useRouterState({ select: (r) => r.location.hash });
-  useEffect(() => {
-    if (hash === "shortcuts") document.getElementById("shortcuts")?.scrollIntoView();
-  }, [hash]);
   return (
     <Section
       id="shortcuts"
@@ -501,22 +496,68 @@ function Shortcuts() {
   );
 }
 
+/** A settings category; one is shown at a time and the URL hash picks it (`/settings#shortcuts`). */
+type SettingsCategory = { id: string; label: string; render: () => ReactNode };
+
+const GENERAL: SettingsCategory = {
+  id: "general",
+  label: "General",
+  render: () => (
+    <>
+      <Appearance />
+      <AddingTasks />
+    </>
+  ),
+};
+
+const SETTINGS_CATEGORIES: SettingsCategory[] = [
+  GENERAL,
+  { id: "workflow", label: "Workflow", render: () => <Workflow /> },
+  { id: "shortcuts", label: "Shortcuts", render: () => <Shortcuts /> },
+  { id: "sync", label: "Sync", render: () => <SyncSettings /> },
+  { id: "calendar", label: "Calendar", render: () => <CalendarSettings /> },
+  { id: "agents", label: "Agents", render: () => <AgentSettings /> },
+  { id: "data", label: "Data and backups", render: () => <Data /> },
+  { id: "about", label: "About", render: () => <About /> },
+];
+
 export function SettingsPage() {
+  const hash = useRouterState({ select: (r) => r.location.hash });
+  const navigate = useNavigate();
+  const current = SETTINGS_CATEGORIES.find((c) => c.id === hash) ?? GENERAL;
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="flex min-h-0 flex-1 flex-col">
       <header className="px-10 pt-7 pb-2">
         <h1 className="font-display text-[34px] leading-tight tracking-wide">Settings</h1>
       </header>
-      <div className="max-w-3xl px-10 pb-10">
-        <About />
-        <Workflow />
-        <Appearance />
-        <AddingTasks />
-        <Shortcuts />
-        <SyncSettings />
-        <CalendarSettings />
-        <AgentSettings />
-        <Data />
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <nav
+          aria-label="Settings categories"
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-10 pb-2 md:w-52 md:flex-col md:overflow-visible md:border-b-0 md:pt-6 md:pr-2 md:pb-0"
+        >
+          {SETTINGS_CATEGORIES.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              aria-current={c.id === current.id ? "page" : undefined}
+              onClick={() =>
+                void navigate({ to: "/settings", search: {}, hash: c.id, replace: true })
+              }
+              className={cx(
+                "shrink-0 rounded px-2.5 py-1.5 text-left text-sm whitespace-nowrap",
+                c.id === current.id
+                  ? "bg-accent/15 text-accent"
+                  : "text-ink-2 hover:bg-neutral-500/10 hover:text-ink",
+              )}
+            >
+              {c.label}
+            </button>
+          ))}
+        </nav>
+        {/* Keyed so a new category starts scrolled to its top. */}
+        <div key={current.id} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="max-w-3xl px-10 pb-10 md:pl-6">{current.render()}</div>
+        </div>
       </div>
     </div>
   );

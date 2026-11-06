@@ -462,8 +462,8 @@ describe("keyboard shortcuts", () => {
   it("remaps a shortcut in Settings and uses it right away", async () => {
     fireEvent.keyDown(window, { key: ",", ctrlKey: true });
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Add a shortcut for Go to Today" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add a shortcut for Go to Today" }));
     fireEvent.keyDown(window, { key: "t", altKey: true });
     expect(
       await screen.findByRole("button", { name: "Remove Alt+T from Go to Today" }),
@@ -493,7 +493,8 @@ describe("settings", () => {
     fireEvent.keyDown(window, { key: "g" });
     fireEvent.keyDown(window, { key: "s" });
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeTruthy();
-    const limit = screen.getByLabelText("To do WIP limit");
+    fireEvent.click(screen.getByRole("button", { name: "Workflow" }));
+    const limit = await screen.findByLabelText("To do WIP limit");
     fireEvent.change(limit, { target: { value: "0" } });
     fireEvent.change(limit, { target: { value: "1" } });
     fireEvent.blur(limit);
@@ -618,6 +619,24 @@ describe("redesign", () => {
     );
     expect(screen.queryByRole("complementary", { name: "Task details" })).toBeNull();
     expect(router.state.location.search).toEqual({});
+  });
+
+  it("shows one Settings category at a time, picked from the side nav or the URL hash", async () => {
+    const router = await renderWith("/settings");
+    const nav = await screen.findByRole("navigation", { name: "Settings categories" });
+    expect(within(nav).getByRole("button", { name: "General" }).getAttribute("aria-current")).toBe(
+      "page",
+    );
+    expect(screen.getByRole("heading", { name: "Appearance" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Workflow" })).toBeNull();
+
+    fireEvent.click(within(nav).getByRole("button", { name: "Workflow" }));
+    expect(await screen.findByRole("heading", { name: "Workflow" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Appearance" })).toBeNull();
+    expect(router.state.location.hash).toBe("workflow");
+
+    await router.navigate({ to: "/settings", search: {}, hash: "shortcuts" });
+    expect(await screen.findByRole("heading", { name: "Keyboard shortcuts" })).toBeTruthy();
   });
 
   it("does the same from the New task dialog", async () => {

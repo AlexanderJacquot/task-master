@@ -1,4 +1,4 @@
-// Settings → Agents (ADR 017): how this device runs Claude Code for "Send to Claude".
+// Settings → Agents (ADR 017): how this device runs the agent for "Send to agent".
 
 import { useEffect, useState } from "react";
 import { Button, cx, INPUT, Select } from "../../components/ui";
@@ -84,7 +84,7 @@ export function AgentSettings() {
     <Section
       id="agents"
       title="Agents"
-      hint="Send to Claude runs Claude Code in the background on this device, in the task's folder, with the task's context and task-master's tools to report its progress."
+      hint="Send to agent runs an agent in the background on this device, in the task's folder, with the task's context and task-master's tools to report its progress."
     >
       <Row label="Runs">
         <Select
@@ -122,11 +122,11 @@ export function AgentSettings() {
           )}
         </Row>
       )}
-      <Row label="Claude Code">
+      <Row label="Agent command">
         <input
           value={draft.claude_path}
           onChange={(e) => edit({ claude_path: e.target.value })}
-          aria-label="Claude Code command"
+          aria-label="Agent command"
           className={cx(INPUT, "w-80 py-1 font-mono text-[12.5px]")}
         />
         <Button size="sm" disabled={!!busy} onClick={() => void detect()}>
@@ -151,7 +151,7 @@ export function AgentSettings() {
           )}
         </p>
       )}
-      <Row label="Claude may">
+      <Row label="Agent may">
         <Select
           value={draft.permission_mode}
           onValueChange={(permission_mode) => edit({ permission_mode })}
@@ -164,7 +164,7 @@ export function AgentSettings() {
         <input
           value={draft.model ?? ""}
           onChange={(e) => edit({ model: e.target.value || null })}
-          placeholder="Claude Code's default"
+          placeholder="The agent's default"
           aria-label="Model"
           className={cx(INPUT, "w-64 py-1 text-[13px]")}
         />

@@ -36,9 +36,9 @@ pub use events::{Changed, EntityRef};
 pub use files::{FileStore, MAX_ATTACHMENT_BYTES, StoredFile, clean_file_name, is_hash, mime_for};
 pub use model::{
     AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, DueFilter, Epic, EpicState,
-    GroupBy, Id, IsoDate, Layout, Priority, Project, ProjectFolder, SessionState, Snapshot, SortBy,
-    Status, StatusCategory, Swimlane, Tag, Task, TaskOwner, TimeBlock, Timestamp,
-    VIEW_SPEC_VERSION, View, ViewFilter, ViewScope, ViewSpec,
+    GroupBy, Id, IsoDate, Layout, Priority, Project, ProjectFolder, REVIEW_STATUS_ID, SessionState,
+    Snapshot, SortBy, Status, StatusCategory, Swimlane, Tag, Task, TaskOwner, TimeBlock, Timestamp,
+    VIEW_SPEC_VERSION, View, ViewFilter, ViewScope, ViewSpec, review_status,
 };
 pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};

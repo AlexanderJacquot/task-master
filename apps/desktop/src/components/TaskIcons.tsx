@@ -2,6 +2,14 @@ import type { ComponentProps } from "react";
 import paths from "../assets/icons/paths.json";
 
 type IconProps = ComponentProps<"svg"> & { size?: number | string };
+
+// The glyphs are drawn on a 24-unit grid and stay within ~0.9..22.1 (stroke included; the
+// lineage tree reaches 0.9), so the viewBox crops that 22.5-unit area: icons render ~7%
+// larger in the same layout box without clipping. The stroke width is scaled down by the
+// same factor (1.75 * 22.5/24) to keep the line weight.
+const VIEW_BOX = "0.75 0.75 22.5 22.5";
+const STROKE_WIDTH = 1.64;
+
 function TaskIcon({ name, size = 24, ...props }: IconProps & { name: keyof typeof paths }) {
   // Decorative unless the caller names it, matching lucide-react's behaviour.
   const label = props["aria-label"];
@@ -12,10 +20,10 @@ function TaskIcon({ name, size = 24, ...props }: IconProps & { name: keyof typeo
       xmlns="http://www.w3.org/2000/svg"
       width={size}
       height={size}
-      viewBox="0 0 24 24"
+      viewBox={VIEW_BOX}
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.75}
+      strokeWidth={STROKE_WIDTH}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden={labelled ? undefined : true}
@@ -59,8 +67,10 @@ export const UnarchiveIcon = icon("unarchive");
 export const PriorityIcon = icon("priority");
 /** Gonfalon banner. */
 export const BookmarkIcon = icon("bookmark");
-/** Quill. */
+/** Quill: cut nib and bare barrel, notched vane, a line of ink. */
 export const EditIcon = icon("edit");
+/** Tarot sun: the ☉ disc ringed by alternating straight and wavy rays. */
+export const TodayIcon = icon("today");
 /** Balance scales. */
 export const MetricsIcon = icon("metrics");
 /** Oak tree. */

@@ -1316,7 +1316,7 @@ fn new_status(name: &str, category: StatusCategory) -> Command {
 #[test]
 fn status_commands_roundtrip() {
     let mut s = store();
-    let created = roundtrip(&mut s, new_status("Review", StatusCategory::InProgress));
+    let created = roundtrip(&mut s, new_status("QA", StatusCategory::InProgress));
     let review = created.statuses[0].clone();
     uuid_v7(&review.id);
     let names: Vec<_> = s
@@ -1328,7 +1328,7 @@ fn status_commands_roundtrip() {
         .collect();
     assert_eq!(
         names.last().map(String::as_str),
-        Some("Review"),
+        Some("QA"),
         "appended last"
     );
 
@@ -1458,7 +1458,7 @@ fn populated() -> Store {
         },
     );
     add_view(&mut s, "All", spec(ViewScope::All));
-    s.execute(new_status("Review", StatusCategory::InProgress))
+    s.execute(new_status("QA", StatusCategory::InProgress))
         .unwrap();
     s
 }

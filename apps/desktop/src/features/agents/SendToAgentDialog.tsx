@@ -1,5 +1,5 @@
-// "Send to Claude" (ADR 017): pick the folder and permissions, add instructions, and start
-// a background Claude Code session on the task.
+// "Send to agent" (ADR 017): pick the folder and permissions, add instructions, and start
+// a background agent session on the task.
 
 import { Dialog } from "radix-ui";
 import { useEffect, useState } from "react";
@@ -30,7 +30,7 @@ export function sessionChanges(session: AgentSession): Changes {
   };
 }
 
-export function SendToClaudeDialog({
+export function SendToAgentDialog({
   task,
   open,
   onOpenChange,
@@ -120,7 +120,7 @@ export function SendToClaudeDialog({
           className="tex-sheet fixed top-[10%] left-1/2 z-50 flex max-h-[80vh] w-[36rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border border-line-strong bg-overlay p-5 shadow-2xl shadow-black/40"
         >
           <Dialog.Title className="font-display text-[19px] tracking-wide text-accent">
-            Send to Claude
+            Send to agent
           </Dialog.Title>
           <p className="-mt-2 truncate text-sm text-ink-2" title={task.title}>
             {task.title}
@@ -172,7 +172,7 @@ export function SendToClaudeDialog({
           )}
 
           <div className="flex flex-col gap-1 text-xs">
-            <span className="text-ink-3">Claude may</span>
+            <span className="text-ink-3">Agent may</span>
             <Select
               value={mode}
               onValueChange={(value) => {
@@ -194,7 +194,7 @@ export function SendToClaudeDialog({
                   onChange={(e) => setConfirmAll(e.target.checked)}
                   className="accent-accent"
                 />
-                I understand Claude will run commands without asking.
+                I understand the agent will run commands without asking.
               </label>
             )}
           </div>
@@ -212,7 +212,7 @@ export function SendToClaudeDialog({
 
           <details onToggle={(e) => e.currentTarget.open && loadBrief()}>
             <summary className="cursor-pointer text-xs text-ink-3 hover:text-ink-2">
-              What Claude gets
+              What the agent gets
             </summary>
             <pre className="mt-2 max-h-56 overflow-auto rounded-lg bg-hover p-3 text-[12px] whitespace-pre-wrap text-ink-2">
               {brief ?? "Loading…"}

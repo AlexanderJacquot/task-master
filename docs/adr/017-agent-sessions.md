@@ -20,7 +20,7 @@ in the same space without cluttering the user's views. Decided with the user:
 
 ## Decisions
 
-### Data (core, migration 0010)
+### Data (core, migrations 0010 and 0011)
 
 - `tasks.owner TEXT NOT NULL DEFAULT 'me' CHECK (owner IN ('me','agent'))`. Set by
   `CreateTask`; the MCP always creates `agent` tasks. `UpdateTask` can change it (adopt an
@@ -81,6 +81,11 @@ in the same space without cluttering the user's views. Decided with the user:
   without a Linux shell, so arguments arrive as given (paths with spaces). A folder
   picked in the dialog (`\\wsl.localhost\<distro>\…` or `C:\…`) is converted to a Linux
   path. Children start without a console window (`CREATE_NO_WINDOW`).
+- Children start without the session markers a parent Claude Code sets (`CLAUDECODE`,
+  `CLAUDE_CODE_CHILD_SESSION`, its session id, messaging socket and token, …), which the
+  app inherits when started from inside one: they would turn transcript saving off (no
+  `--resume`) and hand that session's channel to our agents. User configuration
+  (`ANTHROPIC_API_KEY`, `CLAUDE_CONFIG_DIR`, provider settings) is kept.
 - The stream is parsed line by line (`agents/stream.rs`, tested on a recorded run):
   tool uses become the activity line ("Editing store.rs", "Running `cargo test`",
   "Noting: …"), `system/permission_denied` and the result's `permission_denials` list
@@ -106,10 +111,27 @@ in the same space without cluttering the user's views. Decided with the user:
   session's `--mcp-config` and `--allowedTools mcp__task-master`, so notes and the
   summary still land. Allowed while running (it forks the conversation in Claude Code)
   but the UI suggests waiting or cancelling; a running session stays `running`. Any other
-  becomes `terminal`, which ends (`done`) when the agent calls `complete_session`, when
-  the terminal process exits at least 3 s after opening (launchers such as gnome-terminal,
-  `wt.exe` and `osascript` return at once and cannot be followed), or with the card's
-  **Mark done** (a user edit, undoable). An `interrupted` session has **Resume**: a
+  becomes `terminal`, which ends (`done`) when the agent calls `complete_session`, with the
+  card's **Mark done** (a user edit, undoable), or when Claude or its window goes away.
+- **Watch in terminal.** A running headless session cannot be joined: `claude --resume`
+  would fork it and load none of its current turn. Each run writes a readable log
+  (`agents/<id>/run.log`: the message or instructions, then `stream::readable` of every
+  stream line, and a closing `=== Run ended: <state> ===`), and opening a terminal on a
+  running session shows that log instead (`launch::watch_script`, POSIX `sh`; inside WSL
+  for the WSL runtime), read-only, closing 15 s after the end marker. Native Windows has
+  no POSIX shell, so watching is refused there.
+- **No loose terminals.** The terminal's shell writes its pid to `agents/<id>/terminal.pid`
+  before `exec claude` (WSL: through `sh -c` inside `wsl.exe --exec`), so the file names
+  claude itself, whatever the terminal (launchers such as gnome-terminal, `wt.exe` and
+  `osascript` return at once). A watcher thread per session reads its state every second
+  and checks the process every 5 s with `ps -p <pid> -o args=` (through `wsl.exe` for WSL),
+  which must contain the Claude session id, so a reused pid is never touched. In the
+  terminal state: claude gone (or the window the app started closed after ≥ 3 s) → `done`.
+  Any other state (done, removed): after an 8 s grace for Claude's last message, SIGTERM,
+  then SIGKILL after 3 s; claude exiting closes the terminal, and its pty hangs up what
+  is left. Start-up watches again every `terminal` session with a pid file. Opening a
+  session whose claude still runs in a terminal is refused. Native Windows runs claude
+  without a shell, so it records no pid; those terminals are the user's to close. An `interrupted` session has **Resume**: a
   follow-up asking the agent to pick up where it left off.
 - Sessions are children of the app: on exit the shell marks running ones `interrupted`
   and kills them (the confirmation before quitting is the UI's, step 4).
@@ -140,12 +162,21 @@ in the same space without cluttering the user's views. Decided with the user:
   a session a subtask of the session's task unless `parent_id` or `top_level`; project
   from the parent, else the session task; status by name or category; `depends_on`),
   `update_task` (agent tasks: status, title, description or `append_description`,
-  priority, prerequisites; the user's tasks: status only, and only the session's task and
-  its subtasks at any depth), `add_note`, `complete_session` (stores the summary; for a
+  priority, prerequisites; the user's tasks: status only, never a done or cancelled one,
+  and only the session's task and its subtasks at any depth), `add_note`, `complete_session` (stores the summary; for a
   `running` session the shell still sets the state when the run ends, which keeps the
   agent's summary over Claude's last message; any other session, in a terminal or
   outliving an app that quit and marked it `interrupted`, is marked `done` here, since
   nothing else would end it).
+- **Review.** Migration 0011 seeds a baseline status *Review* (fixed id
+  `…000000000007`, category `in_progress`, rank `a3V` between Waiting and Done), unless the
+  workflow already has a live status named Review; `core::review_status` finds the seeded
+  one, else one by that name. `complete_session` moves the session's task there in the
+  same batch as the summary, when it is the user's task and not closed (done, cancelled)
+  or already in Review. The agent cannot close the user's tasks itself (`update_task`
+  refuses a done or cancelled status for them), so finished agent work always waits for
+  the user's review. A run that ends without `complete_session`, and Mark done, move
+  nothing. Deleting the Review status turns the move off.
 - Server instructions tell the agent how to track its work and which task it is on.
 - **Dependency: `rmcp` 3.9** (official Rust MCP SDK; features `server`, `macros`,
   `transport-io`) rather than a hand-written JSON-RPC loop.

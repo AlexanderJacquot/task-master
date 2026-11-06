@@ -348,10 +348,10 @@ export type AgentSettings_Serialize = {
 	model: string | null,
 };
 
-/**  What "Send to Claude" sends. */
+/**  What "Send to agent" sends. */
 export type AgentStart = AgentStart_Serialize | AgentStart_Deserialize;
 
-/**  What "Send to Claude" sends. */
+/**  What "Send to agent" sends. */
 export type AgentStart_Deserialize = {
 	task_id: string,
 	/**  As typed or picked (a Windows path is converted for WSL). */
@@ -362,7 +362,7 @@ export type AgentStart_Deserialize = {
 	prompt: string,
 };
 
-/**  What "Send to Claude" sends. */
+/**  What "Send to agent" sends. */
 export type AgentStart_Serialize = {
 	task_id: string,
 	/**  As typed or picked (a Windows path is converted for WSL). */

@@ -30,7 +30,7 @@ if (!isCapture) {
     const running = Object.keys(store.getState().agentActivity).length;
     if (running === 0) return;
     const quit = await ask(
-      `${running === 1 ? "A Claude session is" : `${running} Claude sessions are`} still running. Quitting stops ${running === 1 ? "it" : "them"}; you can continue later with a follow-up.`,
+      `${running === 1 ? "An agent session is" : `${running} agent sessions are`} still running. Quitting stops ${running === 1 ? "it" : "them"}; you can continue later with a follow-up.`,
       { title: "Quit task-master?", kind: "warning", okLabel: "Quit", cancelLabel: "Keep running" },
     );
     if (!quit) event.preventDefault();

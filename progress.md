@@ -12,10 +12,11 @@ Terminal on Windows (unit-tested command lines only), and the Windows/macOS inst
 with the sidecar, which only release.yml builds. Migration 0010 bumps the schema, so the
 sync server must be upgraded with the desktops (replicas sync only at one version).
 
-**v0.6.0** is the latest release. `main` also includes, for the next release, the
-freeform Lineage canvas, responsive sidebar shortcuts, calendar popup fixes, public OAuth
-project pages and the medieval icon set. Google Calendar setup and enabling GitHub Pages
-remain user configuration steps (see the guides below).
+**v0.7.0** is prepared on `main`: agent sessions and the bundled MCP server, Review
+workflow (schema 11), freeform Lineage canvas, settings categories, medieval icons,
+sidebar and board polish, calendar popup fixes and public OAuth project pages. The
+client and sync server share the release tag and must be upgraded together. Google
+Calendar setup and enabling GitHub Pages remain user configuration steps.
 
 **M10 Google Calendar sync**, branch `m10-google-calendar`: merged to `main` with M9 and
 released as **v0.4.0** (2026-11-05). Next: the user creates their OAuth client
@@ -43,6 +44,70 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### Release 0.7.0 integration (2026-11-06)
+
+- Kept the M16 merge already on `main` and integrated the subsequent agent/session,
+  Review status, settings, board, sidebar and icon changes for the client and server.
+- Updated the Settings integration tests to navigate to Shortcuts and Workflow after
+  the categories redesign; fixed the outstanding frontend formatting issues.
+- Bumped workspace crates, desktop metadata and lockfile to 0.7.0; added release notes
+  and updated the release workflow body with the schema 11 coordinated-upgrade notice.
+- Passed rustfmt, Clippy with warnings denied, all 196 Rust tests (3 opt-in tests
+  ignored), Biome, TypeScript, and all 290 frontend tests (2 skipped). The Rust network
+  tests run outside the sandbox because they bind loopback listeners.
+- Built the Linux 0.7.0 DEB with the release MCP sidecar via the same Tauri configuration
+  as CI. Cross-platform installers and signed updater metadata are built by the tag
+  workflow; the same tag publishes the versioned server container and `latest`.
+
+### Watch a running session in a terminal (2026-11-06)
+
+- Open in terminal on a running follow-up showed only the user's message: `claude
+  --resume` loads the saved conversation and cannot join a run in progress. Each run now
+  writes `agents/<id>/run.log` (readable: Claude's text, tool uses, denials, the end), and
+  the button reads **Watch in terminal** while running: a read-only window following the
+  log, closing 15 s after `=== Run ended`. Native Windows: refused (no POSIX shell).
+- Tests: the log rendering of the recorded run, the watch script run by `sh` on a growing
+  log, the terminal commands (Linux, WSL, none on native Windows), the button label.
+- Note: the agent sessions sent from the dev app edited this working tree (app icons,
+  TaskRow, BoardView, CaptureBox, SettingsPage, …); two `app.test.tsx` tests fail on its
+  SettingsPage changes and Biome flags its formatting. Not part of this change.
+
+### Spawned sessions are not sub-sessions (2026-11-06)
+
+- An app started from inside a Claude Code session (the dev build run by an agent, or a
+  terminal running Claude Code) inherited its `CLAUDECODE`/`CLAUDE_CODE_*` markers, so
+  spawned `claude` ran as that session's child: transcript saving off (breaking
+  `--resume`) and its id and messaging socket passed to our agents. `agents::process`
+  now removes those markers (`INHERITED_SESSION_VARS`) from every child; the user's own
+  configuration passes through. Unit test on the spawned command's environment.
+
+### Review status for finished agent work (2026-11-06)
+
+- Migration 0011 seeds **Review** (fixed id `…0007`, `in_progress`, between Waiting and
+  Done) unless a live status named Review exists; `core::review_status` finds it.
+- `complete_session` moves the user's session task to Review (not when it is closed or
+  already there). `update_task` refuses done/cancelled for the user's tasks. The agent's
+  rules, server instructions and tool description say so.
+- Tests: the seed and the skip next to a user's own Review (db), the move and the
+  closed-task case, the refusal (MCP); store tests renamed their "Review" status to QA.
+- Verified: Clippy, rustfmt, 192 Rust tests, bindings unchanged, TypeScript, Biome and
+  287 frontend tests. Schema version 11: the sync server must be upgraded with desktops.
+
+### No loose terminal sessions (2026-11-06)
+
+- A terminal opened on a session writes claude's pid (`agents/<id>/terminal.pid`, by the
+  shell before `exec`; WSL through `sh -c`). A watcher thread per session ends it when
+  claude goes away, and once the session is done (agent summary, Mark done) or removed,
+  stops claude after an 8 s grace (SIGTERM, then SIGKILL), which closes the terminal.
+  The pid must still run a command line with the Claude session id. Start-up re-watches
+  `terminal` sessions; a second terminal on a session still open is refused. Native
+  Windows (no shell around claude) records no pid and is not closed.
+- Tests: the watcher's decision table, the pid-recording scripts and probe/kill commands
+  (native, WSL, Windows console), and a real process on Unix started through the
+  terminal script, recognised by its id and stopped by `close_terminal`.
+- Verified: Clippy, rustfmt, 189 Rust tests, Biome, the agent UI tests. Hand check in
+  the app pending.
 
 ### Medieval icon set (2026-11-06)
 

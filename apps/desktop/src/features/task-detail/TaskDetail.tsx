@@ -1,8 +1,12 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ArrowUpRight, ChevronRight, Maximize2, Sun, X } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ChevronRight, Maximize2, X } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { DatePicker } from "../../components/DatePicker";
-import { AgentsIcon as Bot, DeleteIcon as Trash2 } from "../../components/TaskIcons";
+import {
+  AgentsIcon as Bot,
+  TodayIcon as Sun,
+  DeleteIcon as Trash2,
+} from "../../components/TaskIcons";
 import {
   cx,
   Dot,

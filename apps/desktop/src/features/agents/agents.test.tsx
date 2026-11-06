@@ -64,12 +64,12 @@ afterEach(() => {
   localStorage.clear();
 });
 
-it("sends a task to Claude from its page and follows the run", async () => {
+it("sends a task to the agent from its page and follows the run", async () => {
   const app = project({ id: "p1", name: "App" });
   const t = task({ title: "Fix the login", project_id: app.id });
   const { store, agents } = await renderAt(`/task/${t.id}`, { tasks: [t], projects: [app] });
 
-  fireEvent.click(await screen.findByRole("button", { name: "Send to Claude" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Send to agent" }));
   const dialog = await screen.findByRole("dialog");
   const folder = within(dialog).getByRole("textbox", { name: "Folder" });
   // No session and no project folder yet: nothing to prefill.
@@ -81,7 +81,7 @@ it("sends a task to Claude from its page and follows the run", async () => {
   fireEvent.change(within(dialog).getByLabelText("Instructions (optional)"), {
     target: { value: "Keep the API as is" },
   });
-  fireEvent.click(within(dialog).getByText("What Claude gets"));
+  fireEvent.click(within(dialog).getByText("What the agent gets"));
   fireEvent.click(within(dialog).getByRole("button", { name: "Start" }));
 
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -102,6 +102,9 @@ it("sends a task to Claude from its page and follows the run", async () => {
   act(() => agents.activity(session?.id ?? "", "Editing login.ts"));
   expect(within(card).getByRole("status").textContent).toContain("Editing login.ts");
 
+  // A run cannot be joined in a terminal, only watched.
+  fireEvent.click(within(card).getByRole("button", { name: "Watch in terminal" }));
+  await waitFor(() => expect(agents.calls).toContain(`terminal ${session?.id}`));
   fireEvent.click(within(card).getByRole("button", { name: "Stop" }));
   await waitFor(() => expect(agents.calls).toContain(`cancel ${session?.id}`));
 });
@@ -114,7 +117,7 @@ it("prefills the task's last folder and asks before running everything", async (
     { tasks: [t], agent_sessions: [earlier] },
     { settings: { permission_mode: "bypassPermissions" } },
   );
-  fireEvent.click(await screen.findByRole("button", { name: "Send to Claude" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Send to agent" }));
   const dialog = await screen.findByRole("dialog");
   await waitFor(() =>
     expect(within(dialog).getByRole("textbox", { name: "Folder" })).toHaveProperty(

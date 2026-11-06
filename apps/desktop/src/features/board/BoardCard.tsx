@@ -1,9 +1,11 @@
-import { ListChecks } from "lucide-react";
+import { CornerDownRight, ListChecks } from "lucide-react";
 import { memo } from "react";
-import { EstimateIcon as Clock } from "../../components/TaskIcons";
+import { AgentsIcon as Bot, EstimateIcon as Clock } from "../../components/TaskIcons";
 import { Chip, cx, Dot, PRIORITY_PILL } from "../../components/ui";
 import { daysFrom, formatDue, isoDate } from "../../lib/dates";
 import type { Epic, Project, Status, Tag, Task } from "../../lib/types";
+import { isAgentTask } from "../../lib/views";
+import { useStoreState } from "../../store/context";
 import { SessionChip } from "../agents/SessionChip";
 import { EpicMark } from "../organize/EpicMark";
 
@@ -31,7 +33,10 @@ interface Props extends CardLookups {
   overlay?: boolean;
 }
 
-/** The face of a card: title, project, epic, tags, priority, due date, subtask progress. */
+/**
+ * The face of a card: title, project, epic, tags, priority, due date, subtask progress,
+ * and, on a subtask, its parent.
+ */
 export const CardFace = memo(function CardFace(p: Props) {
   const { task } = p;
   const category = p.statuses.find((s) => s.id === task.status_id)?.category;
@@ -42,6 +47,9 @@ export const CardFace = memo(function CardFace(p: Props) {
   const project = task.project_id ? p.projects[task.project_id] : undefined;
   const epic = task.epic_id ? p.epics[task.epic_id] : undefined;
   const tags = task.tag_ids.flatMap((id) => (p.tags[id] ? [p.tags[id]] : []));
+  const parentTitle = useStoreState((s) =>
+    task.parent_id ? (s.tasks[task.parent_id]?.title ?? null) : null,
+  );
 
   return (
     <div
@@ -58,6 +66,9 @@ export const CardFace = memo(function CardFace(p: Props) {
           done && "text-ink-3 line-through",
         )}
       >
+        {isAgentTask(task) && (
+          <Bot size={13} className="mr-1 inline align-[-2px] text-accent" aria-label="Agent task" />
+        )}
         {task.title}
       </p>
       <div className="mt-auto flex min-w-0 items-center gap-1.5 text-xs text-ink-2">
@@ -76,6 +87,16 @@ export const CardFace = memo(function CardFace(p: Props) {
           <span className="flex max-w-24 shrink-0 items-center gap-1 truncate text-violet-800 dark:text-violet-300">
             <EpicMark epic={epic} size={10} />
             <span className="truncate">{epic.name}</span>
+          </span>
+        )}
+        {parentTitle !== null && (
+          <span
+            className="flex min-w-0 max-w-32 shrink items-center gap-1 text-ink-3"
+            title={`Subtask of ${parentTitle}`}
+          >
+            <CornerDownRight size={12} className="shrink-0" aria-hidden="true" />
+            <span className="sr-only">Subtask of </span>
+            <span className="truncate">{parentTitle}</span>
           </span>
         )}
         <SessionChip taskId={task.id} className="max-w-36 shrink-0" />

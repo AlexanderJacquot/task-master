@@ -4,7 +4,7 @@ These are original vector assets rebuilt using the two supplied Medieval Brand A
 
 ## UI icons
 
-`icons/*.svg` are standalone, path-only SVGs. All use a 24 × 24 viewBox, a 1.75-unit stroke, rounded caps and joins, no fill, and `currentColor`. There are no embedded images, fonts, or external dependencies. Use at 24 px where possible; the proof sheet also shows 16 and 32 px.
+`icons/*.svg` are standalone, path-only SVGs. All use a 24 × 24 viewBox, a 1.75-unit stroke, rounded caps and joins, no fill, and `currentColor`. There are no embedded images, fonts, or external dependencies. Use at 24 px where possible; the proof sheet also shows 16 and 32 px. In the app, `TaskIcons.tsx` crops the viewBox to `2 2 20 20` (every glyph, stroke included, stays inside 2..22) so the icons draw 20% larger in the same layout box, with the stroke scaled to 1.46 to keep the same line weight. Keep new glyphs inside that area.
 
 Every icon follows the medieval theme:
 
@@ -23,7 +23,8 @@ Every icon follows the medieval theme:
 | `archive` / `unarchive` | closed chest / open chest       | archive, unarchive              |
 | `priority`              | swallowtail pennant             | priority flag, epic "flag" mark |
 | `bookmark`              | gonfalon banner                 | saved views                     |
-| `edit`                  | quill                           | rename / edit                   |
+| `edit`                  | quill with cut nib, writing ink | rename / edit                   |
+| `today`                 | tarot sun (☉ disc, wavy rays)   | Today view, "plan for today"    |
 | `metrics`               | balance scales                  | Metrics                         |
 | `lineage`               | oak tree                        | Lineage                         |
 | `send`                  | fletched arrow                  | send to agent                   |

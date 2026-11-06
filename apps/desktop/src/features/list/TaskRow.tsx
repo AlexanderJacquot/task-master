@@ -1,10 +1,11 @@
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { memo, useState } from "react";
 import { DatePicker } from "../../components/DatePicker";
-import { PriorityIcon as Flag } from "../../components/TaskIcons";
+import { AgentsIcon as Bot, PriorityIcon as Flag } from "../../components/TaskIcons";
 import { Chip, cx, Dot, PRIORITIES, PRIORITY_STYLE, Select, TaskCheck } from "../../components/ui";
 import { formatDue } from "../../lib/dates";
 import type { Project, Status, Tag, Task, TaskChange } from "../../lib/types";
+import { isAgentTask } from "../../lib/views";
 import { SessionChip } from "../agents/SessionChip";
 
 export interface RowHandlers {
@@ -111,6 +112,13 @@ export const TaskRow = memo(function TaskRow(p: Props) {
           )}
           title="Click to open · Shift+Enter for the full page · double-click to rename"
         >
+          {isAgentTask(task) && (
+            <Bot
+              size={13}
+              className="mr-1 inline align-[-2px] text-accent"
+              aria-label="Agent task"
+            />
+          )}
           {task.title}
         </button>
       )}

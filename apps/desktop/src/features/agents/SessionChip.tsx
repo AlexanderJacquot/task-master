@@ -1,4 +1,4 @@
-// The small Claude status on a task card or row (ADR 017): what a running session is
+// The small agent status on a task card or row (ADR 017): what a running session is
 // doing, or how the last one ended.
 
 import { AgentsIcon as Bot } from "../../components/TaskIcons";
@@ -22,11 +22,11 @@ export function SessionChip({ taskId, className }: { taskId: string; className?:
   if (!session) return null;
   const running = session.state === "running";
   // A run of another device has no live activity here.
-  const text = running ? (activity ?? "Running") : `Claude · ${STATE_LABEL[session.state]}`;
+  const text = running ? (activity ?? "Running") : `Agent · ${STATE_LABEL[session.state]}`;
   return (
     <span
       data-testid="session-chip"
-      title={running ? `Claude: ${text}` : (session.summary ?? session.error ?? text)}
+      title={running ? `Agent: ${text}` : (session.summary ?? session.error ?? text)}
       className={cx(
         "inline-flex max-w-full min-w-0 items-center gap-1 rounded-md px-1.5 text-[12px] leading-5",
         STATE_TONE[session.state],

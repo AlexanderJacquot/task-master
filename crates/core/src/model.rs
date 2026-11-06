@@ -45,6 +45,19 @@ impl Priority {
     }
 }
 
+/// The baseline Review status (migration 0011): where a task goes when an agent reports it
+/// done, for the user to check.
+pub const REVIEW_STATUS_ID: &str = "00000000-0000-7000-8000-000000000007";
+
+/// The workflow's Review status: the seeded one, else a live status named "Review" (a
+/// workflow that had one before the seed). `None` when the user removed it.
+pub fn review_status(statuses: &[Status]) -> Option<&Status> {
+    let live = || statuses.iter().filter(|s| s.deleted_at.is_none());
+    live()
+        .find(|s| s.id == REVIEW_STATUS_ID)
+        .or_else(|| live().find(|s| s.name.trim().eq_ignore_ascii_case("review")))
+}
+
 /// Drives behavior regardless of the status names a user picks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]

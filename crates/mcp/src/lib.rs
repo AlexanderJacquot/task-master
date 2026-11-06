@@ -19,7 +19,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use taskmaster_core::{
     AgentSession, AgentSessionChange, Command, Id, NewAgentNote, NewTask, Priority, SessionState,
-    Snapshot, Status, StatusCategory, Store, Task, TaskChange, TaskOwner,
+    Snapshot, Status, StatusCategory, Store, Task, TaskChange, TaskOwner, review_status,
 };
 
 /// Most rows a listing returns.
@@ -381,7 +381,19 @@ impl TaskServer {
         }
         let mut changes = Vec::new();
         if let Some(status) = &p.status {
-            changes.push(TaskChange::StatusId(resolve_status(&snapshot, status)?));
+            let id = resolve_status(&snapshot, status)?;
+            let closes = snapshot.statuses.iter().any(|s| {
+                s.id == id && matches!(s.category, StatusCategory::Done | StatusCategory::Cancelled)
+            });
+            if !own && closes {
+                return Err(
+                    "the user closes their own tasks after reviewing them; call \
+                            complete_session when you are done, which moves this task to \
+                            Review"
+                        .into(),
+                );
+            }
+            changes.push(TaskChange::StatusId(id));
         }
         if let Some(title) = p.title {
             changes.push(TaskChange::Title(title));
@@ -445,7 +457,8 @@ impl TaskServer {
 
     #[tool(
         description = "Before you finish, record the session summary the user sees on the \
-                       task: what was done, what is left, what to check."
+                       task: what was done, what is left, what to check. This reports the \
+                       work done: the task moves to Review for the user to check."
     )]
     pub fn complete_session(&self, Parameters(p): Parameters<CompleteSession>) -> ToolResult {
         let session = self.session()?;
@@ -459,14 +472,49 @@ impl TaskServer {
         if state != SessionState::Running {
             changes.push(AgentSessionChange::State(SessionState::Done));
         }
-        self.write(vec![Command::UpdateAgentSession {
+        let mut commands = vec![Command::UpdateAgentSession {
             id: session.id.clone(),
             changes,
-        }])?;
-        Ok(if state == SessionState::Running {
-            "Summary recorded. The session ends when you finish your turn.".into()
+        }];
+        // The user's task goes to Review for them to check, unless it is already closed
+        // (or in Review, or the workflow has no Review status).
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let review = review_status(&snapshot.statuses);
+        let task = snapshot.tasks.iter().find(|t| t.id == session.task_id);
+        let category = |id: &str| {
+            snapshot
+                .statuses
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.category)
+        };
+        let to_review = match (review, task) {
+            (Some(review), Some(task)) => {
+                task.owner == TaskOwner::Me
+                    && task.status_id != review.id
+                    && !matches!(
+                        category(&task.status_id),
+                        Some(StatusCategory::Done | StatusCategory::Cancelled)
+                    )
+            }
+            _ => false,
+        };
+        if let (true, Some(review)) = (to_review, review) {
+            commands.push(Command::UpdateTask {
+                id: session.task_id.clone(),
+                changes: vec![TaskChange::StatusId(review.id.clone())],
+            });
+        }
+        self.write(commands)?;
+        let moved = if to_review {
+            " The task moved to Review for the user."
         } else {
-            "Summary recorded and the session marked done.".into()
+            ""
+        };
+        Ok(if state == SessionState::Running {
+            format!("Summary recorded.{moved} The session ends when you finish your turn.")
+        } else {
+            format!("Summary recorded and the session marked done.{moved}")
         })
     }
 }
@@ -498,7 +546,8 @@ impl TaskServer {
             "task-master is the user's task manager. Use these tools to read task context \
              and to track your own progress: create agent tasks for the steps you plan, move \
              them to in_progress and done as you go, add short notes for findings and \
-             decisions, and call complete_session with a summary before you finish. Agent \
+             decisions, and call complete_session with a summary before you finish, which \
+             moves the task to Review: never mark the user's task done yourself. Agent \
              tasks are kept apart from the user's own; never try to change the user's other \
              tasks.",
         );

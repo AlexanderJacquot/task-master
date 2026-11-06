@@ -141,12 +141,7 @@ export const CaptureBox = forwardRef<
           big && "border-b border-line px-5 py-4",
         )}
       >
-        <Plus
-          aria-hidden
-          size={big ? 18 : 16}
-          strokeWidth={1.75}
-          className="shrink-0 text-accent"
-        />
+        <Plus aria-hidden size={big ? 18 : 16} className="shrink-0 text-accent" />
         <input
           ref={ref}
           id={p.id}

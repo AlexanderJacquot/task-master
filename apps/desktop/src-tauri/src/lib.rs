@@ -721,6 +721,9 @@ pub fn run() {
                 sync,
             });
 
+            // Finished terminal sessions close even across a restart (ADR 017).
+            agents::watch_terminals(app.handle());
+
             // Local tools share this database but have their own SQLite connection.
             let handle = app.handle().clone();
             std::thread::Builder::new()

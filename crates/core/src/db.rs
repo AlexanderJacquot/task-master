@@ -20,6 +20,7 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0008_epic_appearance.sql")),
     M::up(include_str!("../migrations/0009_task_dependencies.sql")),
     M::up(include_str!("../migrations/0010_agent_sessions.sql")),
+    M::up(include_str!("../migrations/0011_review_status.sql")),
 ];
 
 pub(crate) fn migrations() -> Migrations<'static> {
@@ -136,6 +137,7 @@ mod tests {
                 "To do",
                 "In progress",
                 "Waiting",
+                "Review",
                 "Done",
                 "Cancelled"
             ]
@@ -146,6 +148,50 @@ mod tests {
         assert_eq!(fk, 1);
         conn.execute_batch("SELECT * FROM tasks_fts WHERE tasks_fts MATCH 'x'")
             .unwrap();
+    }
+
+    #[test]
+    fn review_is_seeded_once_and_not_next_to_a_users_own() {
+        let count = |conn: &Connection| -> i64 {
+            conn.query_row(
+                "SELECT count(*) FROM statuses
+                 WHERE lower(trim(name)) = 'review' AND deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        let fresh = open_in_memory().unwrap();
+        assert_eq!(count(&fresh), 1);
+        let (id, category): (String, String) = fresh
+            .query_row(
+                "SELECT id, category FROM statuses WHERE name = 'Review'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(id, crate::model::REVIEW_STATUS_ID);
+        assert_eq!(category, "in_progress", "an open status");
+
+        // A workflow that already has a Review keeps just its own.
+        let mut conn = Connection::open_in_memory().unwrap();
+        configure(&conn).unwrap();
+        migrations().to_version(&mut conn, 10).unwrap();
+        conn.execute(
+            "INSERT INTO statuses (id, name, category, rank) VALUES ('mine', ' review ', 'todo', 'a9')",
+            [],
+        )
+        .unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+        assert_eq!(count(&conn), 1);
+        let seeded: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM statuses WHERE id = ?1",
+                [crate::model::REVIEW_STATUS_ID],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(seeded, 0);
     }
 
     #[test]

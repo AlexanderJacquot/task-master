@@ -59,6 +59,67 @@ pub fn parse_line(line: &str) -> Event {
     }
 }
 
+/// One stream line as readable text for the run log a "Watch in terminal" window follows:
+/// Claude's words, each tool it uses, refusals, and the end. Empty for anything else.
+pub fn readable(line: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<Value>(line.trim()) else {
+        return Vec::new();
+    };
+    let text = |key: &str| value.get(key).and_then(Value::as_str);
+    match (text("type"), text("subtype")) {
+        (Some("system"), Some("init")) => {
+            let mut started = String::from("● Agent started");
+            if let Some(model) = text("model") {
+                started.push_str(&format!(" ({model})"));
+            }
+            vec![started]
+        }
+        (Some("system"), Some("permission_denied")) => {
+            vec![format!(
+                "  ✗ Not allowed: {}",
+                text("tool_name").unwrap_or("a tool")
+            )]
+        }
+        (Some("assistant"), _) => {
+            let content = value
+                .pointer("/message/content")
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let mut out = Vec::new();
+            for item in content {
+                match item["type"].as_str() {
+                    Some("text") => {
+                        let said = item["text"].as_str().unwrap_or_default().trim();
+                        if !said.is_empty() {
+                            out.push(String::new());
+                            out.extend(said.lines().map(str::to_owned));
+                        }
+                    }
+                    Some("tool_use") => {
+                        let name = item["name"].as_str().unwrap_or("a tool");
+                        out.push(format!("  → {}", describe_tool(name, &item["input"])));
+                    }
+                    _ => {}
+                }
+            }
+            out
+        }
+        (Some("result"), _) => {
+            let r = result(&value);
+            let mut end = format!("● Finished ({})", r.subtype.replace('_', " "));
+            if let Some(turns) = r.turns {
+                end.push_str(&format!(" · {turns} turns"));
+            }
+            if let Some(micros) = r.cost_usd_micros {
+                end.push_str(&format!(" · ${:.4}", micros as f64 / 1_000_000.0));
+            }
+            vec![String::new(), end]
+        }
+        _ => Vec::new(),
+    }
+}
+
 /// The last tool use of an assistant message, else the start of its text.
 fn assistant(value: &Value) -> Event {
     let content = value
@@ -167,6 +228,31 @@ mod tests {
 
     /// A real run (Claude Code 2.1.318), trimmed: Bash allowed, Write denied.
     const RUN: &str = include_str!("fixtures/run.jsonl");
+
+    #[test]
+    fn a_recorded_run_reads_as_a_log_to_watch() {
+        let log: Vec<String> = RUN.lines().flat_map(readable).collect();
+        assert_eq!(log[0], "● Agent started (claude-haiku-5-5)");
+        assert!(
+            log.contains(&"  → Running `echo hello`".to_owned()),
+            "{log:#?}"
+        );
+        assert!(
+            log.contains(&"  → Editing notes.txt".to_owned()),
+            "{log:#?}"
+        );
+        assert!(
+            log.contains(&"  ✗ Not allowed: Write".to_owned()),
+            "{log:#?}"
+        );
+        assert!(
+            log.last().unwrap().starts_with("● Finished (success)"),
+            "{log:#?}"
+        );
+        // Tool results and other noise stay out.
+        assert!(!log.iter().any(|l| l.contains("tool_result")), "{log:#?}");
+        assert!(readable("not json").is_empty());
+    }
 
     #[test]
     fn a_recorded_run_reads_as_status_updates_and_a_result() {

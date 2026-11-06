@@ -87,12 +87,14 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Connect tasks with dependencies and see how they flow in the new Lineage view. Due dates now appear as all-day events in Google Calendar, and moving one there changes the due date.
-            Also: epic colors and shapes, a new date picker, a redesigned tag picker, search in All tasks, delete from quick capture, and a sync sign-in that can be restarted.
+            Send tasks to an agent from the desktop, follow its progress, and resume the conversation. Agent sessions include a bundled MCP server, separate agent-owned tasks, and a Review status for finished work awaiting your approval.
+            Also: a freeform Lineage canvas, medieval icons, settings categories, clearer subtask and agent indicators, and fixes for board selection clipping and terminal session handling.
 
-            Update the sync server to 0.6.0 together with your desktops: this release adds database migrations. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.6.0.
+            Update the sync server and all desktops to 0.7.0 together: this release upgrades the database to schema 11. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.7.0.
 
-            Installed apps (0.2.0 and later) pick this up from Settings → About and updates.
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.7.0/docs/releases/0.7.0.md
+
+            Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg, Linux .AppImage or .deb/.rpm.
           releaseDraft: false
           includeUpdaterJson: true

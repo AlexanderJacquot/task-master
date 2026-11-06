@@ -9,7 +9,7 @@ import { AgentSettings } from "./AgentSettings";
 
 afterEach(cleanup);
 
-it("checks Claude Code, offers the path it found and saves the settings", async () => {
+it("checks the agent, offers the path it found and saves the settings", async () => {
   const agents = fakeAgents();
   const api = { agents: agents.api } as Api;
   render(
@@ -17,7 +17,7 @@ it("checks Claude Code, offers the path it found and saves the settings", async 
       <AgentSettings />
     </StoreProvider>,
   );
-  const path = await screen.findByRole("textbox", { name: "Claude Code command" });
+  const path = await screen.findByRole("textbox", { name: "Agent command" });
   const save = screen.getByRole("button", { name: "Save" });
   expect(save).toHaveProperty("disabled", true);
 

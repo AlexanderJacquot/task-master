@@ -34,7 +34,7 @@ export interface Entities {
   attachments: ById<Attachment>;
   /** Calendar blocks of live tasks. */
   time_blocks: ById<TimeBlock>;
-  /** Claude Code sessions of live tasks, every device's (ADR 017). */
+  /** Agent sessions of live tasks, every device's (ADR 017). */
   agent_sessions: ById<AgentSession>;
 }
 
