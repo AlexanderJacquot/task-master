@@ -179,15 +179,18 @@ body {
   background: color-mix(in srgb, var(--tm-accent) 30%, transparent);
 }
 
-/* Parchment texture: darker edges and a faint vertical fibre, all CSS. The dark theme
-   stays flat. Only near-vertical lines: crossing them with horizontal ones read as graph
-   paper on Windows. Two periods (5 and 7 px) keep the fibre from looking ruled. */
+/* Parchment texture: darker edges and a faint vertical fibre. The dark theme stays flat.
+   Only near-vertical lines: crossing them with horizontal ones read as graph paper on
+   Windows. Two periods (5 and 7 px) keep the fibre from looking ruled.
+
+   The fibre is a tiny SVG tile, never repeating-linear-gradient: WebKitGTK rasterizes
+   1px-period gradients per pixel on the CPU for every repaint of the window. Measured on
+   the AppImage's WebKitGTK 2.50 (Iris Xe, Wayland): 276 ms per frame with the gradients,
+   17 ms with the tile. The 35 px tile is lcm(5, 7) wide; the radial vignettes are cheap. */
 :root:not(.dark) .tex-canvas {
   background-image:
     radial-gradient(ellipse 140% 120% at 50% 45%, rgb(0 0 0 / 0) 55%, rgb(120 80 30 / 0.1) 100%),
-    repeating-linear-gradient(90deg, rgb(110 80 40 / 0.02) 0 1px, transparent 1px 5px),
-    repeating-linear-gradient(90deg, rgb(110 80 40 / 0.015) 0 1px, transparent 1px 7px);
-  background-attachment: fixed;
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='35' height='1'%3E%3Cpath fill='rgb(110,80,40)' fill-opacity='.02' d='M0 0h1v1H0zM5 0h1v1H5zM10 0h1v1h-1zM15 0h1v1h-1zM20 0h1v1h-1zM25 0h1v1h-1zM30 0h1v1h-1z'/%3E%3Cpath fill='rgb(110,80,40)' fill-opacity='.015' d='M0 0h1v1H0zM7 0h1v1H7zM14 0h1v1h-1zM21 0h1v1h-1zM28 0h1v1h-1z'/%3E%3C/svg%3E");
 }
 
 :root:not(.dark) .tex-sidebar {
@@ -197,8 +200,7 @@ body {
       rgb(255 250 235 / 0.35) 0%,
       rgb(255 250 235 / 0) 70%
     ),
-    repeating-linear-gradient(90deg, rgb(110 80 40 / 0.025) 0 1px, transparent 1px 5px),
-    repeating-linear-gradient(90deg, rgb(110 80 40 / 0.018) 0 1px, transparent 1px 7px);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='35' height='1'%3E%3Cpath fill='rgb(110,80,40)' fill-opacity='.025' d='M0 0h1v1H0zM5 0h1v1H5zM10 0h1v1h-1zM15 0h1v1h-1zM20 0h1v1h-1zM25 0h1v1h-1zM30 0h1v1h-1z'/%3E%3Cpath fill='rgb(110,80,40)' fill-opacity='.018' d='M0 0h1v1H0zM7 0h1v1H7zM14 0h1v1h-1zM21 0h1v1h-1zM28 0h1v1h-1z'/%3E%3C/svg%3E");
 }
 
 :root:not(.dark) .tex-sheet {
@@ -209,7 +211,7 @@ body {
       rgb(255 252 243 / 0) 65%
     ),
     radial-gradient(ellipse 130% 110% at 50% 50%, rgb(0 0 0 / 0) 70%, rgb(140 95 35 / 0.09) 100%),
-    repeating-linear-gradient(92deg, rgb(110 80 40 / 0.018) 0 1px, transparent 1px 4px);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='1'%3E%3Cpath fill='rgb(110,80,40)' fill-opacity='.018' d='M0 0h1v1H0z'/%3E%3C/svg%3E");
 }
 
 /* Menus, dropdowns and pickers (MENU in components/ui.tsx): a soft layered shadow and a

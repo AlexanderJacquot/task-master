@@ -45,6 +45,26 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Lag on Linux: parchment texture repaints (2026-11-06)
+
+- Profiled the running 0.7.0 AppImage on the Arch laptop (Iris Xe, KWin Wayland, 15 GB
+  RAM). Not the machine and not the data: 27 tasks, 6.6 GB free, 0% CPU at idle. Of the
+  web process's CPU time, ~75% was `SkiaCPUWorker` threads (software rasterization) and
+  ~11% the JS/layout thread. Typing saves on blur, so keystrokes never reach the core.
+- A/B in a WebKitGTK window (same page, 6 s of dragging a card and typing): the
+  light-theme `repeating-linear-gradient` fibre (1px stripes) costs 276 ms per frame on
+  the AppImage's bundled WebKitGTK 2.50.4 (Ubuntu 22.04 runner) whenever the background
+  under a moving element repaints; 17 ms on Arch's WebKitGTK 2.54.2. The common
+  `WEBKIT_DISABLE_DMABUF_RENDERER` / `WEBKIT_DISABLE_COMPOSITING_MODE` workarounds make
+  it ~4x worse (1.1 s per frame).
+- Fix: the fibre in `.tex-canvas`, `.tex-sidebar` and `.tex-sheet` is now a tiny SVG
+  tile (same periods and opacities; 35 px = lcm(5, 7)); dropped the no-op
+  `background-attachment: fixed`. Bundled WebKit 2.50.4: 276 → 17 ms per frame, CPU
+  raster 18.6 s → 0 per 6 s run. Biome, 290 frontend tests and the Vite build pass.
+- Not yet verified: the look side by side in the real app, and the feel in a rebuilt
+  AppImage. The CI-built AppImage stays slower than Arch's own WebKit in general (flat
+  background: 39 ms vs 17 ms per frame); on Arch, a native build is the faster runtime.
+
 ### Release 0.7.0 integration (2026-11-06)
 
 - Kept the M16 merge already on `main` and integrated the subsequent agent/session,
