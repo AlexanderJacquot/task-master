@@ -47,7 +47,9 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ### Parchment background as WebP, with optional weathering (2026-11-06)
 
-Branch `worktree-parchment-background` (on top of `worktree-perf-texture-tiles`).
+Branch `worktree-parchment-background` (on top of `worktree-perf-texture-tiles`), merged to
+`main` with the lag fix and released as **v0.7.1** (no schema change; notes in
+`docs/releases/0.7.1.md`).
 
 - Generated candidate textures with `scripts/parchment/generate.py` (numpy + Pillow, FFT
   noise, seamless tiles) and reviewed them on a mock of the app: vellum, laid paper,

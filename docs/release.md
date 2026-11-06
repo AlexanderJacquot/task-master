@@ -26,7 +26,7 @@ that folder while `.forgejo/workflows` exists, which is why its manual-only stub
 
 ## Cutting a release
 
-For v0.7.0, use [the release notes](releases/0.7.0.md). Validate the integrated branch
+For v0.7.1, use [the release notes](releases/0.7.1.md). Validate the integrated branch
 with the same checks as CI before tagging.
 
 The same tag also publishes the sync server image (`server-image.yml`, ADR 016), with the

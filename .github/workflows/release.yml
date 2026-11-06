@@ -87,12 +87,12 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Send tasks to an agent from the desktop, follow its progress, and resume the conversation. Agent sessions include a bundled MCP server, separate agent-owned tasks, and a Review status for finished work awaiting your approval.
-            Also: a freeform Lineage canvas, medieval icons, settings categories, clearer subtask and agent indicators, and fixes for board selection clipping and terminal session handling.
+            Fixes heavy lag in the parchment theme on the Linux AppImage while dragging tasks or typing, and redraws the parchment as a pre-rendered calfskin texture.
+            New in Settings → Appearance: optional parchment weathering (burnt edges, coffee rings, water damage, a four-way fold).
 
-            Update the sync server and all desktops to 0.7.0 together: this release upgrades the database to schema 11. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.7.0.
+            No database changes (schema 11): 0.7.0 and 0.7.1 desktops and servers sync with each other. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.7.1.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.7.0/docs/releases/0.7.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.7.1/docs/releases/0.7.1.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg, Linux .AppImage or .deb/.rpm.
