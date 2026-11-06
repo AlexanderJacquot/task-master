@@ -1,0 +1,205 @@
+"""Parchment texture generator (docs/rendering-performance.md, rule 2).
+
+Each texture is a translucent overlay: brown ink where the paper is darker, cream where it
+is lighter, alpha for strength. It sits over a surface's background-color, so one file
+serves the canvas, the sidebar and the sheets and the colour tokens stay in index.css.
+
+Noise is synthesised in the frequency domain (FFT), which makes every texture periodic:
+a tile repeats seamlessly. Deterministic: same seed, same image.
+
+    python3 -I scripts/parchment/generate.py OUT_DIR [option ...]
+
+Options: vellum, laid, folio, calfskin (default: all). Needs numpy and Pillow with WebP.
+"""
+
+import sys
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
+
+INK = np.array([104, 64, 18], dtype=np.float64)  # darkening: sepia brown
+FOX = np.array([140, 72, 24], dtype=np.float64)  # foxing spots: rust
+CREAM = np.array([255, 251, 238], dtype=np.float64)  # lightening
+
+
+def freqs(h, w):
+    fy = np.fft.fftfreq(h)[:, None]
+    fx = np.fft.fftfreq(w)[None, :]
+    return fx, fy
+
+
+def norm(a):
+    a = a - a.mean()
+    return a / (a.std() + 1e-9)
+
+
+def fbm(rng, h, w, beta, lo=0.0, hi=0.5, sx=1.0, sy=1.0):
+    """Periodic 1/f^beta noise between spatial frequencies lo and hi (cycles per px).
+    sx/sy stretch the spectrum: sy > sx gives streaks along y."""
+    fx, fy = freqs(h, w)
+    k = np.sqrt((fx * sx) ** 2 + (fy * sy) ** 2)
+    k[0, 0] = 1.0
+    amp = k ** (-beta / 2)
+    amp[(k < lo) | (k > hi)] = 0
+    amp[0, 0] = 0
+    f = np.fft.fft2(rng.standard_normal((h, w))) * amp
+    return norm(np.real(np.fft.ifft2(f)))
+
+
+def blur(a, sigma):
+    fx, fy = freqs(*a.shape)
+    g = np.exp(-2 * (np.pi * sigma) ** 2 * (fx**2 + fy**2))
+    return np.real(np.fft.ifft2(np.fft.fft2(a) * g))
+
+
+def smoothstep(e0, e1, x):
+    t = np.clip((x - e0) / (e1 - e0), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
+def spots(rng, h, w, count, sigma, jitter=0.5):
+    """Soft round spots at random positions (wrapping, so tiles stay seamless)."""
+    acc = np.zeros((h, w))
+    for s in np.atleast_1d(sigma):
+        pts = np.zeros((h, w))
+        n = int(count / len(np.atleast_1d(sigma)))
+        ys, xs = rng.integers(0, h, n), rng.integers(0, w, n)
+        pts[ys, xs] = rng.uniform(1 - jitter, 1 + jitter, n)
+        b = blur(pts, s)
+        acc += b / (b.max() + 1e-9)
+    return np.clip(acc, 0, 1)
+
+
+def fibres(rng, h, w, density, length, angle_jitter=0.08):
+    """Near-vertical short fibres: anisotropic noise, thresholded into thin streaks."""
+    n = fbm(rng, h, w, 0.0, lo=0.0, hi=0.5, sx=1.0, sy=length)
+    n = blur(n, 0.6)
+    n = norm(n)
+    return smoothstep(2.4 - density, 3.4 - density, n)
+
+
+def chain_lines(rng, h, w, spacing):
+    """Vertical chain lines of laid paper: wobbly, uneven, faint."""
+    x = np.arange(w)[None, :].astype(np.float64)
+    y = np.arange(h)[:, None].astype(np.float64)
+    count = max(1, round(w / spacing))
+    period = w / count
+    wobble = 1.2 * np.sin(2 * np.pi * (y / h) * 3 + rng.uniform(0, 6)) + 0.6 * fbm(
+        rng, h, 1, 2.0, hi=0.05
+    ).reshape(h, 1)
+    d = np.abs(((x + wobble) % period) - period / 2)
+    line = np.exp(-((d / 0.9) ** 2))
+    strength = 0.6 + 0.4 * fbm(rng, h, w, 2.5, hi=0.02)  # fades along its length
+    return line * np.clip(strength, 0, 1.5)
+
+
+def edges(h, w, rng, width):
+    """Darker, uneven edges for a full-window sheet."""
+    y = np.linspace(0, 1, h)[:, None]
+    x = np.linspace(0, 1, w)[None, :]
+    d = np.minimum(np.minimum(x, 1 - x) * w / h, np.minimum(y, 1 - y))
+    d = d + 0.025 * fbm(rng, h, w, 2.4, hi=0.02)
+    return 1 - smoothstep(0, width, d)
+
+
+def to_rgba(dark, light=None, fox=None):
+    """dark/light/fox: alpha maps in 0..1. Composite them into one straight-alpha image."""
+    h, w = dark.shape
+    light = np.zeros((h, w)) if light is None else light
+    fox = np.zeros((h, w)) if fox is None else fox
+    # Over-composite: light first, then dark ink, then foxing on top.
+    rgb = np.zeros((h, w, 3))
+    a = np.zeros((h, w))
+    for col, al in ((CREAM, light), (INK, dark), (FOX, fox)):
+        al = np.clip(al, 0, 1)[..., None]
+        rgb = col * al + rgb * a[..., None] * (1 - al)
+        a = al[..., 0] + a * (1 - al[..., 0])
+        rgb = np.where(a[..., None] > 0, rgb / np.maximum(a[..., None], 1e-9), 0)
+    out = np.dstack([rgb, a * 255])
+    return Image.fromarray(np.clip(np.round(out), 0, 255).astype(np.uint8), "RGBA")
+
+
+def vellum(rng, s=1024):
+    mottle = fbm(rng, s, s, 2.6, lo=1 / 700, hi=0.06)
+    cloud = fbm(rng, s, s, 1.8, lo=1 / 180, hi=0.2)
+    grain = blur(fbm(rng, s, s, 0.0), 0.7)
+    grain = norm(grain)
+    fib = fibres(rng, s, s, density=0.3, length=14)
+    dark = 0.035 + 0.022 * mottle + 0.010 * cloud + 0.008 * grain + 0.05 * fib
+    light = np.clip(-0.03 * mottle, 0, None)
+    return to_rgba(np.clip(dark, 0, 1), light)
+
+
+def laid(rng, s=1024):
+    mottle = fbm(rng, s, s, 2.6, lo=1 / 700, hi=0.06)
+    grain = norm(blur(fbm(rng, s, s, 0.0), 0.7))
+    fib = fibres(rng, s, s, density=0.2, length=12)
+    chains = chain_lines(rng, s, s, spacing=42)
+    dark = 0.03 + 0.02 * mottle + 0.009 * grain + 0.04 * fib + 0.016 * chains
+    light = np.clip(-0.025 * mottle, 0, None)
+    return to_rgba(np.clip(dark, 0, 1), light)
+
+
+def calfskin(rng, s=1024):
+    blotch = fbm(rng, s, s, 3.0, lo=1 / 900, hi=0.03)
+    cloud = fbm(rng, s, s, 2.0, lo=1 / 250, hi=0.15)
+    vein_n = fbm(rng, s, s, 2.8, lo=1 / 400, hi=0.05, sx=1.0, sy=0.45)
+    veins = blur(np.exp(-((vein_n / 0.05) ** 2)), 1.2)  # ridges along the zero crossings
+    follicles = spots(rng, s, s, 900, [0.7, 1.1])
+    grain = norm(blur(fbm(rng, s, s, 0.0), 0.8))
+    dark = (
+        0.04
+        + 0.035 * blotch
+        + 0.012 * cloud
+        + 0.05 * veins
+        + 0.10 * follicles
+        + 0.009 * grain
+    )
+    light = np.clip(-0.04 * blotch, 0, None)
+    return to_rgba(np.clip(dark, 0, 1), light)
+
+
+def folio(rng, w=1920, h=1200):
+    mottle = fbm(rng, h, w, 2.6, lo=1 / 1200, hi=0.05)
+    cloud = fbm(rng, h, w, 1.8, lo=1 / 200, hi=0.2)
+    grain = norm(blur(fbm(rng, h, w, 0.0), 0.7))
+    fib = fibres(rng, h, w, density=0.3, length=14)
+    # Tide-marked water stains: soft blotches with darker rims.
+    stain_n = fbm(rng, h, w, 3.2, lo=1 / 1600, hi=0.012)
+    stain_n = stain_n + 0.25 * fbm(rng, h, w, 2.2, lo=1 / 300, hi=0.06)  # ragged outline
+    stain = smoothstep(1.0, 1.6, stain_n)
+    rim = blur(np.exp(-(((stain_n - 1.22) / 0.08) ** 2)), 2.0) * smoothstep(1.0, 1.3, stain_n)
+    fox = spots(rng, h, w, 120, [1.5, 3.0, 6.0]) * 0.5
+    fox *= np.clip(0.5 + 0.5 * fbm(rng, h, w, 2.0, hi=0.01), 0, 1)
+    edge = edges(h, w, rng, width=0.09)
+    dark = (
+        0.035
+        + 0.025 * mottle
+        + 0.010 * cloud
+        + 0.008 * grain
+        + 0.05 * fib
+        + 0.035 * stain
+        + 0.03 * rim
+        + 0.16 * edge
+    )
+    light = np.clip(-0.035 * mottle, 0, None)
+    return to_rgba(np.clip(dark, 0, 1), light, fox)
+
+
+OPTIONS = {"vellum": vellum, "laid": laid, "calfskin": calfskin, "folio": folio}
+
+
+def main():
+    out = Path(sys.argv[1])
+    out.mkdir(parents=True, exist_ok=True)
+    names = sys.argv[2:] or list(OPTIONS)
+    for i, name in enumerate(names):
+        img = OPTIONS[name](np.random.default_rng(1000 + list(OPTIONS).index(name)))
+        path = out / f"parchment-{name}.webp"
+        img.save(path, "WEBP", quality=72, alpha_quality=60, method=6)
+        print(f"{path} {img.size[0]}x{img.size[1]} {path.stat().st_size // 1024} KB")
+
+
+if __name__ == "__main__":
+    main()
