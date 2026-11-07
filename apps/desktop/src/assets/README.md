@@ -8,40 +8,57 @@ These are original vector assets rebuilt using the two supplied Medieval Brand A
 
 Every icon follows the medieval theme:
 
-| Icon                           | Motif                           | Used for                        |
-| ------------------------------ | ------------------------------- | ------------------------------- |
-| `add`                          | cross with manuscript terminals | new task, add buttons           |
-| `inbox`                        | sealed letter                   | Inbox                           |
-| `projects`                     | castle keep                     | Projects heading                |
-| `due-date`                     | hourglass                       | due dates                       |
-| `settings`                     | anvil                           | Settings                        |
-| `search`                       | lantern                         | search fields                   |
-| `delete`                       | brazier                         | delete / remove                 |
-| `agents`                       | knight's great helm             | agents, agent tasks             |
-| `calendar`                     | open almanac                    | Calendar                        |
-| `all-tasks`                    | open scroll                     | All tasks                       |
-| `archive` / `unarchive`        | closed chest / open chest       | archive, unarchive              |
-| `priority`                     | swallowtail pennant             | priority flag, epic "flag" mark |
-| `bookmark`                     | gonfalon banner                 | saved views                     |
-| `edit`                         | quill with cut nib, writing ink | rename / edit                   |
-| `today`                        | tarot sun (☉ disc, wavy rays)   | Today view, "plan for today"    |
-| `metrics`                      | balance scales                  | Metrics                         |
-| `lineage`                      | oak tree                        | Lineage                         |
-| `send`                         | fletched arrow                  | send to agent                   |
-| `estimate`                     | candle clock                    | estimates, worked time, stale   |
-| `done`                         | wax seal with a tick            | up to date                      |
-| `stop`                         | lowered portcullis              | stop an agent session           |
-| `crown`, `shield`              | crown, heater shield            | extra epic marks                |
-| `play`                         | arrow nocked on a bow           | resume a session                |
-| `terminal`                     | grimoire with a prompt rune     | open session in a terminal      |
-| `more`                         | three iron rivets               | "more" menus                    |
-| `list` / `columns`             | ruled ledger / three banners    | list / board layout             |
-| `filter` / `options`           | sieve / hand lever              | filter, display options         |
-| `update`                       | messenger raven                 | update available                |
-| `folder-open` / `folder-clear` | open chest / struck chest       | choose / forget project folder  |
-| `tag`                          | hanging tag                     | labels                          |
+| Icon                                                       | Motif                                 | Used for                                                      |
+| ---------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------- |
+| `add`                                                      | cross with manuscript terminals       | new task, add buttons                                         |
+| `inbox`                                                    | sealed letter                         | Inbox                                                         |
+| `projects`                                                 | castle keep                           | Projects heading                                              |
+| `due-date`                                                 | hourglass                             | due dates                                                     |
+| `settings`                                                 | anvil                                 | Settings                                                      |
+| `search`                                                   | lantern                               | search fields                                                 |
+| `delete`                                                   | brazier                               | delete / remove                                               |
+| `agents`                                                   | knight's great helm                   | agents, agent tasks                                           |
+| `calendar`                                                 | open almanac                          | Calendar                                                      |
+| `all-tasks`                                                | open scroll                           | All tasks                                                     |
+| `archive` / `unarchive`                                    | closed chest / open chest             | archive, unarchive                                            |
+| `priority`                                                 | swallowtail pennant                   | priority flag, epic "flag" mark                               |
+| `bookmark`                                                 | gonfalon banner                       | saved views                                                   |
+| `edit`                                                     | quill with cut nib, writing ink       | rename / edit                                                 |
+| `today`                                                    | tarot sun (☉ disc, wavy rays)         | Today view, "plan for today"                                  |
+| `metrics`                                                  | balance scales                        | Metrics                                                       |
+| `lineage`                                                  | oak tree                              | Lineage                                                       |
+| `send`                                                     | fletched arrow                        | send to agent                                                 |
+| `estimate`                                                 | candle clock                          | estimates, worked time, stale                                 |
+| `done`                                                     | wax seal with a tick                  | up to date                                                    |
+| `stop`                                                     | lowered portcullis                    | stop an agent session                                         |
+| `crown`, `shield`                                          | crown, heater shield                  | extra epic marks                                              |
+| `play`                                                     | arrow nocked on a bow                 | resume a session                                              |
+| `terminal`                                                 | grimoire with a prompt rune           | open session in a terminal                                    |
+| `more`                                                     | three iron rivets                     | "more" menus                                                  |
+| `list` / `columns`                                         | ruled ledger / three banners          | list / board layout                                           |
+| `filter` / `options`                                       | sieve / hand lever                    | filter, display options                                       |
+| `update`                                                   | messenger raven                       | update available                                              |
+| `folder-open` / `folder-clear`                             | open chest / struck chest             | choose / forget project folder                                |
+| `tag`                                                      | hanging tag                           | labels                                                        |
+| `attach` / `download`                                      | ribboned scroll / scroll on a rope    | attach file, download                                         |
+| `file` / `file-text`                                       | parchment sheet / with ink lines      | attachment types                                              |
+| `external`                                                 | sailing cog                           | open externally                                               |
+| `rename`                                                   | pen over a name plaque                | rename attachment                                             |
+| `expand`                                                   | four-point compass star               | open, fit lineage                                             |
+| `undo`                                                     | turned-back hourglass                 | undo, reset, restart                                          |
+| `refresh` / `spinner`                                      | mill wheel in waves / six-spoke wheel | check for updates / loading (the wheel spins)                 |
+| `calendar-plus`                                            | almanac with a cross                  | schedule a task                                               |
+| `map-pin`                                                  | pennant on a stake                    | event location                                                |
+| `list-checks`                                              | ledger with ticks                     | subtasks done                                                 |
+| `child` / `branch`                                         | twig with a leaf / forked bough       | child of, lineage                                             |
+| `grid` / `pointer`                                         | stone wall / pointing gauntlet        | auto arrange, select tool                                     |
+| `minus`                                                    | dash with terminals                   | zoom out (zoom in is `add`)                                   |
+| `arrow-left` / `arrow-right`                               | fletched arrows                       | back, next                                                    |
+| `spears-left` / `spears-right`                             | double spearheads                     | collapse / expand board lane                                  |
+| `roundel`, `billet`, `pile`, `lozenge`, `bezant`, `mullet` | heraldic charges                      | epic marks (circle, square, triangle, diamond, hexagon, star) |
+| `close` / `check`                                          | crossed swords / tick                 | close, remove / selected, done                                |
 
-Navigation and control glyphs (chevrons, close, check, grip, more) stay as lucide icons for legibility at small sizes.
+Chevrons, the sidebar panel toggle, the drag grip, the stop-button square and the broken-image placeholder stay as lucide icons for legibility at small sizes.
 
 The canonical path data is `icons/paths.json`. React components in `components/TaskIcons.tsx` consume it directly, and `scripts/generate-ui-icons.mjs` produces matching SVG files. Pass `size`, `className`, and standard SVG props to the components. They inherit text color and are decorative by default; name the surrounding button or link for assistive technology.
 

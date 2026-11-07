@@ -197,6 +197,18 @@ Branch `worktree-parchment-background` (on top of `worktree-perf-texture-tiles`)
   rename, expand, undo/refresh/spinner), calendar and board, lineage tools, arrows,
   epic marks, X and check.
 
+### Medieval icons, batch 2: everything else (2026-11-07)
+
+- 30 more glyphs in `paths.json` (see the README table): attach/download/file/file-text,
+  external (cog), rename, expand, undo (used for reset and restart too), refresh (mill wheel)
+  and spinner (six-spoke wheel, rotation-symmetric for `animate-spin`), calendar-plus,
+  map-pin, list-checks, child, branch, grid, pointer, minus, fletched arrows, double
+  spearheads, six heraldic epic marks, close (crossed swords) and check (a plain tick).
+- The parent link in the task header used `ArrowUpRight` rotated -90deg; it now uses the
+  right arrow rotated to point up.
+- Still lucide on purpose: chevrons, sidebar panel toggle, drag grip, and `Square` (stop
+  buttons) and `ImageOff` (broken image), which were not in the review.
+
 ### M16 fixes from the first hand check (2026-11-06)
 
 - Open in terminal on Linux: detects an installed terminal (`x-terminal-emulator`, kitty,
