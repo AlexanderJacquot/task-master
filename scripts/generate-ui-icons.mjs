@@ -41,6 +41,19 @@ const labels = {
   done: "Done",
   crown: "Crown",
   shield: "Shield",
+  stop: "Stop",
+  today: "Today",
+  tag: "Label",
+  play: "Play",
+  terminal: "Terminal",
+  more: "More",
+  list: "List",
+  columns: "Board",
+  filter: "Filter",
+  options: "Options",
+  update: "Update",
+  "folder-open": "Choose folder",
+  "folder-clear": "Forget folder",
 };
 // Icons per row in the proof sheet; each theme panel grows with the icon count.
 const perRow = 8;

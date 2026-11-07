@@ -1,9 +1,12 @@
 // A project's working folder on this device (ADR 017): where "Send to agent" starts its
 // tasks by default. Device configuration, never synced.
 
-import { FolderOpen, FolderX } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { useEffect, useState } from "react";
+import {
+  FolderOpenIcon as FolderOpen,
+  FolderClearIcon as FolderX,
+} from "../../components/TaskIcons";
 import { cx, IconButton, MENU, MENU_ITEM, MENU_LABEL } from "../../components/ui";
 import type { ProjectFolder } from "../../lib/types";
 import { useApi } from "../../store/context";

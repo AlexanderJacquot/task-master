@@ -1,11 +1,13 @@
 // A task's agent sessions (ADR 017): status, summary, notes and the actions on each.
 
-import { Play, Square, SquareTerminal } from "lucide-react";
+import { Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   AgentsIcon as Bot,
   DoneIcon,
+  PlayIcon as Play,
   SendIcon as Send,
+  TerminalIcon as SquareTerminal,
   DeleteIcon as Trash2,
 } from "../../components/TaskIcons";
 import { Button, cx, IconButton, INPUT, SectionLabel } from "../../components/ui";

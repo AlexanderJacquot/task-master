@@ -158,5 +158,5 @@ export function TagPicker({ task, variant = "chips" }: { task: Task; variant?: "
   );
 }
 
-import { Check, Hash, Plus } from "lucide-react";
-import { SearchIcon as Search } from "../../components/TaskIcons";
+import { Check, Plus } from "lucide-react";
+import { TagIcon as Hash, SearchIcon as Search } from "../../components/TaskIcons";

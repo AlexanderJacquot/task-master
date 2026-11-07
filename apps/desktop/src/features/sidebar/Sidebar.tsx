@@ -1,26 +1,21 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import {
-  ArrowDownCircle,
-  ChevronDown,
-  ChevronRight,
-  Hash,
-  MoreHorizontal,
-  PanelLeftClose,
-  PanelLeftOpen,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import { type ReactNode, useMemo, useState } from "react";
 import appIcon from "../../assets/brand/app-icon.svg";
 import {
   ArchiveIcon as Archive,
   UnarchiveIcon as ArchiveRestore,
+  UpdateIcon as ArrowDownCircle,
   BookmarkIcon as Bookmark,
   AgentsIcon as Bot,
   CalendarIcon as CalendarDays,
   MetricsIcon as ChartNoAxesCombined,
   LineageIcon as GitBranch,
+  TagIcon as Hash,
   InboxIcon as Inbox,
   AllTasksIcon as Layers,
+  MoreIcon as MoreHorizontal,
   EditIcon as Pencil,
   AddIcon as Plus,
   ProjectsIcon,

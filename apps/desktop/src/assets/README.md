@@ -30,7 +30,16 @@ Every icon follows the medieval theme:
 | `send`                  | fletched arrow                  | send to agent                   |
 | `estimate`              | candle clock                    | estimates, worked time, stale   |
 | `done`                  | wax seal with a tick            | up to date                      |
+| `stop`                  | lowered portcullis              | stop an agent session           |
 | `crown`, `shield`       | crown, heater shield            | extra epic marks                |
+| `play`                  | arrow nocked on a bow           | resume a session                |
+| `terminal`              | grimoire with a prompt rune     | open session in a terminal      |
+| `more`                  | three iron rivets               | "more" menus                    |
+| `list` / `columns`      | ruled ledger / three banners    | list / board layout             |
+| `filter` / `options`    | sieve / hand lever              | filter, display options         |
+| `update`                | messenger raven                 | update available                |
+| `folder-open` / `folder-clear` | open chest / struck chest | choose / forget project folder |
+| `tag`                   | hanging tag                     | labels                          |
 
 Navigation and control glyphs (chevrons, close, check, grip, more) stay as lucide icons for legibility at small sizes.
 

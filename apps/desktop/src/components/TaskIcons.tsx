@@ -85,3 +85,27 @@ export const DoneIcon = icon("done");
 export const CrownIcon = icon("crown");
 /** Heater shield (epic mark). */
 export const ShieldIcon = icon("shield");
+/** Lowered portcullis (stop). */
+export const StopIcon = icon("stop");
+/** Hanging tag (label). */
+export const TagIcon = icon("tag");
+/** Arrow nocked on a drawn bow (play / resume). */
+export const PlayIcon = icon("play");
+/** Grimoire with a prompt rune (open terminal). */
+export const TerminalIcon = icon("terminal");
+/** Three iron rivets (more menu). */
+export const MoreIcon = icon("more");
+/** Ruled ledger page (list layout). */
+export const ListIcon = icon("list");
+/** Three hanging banners (board layout). */
+export const ColumnsIcon = icon("columns");
+/** Sieve over falling drops (filter). */
+export const FilterIcon = icon("filter");
+/** Hand lever on a base (display options). */
+export const OptionsIcon = icon("options");
+/** Messenger raven (update available). */
+export const UpdateIcon = icon("update");
+/** Open chest with a coin hoard (choose folder). */
+export const FolderOpenIcon = icon("folder-open");
+/** Struck-through chest (forget folder). */
+export const FolderClearIcon = icon("folder-clear");

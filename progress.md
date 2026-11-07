@@ -187,6 +187,16 @@ Branch `worktree-parchment-background` (on top of `worktree-perf-texture-tiles`)
 - `scripts/generate-ui-icons.mjs` lays out the proof sheet for any number of icons.
   Chevrons, close, check, grip and more stay lucide for legibility.
 
+### Medieval icons, batch 1: shell and agents (2026-11-07)
+
+- New in `paths.json`: `play` (bow), `terminal` (grimoire), `more` (rivets), `list` (ledger),
+  `columns` (banners), `filter` (sieve), `options` (lever), `update` (raven), `folder-open` /
+  `folder-clear` (chests); `Hash` now uses the `tag` icon. Call sites import them under the
+  lucide name they replaced. Still lucide on purpose: sidebar panel toggle, chevrons, grip.
+- Later batches: attachments and task detail (paperclip, download, file, external link,
+  rename, expand, undo/refresh/spinner), calendar and board, lineage tools, arrows,
+  epic marks, X and check.
+
 ### M16 fixes from the first hand check (2026-11-06)
 
 - Open in terminal on Linux: detects an installed terminal (`x-terminal-emulator`, kitty,

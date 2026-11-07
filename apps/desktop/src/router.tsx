@@ -6,7 +6,7 @@ import {
   type RouterHistory,
   redirect,
 } from "@tanstack/react-router";
-import { MoreHorizontal } from "lucide-react";
+import { MoreIcon as MoreHorizontal } from "./components/TaskIcons";
 import { IconButton } from "./components/ui";
 import { AgentsPage } from "./features/agents/AgentsPage";
 import { CalendarPage } from "./features/calendar/CalendarPage";
