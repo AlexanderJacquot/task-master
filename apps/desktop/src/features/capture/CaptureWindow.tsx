@@ -1,8 +1,7 @@
 import { currentMonitor, getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { events } from "../../bindings";
-import { DeleteIcon as Trash2 } from "../../components/TaskIcons";
+import { DeleteIcon as Trash2, CloseIcon as X } from "../../components/TaskIcons";
 import { Button, IconButton } from "../../components/ui";
 import { deleteTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";

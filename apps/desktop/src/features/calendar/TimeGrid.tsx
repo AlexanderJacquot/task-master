@@ -4,10 +4,15 @@
 // empty spot creates a task there (NewBlock.tsx).
 
 import { useDraggable, useDroppable } from "@dnd-kit/core";
-import { Check, ExternalLink, X } from "lucide-react";
 import { Popover } from "radix-ui";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { EstimateIcon as Clock, DeleteIcon as Trash2 } from "../../components/TaskIcons";
+import {
+  CheckIcon as Check,
+  EstimateIcon as Clock,
+  ExternalIcon as ExternalLink,
+  DeleteIcon as Trash2,
+  CloseIcon as X,
+} from "../../components/TaskIcons";
 import { Button, cx, FOCUS } from "../../components/ui";
 import {
   allDayOn,

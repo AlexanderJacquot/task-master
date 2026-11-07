@@ -1,8 +1,8 @@
-import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Popover } from "radix-ui";
 import { type KeyboardEvent, type ReactNode, useId, useRef, useState } from "react";
 import { isoDate } from "../lib/dates";
-import { DueDateIcon } from "./TaskIcons";
+import { ArrowRightIcon as ArrowRight, DueDateIcon } from "./TaskIcons";
 import { Button, cx, FOCUS, IconButton, INPUT, MENU } from "./ui";
 
 function dateFrom(value: string): Date {

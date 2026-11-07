@@ -1,13 +1,4 @@
-import {
-  Expand,
-  GitBranch,
-  GripVertical,
-  LayoutGrid,
-  Minus,
-  MousePointer2,
-  Plus,
-  X,
-} from "lucide-react";
+import { GripVertical } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
@@ -16,6 +7,15 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  ExpandIcon as Expand,
+  BranchIcon as GitBranch,
+  GridIcon as LayoutGrid,
+  MinusIcon as Minus,
+  PointerIcon as MousePointer2,
+  AddIcon as Plus,
+  CloseIcon as X,
+} from "../../components/TaskIcons";
 import { Button, cx, Dot, FOCUS, IconButton } from "../../components/ui";
 import type { Project, Status } from "../../lib/types";
 import { ProjectMark } from "../organize/ProjectMark";

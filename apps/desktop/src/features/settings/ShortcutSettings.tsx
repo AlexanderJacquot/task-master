@@ -1,6 +1,6 @@
-import { RotateCcw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Keys } from "../../components/Keys";
+import { UndoIcon as RotateCcw, CloseIcon as X } from "../../components/TaskIcons";
 import { cx, FOCUS } from "../../components/ui";
 import {
   checkBinding,

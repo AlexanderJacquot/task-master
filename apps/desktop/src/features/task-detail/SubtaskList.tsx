@@ -1,6 +1,5 @@
-import { Check } from "lucide-react";
 import { useMemo } from "react";
-import { AgentsIcon as Bot } from "../../components/TaskIcons";
+import { AgentsIcon as Bot, CheckIcon as Check } from "../../components/TaskIcons";
 import { Checkbox, cx, InlineInput } from "../../components/ui";
 import type { Task } from "../../lib/types";
 import { compareRank } from "../../lib/views";

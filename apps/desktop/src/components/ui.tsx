@@ -1,7 +1,8 @@
-import { Check, ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { Select as RadixSelect } from "radix-ui";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import type { Priority } from "../lib/types";
+import { CheckIcon as Check } from "./TaskIcons";
 
 export function cx(...classes: Array<string | false | null | undefined>): string {
   return classes.filter(Boolean).join(" ");

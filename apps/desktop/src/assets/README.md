@@ -8,38 +8,38 @@ These are original vector assets rebuilt using the two supplied Medieval Brand A
 
 Every icon follows the medieval theme:
 
-| Icon                    | Motif                           | Used for                        |
-| ----------------------- | ------------------------------- | ------------------------------- |
-| `add`                   | cross with manuscript terminals | new task, add buttons           |
-| `inbox`                 | sealed letter                   | Inbox                           |
-| `projects`              | castle keep                     | Projects heading                |
-| `due-date`              | hourglass                       | due dates                       |
-| `settings`              | anvil                           | Settings                        |
-| `search`                | lantern                         | search fields                   |
-| `delete`                | brazier                         | delete / remove                 |
-| `agents`                | knight's great helm             | agents, agent tasks             |
-| `calendar`              | open almanac                    | Calendar                        |
-| `all-tasks`             | open scroll                     | All tasks                       |
-| `archive` / `unarchive` | closed chest / open chest       | archive, unarchive              |
-| `priority`              | swallowtail pennant             | priority flag, epic "flag" mark |
-| `bookmark`              | gonfalon banner                 | saved views                     |
-| `edit`                  | quill with cut nib, writing ink | rename / edit                   |
-| `today`                 | tarot sun (☉ disc, wavy rays)   | Today view, "plan for today"    |
-| `metrics`               | balance scales                  | Metrics                         |
-| `lineage`               | oak tree                        | Lineage                         |
-| `send`                  | fletched arrow                  | send to agent                   |
-| `estimate`              | candle clock                    | estimates, worked time, stale   |
-| `done`                  | wax seal with a tick            | up to date                      |
-| `stop`                  | lowered portcullis              | stop an agent session           |
-| `crown`, `shield`       | crown, heater shield            | extra epic marks                |
-| `play`                  | arrow nocked on a bow           | resume a session                |
-| `terminal`              | grimoire with a prompt rune     | open session in a terminal      |
-| `more`                  | three iron rivets               | "more" menus                    |
-| `list` / `columns`      | ruled ledger / three banners    | list / board layout             |
-| `filter` / `options`    | sieve / hand lever              | filter, display options         |
-| `update`                | messenger raven                 | update available                |
-| `folder-open` / `folder-clear` | open chest / struck chest | choose / forget project folder |
-| `tag`                   | hanging tag                     | labels                          |
+| Icon                           | Motif                           | Used for                        |
+| ------------------------------ | ------------------------------- | ------------------------------- |
+| `add`                          | cross with manuscript terminals | new task, add buttons           |
+| `inbox`                        | sealed letter                   | Inbox                           |
+| `projects`                     | castle keep                     | Projects heading                |
+| `due-date`                     | hourglass                       | due dates                       |
+| `settings`                     | anvil                           | Settings                        |
+| `search`                       | lantern                         | search fields                   |
+| `delete`                       | brazier                         | delete / remove                 |
+| `agents`                       | knight's great helm             | agents, agent tasks             |
+| `calendar`                     | open almanac                    | Calendar                        |
+| `all-tasks`                    | open scroll                     | All tasks                       |
+| `archive` / `unarchive`        | closed chest / open chest       | archive, unarchive              |
+| `priority`                     | swallowtail pennant             | priority flag, epic "flag" mark |
+| `bookmark`                     | gonfalon banner                 | saved views                     |
+| `edit`                         | quill with cut nib, writing ink | rename / edit                   |
+| `today`                        | tarot sun (☉ disc, wavy rays)   | Today view, "plan for today"    |
+| `metrics`                      | balance scales                  | Metrics                         |
+| `lineage`                      | oak tree                        | Lineage                         |
+| `send`                         | fletched arrow                  | send to agent                   |
+| `estimate`                     | candle clock                    | estimates, worked time, stale   |
+| `done`                         | wax seal with a tick            | up to date                      |
+| `stop`                         | lowered portcullis              | stop an agent session           |
+| `crown`, `shield`              | crown, heater shield            | extra epic marks                |
+| `play`                         | arrow nocked on a bow           | resume a session                |
+| `terminal`                     | grimoire with a prompt rune     | open session in a terminal      |
+| `more`                         | three iron rivets               | "more" menus                    |
+| `list` / `columns`             | ruled ledger / three banners    | list / board layout             |
+| `filter` / `options`           | sieve / hand lever              | filter, display options         |
+| `update`                       | messenger raven                 | update available                |
+| `folder-open` / `folder-clear` | open chest / struck chest       | choose / forget project folder  |
+| `tag`                          | hanging tag                     | labels                          |
 
 Navigation and control glyphs (chevrons, close, check, grip, more) stay as lucide icons for legibility at small sizes.
 

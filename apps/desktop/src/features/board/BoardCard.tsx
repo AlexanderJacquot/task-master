@@ -1,6 +1,10 @@
-import { CornerDownRight, ListChecks } from "lucide-react";
 import { memo } from "react";
-import { AgentsIcon as Bot, EstimateIcon as Clock } from "../../components/TaskIcons";
+import {
+  AgentsIcon as Bot,
+  EstimateIcon as Clock,
+  ChildIcon as CornerDownRight,
+  ListChecksIcon as ListChecks,
+} from "../../components/TaskIcons";
 import { Chip, cx, Dot, PRIORITY_PILL } from "../../components/ui";
 import { daysFrom, formatDue, isoDate } from "../../lib/dates";
 import type { Epic, Project, Status, Tag, Task } from "../../lib/types";

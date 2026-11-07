@@ -1,5 +1,14 @@
-import { Circle, Diamond, Hexagon, Square, Star, Triangle } from "lucide-react";
-import { CrownIcon, PriorityIcon, ShieldIcon } from "../../components/TaskIcons";
+import {
+  RoundelIcon as Circle,
+  CrownIcon,
+  LozengeIcon as Diamond,
+  BezantIcon as Hexagon,
+  PriorityIcon,
+  ShieldIcon,
+  BilletIcon as Square,
+  MulletIcon as Star,
+  PileIcon as Triangle,
+} from "../../components/TaskIcons";
 import type { Epic } from "../../lib/types";
 
 export const EPIC_SHAPES = {

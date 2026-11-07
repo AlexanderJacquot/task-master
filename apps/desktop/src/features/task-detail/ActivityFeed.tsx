@@ -1,5 +1,5 @@
-import { Undo2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { UndoIcon as Undo2 } from "../../components/TaskIcons";
 import { cx } from "../../components/ui";
 import { formatRange } from "../../lib/calendar";
 import { formatAgo } from "../../lib/dates";

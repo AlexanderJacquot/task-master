@@ -1,8 +1,12 @@
+import {
+  ExternalIcon as ExternalLink,
+  MapPinIcon as MapPin,
+  CloseIcon as X,
+} from "../../components/TaskIcons";
 // Events from the user's calendars (M10, ADR 014): read-only, drawn outlined in their
 // calendar's color so they read as "planned elsewhere". A click shows the details and a
 // link to the event in Google Calendar.
 
-import { ExternalLink, MapPin, X } from "lucide-react";
 import { Popover } from "radix-ui";
 import { type ReactNode, useState } from "react";
 import { Button, cx, FOCUS } from "../../components/ui";

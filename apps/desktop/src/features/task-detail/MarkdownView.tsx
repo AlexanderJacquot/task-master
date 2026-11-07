@@ -1,7 +1,8 @@
-import { FileText, ImageOff } from "lucide-react";
+import { ImageOff } from "lucide-react";
 import { type ComponentProps, memo, useState } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { FileTextIcon as FileText } from "../../components/TaskIcons";
 import { cx } from "../../components/ui";
 import { attachmentId, formatSize, isImage } from "../../lib/attachments";
 import type { Attachment } from "../../lib/types";

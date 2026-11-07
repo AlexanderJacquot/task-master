@@ -109,3 +109,63 @@ export const UpdateIcon = icon("update");
 export const FolderOpenIcon = icon("folder-open");
 /** Struck-through chest (forget folder). */
 export const FolderClearIcon = icon("folder-clear");
+/** Rolled scroll tied with a ribbon (attach file). */
+export const AttachIcon = icon("attach");
+/** Scroll lowered on a rope (download). */
+export const DownloadIcon = icon("download");
+/** Parchment sheet with a folded corner. */
+export const FileIcon = icon("file");
+/** Parchment sheet with ink lines. */
+export const FileTextIcon = icon("file-text");
+/** Cog sailing out (open externally). */
+export const ExternalIcon = icon("external");
+/** Pen over a name plaque (rename). */
+export const RenameIcon = icon("rename");
+/** Four-point compass star (expand, fit). */
+export const ExpandIcon = icon("expand");
+/** Hourglass turned back (undo, reset). */
+export const UndoIcon = icon("undo");
+/** Mill wheel in waves (refresh, check again). */
+export const RefreshIcon = icon("refresh");
+/** Six-spoke wheel, symmetric so it can be spun with CSS (loading). */
+export const SpinnerIcon = icon("spinner");
+/** Open almanac with a cross (schedule a task). */
+export const CalendarPlusIcon = icon("calendar-plus");
+/** Pennant on a stake (location). */
+export const MapPinIcon = icon("map-pin");
+/** Ledger with ticks (subtasks done). */
+export const ListChecksIcon = icon("list-checks");
+/** Twig with a leaf (child of). */
+export const ChildIcon = icon("child");
+/** Forked bough (lineage). */
+export const BranchIcon = icon("branch");
+/** Stone wall (auto arrange). */
+export const GridIcon = icon("grid");
+/** Pointing gauntlet (select tool). */
+export const PointerIcon = icon("pointer");
+/** Dash with manuscript terminals, the cross's partner (zoom out). */
+export const MinusIcon = icon("minus");
+/** Fletched arrow pointing right. */
+export const ArrowRightIcon = icon("arrow-right");
+/** Fletched arrow pointing left. */
+export const ArrowLeftIcon = icon("arrow-left");
+/** Double spearheads pointing right. */
+export const SpearsRightIcon = icon("spears-right");
+/** Double spearheads pointing left. */
+export const SpearsLeftIcon = icon("spears-left");
+/** Heraldic roundel (epic mark). */
+export const RoundelIcon = icon("roundel");
+/** Heraldic billet (epic mark). */
+export const BilletIcon = icon("billet");
+/** Heraldic pile (epic mark). */
+export const PileIcon = icon("pile");
+/** Voided lozenge (epic mark). */
+export const LozengeIcon = icon("lozenge");
+/** Bezant on a hexagon (epic mark). */
+export const BezantIcon = icon("bezant");
+/** Heraldic mullet, a five-point star (epic mark). */
+export const MulletIcon = icon("mullet");
+/** Crossed swords (close, remove). */
+export const CloseIcon = icon("close");
+/** Tick (done, selected). */
+export const CheckIcon = icon("check");

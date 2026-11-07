@@ -1,8 +1,9 @@
+import { CalendarPlusIcon as CalendarPlus } from "../../components/TaskIcons";
 // The calendar's side list: today's tasks, then other open tasks (searchable), to drag
 // onto the calendar or schedule with a button.
 
 import { useDraggable } from "@dnd-kit/core";
-import { CalendarPlus, GripVertical } from "lucide-react";
+import { GripVertical } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cx, Dot, FOCUS, IconButton, INPUT, SectionLabel } from "../../components/ui";
 import { addDays, atMinute, blockMinutes, formatDuration } from "../../lib/calendar";

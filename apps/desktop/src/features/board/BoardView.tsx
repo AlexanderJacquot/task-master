@@ -26,7 +26,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import {
   type KeyboardEvent,
   memo,
@@ -37,6 +36,10 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  SpearsLeftIcon as ChevronsLeft,
+  SpearsRightIcon as ChevronsRight,
+} from "../../components/TaskIcons";
 import { cx, Dot } from "../../components/ui";
 import { adjacentStatus, type Board, type Card, type Column, type Lane } from "../../lib/board";
 import { moveCard } from "../../store/actions";
