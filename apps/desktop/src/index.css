@@ -457,3 +457,11 @@ body {
 .tm-dropcap > :where(h1, h2, h3, h4, h5, h6) {
   clear: left;
 }
+
+/* Middle-button pan on the board (useMiddleDragPan): one grabbing hand over everything
+   (unlayered, so it beats the cards' cursor-grab utility) and no selection while dragging. */
+[data-panning],
+[data-panning] * {
+  cursor: grabbing;
+  user-select: none;
+}

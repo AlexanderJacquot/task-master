@@ -50,6 +50,7 @@ import {
   MIN_COLUMN_WIDTH,
   useBoardColumns,
 } from "./useBoardColumns";
+import { useMiddleDragPan } from "./useMiddleDragPan";
 
 interface Props {
   board: Board;
@@ -260,6 +261,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
 
   const active = activeId ? cards.get(activeId) : undefined;
   const lanes = board.lanes.length > 1 || board.lanes[0]?.key !== "all";
+  const panRef = useMiddleDragPan<HTMLDivElement>();
 
   return (
     <DndContext
@@ -270,7 +272,11 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
       onDragEnd={onDragEnd}
       onDragCancel={onDragCancel}
     >
-      <div className={cx("min-h-0 flex-1 overflow-auto", lanes ? "" : "flex")} data-testid="board">
+      <div
+        ref={panRef}
+        className={cx("min-h-0 flex-1 overflow-auto", lanes ? "" : "flex")}
+        data-testid="board"
+      >
         <div className={cx("flex min-w-max flex-col", !lanes && "flex-1")}>
           <div className="sticky top-0 z-10 flex gap-3.5 bg-canvas px-7 pt-2 pb-2">
             {board.columns.map((column) => (
