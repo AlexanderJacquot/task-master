@@ -129,7 +129,7 @@ function MonthCell({
         onClick={() => onPickDay(iso)}
         aria-label={`Open ${date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`}
         className={cx(
-          "self-start rounded-full px-1.5 text-[15px] leading-7 tabular-nums hover:bg-hover",
+          "flex size-7 shrink-0 items-center justify-center self-start rounded-full text-[15px] tabular-nums hover:bg-hover",
           iso === today
             ? "bg-accent text-accent-ink hover:bg-accent-hover"
             : inMonth
