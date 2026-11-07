@@ -26,13 +26,13 @@ function ColorPicker({ project }: { project: Project }) {
       <Popover.Trigger
         aria-label="Project color and icon"
         title="Color and icon"
-        className="flex size-7 items-center justify-center rounded-md hover:bg-hover"
+        className="flex size-7 shrink-0 items-center justify-center rounded-md hover:bg-hover"
       >
-        <ProjectMark project={project} />
+        <ProjectMark project={project} dotClass="size-3" className="text-[0.85em]" />
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content
-          align="end"
+          align="start"
           sideOffset={4}
           className={cx(MENU, "grid min-w-0 grid-cols-5 gap-1.5 p-2.5")}
         >
@@ -95,7 +95,7 @@ function ColorPicker({ project }: { project: Project }) {
   );
 }
 
-/** A project's tasks, with its settings in the header: name, color, area, archive, delete. */
+/** A project's tasks, with its settings in the header: name (the mark beside it picks color and icon), area, archive, delete. */
 export function ProjectPage({ project }: { project: Project }) {
   const store = useTaskStore();
   const navigate = useNavigate();
@@ -115,7 +115,7 @@ export function ProjectPage({ project }: { project: Project }) {
       eyebrow={area?.name}
       title={
         <span className="flex min-w-0 items-center gap-2">
-          <ProjectMark project={project} dotClass="size-3" className="text-[0.85em]" />
+          <ColorPicker project={project} />
           <EditableTitle
             value={project.name}
             placeholder="Project name"
@@ -129,7 +129,6 @@ export function ProjectPage({ project }: { project: Project }) {
       actions={
         <>
           <ProjectFolderButton projectId={project.id} />
-          <ColorPicker project={project} />
           {!isArea && (
             <Select
               aria-label="Area"
