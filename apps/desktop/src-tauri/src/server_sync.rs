@@ -29,8 +29,11 @@ const CYCLE: Duration = Duration::from_secs(5 * 60);
 /// Edits within this pause make one round.
 const SETTLE: Duration = Duration::from_secs(2);
 const FIRST: Duration = Duration::from_secs(5);
-/// Fixed loopback port of the OIDC redirect (registered with the provider, docs/server.md).
-pub const OIDC_PORT: u16 = 47823;
+/// Loopback ports of the OIDC redirect, tried in order (each registered with the provider,
+/// docs/server.md). Windows can reserve a whole block that holds the first one: WSL's
+/// mirrored networking reserves its port range (for example 44620-48715) and Hyper-V
+/// excludes ranges, so a bind fails with "in use" although nothing listens there.
+pub const OIDC_PORTS: [u16; 3] = [47823, 38823, 28823];
 const OIDC_PATH: &str = "/oidc/callback";
 const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(300);
 /// How long a new sign-in waits for an earlier one (in this or another task-master
@@ -578,8 +581,8 @@ pub fn oidc_sign_in(
         endpoint("token_endpoint")?,
     );
 
-    let listener = bind_callback(OIDC_PORT, TAKE_OVER_WAIT)?;
-    let redirect = format!("http://127.0.0.1:{OIDC_PORT}{OIDC_PATH}");
+    let (listener, port) = bind_callback(&OIDC_PORTS, TAKE_OVER_WAIT)?;
+    let redirect = format!("http://127.0.0.1:{port}{OIDC_PATH}");
     let verifier = google::random_token(48)?;
     let state = google::random_token(16)?;
     open(&oidc_auth_url(
@@ -629,40 +632,59 @@ pub fn oidc_sign_in(
         .ok_or_else(|| "the provider sent no ID token (is the `openid` scope allowed?)".into())
 }
 
-/// Binds the fixed callback port. While an earlier sign-in still waits on it (in this
-/// instance or another one), asks it to stop and retries until `wait` runs out.
-fn bind_callback(port: u16, wait: Duration) -> Result<TcpListener, String> {
+/// Binds the first usable callback port. A port where an earlier sign-in still waits (in
+/// this instance or another one) is taken over: it is asked to stop, and the bind is
+/// retried until `wait` runs out. A port that is busy while nothing answers on it
+/// (reserved by Windows) or that cannot be bound at all is skipped at once.
+fn bind_callback(ports: &[u16], wait: Duration) -> Result<(TcpListener, u16), String> {
+    let mut problems = Vec::new();
+    for &port in ports {
+        match take_port(port, wait) {
+            Ok(listener) => return Ok((listener, port)),
+            Err(e) => problems.push(format!("{port}: {e}")),
+        }
+    }
+    Err(format!(
+        "no sign-in callback port is free ({}); close the program using one and try again",
+        problems.join("; ")
+    ))
+}
+
+fn take_port(port: u16, wait: Duration) -> Result<TcpListener, String> {
     let deadline = Instant::now() + wait;
     let mut asked: Option<Instant> = None;
     loop {
         match TcpListener::bind(("127.0.0.1", port)) {
             Ok(listener) => return Ok(listener),
-            Err(e) if e.kind() == ErrorKind::AddrInUse && Instant::now() < deadline => {
+            Err(e) if e.kind() == ErrorKind::AddrInUse => {
                 if asked.is_none_or(|at| at.elapsed() >= Duration::from_secs(1)) {
-                    ask_to_stop(port);
+                    if !ask_to_stop(port) {
+                        return Err(format!("reserved by the system ({e})"));
+                    }
                     asked = Some(Instant::now());
+                }
+                if Instant::now() >= deadline {
+                    return Err(format!("used by another program ({e})"));
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
-            Err(e) => {
-                return Err(format!(
-                    "port {port} is used by another program ({e}); close it and try again"
-                ));
-            }
+            Err(e) => return Err(e.to_string()),
         }
     }
 }
 
 /// Sends a waiting sign-in the answer of a cancelled one: every sign-in accepts an
-/// `error` callback (`google::parse_callback`), stops and frees the port.
-fn ask_to_stop(port: u16) {
+/// `error` callback (`google::parse_callback`), stops and frees the port. False when
+/// nothing listens on the port.
+fn ask_to_stop(port: u16) -> bool {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(500)) {
-        let _ = stream.write_all(
-            format!("GET {OIDC_PATH}?error=replaced HTTP/1.1\r\nhost: 127.0.0.1\r\n\r\n")
-                .as_bytes(),
-        );
-    }
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(500)) else {
+        return false;
+    };
+    let _ = stream.write_all(
+        format!("GET {OIDC_PATH}?error=replaced HTTP/1.1\r\nhost: 127.0.0.1\r\n\r\n").as_bytes(),
+    );
+    true
 }
 
 pub fn sync_before_calendar(state: &AppState) -> CommandResult<()> {
@@ -690,8 +712,8 @@ mod tests {
                 "your task-master server",
             )
         });
-        let listener = bind_callback(port, Duration::from_secs(3)).unwrap();
-        assert_eq!(listener.local_addr().unwrap().port(), port);
+        let (listener, bound) = bind_callback(&[port], Duration::from_secs(3)).unwrap();
+        assert_eq!((listener.local_addr().unwrap().port(), bound), (port, port));
         let err = waiting.join().unwrap().unwrap_err();
         assert!(err.contains("replaced"), "{err}");
     }
@@ -701,8 +723,29 @@ mod tests {
         // Bound but never answering, like an unrelated program.
         let other = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = other.local_addr().unwrap().port();
-        let err = bind_callback(port, Duration::from_millis(300)).unwrap_err();
+        let err = bind_callback(&[port], Duration::from_millis(300)).unwrap_err();
         assert!(err.contains("used by another program"), "{err}");
+    }
+
+    #[test]
+    fn a_busy_port_nobody_answers_on_is_skipped_at_once() {
+        // A connected socket's own port: bound, but nothing listens there, like a port
+        // Windows reserved for WSL.
+        let server = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(server.local_addr().unwrap()).unwrap();
+        let reserved = client.local_addr().unwrap().port();
+        let free = TcpListener::bind("127.0.0.1:0").unwrap();
+        let next = free.local_addr().unwrap().port();
+        drop(free);
+
+        let started = Instant::now();
+        let (_listener, bound) = bind_callback(&[reserved, next], Duration::from_secs(3)).unwrap();
+        assert_eq!(bound, next);
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     #[test]

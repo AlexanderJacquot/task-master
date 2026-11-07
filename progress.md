@@ -360,6 +360,15 @@ Branch `worktree-parchment-background` (on top of `worktree-perf-texture-tiles`)
 - Verified: 260 frontend tests passed; TypeScript, Biome, the production build,
   the full Rust test suite and Clippy passed.
 
+### Sync sign-in callback ports (2026-11-05)
+
+- Sign-in failed on Windows with "port 47823 is used by another program" although nothing
+  listened: WSL mirrored networking reserves its port range (here 44620-48715) on Windows.
+  The desktop now tries ports 47823, 38823, 28823 and skips a busy port nobody answers on
+  at once; a waiting sign-in on a port is still taken over. The provider must register all
+  three redirect URIs (docs/server.md; homelab Authelia config needs the two new ones).
+- Rust test covers skipping a reserved port.
+
 ### Release 0.6.0 (2026-11-05)
 
 - Version 0.6.0 for the desktop and the sync server (one workspace version, one tag).

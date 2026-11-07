@@ -135,6 +135,8 @@ signs in through a loopback redirect on a fixed port, like the Google sign-in. I
         pre_configured_consent_duration: 1M
         redirect_uris:
           - "http://127.0.0.1:47823/oidc/callback"
+          - "http://127.0.0.1:38823/oidc/callback"
+          - "http://127.0.0.1:28823/oidc/callback"
         scopes: [openid, profile, groups, offline_access]
         response_types: [code]
         grant_types: [authorization_code, refresh_token]
@@ -200,8 +202,8 @@ docker run -d --name task-master --restart unless-stopped \
 
 Point the desktop at `http://<host>:8080`. For any address reachable from outside your
 network, use `TM_AUTH=token` (and HTTPS through your reverse proxy), or `oidc` with your
-own provider. Register the same public client as in step 3; its redirect URI is always
-`http://127.0.0.1:47823/oidc/callback`.
+own provider. Register the same public client as in step 3; its redirect URIs are
+`http://127.0.0.1:{47823,38823,28823}/oidc/callback` (the desktop uses the first free port).
 
 ## 5. Configuration reference
 
@@ -275,8 +277,8 @@ are refreshed when changing runners. Server day-boundary calculations use UTC.
 | Symptom | Check |
 | --- | --- |
 | Desktop says "unreachable" | `curl <url>/info` from that machine; on the homelab, LAN or VPN only |
-| Sign-in loops or fails | The redirect URI is exactly `http://127.0.0.1:47823/oidc/callback` and the client is `public: true` |
-| "Port 47823 is used by another program" | A sign-in still waiting in task-master (this window or another instance) is replaced automatically, and **Start over** restarts one. This error means a different program holds the port: `netstat -ano \| findstr 47823` (Windows) or `lsof -i :47823` shows which |
+| Sign-in loops or fails | All three redirect URIs are registered exactly (`http://127.0.0.1:47823/oidc/callback`, `:38823`, `:28823`) and the client is `public: true`. A "redirect_uri" error in the browser means the port the desktop picked is missing |
+| "No sign-in callback port is free" | A sign-in still waiting in task-master (this window or another instance) is replaced automatically, and **Start over** restarts one. A port Windows reserves (WSL mirrored networking reserves its port range, e.g. 44620-48715, which holds 47823; Hyper-V: `netsh interface ipv4 show excludedportrange protocol=tcp`) is skipped. The error lists each port's reason; "used by another program" means something listens there: `netstat -ano \| findstr 47823` (Windows) or `lsof -i :47823` shows which |
 | `401` for the dashboard | Token revoked or wrong scope (`token list`) |
 | Settings → Sync warns about the clock | The device clock is more than a minute off. Sync corrects for it, but fix the clock (NTP). |
 | Server refuses pushes after an update | The device runs an older app with a different schema. Update the app. |
