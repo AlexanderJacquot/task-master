@@ -1,0 +1,25 @@
+pkgbase = task-master-bin
+	pkgdesc = Local-first task manager with boards, calendar sync and agent sessions
+	pkgver = 0.7.0
+	pkgrel = 1
+	url = https://github.com/AlexanderJacquot/task-master
+	arch = x86_64
+	license = LicenseRef-UNLICENSED
+	depends = cairo
+	depends = dbus
+	depends = gcc-libs
+	depends = gdk-pixbuf2
+	depends = glib2
+	depends = glibc
+	depends = gtk3
+	depends = hicolor-icon-theme
+	depends = libsoup3
+	depends = webkit2gtk-4.1
+	provides = task-master
+	conflicts = task-master
+	options = !strip
+	options = !debug
+	source_x86_64 = task-master_0.7.0_amd64.deb::https://github.com/AlexanderJacquot/task-master/releases/download/v0.7.0/task-master_0.7.0_amd64.deb
+	sha256sums_x86_64 = b6478bcb15e5b25bf537348982582225d173b38ad1820825bae4bb6e189caef5
+
+pkgname = task-master-bin

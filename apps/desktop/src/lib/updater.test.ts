@@ -17,6 +17,35 @@ function source(check: UpdateSource["check"]): UpdateSource & { relaunched: numb
 }
 
 describe("update store", () => {
+  it("leaves updates to the package manager that owns the install", async () => {
+    let checks = 0;
+    const src = source(async () => {
+      checks += 1;
+      return fakeUpdate(async () => {});
+    });
+    const store = createUpdateStore({
+      ...src,
+      managedBy: async () => "the AUR package task-master-bin",
+    });
+    await store.getState().check();
+    await store.getState().check({ quiet: true });
+    await store.getState().install();
+    expect(store.getState().status).toEqual({
+      kind: "managed",
+      by: "the AUR package task-master-bin",
+    });
+    expect(checks).toBe(0);
+  });
+
+  it("checks GitHub when the managed lookup fails", async () => {
+    const store = createUpdateStore({
+      ...source(async () => null),
+      managedBy: () => Promise.reject(new Error("no config")),
+    });
+    await store.getState().check();
+    expect(store.getState().status.kind).toBe("current");
+  });
+
   it("reports when this build is the latest", async () => {
     const store = createUpdateStore(source(async () => null));
     await store.getState().check();

@@ -348,6 +348,9 @@ fn config_view(state: &AppState) -> CommandResult<ConfigView> {
         data_dir: state.data_dir.display().to_string(),
         custom_data_dir: config.data_dir.is_some(),
         remote: config.remote.as_ref().map(RemoteView::from),
+        managed_by: std::env::current_exe()
+            .ok()
+            .and_then(|exe| config::managed_by(&exe)),
     })
 }
 

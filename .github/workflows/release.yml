@@ -95,8 +95,21 @@ jobs:
             Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.7.1/docs/releases/0.7.1.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
-            New install: Windows setup .exe, macOS .dmg, Linux .AppImage or .deb/.rpm.
+            New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.
           releaseDraft: false
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }} --config src-tauri/tauri.updater.conf.json --config src-tauri/tauri.sidecar.conf.json
+
+  # Arch Linux package task-master-bin (ADR 018), after the release is published: a failure
+  # here leaves the installers and in-app updates untouched. Until the AUR_SSH_PRIVATE_KEY
+  # secret exists (AUR registration is closed for now), this job builds and checks the
+  # package, then fails on purpose at the publish step. Stable tags only: pkgver cannot
+  # hold a pre-release suffix.
+  aur:
+    needs: build
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
+    uses: ./.github/workflows/aur.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit

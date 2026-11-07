@@ -40,6 +40,12 @@ export function About() {
               </Button>
             </Row>
           )}
+          {status.kind === "managed" && (
+            <p className="text-[13.5px] text-ink-2">
+              This copy is installed by {status.by}. Updates arrive through your package manager,
+              not from here.
+            </p>
+          )}
           {status.kind === "checking" && (
             <Row text="Checking for updates…">
               <Loader2 size={16} className="animate-spin text-ink-3" />
