@@ -28,6 +28,7 @@ import type { CardLookups } from "../board/BoardCard";
 import { BoardView } from "../board/BoardView";
 import { CAPTURE_HINT, CaptureBox } from "../capture/CaptureBox";
 import { TaskList } from "../list/TaskList";
+import { EmptyArt, TitleCrest, TitleFlourish } from "../ornaments/Ornaments";
 import { EditableTitle } from "./EditableTitle";
 import { FilterBar } from "./FilterBar";
 import { useOpenTask } from "./useOpenTask";
@@ -329,8 +330,10 @@ function ViewBody({
         <div className="min-w-0 flex-1">
           {eyebrow && <div className="mb-0.5 text-[13px] text-ink-3">{eyebrow}</div>}
           <h1 className="flex min-w-0 items-center gap-3 font-display text-[34px] leading-tight font-normal tracking-wide">
+            <TitleCrest />
             {title}
           </h1>
+          <TitleFlourish />
           <div className="mt-1 text-[13.5px] text-ink-2">
             {taskCount} {taskCount === 1 ? "task" : "tasks"}
           </div>
@@ -550,7 +553,7 @@ function ViewBody({
           onOpen={openTask}
         />
       ) : rows.length === 0 ? (
-        <p className="p-10 text-center font-display text-lg text-ink-3">
+        <EmptyArt>
           {searchActive
             ? searching
               ? "Searching…"
@@ -560,7 +563,7 @@ function ViewBody({
             : scope.kind === "inbox"
               ? "Inbox zero. Nothing to triage."
               : "No tasks here yet."}
-        </p>
+        </EmptyArt>
       ) : (
         <TaskList
           rows={rows}

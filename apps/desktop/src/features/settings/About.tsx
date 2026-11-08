@@ -1,4 +1,3 @@
-import appIcon from "../../assets/brand/app-icon.svg";
 import {
   DoneIcon as CheckCircle2,
   DownloadIcon as Download,
@@ -8,6 +7,7 @@ import {
 } from "../../components/TaskIcons";
 import { Button } from "../../components/ui";
 import { BUILD, useUpdates } from "../../lib/updater";
+import { AboutHero, AppLogo } from "../ornaments/Ornaments";
 
 function time(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -21,9 +21,10 @@ export function About() {
   return (
     <section className="flex flex-col gap-3 border-b border-line py-6" aria-label="About">
       <h2 className="font-display text-[19px] tracking-wide text-accent">About and updates</h2>
+      <AboutHero />
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="inline-flex items-center gap-2 font-display text-[22px] tracking-wide">
-          <img src={appIcon} alt="" width={36} height={36} />
+          <AppLogo size={36} />
           Task Master
         </span>
         <span className="text-ink" data-testid="app-version">

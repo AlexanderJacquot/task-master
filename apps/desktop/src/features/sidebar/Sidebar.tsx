@@ -8,7 +8,6 @@ import {
   useMemo,
   useState,
 } from "react";
-import appIcon from "../../assets/brand/app-icon.svg";
 import {
   ArchiveIcon as Archive,
   UnarchiveIcon as ArchiveRestore,
@@ -53,6 +52,7 @@ import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import { PROJECT_COLORS } from "../organize/projectColors";
 import { TagMenu } from "../organize/TagMenu";
+import { AppLogo, NavIcon, Wordmark } from "../ornaments/Ornaments";
 import { useShell } from "../shell/shellContext";
 import { ProjectTree } from "./ProjectTree";
 import { useProjectOrder } from "./useProjectOrder";
@@ -555,7 +555,7 @@ export function Sidebar({
         style={{ width: SIDEBAR_WIDTH.rail }}
         className="tex-sidebar flex shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-line bg-sidebar py-4"
       >
-        <img src={appIcon} width={30} height={30} alt="Task Master" className="mb-1 shrink-0" />
+        <AppLogo size={30} alt="Task Master" className="mb-1 shrink-0" />
         <IconButton label="Expand sidebar" onClick={onToggleCollapsed} className="mb-1 size-8">
           <PanelLeftOpen size={17} />
         </IconButton>
@@ -624,15 +624,9 @@ export function Sidebar({
         className="tex-sidebar @container/sidebar relative flex h-full min-w-0 flex-1 flex-col overflow-y-auto border-r border-line bg-sidebar px-3 pt-4 pb-3"
       >
         <div className="flex items-center gap-2 px-2 pb-3">
-          <img
-            src={appIcon}
-            width={30}
-            height={30}
-            alt=""
-            className="hidden shrink-0 @[216px]/sidebar:block"
-          />
+          <AppLogo size={30} className="hidden shrink-0 @[216px]/sidebar:block" />
           <span className="min-w-0 flex-1 truncate font-display text-[21px] tracking-wide text-accent">
-            Task Master
+            <Wordmark>Task Master</Wordmark>
           </span>
           <IconButton label="Collapse sidebar" onClick={onToggleCollapsed}>
             <PanelLeftClose size={16} />
@@ -661,7 +655,7 @@ export function Sidebar({
               FOCUS,
             )}
           >
-            <Search size={26} />
+            <NavIcon name="search" size={24} fallback={<Search size={26} />} />
           </button>
         </div>
 
@@ -669,24 +663,51 @@ export function Sidebar({
           <NavItem
             to="/inbox"
             count={counts.inbox}
-            icon={<Inbox size={17} className="shrink-0 text-sky-700 dark:text-sky-300" />}
+            icon={
+              <NavIcon
+                name="inbox"
+                size={17}
+                fallback={<Inbox size={17} className="shrink-0 text-sky-700 dark:text-sky-300" />}
+              />
+            }
           >
             Inbox
           </NavItem>
           <NavItem
             to="/today"
             count={counts.today}
-            icon={<Sun size={17} className="shrink-0 text-amber-700 dark:text-amber-300" />}
+            icon={
+              <NavIcon
+                name="today"
+                size={17}
+                fallback={<Sun size={17} className="shrink-0 text-amber-700 dark:text-amber-300" />}
+              />
+            }
           >
             Today
           </NavItem>
           <NavItem
             to="/calendar"
-            icon={<CalendarDays size={17} className="shrink-0 text-rubric" />}
+            icon={
+              <NavIcon
+                name="due-date"
+                size={17}
+                fallback={<CalendarDays size={17} className="shrink-0 text-rubric" />}
+              />
+            }
           >
             Calendar
           </NavItem>
-          <NavItem to="/all" icon={<Layers size={17} className="shrink-0" />}>
+          <NavItem
+            to="/all"
+            icon={
+              <NavIcon
+                name="all-tasks"
+                size={17}
+                fallback={<Layers size={17} className="shrink-0" />}
+              />
+            }
+          >
             All tasks
           </NavItem>
           <NavItem
@@ -884,7 +905,13 @@ export function Sidebar({
             <div className="flex min-w-0 flex-1 flex-col [&>a]:flex-1">
               <NavItem
                 to="/settings"
-                icon={<Settings2 size={20} className="shrink-0" />}
+                icon={
+                  <NavIcon
+                    name="settings"
+                    size={20}
+                    fallback={<Settings2 size={20} className="shrink-0" />}
+                  />
+                }
                 title={withKeys(keymap, "goSettings", "Settings")}
               >
                 <span className="font-display text-[15px] tracking-wide">Settings</span>

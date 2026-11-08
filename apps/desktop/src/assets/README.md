@@ -74,6 +74,14 @@ Palette: ink `#1F1A16`, parchment `#F5E8D0`, aged gold `#D4A241`, wax red `#8B2A
 
 The app logo is wired into the sidebar, About panel, and web favicon. Tauri's configured native icon paths now contain generated PNG, Windows ICO, and macOS ICNS exports (along with its platform-specific sizes). These are the logo files used for the next built installer/application; an already installed build must be rebuilt/reinstalled to receive them. The browser and in-app logo use the SVG directly.
 
+## Asset pack (ADR 019)
+
+`pack/` holds the painted asset pack as WebP, imported by
+`scripts/asset-pack/import.sh <task-master-png-assets.zip>`. In development the asset lab
+(Ctrl+Alt+A) switches them around the UI; releases ship each slot's `initial` choice from
+`src/lib/ornaments.ts`. The native app icon is `app-linux-purple`
+(`scripts/asset-pack/set-app-icon.sh <variant>`); the in-app logo is `app-banner`.
+
 ## Parchment textures
 
 `parchment/*.webp` are the light theme's background: `parchment-calfskin.webp` (1024 px

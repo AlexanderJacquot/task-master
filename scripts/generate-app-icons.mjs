@@ -1,11 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const cwd = fileURLToPath(new URL("../apps/desktop/", import.meta.url));
-const source = "src/assets/brand/app-icon.svg";
+// Regenerates every native size from the current 1024 px icon, or from the image given
+// (scripts/asset-pack/set-app-icon.sh passes a pack PNG; ADR 019).
+const source = process.argv[2] ? resolve(process.argv[2]) : "src-tauri/app-icon.png";
 function generate(args) {
   const result = spawnSync("pnpm", ["tauri", "icon", source, ...args], {
     cwd,
