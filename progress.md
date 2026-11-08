@@ -45,6 +45,18 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Asset pack and development asset lab (2026-11-09, ADR 019)
+
+- Painted PNG asset pack imported as WebP by `scripts/asset-pack/import.sh <zip>` into
+  `apps/desktop/src/assets/pack` (~930 KB; the 1024 px icon sources are gitignored).
+- Native app icon regenerated from `app-linux-purple`; in-app logo is `app-banner` (`scripts/asset-pack/set-app-icon.sh`;
+  `generate-app-icons.mjs` now takes an optional source path).
+- `src/lib/ornaments.ts` defines switchable slots (logo, wordmark, title flourish/crest,
+  done stamp, priority ribbon, empty page, corners, background, gold sidebar icons, About
+  banner); `features/ornaments/AssetLab.tsx` is the live picker (Ctrl+Alt+A or Settings →
+  Appearance), development builds only. Shipped: purple native icon, banner logo, divider
+  under page titles, full wax seal on empty pages. A release build bundles only those.
+
 ### Release 0.9.0 (2026-11-08)
 
 - Integrated the uncommitted work since 0.8.0: backup and sync frequency, default project

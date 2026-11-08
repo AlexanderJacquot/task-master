@@ -10,6 +10,8 @@ import type { AppSearch } from "../../router";
 import type { NewTaskInput } from "../../store/actions";
 import { useStoreState } from "../../store/context";
 import { CaptureBox } from "../capture/CaptureBox";
+import { AssetLab } from "../ornaments/AssetLab";
+import { FaviconSync, MainDecor } from "../ornaments/Ornaments";
 import { CommandPalette } from "../palette/CommandPalette";
 import { SIDEBAR_WIDTH, Sidebar } from "../sidebar/Sidebar";
 import { useProjectOrder } from "../sidebar/useProjectOrder";
@@ -146,13 +148,16 @@ export function Layout() {
     <ShellContext.Provider value={shell}>
       <Framed titleBar={titleBar(collapsed ? SIDEBAR_WIDTH.rail : SIDEBAR_WIDTH.open)}>
         <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
-        <main className="flex min-w-0 flex-1 flex-col">
+        <main className="relative flex min-w-0 flex-1 flex-col">
+          <MainDecor />
           <Outlet />
         </main>
         {task && !onTaskPage && (
           <TaskDetail key={task} taskId={task} focusDescription={focus === "description"} />
         )}
         <ErrorToast />
+        {import.meta.env.DEV && <AssetLab />}
+        <FaviconSync />
         <CommandPalette open={palette} onOpenChange={setPalette} />
         <ShortcutHelp open={help} onOpenChange={setHelp} />
         <NewTaskDialog

@@ -1,7 +1,7 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { type ReactNode, useEffect, useState } from "react";
-import { cx, Dot, InlineInput, Select } from "../../components/ui";
+import { Button, cx, Dot, InlineInput, Select } from "../../components/ui";
 import {
   loadDefaultProject,
   loadOpenInPanel,
@@ -9,6 +9,7 @@ import {
   saveOpenInPanel,
 } from "../../lib/capturePrefs";
 import { formatAgo, isoDate } from "../../lib/dates";
+import { useOrnaments } from "../../lib/ornaments";
 import { settingsApi } from "../../lib/settingsApi";
 import { loadTheme, saveTheme, THEME_LABELS, type Theme } from "../../lib/theme";
 import type {
@@ -206,6 +207,16 @@ function Appearance() {
         ))}
       </div>
       <WeatheringChoice dark={theme === "dark"} />
+      {import.meta.env.DEV && (
+        <div className="flex items-center gap-3">
+          <Button size="sm" onClick={() => useOrnaments.getState().setOpen(true)}>
+            Open asset lab
+          </Button>
+          <span className="text-xs text-ink-3">
+            Try the painted asset pack around the app (Ctrl+Alt+A). Development builds only.
+          </span>
+        </div>
+      )}
     </Section>
   );
 }

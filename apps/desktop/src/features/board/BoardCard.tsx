@@ -8,11 +8,13 @@ import {
 } from "../../components/TaskIcons";
 import { Chip, cx, Dot, PRIORITY_PILL } from "../../components/ui";
 import { daysFrom, formatDue, isoDate } from "../../lib/dates";
+import { useOrnament } from "../../lib/ornaments";
 import type { Epic, Project, Status, Tag, Task } from "../../lib/types";
 import { isAgentTask } from "../../lib/views";
 import { useStoreState } from "../../store/context";
 import { SessionChip } from "../agents/SessionChip";
 import { EpicMark } from "../organize/EpicMark";
+import { DoneStamp, PriorityRibbon, useDoneStamp } from "../ornaments/Ornaments";
 
 /** Height of a card plus the gap below it; fixed so columns virtualize without measuring. */
 export const CARD_SLOT = 98;
@@ -52,6 +54,9 @@ export const CardFace = memo(function CardFace(p: Props) {
   const project = task.project_id ? p.projects[task.project_id] : undefined;
   const epic = task.epic_id ? p.epics[task.epic_id] : undefined;
   const tags = task.tag_ids.flatMap((id) => (p.tags[id] ? [p.tags[id]] : []));
+  const stamp = useDoneStamp();
+  const flagged = (task.priority === "urgent" || task.priority === "high") && !done;
+  const ribbon = useOrnament("priorityRibbon") !== null && flagged;
   const parentTitle = useStoreState((s) =>
     task.parent_id ? (s.tasks[task.parent_id]?.title ?? null) : null,
   );
@@ -59,19 +64,22 @@ export const CardFace = memo(function CardFace(p: Props) {
   return (
     <div
       className={cx(
-        "flex h-[88px] flex-col gap-1.5 overflow-hidden rounded-[11px] border bg-raised px-3 py-2.5 shadow-sm shadow-black/10 transition-colors",
+        "relative flex h-[88px] flex-col gap-1.5 overflow-hidden rounded-[11px] border bg-raised px-3 py-2.5 shadow-sm shadow-black/10 transition-colors",
         p.selected ? "border-accent ring-1 ring-accent" : "border-line hover:border-line-strong",
         p.placeholder && "opacity-40",
         p.overlay && "rotate-1 shadow-xl shadow-black/30",
       )}
     >
+      {done && stamp && <DoneStamp cancelled={category === "cancelled"} />}
+      {flagged && <PriorityRibbon urgent={task.priority === "urgent"} />}
       <p
         className={cx(
           "line-clamp-2 min-h-0 leading-snug text-ink",
+          ribbon && "pr-6",
           done && "text-ink-3 line-through",
         )}
       >
-        {done && (
+        {done && !stamp && (
           <DoneIcon
             size={15}
             className="mr-1 inline align-[-3px] text-rubric"
