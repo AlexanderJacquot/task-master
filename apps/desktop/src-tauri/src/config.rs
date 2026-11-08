@@ -72,6 +72,12 @@ pub struct AgentSettings {
     /// `--model` for sessions; Claude Code's default when `None`.
     #[serde(default)]
     pub model: Option<String>,
+    /// Where a task goes when it is sent to an agent; In progress when `None`.
+    #[serde(default)]
+    pub started_status_id: Option<taskmaster_core::Id>,
+    /// Where a task goes when the agent reports it done; Review when `None`.
+    #[serde(default)]
+    pub done_status_id: Option<taskmaster_core::Id>,
 }
 
 fn default_claude() -> String {
@@ -91,11 +97,21 @@ impl Default for AgentSettings {
             terminal: None,
             permission_mode: default_permission_mode(),
             model: None,
+            started_status_id: None,
+            done_status_id: None,
         }
     }
 }
 
 impl AgentSettings {
+    /// The statuses a user's task moves to as an agent works on it (ADR 017).
+    pub fn workflow(&self) -> taskmaster_core::AgentWorkflow {
+        taskmaster_core::AgentWorkflow {
+            started_status_id: self.started_status_id.clone(),
+            done_status_id: self.done_status_id.clone(),
+        }
+    }
+
     /// Trims fields and checks the permission mode.
     pub fn normalized(mut self) -> Result<Self, String> {
         let blank_to_none =
@@ -103,6 +119,8 @@ impl AgentSettings {
         self.wsl_distro = blank_to_none(self.wsl_distro);
         self.terminal = blank_to_none(self.terminal);
         self.model = blank_to_none(self.model);
+        self.started_status_id = blank_to_none(self.started_status_id);
+        self.done_status_id = blank_to_none(self.done_status_id);
         self.claude_path = self.claude_path.trim().to_owned();
         if self.claude_path.is_empty() {
             self.claude_path = default_claude();

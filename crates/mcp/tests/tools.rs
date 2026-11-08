@@ -67,6 +67,7 @@ fn fixture() -> Fixture {
                 folder: "/home/alex/Code/task-master".into(),
                 runtime: AgentRuntime::Wsl,
                 permission_mode: "acceptEdits".into(),
+                model: None,
                 prompt: String::new(),
             },
         }])
@@ -433,6 +434,40 @@ async fn reporting_done_moves_the_users_task_to_review() {
     .await;
     assert!(!again.contains("moved"), "{again}");
     client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn reporting_done_moves_the_task_to_the_picked_status() {
+    let mut f = fixture();
+    let picked = f
+        .store
+        .execute(Command::CreateStatus {
+            status: NewStatus {
+                id: None,
+                name: "To check".into(),
+                category: StatusCategory::Todo,
+                color: None,
+                rank: None,
+                wip_limit: None,
+            },
+        })
+        .unwrap()
+        .statuses
+        .remove(0);
+    let task = f.task.clone();
+    let server = TaskServer::new(f.store, Some(&f.session))
+        .unwrap()
+        .with_workflow(AgentWorkflow {
+            started_status_id: None,
+            done_status_id: Some(picked.id.clone()),
+        });
+    let client = connect(server.clone()).await;
+    let reply = ok(&client, "complete_session", json!({ "summary": "Done." })).await;
+    assert!(reply.contains("moved to To check"), "{reply}");
+    client.cancel().await.unwrap();
+    let snapshot = server_snapshot(&server);
+    let moved = snapshot.tasks.iter().find(|t| t.id == task).unwrap();
+    assert_eq!(moved.status_id, picked.id);
 }
 
 #[tokio::test(flavor = "current_thread")]

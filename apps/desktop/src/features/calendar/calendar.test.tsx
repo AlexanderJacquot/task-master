@@ -331,9 +331,6 @@ describe("events from Google Calendar", () => {
     // It overlaps the Dentist block (10:00 to 11:00): they share the column.
     expect(within(column).getByRole("button", { name: /^Dentist, / })).toBeTruthy();
     expect(within(screen.getByTestId(`day-lane-${today}`)).getByText("Holiday")).toBeTruthy();
-    expect(
-      within(screen.getByTestId(`day-lane-${addDays(today, 1)}`)).getByText("Holiday"),
-    ).toBeTruthy();
     expect(screen.getByText(/Google Calendar synced 2 min ago/)).toBeTruthy();
 
     fireEvent.click(event);
@@ -342,6 +339,14 @@ describe("events from Google Calendar", () => {
     expect(within(details).getByText(/Me · read-only/)).toBeTruthy();
     fireEvent.click(within(details).getByRole("button", { name: "Open in Google Calendar" }));
     expect(opened).toEqual([standup.link]);
+
+    // On Sunday, tomorrow belongs to the next displayed week.
+    if (new Date(`${today}T12:00:00`).getDay() === 0) {
+      fireEvent.click(screen.getByRole("button", { name: "Next week" }));
+    }
+    expect(
+      within(await screen.findByTestId(`day-lane-${addDays(today, 1)}`)).getByText("Holiday"),
+    ).toBeTruthy();
 
     // The week's range was asked for.
     expect((calendar.ranges.at(-1)?.to_date ?? "") > today).toBe(true);

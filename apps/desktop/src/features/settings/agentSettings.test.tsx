@@ -5,6 +5,8 @@ import type { Api } from "../../lib/api";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore } from "../../store/store";
 import { fakeAgents } from "../../test/fakeAgents";
+import { STATUS, snapshot } from "../../test/fixtures";
+import { pickOption } from "../../test/select";
 import { AgentSettings } from "./AgentSettings";
 
 afterEach(cleanup);
@@ -31,4 +33,26 @@ it("checks the agent, offers the path it found and saves the settings", async ()
   expect(agents.calls).toEqual(["save settings"]);
   expect((await agents.api.settings()).claude_path).toBe("/usr/bin/claude");
   await waitFor(() => expect(save).toHaveProperty("disabled", true));
+});
+
+it("picks the statuses a task moves to when sent to an agent and when it is done", async () => {
+  const agents = fakeAgents();
+  const api = { agents: agents.api, snapshot: async () => snapshot() } as unknown as Api;
+  const store = createTaskStore(api);
+  await store.getState().hydrate();
+  render(
+    <StoreProvider store={store} api={api}>
+      <AgentSettings />
+    </StoreProvider>,
+  );
+  const sent = await screen.findByRole("combobox", { name: "Status when sent to an agent" });
+  expect(sent.textContent).toContain("Default (In progress)");
+  await pickOption(sent, "Waiting");
+  await pickOption(screen.getByRole("combobox", { name: "Status when the agent is done" }), "Done");
+
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await screen.findByText("Saved.");
+  const saved = await agents.api.settings();
+  expect(saved.started_status_id).toBe(STATUS.waiting);
+  expect(saved.done_status_id).toBe(STATUS.done);
 });

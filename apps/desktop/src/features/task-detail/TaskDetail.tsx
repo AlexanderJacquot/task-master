@@ -34,6 +34,7 @@ import { DescriptionEditor } from "./DescriptionEditor";
 import { PropertyPills } from "./PropertyPills";
 import { SubtaskList } from "./SubtaskList";
 import { TagPicker } from "./TagPicker";
+import { TitleField } from "./TitleField";
 import { useTaskAttachments, useTaskFiles } from "./useTaskFiles";
 
 type Variant = "panel" | "page";
@@ -118,13 +119,12 @@ export function TaskEditor({
           size={page ? "lg" : "md"}
         />
       </span>
-      <textarea
+      <TitleField
         key={`title-${task.updated_at}`}
         defaultValue={task.title}
         aria-label="Title"
-        rows={page ? 1 : 2}
         className={cx(
-          "w-full resize-none rounded-lg border border-transparent bg-transparent px-1 [field-sizing:content] focus:outline-none",
+          "w-full resize-none overflow-hidden rounded-lg border border-transparent bg-transparent px-1 focus:outline-none",
           page
             ? "font-display text-[40px] leading-[1.15] tracking-wide"
             : "font-display text-[22px] leading-tight hover:border-line-strong focus:border-accent",
@@ -397,7 +397,12 @@ export function TaskDetail({
         <button
           type="button"
           onClick={() =>
-            void navigate({ to: "/task/$taskId", params: { taskId: task.id }, search: {} })
+            void navigate({
+              to: "/task/$taskId",
+              params: { taskId: task.id },
+              // A task just created keeps the cursor in its description on the full page.
+              search: focusDescription ? { focus: "description" } : {},
+            })
           }
           title="Open the full page (Shift+Enter in a list)"
           className="flex items-center gap-1.5 rounded-md bg-hover px-2.5 py-1 text-ink-2 hover:bg-selected hover:text-ink"
@@ -507,7 +512,7 @@ export function TaskPage({
           <Trash2 size={15} />
         </IconButton>
       </div>
-      <div className="tex-canvas min-h-0 flex-1 overflow-y-auto px-6 py-8">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
         <article className="tex-sheet mx-auto max-w-[820px] rounded-xl border border-line bg-raised px-10 py-11 shadow-xl shadow-black/10 sm:px-14">
           <TaskEditor
             key={task.id}

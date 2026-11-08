@@ -1,13 +1,13 @@
 import { useMemo } from "react";
-import { AgentsIcon as Bot, CheckIcon as Check } from "../../components/TaskIcons";
-import { Checkbox, cx, InlineInput } from "../../components/ui";
+import { AgentsIcon as Bot, DoneIcon } from "../../components/TaskIcons";
+import { cx, InlineInput } from "../../components/ui";
 import type { Task } from "../../lib/types";
 import { compareRank } from "../../lib/views";
 import { createTask, moveSubtask, setParent, toggleDone } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
 
-/** The full page's subtask box: square, filled with the done green when ticked. */
+/** A subtask box: an empty square, replaced by a red wax seal once done. */
 function SquareCheck({
   checked,
   onChange,
@@ -20,8 +20,8 @@ function SquareCheck({
   return (
     <span
       className={cx(
-        "relative inline-flex size-[18px] shrink-0 items-center justify-center rounded-[4px] border-[1.5px] transition-colors",
-        checked ? "border-done bg-done" : "border-ink-3",
+        "relative inline-flex size-[18px] shrink-0 items-center justify-center rounded-[4px] transition-colors",
+        !checked && "border-[1.5px] border-ink-3",
       )}
     >
       <input
@@ -31,14 +31,7 @@ function SquareCheck({
         aria-label={label}
         className="absolute inset-0 cursor-pointer appearance-none rounded-[4px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
       />
-      {checked && (
-        <Check
-          aria-hidden
-          size={12}
-          strokeWidth={3.2}
-          className="pointer-events-none text-canvas"
-        />
-      )}
+      {checked && <DoneIcon aria-hidden size={20} className="pointer-events-none text-rubric" />}
     </span>
   );
 }
@@ -72,7 +65,7 @@ export function SubtaskList({
 
   const page = variant === "page";
   const doneCount = children.filter(isDone).length;
-  const Box = page ? SquareCheck : Checkbox;
+  const Box = SquareCheck;
 
   return (
     <div>

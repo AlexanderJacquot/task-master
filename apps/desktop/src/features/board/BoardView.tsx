@@ -281,7 +281,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
         data-testid="board"
       >
         <div className={cx("flex min-w-max flex-col", !lanes && "flex-1")}>
-          <div className="sticky top-0 z-10 flex gap-3.5 bg-canvas px-7 pt-2 pb-2">
+          <div className="tex-canvas-pinned sticky top-0 z-10 flex gap-3.5 bg-canvas px-7 pt-2 pb-2">
             {board.columns.map((column) => (
               <ColumnHeader
                 key={column.status.id}

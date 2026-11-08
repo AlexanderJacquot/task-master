@@ -14,9 +14,9 @@ The user chose our own.
 **Frameless on Windows only.** `tauri.windows.conf.json` (merged by Tauri on Windows
 builds) sets `decorations: false` and `shadow: true` on the main window. Tauri merges it as
 a JSON merge patch, which replaces the whole window list, so the file repeats both windows;
-a shell test fails if it differs from `tauri.conf.json` in anything else. Linux keeps the
-native frame (window managers vary too much); macOS too for now (its native "overlay"
-title bar style would be the cheap route there later).
+a shell test fails if it differs from `tauri.conf.json` in anything else. macOS keeps the
+native frame for now (its native "overlay" title bar style would be the cheap route there
+later). Linux: see the amendment below.
 
 **The strip.** `TitleBar` (32 px) sits above the sidebar and the main area: its left part
 is as wide as the sidebar (open or folded) and has its background, the rest shows the
@@ -46,3 +46,20 @@ second instance on the same database.
   (`WM_NCHITTEST` → `HTMAXBUTTON`) or a community plugin; revisit if it is missed.
 - Resize borders and the shadow rely on Tauri's handling of frameless windows on Windows;
   to be checked by hand.
+
+## Amendment (2026-11-07): Linux too
+
+On Wayland (KDE Plasma here) GTK draws its own client-side title bar, a dark strip above
+the app like the one on Windows. `tauri.linux.conf.json` now drops the main window's frame
+the same way (`decorations: false`, no `shadow`: Tauri ignores it on Linux); a second shell
+test guards the drift. Tauri 2.12 (`tauri-runtime-wry`'s `undecorated_resizing`) gives
+frameless GTK windows resize edges and cursors, and drag regions use the compositor's own
+move, so snapping and double-click maximize keep working.
+
+`titleBarStyleFor(userAgent)` picks the buttons: `windows` as above, `linux` for a Linux
+user agent: round 24 px buttons with SVG line icons (no icon font is guaranteed), red disc
+on close hover, minimize / maximize / close on the right, the KDE and GNOME default order.
+
+Known limits on Linux: the compositor draws no shadow and no rounded corners for a
+frameless window, the window menu (Alt+Space or right-click on the bar) and the user's
+button order and theme from system settings are not followed.

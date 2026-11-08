@@ -20,8 +20,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use taskmaster_core::{
-    AgentNote, AgentRuntime, AgentSession, AgentSessionChange, Command, Id, NewAgentSession,
-    ProjectFolder, SessionState,
+    AgentNote, AgentRuntime, AgentSession, AgentSessionChange, AgentWorkflow, Command, Id,
+    NewAgentSession, ProjectFolder, SessionState, Status, Store, Task,
 };
 use tauri::{AppHandle, Manager, State};
 use tauri_specta::Event as _;
@@ -52,10 +52,8 @@ struct Live {
     activity: Arc<Mutex<Option<String>>>,
 }
 
-/// In the session's folder: a readable log of the current run, for "Watch in terminal".
+/// In the session's folder: a readable log of the last run (its messages and tools).
 const RUN_LOG_FILE: &str = "run.log";
-/// How long a watch window stays after the run ended.
-const WATCH_CLOSE_AFTER: u32 = 15;
 
 fn state_label(state: SessionState) -> &'static str {
     match state {
@@ -105,7 +103,7 @@ pub fn opening_prompt(brief: &str, instructions: &str) -> String {
 }
 
 /// Appended to Claude Code's system prompt for the whole session.
-pub fn session_rules(task_title: &str, task_id: &str) -> String {
+pub fn session_rules(task_title: &str, task_id: &str, done_status: &str) -> String {
     format!(
         "You were started from task-master, the user's task manager, to work on the task \
          \"{task_title}\" (id `{task_id}`). Its context is in the first message; the \
@@ -113,21 +111,26 @@ pub fn session_rules(task_title: &str, task_id: &str) -> String {
          Track your work with those tools as you go: create agent tasks for the steps you \
          plan (they become subtasks of this task), move them to in_progress and done, add \
          short notes for findings and decisions, and call complete_session with a summary \
-         (done, left, to check) before you finish. That moves this task to Review for the \
-         user to check: do not mark it done yourself.\n\n\
+         (done, left, to check) before you finish. The app then moves this task to \
+         {done_status} for the user to check: do not mark it done yourself.\n\n\
          You run in the background: nobody can answer a question or approve a tool while \
          you work. If you need a decision, stop, say what you need in your final message and \
          in complete_session; the user will reply with a follow-up message.\n"
     )
 }
 
-/// `--mcp-config` content: our server for this session.
-pub fn mcp_config(server: &str, db: &str, session_id: &str) -> String {
+/// `--mcp-config` content: our server for this session, and the status picked for agent
+/// work done (the server's default, Review, when `None`).
+pub fn mcp_config(server: &str, db: &str, session_id: &str, done_status: Option<&str>) -> String {
+    let mut args = vec!["--db", db, "--session", session_id];
+    if let Some(id) = done_status {
+        args.extend(["--done-status", id]);
+    }
     let config = serde_json::json!({
         "mcpServers": {
             launch::MCP_SERVER: {
                 "command": server,
-                "args": ["--db", db, "--session", session_id],
+                "args": args,
             }
         }
     });
@@ -200,6 +203,61 @@ fn settings(state: &AppState) -> CommandResult<AgentSettings> {
         .clone())
 }
 
+/// The status move of a user's task the workflow makes for an agent event, if any.
+fn task_move(
+    s: &Store,
+    task_id: &str,
+    workflow: &AgentWorkflow,
+    rule: fn(&AgentWorkflow, &[Status], &Task) -> Option<Command>,
+) -> taskmaster_core::Result<Option<Command>> {
+    let snapshot = s.snapshot()?;
+    Ok(snapshot
+        .tasks
+        .iter()
+        .find(|t| t.id == task_id)
+        .and_then(|task| rule(workflow, &snapshot.statuses, task)))
+}
+
+/// Moves the session's task to the "sent to an agent" status (ADR 017); a failure is
+/// only logged, the run goes on.
+fn mark_started(state: &AppState, settings: &AgentSettings, task_id: &str) {
+    let workflow = settings.workflow();
+    let moved = with_store(state, |s| {
+        if let Some(command) = task_move(s, task_id, &workflow, AgentWorkflow::on_start)? {
+            s.execute_without_undo(vec![command])?;
+        }
+        Ok(())
+    });
+    if let Err(e) = moved {
+        eprintln!("cannot move task {task_id} to in progress: {}", e.message);
+    }
+}
+
+/// Writes the session's `mcp.json` (in its folder, which must exist) for this app's MCP
+/// server, and returns its path. Rewritten for each run and terminal: the server's path
+/// changes when the app does (an AppImage is mounted at a new place on each start).
+fn write_mcp_config(
+    state: &AppState,
+    settings: &AgentSettings,
+    session_id: &str,
+    runtime: AgentRuntime,
+) -> Result<PathBuf, String> {
+    let server = runtime_path(&mcp_binary()?, runtime)?;
+    let config_file = state
+        .data_dir
+        .join("agents")
+        .join(session_id)
+        .join("mcp.json");
+    let db = state.db_path.display().to_string();
+    let done_status = settings.done_status_id.as_deref();
+    std::fs::write(
+        &config_file,
+        mcp_config(&server, &db, session_id, done_status),
+    )
+    .map_err(|e| format!("cannot write the MCP config: {e}"))?;
+    Ok(config_file)
+}
+
 /// A file of the app's as the runtime sees it.
 fn runtime_path(path: &Path, runtime: AgentRuntime) -> Result<String, String> {
     let text = path.display().to_string();
@@ -250,7 +308,24 @@ fn process(launch: &Launch) -> Process {
     for var in INHERITED_SESSION_VARS {
         p.env_remove(var);
     }
+    for (name, value) in host_env() {
+        match value {
+            Some(value) => p.env(name, value),
+            None => p.env_remove(name),
+        };
+    }
     p
+}
+
+/// [`launch::host_env`] for this process, read once (the AppImage sets it before start).
+fn host_env() -> &'static [(String, Option<String>)] {
+    static CHANGES: std::sync::OnceLock<Vec<(String, Option<String>)>> = std::sync::OnceLock::new();
+    CHANGES.get_or_init(|| {
+        let env: Vec<(String, String)> = std::env::vars_os()
+            .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
+            .collect();
+        launch::host_env(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+    })
 }
 
 /// Starts one run of `session` (new, or a follow-up with `resume`) with `prompt` on stdin.
@@ -272,11 +347,7 @@ fn spawn_run(
     }
     let dir = state.data_dir.join("agents").join(&session.id);
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot write {}: {e}", dir.display()))?;
-    let server = runtime_path(&mcp_binary()?, runtime)?;
-    let config_file = dir.join("mcp.json");
-    let db = state.db_path.display().to_string();
-    std::fs::write(&config_file, mcp_config(&server, &db, &session.id))
-        .map_err(|e| format!("cannot write the MCP config: {e}"))?;
+    let config_file = write_mcp_config(state, &settings, &session.id, runtime)?;
     let rules_file = dir.join("rules.md");
     if let Some(rules) = rules {
         std::fs::write(&rules_file, rules).map_err(|e| format!("cannot write the rules: {e}"))?;
@@ -288,6 +359,7 @@ fn spawn_run(
             claude_session_id: &session.claude_session_id,
             resume,
             permission_mode: &session.permission_mode,
+            model: session.model.as_deref(),
             mcp_config: &runtime_path(&config_file, runtime)?,
             rules: &runtime_path(&rules_file, runtime)?,
         },
@@ -304,12 +376,41 @@ fn spawn_run(
         };
         let _ = log.write_all(header.as_bytes());
     }
-    let mut child = hidden(&mut process(&launch))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("cannot start {}: {e}", launch.program))?;
+    if let Some(cwd) = &launch.cwd
+        && !cwd.is_dir()
+    {
+        return Err(format!(
+            "the project folder {} does not exist; set it again in the project's settings",
+            cwd.display()
+        ));
+    }
+    let start = |launch: &Launch| {
+        hidden(&mut process(launch))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    };
+    let mut child = match start(&launch) {
+        Ok(child) => child,
+        // A GUI app often lacks the shell's PATH: find `claude` the way settings do.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && launch.program == "claude" => {
+            let found = hidden(&mut process(&launch::lookup_command(&settings, Os::current())))
+                .stdin(Stdio::null())
+                .output()
+                .ok()
+                .and_then(|out| launch::found_path(&String::from_utf8_lossy(&out.stdout)))
+                .ok_or_else(|| {
+                    "cannot start claude: not found on the app's PATH; set its full path in the agent settings".to_owned()
+                })?;
+            let retry = Launch {
+                program: found.clone(),
+                ..launch
+            };
+            start(&retry).map_err(|e| format!("cannot start {found}: {e}"))?
+        }
+        Err(e) => return Err(format!("cannot start {}: {e}", launch.program)),
+    };
     let (Some(mut stdin), Some(stdout), Some(stderr)) =
         (child.stdin.take(), child.stdout.take(), child.stderr.take())
     else {
@@ -437,17 +538,29 @@ fn finish(
     if let Ok(mut live) = state.agents.live.lock() {
         live.remove(id);
     }
+    let workflow = settings(&state).map(|s| s.workflow()).unwrap_or_default();
     let written = with_store(&state, |s| {
         let session = s.agent_session(id)?;
         if session.state != SessionState::Running {
             return Ok(());
         }
         let changes = outcome(&session, cancelled, result, denied, failure);
-        s.execute_without_undo(vec![Command::UpdateAgentSession {
+        let done = changes.contains(&AgentSessionChange::State(SessionState::Done));
+        let mut commands = vec![Command::UpdateAgentSession {
             id: id.to_owned(),
             changes,
-        }])
-        .map(|_| ())
+        }];
+        // The software rule (ADR 017): a run that ended well reports the task done, whether
+        // or not the agent called complete_session.
+        if done {
+            commands.extend(task_move(
+                s,
+                &session.task_id,
+                &workflow,
+                AgentWorkflow::on_done,
+            )?);
+        }
+        s.execute_without_undo(commands).map(|_| ())
     });
     if let Err(e) = written {
         eprintln!("cannot record the end of agent session {id}: {}", e.message);
@@ -504,6 +617,9 @@ pub struct AgentStart {
     pub folder: String,
     /// The settings' default when `None`.
     pub permission_mode: Option<String>,
+    /// Claude Code `--model` (alias or full name); the settings' model when `None`.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Extra instructions; may be empty.
     pub prompt: String,
 }
@@ -519,16 +635,22 @@ pub fn agent_start(
 ) -> CommandResult<AgentSession> {
     let settings = settings(&state)?;
     let folder = launch::to_runtime_path(&input.folder, settings.runtime);
-    let permission_mode = input.permission_mode.unwrap_or(settings.permission_mode);
-    let (brief, title) = with_store(&state, |s| {
-        let title = s
-            .snapshot()?
+    let permission_mode = input
+        .permission_mode
+        .unwrap_or_else(|| settings.permission_mode.clone());
+    let (brief, title, done_status) = with_store(&state, |s| {
+        let snapshot = s.snapshot()?;
+        let title = snapshot
             .tasks
-            .into_iter()
+            .iter()
             .find(|t| t.id == input.task_id)
-            .map(|t| t.title)
+            .map(|t| t.title.clone())
             .unwrap_or_default();
-        Ok((s.agent_brief(&input.task_id)?, title))
+        let done_status = settings
+            .workflow()
+            .done_status(&snapshot.statuses)
+            .map_or_else(|| "Review".to_owned(), |s| s.name.clone());
+        Ok((s.agent_brief(&input.task_id)?, title, done_status))
     })?;
     let session = with_store(&state, |s| {
         s.execute_without_undo(vec![Command::CreateAgentSession {
@@ -539,6 +661,7 @@ pub fn agent_start(
                 folder,
                 runtime: settings.runtime,
                 permission_mode,
+                model: input.model.clone(),
                 prompt: input.prompt.clone(),
             },
         }])
@@ -546,11 +669,12 @@ pub fn agent_start(
     .agent_sessions
     .remove(0);
     let prompt = opening_prompt(&brief, &input.prompt);
-    let rules = session_rules(&title, &input.task_id);
+    let rules = session_rules(&title, &input.task_id, &done_status);
     if let Err(message) = spawn_run(&app, &state, &session, false, prompt, Some(rules)) {
         fail(&state, &session.id, &message);
         return Err(invalid(message));
     }
+    mark_started(&state, &settings, &input.task_id);
     Ok(session)
 }
 
@@ -597,6 +721,7 @@ pub fn agent_send(
         fail(&state, &session.id, &message);
         return Err(invalid(message));
     }
+    mark_started(&state, &settings(&state)?, &session.task_id);
     Ok(())
 }
 
@@ -644,9 +769,10 @@ pub fn agent_cancel(state: State<'_, AppState>, session_id: Id) -> CommandResult
 const TERMINAL_LAUNCHER: Duration = Duration::from_secs(3);
 
 /// Opens a terminal running `claude --resume` in the session's folder, with the session's
-/// MCP config. A session the app is not running becomes `terminal` until the agent records
-/// its summary, the user marks it done, or the terminal closes (when it can be followed).
-#[tauri::command]
+/// MCP config. A running session's headless run is stopped first. The session becomes
+/// `terminal` until the agent records its summary, the user marks it done, or the terminal
+/// closes (when it can be followed). Async: stopping a run waits for it, off the UI thread.
+#[tauri::command(async)]
 #[specta::specta]
 pub fn agent_open_terminal(
     app: AppHandle,
@@ -669,72 +795,36 @@ pub fn agent_open_terminal(
             .or_else(|| launch::detect_linux_terminal(on_path)),
         _ => None,
     };
-    // A run in progress cannot be joined (`claude --resume` would fork it and show none of
-    // its current turn), so the terminal follows its log instead, read-only.
+    // A run in progress cannot be joined (`claude --resume` would fork it and load none of
+    // its current turn), so the terminal takes it over: the headless run stops (its turn so
+    // far is kept in the conversation) and the terminal continues the session.
     if is_live(&state, &session.id)? {
-        let log = state
-            .data_dir
-            .join("agents")
-            .join(&session.id)
-            .join(RUN_LOG_FILE);
-        let script = launch::watch_script(
-            &runtime_path(&log, session.runtime).map_err(invalid)?,
-            WATCH_CLOSE_AFTER,
-        );
-        let watch = launch::shell_terminal(
-            &settings,
-            session.runtime,
-            &script,
-            os,
-            default_terminal.as_deref(),
-        )
-        .ok_or_else(|| {
-            invalid("watching a run needs a POSIX shell (WSL, macOS or Linux); wait for it to end")
-        })?;
-        let started = process(&watch)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-        return match started {
-            Ok(_) => Ok(()),
-            Err(_) if watch.program == "wt.exe" => {
-                // No Windows Terminal: the same command in a console window.
-                let mut args = vec!["/c".to_owned(), "start".into(), String::new()];
-                args.extend(watch.args);
-                let console = Launch {
-                    program: "cmd.exe".into(),
-                    args,
-                    cwd: None,
-                };
-                hidden(&mut process(&console))
-                    .spawn()
-                    .map(|_| ())
-                    .map_err(|e| internal(format!("cannot open a terminal: {e}")))
-            }
-            Err(e) => Err(internal(format!(
-                "cannot open a terminal ({}): {e}; set one in Settings → Agents",
-                watch.program
-            ))),
-        };
+        stop_for_terminal(&state, &session.id)?;
     }
+    // The session's MCP config, up to date when it can be (the agent keeps its tools).
     let config = state
         .data_dir
         .join("agents")
         .join(&session.id)
         .join("mcp.json");
+    if config.is_file()
+        && let Err(e) = write_mcp_config(&state, &settings, &session.id, session.runtime)
+    {
+        eprintln!(
+            "cannot update the MCP config of agent session {}: {e}",
+            session.id
+        );
+    }
     let config = config
         .is_file()
         .then(|| runtime_path(&config, session.runtime).ok())
         .flatten();
-    // A running headless run stays the app's: the terminal forks its conversation and is
-    // the user's to close. Any other session is continued here, and watched.
+    // A run still going (it did not stop in time) stays the app's: the terminal forks its
+    // conversation and is the user's to close. Any other session is continued here, and
+    // watched.
     let takes_over = !is_live(&state, &session.id)?;
-    let pid_file = state
-        .data_dir
-        .join("agents")
-        .join(&session.id)
-        .join(TERMINAL_PID_FILE);
+    let session_dir = state.data_dir.join("agents").join(&session.id);
+    let pid_file = session_dir.join(TERMINAL_PID_FILE);
     if takes_over && session.state == SessionState::Terminal {
         let open = read_pid(&pid_file).is_some_and(|pid| {
             claude_alive(
@@ -771,10 +861,15 @@ pub fn agent_open_terminal(
         os,
         default_terminal.as_deref(),
     );
+    // What the terminal prints when it cannot start, for the error (see `run_watch`).
+    let errors = || {
+        std::fs::File::create(session_dir.join(TERMINAL_LOG_FILE))
+            .map_or_else(|_| Stdio::null(), Stdio::from)
+    };
     let started = process(&launch)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(errors())
         .spawn();
     let child = match started {
         Ok(child) => child,
@@ -809,7 +904,47 @@ pub fn agent_open_terminal(
             }])
         })?;
     }
-    watch_terminal(&app, &session, Some(child));
+    watch_terminal(
+        &app,
+        &session,
+        Some(TerminalProcess {
+            child,
+            program: launch.program,
+        }),
+    );
+    Ok(())
+}
+
+/// How long opening a terminal waits for the headless run it takes over to end.
+const TAKE_OVER_WAIT: Duration = Duration::from_secs(5);
+
+/// Stops the session's headless run and waits until its end is recorded (`finish`), so
+/// that record cannot land after the session became `terminal`.
+fn stop_for_terminal(state: &AppState, id: &str) -> CommandResult<()> {
+    let run = state
+        .agents
+        .live
+        .lock()
+        .map_err(|_| internal("agent lock poisoned"))?
+        .get(id)
+        .map(|l| (l.child.clone(), l.cancelled.clone()));
+    let Some((child, cancelled)) = run else {
+        return Ok(());
+    };
+    cancelled.store(true, Ordering::SeqCst);
+    if let Ok(mut child) = child.lock() {
+        let _ = child.kill();
+    }
+    let deadline = std::time::Instant::now() + TAKE_OVER_WAIT;
+    while std::time::Instant::now() < deadline {
+        let ended = !is_live(state, id)?
+            && with_store(state, |s| s.agent_session(id))?.state != SessionState::Running;
+        if ended {
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    eprintln!("agent session {id}: the run did not stop in time for its terminal");
     Ok(())
 }
 
@@ -818,6 +953,8 @@ pub fn agent_open_terminal(
 
 /// In the session's folder: claude's pid, written by the terminal's shell before `exec`.
 const TERMINAL_PID_FILE: &str = "terminal.pid";
+/// In the session's folder: what the last terminal opened for it printed on stderr.
+const TERMINAL_LOG_FILE: &str = "terminal.log";
 /// How often a watcher reads the session's state.
 const TERMINAL_POLL: Duration = Duration::from_secs(1);
 /// Every this many polls, a watcher also checks claude is still running.
@@ -850,6 +987,46 @@ fn watch_step(state: Option<SessionState>, window_closed: bool, claude: Option<b
         _ if gone => Watch::Stop,
         _ => Watch::Close,
     }
+}
+
+/// A terminal this app started for a session.
+struct TerminalProcess {
+    child: Child,
+    /// The terminal program, for messages.
+    program: String,
+}
+
+/// A terminal that exits with an error before [`TERMINAL_LAUNCHER`] and before its shell
+/// recorded claude's pid never showed the conversation (a missing library, a bad option):
+/// left as is, the session would stay "In terminal" with nothing open.
+fn terminal_failed(quick: bool, success: bool, pid_recorded: bool) -> bool {
+    quick && !success && !pid_recorded
+}
+
+/// The session's error when its terminal could not start: the status, and the lines of
+/// what it printed that name an error (else its last line).
+fn terminal_failure(program: &str, status: &str, stderr: &str) -> String {
+    let lines: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let mut said: Vec<&str> = lines
+        .iter()
+        .copied()
+        .filter(|l| l.to_lowercase().contains("error"))
+        .take(2)
+        .collect();
+    if said.is_empty() {
+        said.extend(lines.last());
+    }
+    let mut message = format!("The terminal ({program}) closed at once ({status})");
+    if !said.is_empty() {
+        let said: String = said.join(" ").chars().take(400).collect();
+        message.push_str(&format!(": {said}"));
+    }
+    message.push_str(". Pick another terminal in Settings → Agents, or open it again.");
+    message
 }
 
 fn read_pid(path: &Path) -> Option<u32> {
@@ -921,7 +1098,7 @@ fn close_terminal(
 /// Watches a session continued in a terminal: marks it done when claude or its window goes
 /// away, and once it is done (the agent's summary, Mark done) or removed, stops claude so
 /// no terminal is left behind. `child` is the terminal process when this app started it.
-fn watch_terminal(app: &AppHandle, session: &AgentSession, child: Option<Child>) {
+fn watch_terminal(app: &AppHandle, session: &AgentSession, child: Option<TerminalProcess>) {
     let state = app.state::<AppState>();
     let first = state
         .agents
@@ -951,22 +1128,47 @@ fn watch_terminal(app: &AppHandle, session: &AgentSession, child: Option<Child>)
     }
 }
 
-fn run_watch(state: &AppState, session: &AgentSession, mut child: Option<Child>) {
+/// `session` is as it was before its terminal opened.
+fn run_watch(state: &AppState, session: &AgentSession, mut child: Option<TerminalProcess>) {
     let os = Os::current();
     let opened = Instant::now();
-    let pid_file = state
-        .data_dir
-        .join("agents")
-        .join(&session.id)
-        .join(TERMINAL_PID_FILE);
+    let session_dir = state.data_dir.join("agents").join(&session.id);
+    let pid_file = session_dir.join(TERMINAL_PID_FILE);
     let mut window_closed = false;
     let mut claude = None;
     for tick in 1u32.. {
         std::thread::sleep(TERMINAL_POLL);
-        if let Some(c) = child.as_mut()
-            && let Ok(Some(_)) = c.try_wait()
+        if let Some(t) = child.as_mut()
+            && let Ok(Some(status)) = t.child.try_wait()
         {
-            window_closed = opened.elapsed() >= TERMINAL_LAUNCHER;
+            let quick = opened.elapsed() < TERMINAL_LAUNCHER;
+            if terminal_failed(quick, status.success(), read_pid(&pid_file).is_some()) {
+                let stderr = std::fs::read_to_string(session_dir.join(TERMINAL_LOG_FILE))
+                    .unwrap_or_default();
+                let error = terminal_failure(&t.program, &status.to_string(), &stderr);
+                // Back to where it was; a session already stuck in the terminal is done.
+                let back = match session.state {
+                    SessionState::Terminal | SessionState::Running => SessionState::Done,
+                    other => other,
+                };
+                let reverted = with_store(state, |s| {
+                    s.execute_without_undo(vec![Command::UpdateAgentSession {
+                        id: session.id.clone(),
+                        changes: vec![
+                            AgentSessionChange::State(back),
+                            AgentSessionChange::Error(Some(error.clone())),
+                        ],
+                    }])
+                });
+                if let Err(e) = reverted {
+                    eprintln!(
+                        "cannot record the failed terminal of {}: {}",
+                        session.id, e.message
+                    );
+                }
+                break;
+            }
+            window_closed = !quick;
             child = None;
         }
         let Ok(settings) = settings(state) else {
@@ -1005,7 +1207,13 @@ fn run_watch(state: &AppState, session: &AgentSession, mut child: Option<Child>)
             }
             Watch::Close => {
                 std::thread::sleep(TERMINAL_CLOSE_GRACE);
-                close_terminal(&settings, session, os, pid, child.as_mut());
+                close_terminal(
+                    &settings,
+                    session,
+                    os,
+                    pid,
+                    child.as_mut().map(|t| &mut t.child),
+                );
                 break;
             }
             Watch::Stop => break,
@@ -1228,6 +1436,7 @@ mod tests {
             folder: "/f".into(),
             runtime: AgentRuntime::Native,
             permission_mode: "acceptEdits".into(),
+            model: None,
             prompt: String::new(),
             state: SessionState::Running,
             started_at: 1,
@@ -1270,6 +1479,35 @@ mod tests {
         ] {
             assert!(!removed.iter().any(|r| r == kept), "{kept} is kept");
         }
+    }
+
+    #[test]
+    fn a_terminal_that_cannot_start_is_reported() {
+        // An error exit before the shell ran: failed. A launcher handing over (success), a
+        // late exit (the window closed) or a recorded pid (claude ran) are not.
+        assert!(terminal_failed(true, false, false));
+        assert!(!terminal_failed(true, true, false));
+        assert!(!terminal_failed(false, false, false));
+        assert!(!terminal_failed(true, false, true));
+
+        // kitty started with the AppImage's PYTHONHOME (the bug this guards against).
+        let kitty = "Python path configuration:\n  PYTHONHOME = '/tmp/.mount_x/usr/'\n\
+                     Fatal Python error: init_fs_encoding: failed to get the Python codec\n\
+                     Python runtime state: core initialized\n\
+                     ModuleNotFoundError: No module named 'encodings'\n\n\
+                     Current thread 0x0001 (most recent call first):\n  <no Python frame>\n";
+        let message = terminal_failure("kitty", "exit status: 1", kitty);
+        assert_eq!(
+            message,
+            "The terminal (kitty) closed at once (exit status: 1): Fatal Python error: \
+             init_fs_encoding: failed to get the Python codec ModuleNotFoundError: No module \
+             named 'encodings'. Pick another terminal in Settings → Agents, or open it again."
+        );
+        assert!(
+            terminal_failure("foot", "exit status: 2", "foot: unknown option -- x\n")
+                .contains("(exit status: 2): foot: unknown option -- x.")
+        );
+        assert!(terminal_failure("st", "signal: 6", "").contains("(signal: 6). Pick"));
     }
 
     #[test]
@@ -1475,6 +1713,7 @@ mod tests {
                     folder: dir.display().to_string(),
                     runtime: AgentRuntime::Native,
                     permission_mode: "default".into(),
+                    model: None,
                     prompt: String::new(),
                 },
             }])
@@ -1493,11 +1732,12 @@ mod tests {
                 &server.display().to_string(),
                 &db.display().to_string(),
                 &session.id,
+                None,
             ),
         )
         .unwrap();
         let rules = dir.join("rules.md");
-        std::fs::write(&rules, session_rules(&task.title, &task.id)).unwrap();
+        std::fs::write(&rules, session_rules(&task.title, &task.id, "Review")).unwrap();
         let settings = AgentSettings {
             model: Some("haiku".into()),
             ..AgentSettings::default()
@@ -1509,6 +1749,7 @@ mod tests {
                 claude_session_id: &session.claude_session_id,
                 resume: false,
                 permission_mode: &session.permission_mode,
+                model: session.model.as_deref(),
                 mcp_config: &config.display().to_string(),
                 rules: &rules.display().to_string(),
             },
@@ -1597,13 +1838,28 @@ mod tests {
         assert!(
             opening_prompt("# Task: X", "Only fix the tests").ends_with("Only fix the tests\n")
         );
-        let rules = session_rules("Fix sync", "0190-id");
+        let rules = session_rules("Fix sync", "0190-id", "To check");
         assert!(rules.contains("\"Fix sync\" (id `0190-id`)"));
         assert!(rules.contains("complete_session"));
+        assert!(rules.contains("moves this task to To check"));
+        let picked: serde_json::Value =
+            serde_json::from_str(&mcp_config("tm-mcp", "tm.sqlite", "s1", Some("st1"))).unwrap();
+        assert_eq!(
+            picked["mcpServers"]["task-master"]["args"],
+            serde_json::json!([
+                "--db",
+                "tm.sqlite",
+                "--session",
+                "s1",
+                "--done-status",
+                "st1"
+            ])
+        );
         let config: serde_json::Value = serde_json::from_str(&mcp_config(
             "/mnt/c/tm/task-master-mcp.exe",
             r"C:\data\tm.sqlite",
             "s1",
+            None,
         ))
         .unwrap();
         assert_eq!(

@@ -542,6 +542,7 @@ describe("redesign", () => {
     const panel = await screen.findByRole("complementary", { name: "Task details" });
     fireEvent.click(within(panel).getByRole("button", { name: /Open/ }));
     await waitFor(() => expect(router.state.location.pathname).toBe(`/task/${existing.id}`));
+    expect(router.state.location.search).toEqual({});
     // The page replaces the panel and collapses the sidebar to a rail.
     expect(screen.queryByRole("complementary", { name: "Task details" })).toBeNull();
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
@@ -598,6 +599,20 @@ describe("redesign", () => {
     expect(
       within(next).getByRole("region", { name: "Description" }).contains(document.activeElement),
     ).toBe(false);
+  });
+
+  it("keeps the cursor in the description when a new task's panel opens the full page", async () => {
+    const router = await renderWith("/inbox");
+    const input = await screen.findByRole("textbox", { name: "New task" });
+    fireEvent.change(input, { target: { value: "Plan the trip" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    const panel = await screen.findByRole("complementary", { name: "Task details" });
+    fireEvent.click(within(panel).getByRole("button", { name: /Open/ }));
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/task\//));
+    expect(router.state.location.search).toEqual({ focus: "description" });
+    const description = await screen.findByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement?.classList.contains("cm-content")).toBe(true);
   });
 
   it("keeps the panel closed when Settings turns that off", async () => {

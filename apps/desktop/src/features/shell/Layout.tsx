@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useRouter, useRouterState, useSearch } from "@tanstack/react-router";
 import { Dialog } from "radix-ui";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { KeyList } from "../../components/Keys";
 import { Kbd } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
@@ -15,7 +15,7 @@ import { useProjectOrder } from "../sidebar/useProjectOrder";
 import { TaskDetail } from "../task-detail/TaskDetail";
 import { ErrorToast } from "./ErrorToast";
 import { type ShellActions, ShellContext } from "./shellContext";
-import { TitleBar, tauriWindowControls, usesCustomTitleBar } from "./TitleBar";
+import { customTitleBarStyle, TitleBar, tauriWindowControls } from "./TitleBar";
 import { useFileDrop } from "./useFileDrop";
 import { useOpenTask } from "./useOpenTask";
 import { useShortcuts } from "./useShortcuts";
@@ -90,8 +90,12 @@ export function Layout() {
     [openNewTask],
   );
 
-  // Windows: the frameless main window draws its own title bar (ADR 012).
-  const windowControls = useMemo(() => (usesCustomTitleBar() ? tauriWindowControls() : null), []);
+  // Windows and Linux: the frameless main window draws its own title bar (ADR 012).
+  const titleBarStyle = useMemo(customTitleBarStyle, []);
+  const windowControls = useMemo(
+    () => (titleBarStyle ? tauriWindowControls() : null),
+    [titleBarStyle],
+  );
   useFileDrop();
   useShortcuts({
     closeDetail: () => {
@@ -109,7 +113,10 @@ export function Layout() {
   });
 
   const titleBar = (sidebarWidth: number | string) =>
-    windowControls && <TitleBar controls={windowControls} sidebarWidth={sidebarWidth} />;
+    windowControls &&
+    titleBarStyle && (
+      <TitleBar controls={windowControls} sidebarWidth={sidebarWidth} variant={titleBarStyle} />
+    );
 
   if (loadError) {
     return (
@@ -166,12 +173,18 @@ function NewTaskDialog({
 }) {
   const projects = useStoreState((s) => s.projects);
   const project = defaults?.project_id ? projects[defaults.project_id] : undefined;
+  // Closing hands focus back to what had it before; not when a task just opened to write in.
+  const opened = useRef(false);
   return (
     <Dialog.Root open={defaults !== null} onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" />
         <Dialog.Content
           aria-describedby={undefined}
+          onCloseAutoFocus={(e) => {
+            if (opened.current) e.preventDefault();
+            opened.current = false;
+          }}
           onEscapeKeyDown={(e) => {
             // The capture box handles Escape itself (it may only cancel a confirmation).
             e.preventDefault();
@@ -189,6 +202,7 @@ function NewTaskDialog({
               placeholder="What needs doing?"
               onEscape={onClose}
               onCaptured={(id, how) => {
+                opened.current = how.open;
                 onClose();
                 if (how.open) onOpenTask(id);
               }}

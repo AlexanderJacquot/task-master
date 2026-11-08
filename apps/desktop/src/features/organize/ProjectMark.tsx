@@ -1,32 +1,23 @@
 import { cx, Dot } from "../../components/ui";
 import type { Project } from "../../lib/types";
 
-/** Emoji offered as project icons (any other one can be typed or pasted). */
-export const PROJECT_ICONS = [
-  "📁",
-  "🏠",
-  "💼",
-  "💡",
-  "🎯",
-  "📚",
-  "🛠️",
-  "💻",
-  "🎨",
-  "🎵",
-  "🏃",
-  "💰",
-  "✈️",
-  "🌱",
-  "❤️",
-];
+const ENGRAVINGS = import.meta.glob("../../assets/project-icons/*.png", {
+  eager: true,
+  query: "?url",
+  import: "default",
+}) as Record<string, string>;
 
-/** The first visible character of `text` (one emoji, flags and skin tones included), or null. */
-export function firstGrapheme(text: string): string | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  const [first] = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(trimmed);
-  return first?.segment ?? null;
-}
+/** Engraved icons (`img:<name>` in `project.icon`), alphabetical. */
+export const PROJECT_ENGRAVINGS: { id: string; name: string; url: string }[] = Object.entries(
+  ENGRAVINGS,
+)
+  .map(([path, url]) => {
+    const name = path.replace(/^.*\//, "").replace(/\.png$/, "");
+    return { id: `img:${name}`, name, url };
+  })
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+const ENGRAVING_BY_ID = new Map(PROJECT_ENGRAVINGS.map((e) => [e.id, e]));
 
 /** A project's icon when it has one, else its colored dot. `dotClass` sizes the dot. */
 export function ProjectMark({
@@ -38,7 +29,19 @@ export function ProjectMark({
   dotClass?: string;
   className?: string;
 }) {
-  if (project.icon) {
+  const engraving = project.icon ? ENGRAVING_BY_ID.get(project.icon) : undefined;
+  if (engraving) {
+    return (
+      <img
+        alt=""
+        aria-hidden
+        src={engraving.url}
+        draggable={false}
+        className={cx("inline-block size-[1.3em] shrink-0 object-contain", className)}
+      />
+    );
+  }
+  if (project.icon && !project.icon.startsWith("img:")) {
     return (
       <span
         aria-hidden

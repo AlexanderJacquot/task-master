@@ -45,6 +45,95 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Main integration and local verification (2026-11-08)
+
+- All branch tips are contained in `main`; committed the remaining desktop, agent workflow,
+  project icon, title bar and task detail changes from the main worktree together.
+- Fixed the sidebar resizer's semantic element and event types so lint and TypeScript pass.
+  Made the Google Calendar event test check the next week when today is Sunday.
+- Verified `pnpm lint`, `pnpm typecheck`, `pnpm test` (302 passed),
+  `cargo test --workspace --locked`, `cargo clippy --workspace --all-targets --locked -- -D warnings`,
+  and `cargo fmt --all -- --check`.
+
+### New task keeps the cursor when expanded to the full page (2026-11-07)
+
+A task added from a view's top row opens in the side panel with the cursor in its
+description; its **Open** button went to the full page without the focus flag, so the
+page opened with no cursor. The button now forwards `focus: "description"` when the panel
+has it (a task just created), and stays plain otherwise, matching Shift+Enter on a list
+row. Tests in `app.test.tsx` cover both cases.
+
+### Running sessions continue in a real terminal (2026-11-07)
+
+The terminal button on a running session opened a read-only window tailing `run.log`
+("Watch in terminal"), not an interactive Claude. Now it is **Continue in terminal**:
+`agent_open_terminal` stops the headless run (`stop_for_terminal`: kill, then wait up to
+5 s until `finish` recorded its end, so it cannot overwrite `terminal`), then resumes it
+with `claude --resume` like any ended session. The command is `#[tauri::command(async)]`
+so the wait is off the UI thread. `launch::watch_script` / `shell_terminal` and their
+tests are removed; `run.log` is still written as a record. ADR 017 and docs/agents.md
+amended. The turn in progress is cut short (its work so far stays in the conversation).
+- Also fixed the agents page test's expectation for the new `model: null` start field.
+- Not run by hand yet: start a session, click the terminal button while it runs, check
+  kitty opens an interactive Claude on the conversation and the card shows "In terminal".
+
+### Terminal button on a running session opens a real terminal (2026-11-07)
+
+The terminal button on a running session opened "Watch in terminal", a read-only window
+following `run.log`, not Claude. It is now **Continue in terminal (stops the background
+run)**: `agent_open_terminal` stops the headless run (as Stop), waits up to 5 s for its
+end to be recorded (`stop_for_terminal`, so the `cancelled` write cannot land after
+`terminal`), then runs `claude --resume` interactively like any ended session. The command
+is `#[tauri::command(async)]` so the wait is off the UI thread. `launch::watch_script`,
+`shell_terminal` and their tests are removed; `run.log` is still written as a record.
+ADR 017 and docs/agents.md amended. Not run by hand: click it on a running session in the
+real app and check that the terminal is interactive and the session shows "In terminal".
+
+### Engraved project icons (2026-11-07)
+
+Projects can pick one of 36 engravings from the GPT sheets (`assets/project-icons/*.png`,
+96px, cut by `scripts/slice-project-icons.py`) besides an emoji. Stored as
+`icon = "img:<name>"` (no schema change); `ProjectMark` renders it, the picker on the
+project page has a new grid. Vitest +1. Looks fine on parchment and dark in a montage;
+judge it in the real app at sidebar size (~16px), where the stipple may turn to mush.
+Not run: cargo / full pnpm test (only organize tests and tsc).
+
+### Linux title bar, no more black Wayland strip (2026-11-07)
+
+ADR 012 amended. GTK drew its own dark title bar on Wayland above the app.
+- `tauri.linux.conf.json`: main window `decorations: false` (shell test against drift,
+  like the Windows file). Resize edges come from Tauri's frameless handling on GTK.
+- `TitleBar` gets a `linux` variant (round SVG-icon buttons, red close disc);
+  `titleBarStyleFor(userAgent)` / `customTitleBarStyle()` pick windows / linux / none.
+- Tests: Vitest +2 (style detection, Linux buttons), Rust +1 (Linux config drift).
+- Not run by hand yet: check drag, snap, double-click maximize and edge resizing on KDE
+  Wayland. No compositor shadow or rounded corners on a frameless window.
+
+### Task view no longer doubles the weathering (2026-11-07)
+
+The full-page task view wrapped its content in its own `tex-canvas`, which painted a second
+copy of the weathering layers (burnt edges etc.) inside the window-wide ones from `Framed`.
+Removed the class in `TaskDetail.tsx`. Not verified by hand or by tests in that session.
+
+### Agent terminals open from the AppImage (2026-11-07)
+
+"Open in terminal" did nothing in the release AppImage and left the session "In terminal"
+for good. The AppImage runtime exports `PYTHONHOME`, `PYTHONPATH`, `LD_LIBRARY_PATH`, `PATH`,
+`QT_PLUGIN_PATH`, GTK/GStreamer variables into its mount; the terminal inherited them and
+kitty (embedded Python) died at start-up ("Fatal Python error"), before its shell recorded
+claude's pid, so the watcher waited forever.
+
+- `launch::host_env`: every program the agents code starts (`process()`) gets the user's
+  environment back: the image's entries are removed from path lists, AppImage-only
+  variables are dropped. No-op outside an AppImage.
+- A terminal that exits with an error within 3 s and before recording a pid sets the
+  session back (stuck "In terminal" sessions become done) with an error that quotes its
+  stderr (`terminal.log` in the session folder).
+- `mcp.json` is rewritten when a terminal opens: it named the MCP server inside the old
+  AppImage mount, gone after a restart.
+- Not yet verified in a built AppImage: unit tests, plus kitty reproduced by hand with the
+  AppImage's environment.
+
 ### Parchment background as WebP, with optional weathering (2026-11-06)
 
 Branch `worktree-parchment-background` (on top of `worktree-perf-texture-tiles`), merged to
@@ -109,6 +198,29 @@ Branch `worktree-parchment-background` (on top of `worktree-perf-texture-tiles`)
   secret, then `gh workflow run aur.yml -f tag=v<latest>` and restore the AUR mention in
   the release body (docs/release.md, setup step 4). First AUR version: 0.7.1 or later
   (0.7.0 binaries do not read the marker).
+
+### Agent status moves as a software rule (2026-11-07)
+
+- Settings → Agents: "When sent" and "When done" status pickers (defaults In progress and
+  Review), stored per device in the agent settings. `core::AgentWorkflow` holds the rule;
+  ADR 017 amended.
+- The app moves the task to the "sent" status when a session or follow-up starts, and to
+  the "done" status when a headless run ends `done` (even without `complete_session`).
+  `complete_session` in the MCP server uses the picked status (`--done-status`).
+- Tests: `crates/core/tests/agent_workflow.rs`, an MCP test for a picked status, an
+  `mcp_config` args check, a Settings test. Clippy, cargo test, Biome on the changed files
+  pass. `pnpm test` has 1 failure from the parallel Model-selector work
+  (`agents.test.tsx` expects no `model` field); Biome flags `Sidebar.tsx` (also not
+  part of this change).
+- Not yet verified in the real app. A terminal session keeps the `mcp.json` written when
+  it started, so a status picked later applies from its next headless run.
+
+### Full task title visible on Linux (2026-11-07)
+
+- The task title textarea relied on `field-sizing: content`, which WebKitGTK ignores, so
+  long titles were cut off at 1 row (page) or 2 rows (panel). `TitleField` now sets its
+  height from `scrollHeight` on mount, input, width change and font load.
+- Not run in this session (no approval for commands): Biome, TypeScript, `pnpm test`.
 
 ### Release 0.7.0 integration (2026-11-06)
 
@@ -1104,3 +1216,6 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
   move, tag) on the selected task.
 - Board: `Alt+↑/↓` to reorder within a column;
   scroll a keyboard-moved card into view when it lands below the fold.
+
+- Send to agent: a Model selector (Default/Opus/Sonnet/Haiku). Stored per session
+  (`agent_sessions.model`, migration 0012) so follow-ups reuse it. Not yet run: cargo/pnpm checks.

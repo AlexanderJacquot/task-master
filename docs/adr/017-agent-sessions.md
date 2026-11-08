@@ -109,17 +109,17 @@ in the same space without cluttering the user's views. Decided with the user:
   foot, konsole, gnome-terminal, xfce4-terminal, xterm; each with its own "run" flag) on
   Linux, since Arch and Fedora have no `x-terminal-emulator`. The terminal gets the
   session's `--mcp-config` and `--allowedTools mcp__task-master`, so notes and the
-  summary still land. Allowed while running (it forks the conversation in Claude Code)
-  but the UI suggests waiting or cancelling; a running session stays `running`. Any other
+  summary still land. A running session is taken over (see below). The session
   becomes `terminal`, which ends (`done`) when the agent calls `complete_session`, with the
   card's **Mark done** (a user edit, undoable), or when Claude or its window goes away.
-- **Watch in terminal.** A running headless session cannot be joined: `claude --resume`
-  would fork it and load none of its current turn. Each run writes a readable log
-  (`agents/<id>/run.log`: the message or instructions, then `stream::readable` of every
-  stream line, and a closing `=== Run ended: <state> ===`), and opening a terminal on a
-  running session shows that log instead (`launch::watch_script`, POSIX `sh`; inside WSL
-  for the WSL runtime), read-only, closing 15 s after the end marker. Native Windows has
-  no POSIX shell, so watching is refused there.
+- **Taking over a run** (amended 2026-11-07; was "Watch in terminal", a read-only window
+  following the run log). A running headless session cannot be joined: `claude --resume`
+  would fork it and load none of its current turn. Opening a terminal on it stops the
+  headless run (as Stop does), waits up to 5 s for its end to be recorded (so that write
+  cannot land after `terminal`), then resumes it interactively like any ended session.
+  The current turn is cut short; what it did is in the conversation. The command is
+  `async` so the wait is off the UI thread. Each run still writes a readable log
+  (`agents/<id>/run.log`) as a record.
 - **No loose terminals.** The terminal's shell writes its pid to `agents/<id>/terminal.pid`
   before `exec claude` (WSL: through `sh -c` inside `wsl.exe --exec`), so the file names
   claude itself, whatever the terminal (launchers such as gnome-terminal, `wt.exe` and
@@ -175,8 +175,18 @@ in the same space without cluttering the user's views. Decided with the user:
   same batch as the summary, when it is the user's task and not closed (done, cancelled)
   or already in Review. The agent cannot close the user's tasks itself (`update_task`
   refuses a done or cancelled status for them), so finished agent work always waits for
-  the user's review. A run that ends without `complete_session`, and Mark done, move
-  nothing. Deleting the Review status turns the move off.
+  the user's review. Deleting the Review status turns the move off.
+- **Agent workflow statuses (amended 2026-11-07).** The status moves are a software rule
+  (`core::AgentWorkflow`), not something the agent is asked to do. Settings → Agents picks
+  two statuses, per device (`started_status_id`, `done_status_id` in the agent settings;
+  `None` is the default): *when sent* (default the seeded In progress, else the first open
+  in-progress status that is not the done one) and *when done* (default Review). Sending
+  a task to an agent (a new session or a follow-up) moves it to the first, once the run
+  has started, reopening it if needed. The second is applied by `complete_session` (the
+  app passes `--done-status <id>` to the MCP server) and by the app when a headless run
+  ends `done`, whether or not the agent called `complete_session`; a task the user
+  closed stays closed. A failed, cancelled or interrupted run moves nothing, nor does Mark
+  done or a terminal closing. A pick whose status was deleted falls back to the default.
 - Server instructions tell the agent how to track its work and which task it is on.
 - **Dependency: `rmcp` 3.9** (official Rust MCP SDK; features `server`, `macros`,
   `transport-io`) rather than a hand-written JSON-RPC loop.

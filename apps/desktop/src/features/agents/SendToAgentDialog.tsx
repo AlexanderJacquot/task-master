@@ -6,7 +6,14 @@ import { useEffect, useState } from "react";
 import { Button, cx, INPUT, Select } from "../../components/ui";
 import type { AgentSession, AgentSettings, Changes, ProjectFolder, Task } from "../../lib/types";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
-import { defaultFolder, folderName, PERMISSION_MODES, recentFolders } from "./sessions";
+import {
+  DEFAULT_MODEL,
+  defaultFolder,
+  folderName,
+  MODELS,
+  PERMISSION_MODES,
+  recentFolders,
+} from "./sessions";
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -47,6 +54,7 @@ export function SendToAgentDialog({
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
   const [folder, setFolder] = useState("");
   const [mode, setMode] = useState("acceptEdits");
+  const [model, setModel] = useState(DEFAULT_MODEL);
   const [confirmAll, setConfirmAll] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [brief, setBrief] = useState<string | null>(null);
@@ -68,6 +76,7 @@ export function SendToAgentDialog({
         setSettings(s);
         setFolders(f);
         setMode(s.permission_mode);
+        setModel(s.model && MODELS.some((m) => m.value === s.model) ? s.model : DEFAULT_MODEL);
         setFolder(defaultFolder(task, sessions, f, projects, s.runtime));
       },
       (e) => live && setError(message(e)),
@@ -91,6 +100,8 @@ export function SendToAgentDialog({
         task_id: task.id,
         folder: folder.trim(),
         permission_mode: mode,
+        // The settings' own model (possibly a full name not in the list) stays as is.
+        model: model === DEFAULT_MODEL ? null : model,
         prompt,
       });
       store.getState().record(sessionChanges(session));
@@ -197,6 +208,23 @@ export function SendToAgentDialog({
                 I understand the agent will run commands without asking.
               </label>
             )}
+          </div>
+
+          <div className="flex flex-col gap-1 text-xs">
+            <span className="text-ink-3">Model</span>
+            <Select
+              value={model}
+              onValueChange={setModel}
+              aria-label="Model"
+              className="w-56"
+              options={[
+                {
+                  value: DEFAULT_MODEL,
+                  label: settings?.model ? `Default (${settings.model})` : "Default",
+                },
+                ...MODELS,
+              ]}
+            />
           </div>
 
           <label className="flex flex-col gap-1 text-xs">

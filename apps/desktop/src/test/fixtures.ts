@@ -178,6 +178,7 @@ export function agentSession(overrides: Partial<AgentSession> = {}): AgentSessio
     folder: "/home/me/code/app",
     runtime: "native",
     permission_mode: "acceptEdits",
+    model: null,
     prompt: "",
     state: "done",
     started_at: 1_000 + counter,

@@ -1,8 +1,8 @@
-// The app's own title bar on Windows (ADR 012). The main window has no system frame there
-// (`tauri.windows.conf.json`), so this strip continues the sidebar and canvas colors to
-// the top edge, drags the window (double-click maximizes, Aero Snap still works) and
-// draws the minimize / maximize / close buttons in the Windows style. Other systems keep
-// their native title bar and render nothing here.
+// The app's own title bar on Windows and Linux (ADR 012). The main window has no system
+// frame there (`tauri.windows.conf.json`, `tauri.linux.conf.json`), so this strip continues
+// the sidebar and canvas colors to the top edge, drags the window (double-click maximizes,
+// snapping still works) and draws the minimize / maximize / close buttons in the system's
+// style. macOS keeps its native title bar and renders nothing here.
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
@@ -29,14 +29,26 @@ export const tauriWindowControls = (): WindowControls => {
   };
 };
 
-/** True in the Windows desktop app, where the main window is frameless. */
+/** Which buttons the strip draws: Windows' square ones or Linux desktops' round ones. */
+export type TitleBarStyle = "windows" | "linux";
+
+/** The style for a user agent; null where the window keeps its system frame (macOS). */
+export function titleBarStyleFor(userAgent: string): TitleBarStyle | null {
+  if (userAgent.includes("Windows")) return "windows";
+  if (userAgent.includes("Linux") && !userAgent.includes("Android")) return "linux";
+  return null;
+}
+
+/** The title bar style of this window: set in the desktop app's frameless main window. */
+export function customTitleBarStyle(): TitleBarStyle | null {
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return null;
+  if (getCurrentWindow().label !== "main") return null;
+  return titleBarStyleFor(navigator.userAgent);
+}
+
+/** True in the Windows and Linux desktop app, where the main window is frameless. */
 export function usesCustomTitleBar(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    "__TAURI_INTERNALS__" in window &&
-    navigator.userAgent.includes("Windows") &&
-    getCurrentWindow().label === "main"
-  );
+  return customTitleBarStyle() !== null;
 }
 
 /** Height of the strip; the layout leaves this much room at the top. */
@@ -50,6 +62,55 @@ const GLYPH = {
   restore: "",
   close: "",
 } as const;
+
+// Linux: line icons in round buttons, close on a red disc when hovered, as Breeze and
+// Adwaita do; drawn as SVG since no icon font can be counted on.
+const LINUX_ICON = {
+  minimize: "M4 6.5 8 10.5 12 6.5",
+  maximize: "M4 10 8 6 12 10",
+  restore: "M8 4 12 8 8 12 4 8Z",
+  close: "M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5",
+} as const;
+
+function LinuxButton({
+  label,
+  icon,
+  onClick,
+  close,
+}: {
+  label: string;
+  icon: keyof typeof LINUX_ICON;
+  onClick: () => void;
+  close?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      tabIndex={-1}
+      onClick={onClick}
+      className={cx(
+        "inline-flex size-6 items-center justify-center self-center rounded-full text-ink-2 transition-colors duration-100",
+        close ? "hover:bg-[#da4453] hover:text-white active:bg-[#da4453]/80" : "hover:bg-hover",
+      )}
+    >
+      <svg
+        viewBox="0 0 16 16"
+        width="16"
+        height="16"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d={LINUX_ICON[icon]} />
+      </svg>
+    </button>
+  );
+}
 
 function ControlButton({
   label,
@@ -87,9 +148,11 @@ function ControlButton({
 export function TitleBar({
   controls,
   sidebarWidth,
+  variant = "windows",
 }: {
   controls: WindowControls;
   sidebarWidth: number | string;
+  variant?: TitleBarStyle;
 }) {
   const [maximized, setMaximized] = useState(false);
   const [focused, setFocused] = useState(true);
@@ -137,24 +200,36 @@ export function TitleBar({
           style={{ width: sidebarWidth }}
         />
       )}
-      <div className="flex min-w-0 flex-1 items-stretch justify-end">
-        <ControlButton
-          label="Minimize"
-          glyph={GLYPH.minimize}
-          onClick={() => void controls.minimize()}
-        />
-        <ControlButton
-          label={maximized ? "Restore" : "Maximize"}
-          glyph={maximized ? GLYPH.restore : GLYPH.maximize}
-          onClick={() => void controls.toggleMaximize()}
-        />
-        <ControlButton
-          label="Close"
-          glyph={GLYPH.close}
-          onClick={() => void controls.close()}
-          close
-        />
-      </div>
+      {variant === "linux" ? (
+        <div className="flex min-w-0 flex-1 items-stretch justify-end gap-1.5 pr-2">
+          <LinuxButton label="Minimize" icon="minimize" onClick={() => void controls.minimize()} />
+          <LinuxButton
+            label={maximized ? "Restore" : "Maximize"}
+            icon={maximized ? "restore" : "maximize"}
+            onClick={() => void controls.toggleMaximize()}
+          />
+          <LinuxButton label="Close" icon="close" onClick={() => void controls.close()} close />
+        </div>
+      ) : (
+        <div className="flex min-w-0 flex-1 items-stretch justify-end">
+          <ControlButton
+            label="Minimize"
+            glyph={GLYPH.minimize}
+            onClick={() => void controls.minimize()}
+          />
+          <ControlButton
+            label={maximized ? "Restore" : "Maximize"}
+            glyph={maximized ? GLYPH.restore : GLYPH.maximize}
+            onClick={() => void controls.toggleMaximize()}
+          />
+          <ControlButton
+            label="Close"
+            glyph={GLYPH.close}
+            onClick={() => void controls.close()}
+            close
+          />
+        </div>
+      )}
     </header>
   );
 }

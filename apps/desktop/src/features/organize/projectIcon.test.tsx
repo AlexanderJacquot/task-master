@@ -8,7 +8,6 @@ import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore } from "../../store/store";
 import { fakeParse, project, snapshot } from "../../test/fixtures";
-import { firstGrapheme } from "./ProjectMark";
 
 async function renderProject(p: Project) {
   const executed: Command[][] = [];
@@ -63,38 +62,28 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe("firstGrapheme", () => {
-  it("keeps one whole emoji, including joined and flag sequences", () => {
-    expect(firstGrapheme("  🏠 home")).toBe("🏠");
-    expect(firstGrapheme("👩‍💻x")).toBe("👩‍💻");
-    expect(firstGrapheme("🇫🇷🇩🇪")).toBe("🇫🇷");
-    expect(firstGrapheme("   ")).toBeNull();
-  });
-});
-
 describe("project icons", () => {
-  it("shows the icon in place of the dot and sets one from the picker", async () => {
+  it("shows an existing icon and can go back to the dot", async () => {
     const p = project({ name: "Homelab", icon: "🏠" });
     const { executed, picker } = await renderProject(p);
     expect(picker.textContent).toBe("🏠");
 
     fireEvent.click(picker);
-    fireEvent.click(await screen.findByRole("button", { name: "Icon 🎯" }));
-    await waitFor(() => expect(iconChanges(executed)).toEqual(["🎯"]));
-    expect(screen.getByRole("button", { name: "Project color and icon" }).textContent).toBe("🎯");
+    expect(screen.queryByLabelText("Custom icon")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Icon 🎯" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "No icon (show the color dot)" }));
+    await waitFor(() => expect(iconChanges(executed)).toEqual([null]));
   });
 
-  it("takes a typed emoji and can go back to the dot", async () => {
-    const { executed, picker } = await renderProject(project({ name: "Perso" }));
-    expect(picker.textContent).toBe("");
-
+  it("picks an engraving and shows it as an image", async () => {
+    const { executed, picker } = await renderProject(project({ name: "Keep" }));
     fireEvent.click(picker);
-    const input = await screen.findByLabelText("Custom icon");
-    fireEvent.change(input, { target: { value: "🦊 fox" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(iconChanges(executed)).toEqual(["🦊"]));
-
-    fireEvent.click(screen.getByRole("button", { name: "No icon (show the color dot)" }));
-    await waitFor(() => expect(iconChanges(executed)).toEqual(["🦊", null]));
+    fireEvent.click(await screen.findByRole("button", { name: "Engraving castle" }));
+    await waitFor(() => expect(iconChanges(executed)).toEqual(["img:castle"]));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Project color and icon" }).querySelector("img"),
+      ).not.toBeNull(),
+    );
   });
 });

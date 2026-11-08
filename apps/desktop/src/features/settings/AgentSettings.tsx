@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button, cx, INPUT, Select } from "../../components/ui";
 import type { ClaudeCheck, AgentSettings as Settings } from "../../lib/types";
-import { useApi } from "../../store/context";
+import { useApi, useStoreState } from "../../store/context";
 import { PERMISSION_MODES } from "../agents/sessions";
 import { Section } from "./SettingsPage";
 
@@ -19,6 +19,7 @@ const isLinux =
 
 export function AgentSettings() {
   const api = useApi().agents;
+  const statuses = useStoreState((s) => s.statuses);
   const [saved, setSaved] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Settings | null>(null);
   const [distros, setDistros] = useState<string[]>([]);
@@ -48,6 +49,10 @@ export function AgentSettings() {
   }, [api]);
 
   if (!api || !draft) return null;
+  const statusOptions = (fallback: string) => [
+    { value: "", label: `Default (${fallback})` },
+    ...statuses.map((s) => ({ value: s.id, label: s.name })),
+  ];
   const edit = (patch: Partial<Settings>) => {
     setDraft({ ...draft, ...patch });
     setCheck(null);
@@ -169,6 +174,28 @@ export function AgentSettings() {
           className={cx(INPUT, "w-64 py-1 text-[13px]")}
         />
       </Row>
+      <Row label="When sent">
+        <Select
+          value={draft.started_status_id ?? ""}
+          onValueChange={(id) => edit({ started_status_id: id || null })}
+          aria-label="Status when sent to an agent"
+          className="w-64"
+          options={statusOptions("In progress")}
+        />
+      </Row>
+      <Row label="When done">
+        <Select
+          value={draft.done_status_id ?? ""}
+          onValueChange={(id) => edit({ done_status_id: id || null })}
+          aria-label="Status when the agent is done"
+          className="w-64"
+          options={statusOptions("Review")}
+        />
+      </Row>
+      <p className="pl-28 text-xs text-ink-3">
+        The app moves the task itself: to the first status when it is sent to an agent, to the
+        second when the agent reports it done (a task you closed stays closed).
+      </p>
       {isLinux && (
         <Row label="Terminal">
           <input

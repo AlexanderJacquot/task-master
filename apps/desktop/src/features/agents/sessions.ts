@@ -93,6 +93,16 @@ export const STATE_LABEL: Record<SessionState, string> = {
   terminal: "In terminal",
 };
 
+/** Models offered when sending to an agent; the values are Claude Code `--model` aliases. */
+export const MODELS: Array<{ value: string; label: string }> = [
+  { value: "opus", label: "Opus" },
+  { value: "sonnet", label: "Sonnet" },
+  { value: "haiku", label: "Haiku" },
+];
+
+/** Value of the "use the configured default" entry (an empty string is not a valid option). */
+export const DEFAULT_MODEL = "default";
+
 export const PERMISSION_MODES: Array<{ value: string; label: string; hint: string }> = [
   {
     value: "acceptEdits",

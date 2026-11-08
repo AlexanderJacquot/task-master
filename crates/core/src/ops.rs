@@ -227,6 +227,7 @@ impl Entity {
                 "folder",
                 "runtime",
                 "permission_mode",
+                "model",
                 "prompt",
                 "state",
                 "started_at",

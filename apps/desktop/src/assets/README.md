@@ -62,7 +62,7 @@ Chevrons, the sidebar panel toggle, the drag grip, the stop-button square and th
 
 The canonical path data is `icons/paths.json`. React components in `components/TaskIcons.tsx` consume it directly, and `scripts/generate-ui-icons.mjs` produces matching SVG files. Pass `size`, `className`, and standard SVG props to the components. They inherit text color and are decorative by default; name the surrounding button or link for assistive technology.
 
-Call sites import them under the lucide name they replaced (`DeleteIcon as Trash2`). Project-specific emoji and color choices remain available.
+Call sites import them under the lucide name they replaced (`DeleteIcon as Trash2`). Project color and engraved icon choices remain available.
 
 ## Brand
 

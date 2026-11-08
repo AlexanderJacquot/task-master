@@ -18,8 +18,8 @@ use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use taskmaster_core::{
-    AgentSession, AgentSessionChange, Command, Id, NewAgentNote, NewTask, Priority, SessionState,
-    Snapshot, Status, StatusCategory, Store, Task, TaskChange, TaskOwner, review_status,
+    AgentSession, AgentSessionChange, AgentWorkflow, Command, Id, NewAgentNote, NewTask, Priority,
+    SessionState, Snapshot, Status, StatusCategory, Store, Task, TaskChange, TaskOwner,
 };
 
 /// Most rows a listing returns.
@@ -33,6 +33,8 @@ type ToolResult = Result<String, String>;
 pub struct TaskServer {
     store: Arc<Mutex<Store>>,
     session: Option<AgentSession>,
+    /// Where the session's task goes when the agent reports it done (Settings → Agents).
+    workflow: AgentWorkflow,
     tool_router: ToolRouter<Self>,
 }
 
@@ -51,8 +53,27 @@ impl TaskServer {
         Ok(Self {
             store: Arc::new(Mutex::new(store)),
             session,
+            workflow: AgentWorkflow::default(),
             tool_router: Self::tool_router(),
         })
+    }
+
+    /// The statuses picked for agent work (the app passes `--done-status`).
+    pub fn with_workflow(mut self, workflow: AgentWorkflow) -> Self {
+        self.workflow = workflow;
+        self
+    }
+
+    /// The name of the status the session's task goes to when the agent reports it done.
+    fn done_status_name(&self) -> String {
+        self.with_store(|s| s.snapshot())
+            .ok()
+            .and_then(|snapshot| {
+                self.workflow
+                    .done_status(&snapshot.statuses)
+                    .map(|s| s.name.clone())
+            })
+            .unwrap_or_else(|| "Review".into())
     }
 
     fn with_store<T>(
@@ -386,12 +407,11 @@ impl TaskServer {
                 s.id == id && matches!(s.category, StatusCategory::Done | StatusCategory::Cancelled)
             });
             if !own && closes {
-                return Err(
+                return Err(format!(
                     "the user closes their own tasks after reviewing them; call \
-                            complete_session when you are done, which moves this task to \
-                            Review"
-                        .into(),
-                );
+                     complete_session when you are done, which moves this task to {}",
+                    self.done_status_name()
+                ));
             }
             changes.push(TaskChange::StatusId(id));
         }
@@ -458,7 +478,8 @@ impl TaskServer {
     #[tool(
         description = "Before you finish, record the session summary the user sees on the \
                        task: what was done, what is left, what to check. This reports the \
-                       work done: the task moves to Review for the user to check."
+                       work done: the task moves to the status the user picked for agent \
+                       work done (Review by default) for them to check."
     )]
     pub fn complete_session(&self, Parameters(p): Parameters<CompleteSession>) -> ToolResult {
         let session = self.session()?;
@@ -476,45 +497,25 @@ impl TaskServer {
             id: session.id.clone(),
             changes,
         }];
-        // The user's task goes to Review for them to check, unless it is already closed
-        // (or in Review, or the workflow has no Review status).
+        // The software rule (ADR 017): the user's task goes to the status picked for agent
+        // work done, unless it is there already or the user closed it.
         let snapshot = self.with_store(|s| s.snapshot())?;
-        let review = review_status(&snapshot.statuses);
-        let task = snapshot.tasks.iter().find(|t| t.id == session.task_id);
-        let category = |id: &str| {
-            snapshot
-                .statuses
-                .iter()
-                .find(|s| s.id == id)
-                .map(|s| s.category)
+        let target = self.workflow.done_status(&snapshot.statuses);
+        let moved = snapshot
+            .tasks
+            .iter()
+            .find(|t| t.id == session.task_id)
+            .and_then(|task| self.workflow.on_done(&snapshot.statuses, task));
+        let to = match (&moved, target) {
+            (Some(_), Some(target)) => format!(" The task moved to {} for the user.", target.name),
+            _ => String::new(),
         };
-        let to_review = match (review, task) {
-            (Some(review), Some(task)) => {
-                task.owner == TaskOwner::Me
-                    && task.status_id != review.id
-                    && !matches!(
-                        category(&task.status_id),
-                        Some(StatusCategory::Done | StatusCategory::Cancelled)
-                    )
-            }
-            _ => false,
-        };
-        if let (true, Some(review)) = (to_review, review) {
-            commands.push(Command::UpdateTask {
-                id: session.task_id.clone(),
-                changes: vec![TaskChange::StatusId(review.id.clone())],
-            });
-        }
+        commands.extend(moved);
         self.write(commands)?;
-        let moved = if to_review {
-            " The task moved to Review for the user."
-        } else {
-            ""
-        };
         Ok(if state == SessionState::Running {
-            format!("Summary recorded.{moved} The session ends when you finish your turn.")
+            format!("Summary recorded.{to} The session ends when you finish your turn.")
         } else {
-            format!("Summary recorded and the session marked done.{moved}")
+            format!("Summary recorded and the session marked done.{to}")
         })
     }
 }
@@ -542,14 +543,15 @@ impl TaskServer {
     }
 
     fn instructions(&self) -> String {
-        let mut text = String::from(
+        let mut text = format!(
             "task-master is the user's task manager. Use these tools to read task context \
              and to track your own progress: create agent tasks for the steps you plan, move \
              them to in_progress and done as you go, add short notes for findings and \
-             decisions, and call complete_session with a summary before you finish, which \
-             moves the task to Review: never mark the user's task done yourself. Agent \
-             tasks are kept apart from the user's own; never try to change the user's other \
-             tasks.",
+             decisions, and call complete_session with a summary before you finish. The app \
+             then moves the task to {} for the user to check: never mark the user's task \
+             done yourself. Agent tasks are kept apart from the user's own; never try to \
+             change the user's other tasks.",
+            self.done_status_name()
         );
         if let Some(session) = &self.session {
             text.push_str(&format!(

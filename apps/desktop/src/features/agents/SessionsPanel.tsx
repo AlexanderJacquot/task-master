@@ -1,6 +1,5 @@
 // A task's agent sessions (ADR 017): status, summary, notes and the actions on each.
 
-import { Square } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   AgentsIcon as Bot,
@@ -8,6 +7,7 @@ import {
   PlayIcon as Play,
   SendIcon as Send,
   TerminalIcon as SquareTerminal,
+  StopIcon,
   DeleteIcon as Trash2,
 } from "../../components/TaskIcons";
 import { Button, cx, IconButton, INPUT, SectionLabel } from "../../components/ui";
@@ -15,6 +15,7 @@ import { formatAgo } from "../../lib/dates";
 import type { AgentNote, AgentSession, Task } from "../../lib/types";
 import { markSessionDone, removeAgentSession } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
+import { MarkdownView } from "../task-detail/MarkdownView";
 import { SendToAgentDialog } from "./SendToAgentDialog";
 import { STATE_TONE } from "./SessionChip";
 import {
@@ -74,7 +75,7 @@ export function SessionsPanel({ task, page }: { task: Task; page: boolean }) {
 }
 
 function SessionCard({ session, expanded }: { session: AgentSession; expanded: boolean }) {
-  const api = useApi().agents;
+  const { agents: api, files } = useApi();
   const store = useTaskStore();
   const activity = useStoreState((s) => s.agentActivity[session.id]);
   const [notes, setNotes] = useState<AgentNote[] | null>(null);
@@ -144,7 +145,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           {cost && ` · ${cost}`}
         </button>
         <IconButton
-          label={running ? "Watch in terminal" : "Open in terminal"}
+          label={running ? "Continue in terminal (stops the background run)" : "Open in terminal"}
           disabled={!!busy}
           onClick={() => void act("terminal", () => api.openTerminal(session.id))}
         >
@@ -166,7 +167,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
             disabled={!!busy}
             onClick={() => void act("stop", () => api.cancel(session.id))}
           >
-            <Square size={14} />
+            <StopIcon size={14} />
           </IconButton>
         ) : inTerminal ? (
           <IconButton
@@ -209,9 +210,14 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
             </p>
           )}
           {session.summary && (
-            <p className="whitespace-pre-wrap text-ink" data-testid="session-summary">
-              {session.summary}
-            </p>
+            <div data-testid="session-summary">
+              <MarkdownView
+                source={session.summary}
+                attachments={{}}
+                actions={{ openUrl: (url) => void files?.openUrl(url).catch(() => {}) }}
+                className="text-ink"
+              />
+            </div>
           )}
           {session.error && (
             <p className="whitespace-pre-wrap text-xs text-red-700 dark:text-red-300">

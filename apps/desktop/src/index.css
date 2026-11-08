@@ -209,7 +209,8 @@ body {
   --wx-coffee: url("./assets/parchment/parchment-coffee.webp");
 }
 
-:root:not(.dark) .tex-canvas {
+:root:not(.dark) .tex-canvas,
+:root:not(.dark) .tex-canvas-pinned {
   background-image:
     var(--wx-burnt), var(--wx-fold), var(--wx-water), var(--wx-coffee),
     radial-gradient(ellipse 140% 120% at 50% 45%, rgb(0 0 0 / 0) 55%, rgb(120 80 30 / 0.1) 100%),
@@ -229,6 +230,13 @@ body {
     0 0,
     0 0;
   background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+}
+
+/* The same canvas texture on an opaque sticky bar (the board's column headers). The window is
+   the canvas, so pinning every layer to the viewport makes the bar line up with the texture
+   behind it instead of showing a flat or restarted patch. */
+:root:not(.dark) .tex-canvas-pinned {
+  background-attachment: fixed;
 }
 
 :root:not(.dark) .tex-sidebar {

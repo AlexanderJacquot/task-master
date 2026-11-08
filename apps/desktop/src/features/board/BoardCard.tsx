@@ -3,6 +3,7 @@ import {
   AgentsIcon as Bot,
   EstimateIcon as Clock,
   ChildIcon as CornerDownRight,
+  DoneIcon,
   ListChecksIcon as ListChecks,
 } from "../../components/TaskIcons";
 import { Chip, cx, Dot, PRIORITY_PILL } from "../../components/ui";
@@ -70,6 +71,13 @@ export const CardFace = memo(function CardFace(p: Props) {
           done && "text-ink-3 line-through",
         )}
       >
+        {done && (
+          <DoneIcon
+            size={15}
+            className="mr-1 inline align-[-3px] text-rubric"
+            aria-label={category === "done" ? "Done" : "Cancelled"}
+          />
+        )}
         {isAgentTask(task) && (
           <Bot size={13} className="mr-1 inline align-[-2px] text-accent" aria-label="Agent task" />
         )}

@@ -5,6 +5,7 @@
 //! [`Store::execute`], which writes rows and their `ops` entries in one transaction.
 //! See `docs/plan.md`.
 
+mod agent_workflow;
 mod brief;
 pub mod calendar;
 mod clock;
@@ -23,6 +24,7 @@ pub mod rank;
 mod store;
 mod sync;
 
+pub use agent_workflow::{AgentWorkflow, IN_PROGRESS_STATUS_ID};
 pub use clock::{new_id, now_ms, utc_date};
 pub use commands::{
     AgentSessionChange, AttachmentChange, Command, EpicChange, MAX_BLOCK_MS, MAX_NOTE_CHARS,

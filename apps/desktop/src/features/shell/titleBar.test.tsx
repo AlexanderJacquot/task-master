@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { TitleBar, usesCustomTitleBar, type WindowControls } from "./TitleBar";
+import { TitleBar, titleBarStyleFor, usesCustomTitleBar, type WindowControls } from "./TitleBar";
 
 function fakeControls() {
   const calls: string[] = [];
@@ -58,7 +58,33 @@ describe("the Windows title bar", () => {
     expect(fake.unsubscribed()).toBe(true);
   });
 
-  it("is only used inside the Windows app", () => {
+  it("is only used inside the desktop app", () => {
     expect(usesCustomTitleBar()).toBe(false);
+  });
+
+  it("picks the style from the system, none on macOS", () => {
+    expect(titleBarStyleFor("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")).toBe(
+      "windows",
+    );
+    expect(titleBarStyleFor("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15")).toBe("linux");
+    expect(titleBarStyleFor("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit")).toBe(
+      null,
+    );
+  });
+});
+
+describe("the Linux title bar", () => {
+  it("drives the window with round icon buttons", async () => {
+    const fake = fakeControls();
+    const { container } = render(
+      <TitleBar controls={fake.controls} sidebarWidth={264} variant="linux" />,
+    );
+    expect(container.querySelector("header")?.getAttribute("data-tauri-drag-region")).toBe("deep");
+    expect(container.querySelectorAll("button svg")).toHaveLength(3);
+    fireEvent.click(screen.getByRole("button", { name: "Minimize" }));
+    fireEvent.click(screen.getByRole("button", { name: "Maximize" }));
+    expect(await screen.findByRole("button", { name: "Restore" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(fake.calls).toEqual(["minimize", "toggleMaximize", "close"]);
   });
 });

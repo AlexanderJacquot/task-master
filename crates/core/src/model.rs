@@ -408,6 +408,9 @@ pub struct AgentSession {
     pub runtime: AgentRuntime,
     /// Claude Code `--permission-mode`.
     pub permission_mode: String,
+    /// Claude Code `--model` (an alias like `opus` or a full name); `None` for the default.
+    #[serde(default)]
+    pub model: Option<String>,
     /// The user's extra instructions (the brief itself is not stored).
     pub prompt: String,
     pub state: SessionState,

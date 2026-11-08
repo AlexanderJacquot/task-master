@@ -33,6 +33,7 @@ fn new_session(task_id: &str) -> NewAgentSession {
         folder: "/home/alex/Code/task-master".into(),
         runtime: AgentRuntime::Wsl,
         permission_mode: "acceptEdits".into(),
+        model: None,
         prompt: "  Keep it small.  ".into(),
     }
 }

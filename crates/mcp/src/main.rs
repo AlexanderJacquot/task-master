@@ -1,12 +1,13 @@
-//! `task-master-mcp --db <path> [--session <id>]`: the stdio MCP server Claude Code starts
+//! `task-master-mcp --db <path> [--session <id>] [--done-status <status id>]`: the stdio MCP server Claude Code starts
 //! for a session (docs/adr/017-agent-sessions.md). Logs go to stderr; stdout is the
 //! protocol.
 
 use rmcp::ServiceExt;
-use taskmaster_core::Store;
+use taskmaster_core::{AgentWorkflow, Store};
 use taskmaster_mcp::TaskServer;
 
-const USAGE: &str = "usage: task-master-mcp --db <path to tasks.sqlite> [--session <session id>]";
+const USAGE: &str = "usage: task-master-mcp --db <path to tasks.sqlite> [--session <session id>] \
+                     [--done-status <status id>]";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -19,11 +20,14 @@ async fn main() {
 async fn run() -> Result<(), String> {
     let mut db = None;
     let mut session = None;
+    // Where the session's task goes when the agent reports it done (Settings → Agents).
+    let mut workflow = AgentWorkflow::default();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--db" => db = args.next(),
             "--session" => session = args.next(),
+            "--done-status" => workflow.done_status_id = args.next(),
             "--help" | "-h" => {
                 println!("{USAGE}");
                 return Ok(());
@@ -38,7 +42,8 @@ async fn run() -> Result<(), String> {
     }
     let store = Store::open(&db).map_err(|e| format!("cannot open {db}: {e}"))?;
     let server = TaskServer::new(store, session.as_deref())
-        .map_err(|e| format!("cannot load session: {e}"))?;
+        .map_err(|e| format!("cannot load session: {e}"))?
+        .with_workflow(workflow);
     let service = server
         .serve(rmcp::transport::stdio())
         .await

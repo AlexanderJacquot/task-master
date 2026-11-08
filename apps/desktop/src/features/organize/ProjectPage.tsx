@@ -13,7 +13,7 @@ import { useStoreState, useTaskStore } from "../../store/context";
 import { ProjectFolderButton } from "../agents/ProjectFolderButton";
 import { EditableTitle } from "../shell/EditableTitle";
 import { ViewPage } from "../shell/ViewPage";
-import { firstGrapheme, PROJECT_ICONS, ProjectMark } from "./ProjectMark";
+import { PROJECT_ENGRAVINGS, ProjectMark } from "./ProjectMark";
 import { PROJECT_COLORS } from "./projectColors";
 
 function ColorPicker({ project }: { project: Project }) {
@@ -55,32 +55,20 @@ function ColorPicker({ project }: { project: Project }) {
             No color
           </Popover.Close>
           <div className="col-span-5 my-1 h-px bg-line" />
-          {PROJECT_ICONS.map((icon) => (
+          {PROJECT_ENGRAVINGS.map((e) => (
             <Popover.Close
-              key={icon}
-              aria-label={`Icon ${icon}`}
-              onClick={() => setIcon(icon)}
+              key={e.id}
+              aria-label={`Engraving ${e.name}`}
+              title={e.name}
+              onClick={() => setIcon(e.id)}
               className={cx(
-                "flex size-6 items-center justify-center rounded-md text-[15px] leading-none hover:bg-hover",
-                project.icon === icon && "bg-hover ring-1 ring-line-strong",
+                "flex size-8 items-center justify-center rounded-md hover:bg-hover",
+                project.icon === e.id && "bg-hover ring-1 ring-line-strong",
               )}
             >
-              {icon}
+              <img src={e.url} alt="" draggable={false} className="size-7 object-contain" />
             </Popover.Close>
           ))}
-          <input
-            aria-label="Custom icon"
-            placeholder="Other emoji…"
-            defaultValue={project.icon && !PROJECT_ICONS.includes(project.icon) ? project.icon : ""}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") setIcon(firstGrapheme(e.currentTarget.value));
-            }}
-            onBlur={(e) => {
-              const icon = firstGrapheme(e.currentTarget.value);
-              if (icon) setIcon(icon);
-            }}
-            className="col-span-5 mt-1 h-7 rounded-md border border-line-strong bg-transparent px-2 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-accent"
-          />
           {project.icon && (
             <Popover.Close
               onClick={() => setIcon(null)}

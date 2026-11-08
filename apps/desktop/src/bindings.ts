@@ -113,8 +113,9 @@ export const commands = {
 	agentCancel: (sessionId: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_cancel", { sessionId })),
 	/**
 	 *  Opens a terminal running `claude --resume` in the session's folder, with the session's
-	 *  MCP config. A session the app is not running becomes `terminal` until the agent records
-	 *  its summary, the user marks it done, or the terminal closes (when it can be followed).
+	 *  MCP config. A running session's headless run is stopped first. The session becomes
+	 *  `terminal` until the agent records its summary, the user marks it done, or the terminal
+	 *  closes (when it can be followed). Async: stopping a run waits for it, off the UI thread.
 	 */
 	agentOpenTerminal: (sessionId: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_open_terminal", { sessionId })),
 	/**  What each running session is doing, for a window that just opened. */
@@ -256,6 +257,8 @@ export type AgentSession_Deserialize = {
 	runtime: AgentRuntime,
 	/**  Claude Code `--permission-mode`. */
 	permission_mode: string,
+	/**  Claude Code `--model` (an alias like `opus` or a full name); `None` for the default. */
+	model?: string | null,
 	/**  The user's extra instructions (the brief itself is not stored). */
 	prompt: string,
 	state: SessionState,
@@ -286,6 +289,8 @@ export type AgentSession_Serialize = {
 	runtime: AgentRuntime,
 	/**  Claude Code `--permission-mode`. */
 	permission_mode: string,
+	/**  Claude Code `--model` (an alias like `opus` or a full name); `None` for the default. */
+	model: string | null,
 	/**  The user's extra instructions (the brief itself is not stored). */
 	prompt: string,
 	state: SessionState,
@@ -325,6 +330,10 @@ export type AgentSettings_Deserialize = {
 	permission_mode?: string,
 	/**  `--model` for sessions; Claude Code's default when `None`. */
 	model?: string | null,
+	/**  Where a task goes when it is sent to an agent; In progress when `None`. */
+	started_status_id?: string | null,
+	/**  Where a task goes when the agent reports it done; Review when `None`. */
+	done_status_id?: string | null,
 };
 
 /**  How this device runs Claude Code for agent sessions (ADR 017). */
@@ -346,6 +355,10 @@ export type AgentSettings_Serialize = {
 	permission_mode: string,
 	/**  `--model` for sessions; Claude Code's default when `None`. */
 	model: string | null,
+	/**  Where a task goes when it is sent to an agent; In progress when `None`. */
+	started_status_id: string | null,
+	/**  Where a task goes when the agent reports it done; Review when `None`. */
+	done_status_id: string | null,
 };
 
 /**  What "Send to agent" sends. */
@@ -358,6 +371,8 @@ export type AgentStart_Deserialize = {
 	folder: string,
 	/**  The settings' default when `None`. */
 	permission_mode?: string | null,
+	/**  Claude Code `--model` (alias or full name); the settings' model when `None`. */
+	model?: string | null,
 	/**  Extra instructions; may be empty. */
 	prompt: string,
 };
@@ -369,6 +384,8 @@ export type AgentStart_Serialize = {
 	folder: string,
 	/**  The settings' default when `None`. */
 	permission_mode: string | null,
+	/**  Claude Code `--model` (alias or full name); the settings' model when `None`. */
+	model: string | null,
 	/**  Extra instructions; may be empty. */
 	prompt: string,
 };
@@ -962,6 +979,8 @@ export type NewAgentSession_Deserialize = {
 	runtime: AgentRuntime,
 	/**  One of [`PERMISSION_MODES`]. */
 	permission_mode: string,
+	/**  Claude Code `--model`; `None` for the default. */
+	model?: string | null,
 	prompt?: string,
 };
 
@@ -974,6 +993,8 @@ export type NewAgentSession_Serialize = {
 	runtime: AgentRuntime,
 	/**  One of [`PERMISSION_MODES`]. */
 	permission_mode: string,
+	/**  Claude Code `--model`; `None` for the default. */
+	model: string | null,
 	prompt: string,
 };
 

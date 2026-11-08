@@ -89,6 +89,7 @@ it("sends a task to the agent from its page and follows the run", async () => {
     {
       task_id: t.id,
       folder: "/picked",
+      model: null,
       permission_mode: "acceptEdits",
       prompt: "Keep the API as is",
     },
@@ -102,8 +103,10 @@ it("sends a task to the agent from its page and follows the run", async () => {
   act(() => agents.activity(session?.id ?? "", "Editing login.ts"));
   expect(within(card).getByRole("status").textContent).toContain("Editing login.ts");
 
-  // A run cannot be joined in a terminal, only watched.
-  fireEvent.click(within(card).getByRole("button", { name: "Watch in terminal" }));
+  // A run is taken over in a terminal (the shell stops the background run first).
+  fireEvent.click(
+    within(card).getByRole("button", { name: "Continue in terminal (stops the background run)" }),
+  );
   await waitFor(() => expect(agents.calls).toContain(`terminal ${session?.id}`));
   fireEvent.click(within(card).getByRole("button", { name: "Stop" }));
   await waitFor(() => expect(agents.calls).toContain(`cancel ${session?.id}`));

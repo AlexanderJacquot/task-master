@@ -1,9 +1,8 @@
 // /agents (ADR 017): what the agent is doing and did, and the agents' own tasks, kept apart
 // from the user's views. Lists are capped (50 sessions, 100 tasks), so none is virtualized.
 
-import { Square } from "lucide-react";
 import { useMemo, useState } from "react";
-import { AgentsIcon as Bot } from "../../components/TaskIcons";
+import { AgentsIcon as Bot, StopIcon } from "../../components/TaskIcons";
 import { cx, IconButton, SectionLabel, TaskCheck } from "../../components/ui";
 import { formatAgo } from "../../lib/dates";
 import type { AgentSession, Task } from "../../lib/types";
@@ -166,7 +165,7 @@ function SessionRow({ session, task }: { session: AgentSession; task: Task | und
       </span>
       {running && api && (
         <IconButton label="Stop" onClick={() => void api.cancel(session.id)}>
-          <Square size={14} />
+          <StopIcon size={14} />
         </IconButton>
       )}
     </li>

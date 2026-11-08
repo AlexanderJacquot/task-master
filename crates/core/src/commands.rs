@@ -161,6 +161,9 @@ pub struct NewAgentSession {
     pub runtime: AgentRuntime,
     /// One of [`PERMISSION_MODES`].
     pub permission_mode: String,
+    /// Claude Code `--model`; `None` for the default.
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default)]
     pub prompt: String,
 }
@@ -1570,6 +1573,18 @@ fn create_agent_session(b: &mut Batch<'_, '_>, n: NewAgentSession) -> Result<()>
     check_id(&n.claude_session_id)?;
     let folder = non_empty("folder", &n.folder)?;
     check_permission_mode(&n.permission_mode)?;
+    let model = n
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_owned);
+    if model
+        .as_deref()
+        .is_some_and(|m| m.starts_with('-') || m.contains(char::is_whitespace))
+    {
+        return Err(Error::invalid("invalid model name"));
+    }
     let device_id = b.device_id().to_owned();
     b.apply(Change::new(
         Entity::AgentSession,
@@ -1582,6 +1597,7 @@ fn create_agent_session(b: &mut Batch<'_, '_>, n: NewAgentSession) -> Result<()>
             "folder": folder,
             "runtime": n.runtime.as_str(),
             "permission_mode": n.permission_mode,
+            "model": model,
             "prompt": n.prompt.trim(),
             "state": SessionState::Running.as_str(),
             "started_at": b.now,

@@ -30,6 +30,8 @@ export function fakeAgents(
     terminal: null,
     permission_mode: "acceptEdits",
     model: null,
+    started_status_id: null,
+    done_status_id: null,
     ...opts.settings,
   };
   let folders = opts.folders ?? [];
@@ -41,6 +43,7 @@ export function fakeAgents(
         task_id: input.task_id,
         folder: input.folder,
         permission_mode: input.permission_mode ?? settings.permission_mode,
+        model: input.model ?? null,
         prompt: input.prompt,
         state: "running",
         started_at: Date.now(),

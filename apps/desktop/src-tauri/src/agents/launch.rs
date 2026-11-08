@@ -46,6 +46,8 @@ pub struct Run<'a> {
     /// A follow-up turn of an existing session (`--resume`) rather than a new one.
     pub resume: bool,
     pub permission_mode: &'a str,
+    /// `--model` for this session; the settings' model when `None`.
+    pub model: Option<&'a str>,
     /// MCP config and rules files, as the runtime sees them.
     pub mcp_config: &'a str,
     pub rules: &'a str,
@@ -79,8 +81,8 @@ pub fn claude_command(settings: &AgentSettings, run: &Run<'_>) -> Launch {
         "--allowedTools".into(),
         format!("mcp__{MCP_SERVER}"),
     ]);
-    if let Some(model) = &settings.model {
-        claude.extend(["--model".into(), model.clone()]);
+    if let Some(model) = run.model.or(settings.model.as_deref()) {
+        claude.extend(["--model".into(), model.to_owned()]);
     }
     in_runtime(
         settings,
@@ -304,89 +306,8 @@ pub fn terminal_command(
     }
 }
 
-/// Starts the line that ends a run log; the watch script stops at it.
+/// Starts the line that ends a run log (`agents/<id>/run.log`).
 pub const RUN_END_PREFIX: &str = "=== Run ended";
-
-/// A POSIX script that shows a run log as it grows (read-only), stops at the line
-/// starting with [`RUN_END_PREFIX`], then closes after `close_after` seconds.
-pub fn watch_script(log: &str, close_after: u32) -> String {
-    format!(
-        "log={log}; n=0\n\
-         echo 'Watching the background run of this session (read only).'\n\
-         echo 'This window closes when it ends.'\n\
-         echo\n\
-         while :; do\n\
-         \x20 if [ -f \"$log\" ]; then\n\
-         \x20   ended=0; grep -q '^{end}' \"$log\" && ended=1\n\
-         \x20   total=$(wc -l < \"$log\" | tr -d ' ')\n\
-         \x20   if [ \"$total\" -gt \"$n\" ]; then sed -n \"$((n + 1)),${{total}}p\" \"$log\"; n=$total; fi\n\
-         \x20   [ \"$ended\" = 1 ] && break\n\
-         \x20 fi\n\
-         \x20 sleep 1\n\
-         done\n\
-         echo\n\
-         echo 'To continue this conversation: send a follow-up on the task, or Open in terminal.'\n\
-         echo 'This window closes in {close_after} seconds.'\n\
-         sleep {close_after}\n",
-        log = sh_quote(log),
-        end = RUN_END_PREFIX,
-    )
-}
-
-/// A visible terminal running a POSIX `script` where claude runs (inside WSL for the WSL
-/// runtime). `None` for native Windows, which has no POSIX shell.
-pub fn shell_terminal(
-    settings: &AgentSettings,
-    runtime: AgentRuntime,
-    script: &str,
-    os: Os,
-    default_terminal: Option<&str>,
-) -> Option<Launch> {
-    let sh = vec!["sh".to_owned(), "-c".into(), script.to_owned()];
-    match (runtime, os) {
-        (AgentRuntime::Wsl, _) => {
-            let mut args = vec!["wsl.exe".to_owned()];
-            args.extend(wsl_prefix(settings));
-            args.push("--exec".into());
-            args.extend(sh);
-            Some(Launch {
-                program: "wt.exe".into(),
-                args,
-                cwd: None,
-            })
-        }
-        (AgentRuntime::Native, Os::Windows) => None,
-        (AgentRuntime::Native, Os::Mac) => Some(Launch {
-            program: "osascript".into(),
-            args: vec![
-                "-e".into(),
-                format!(
-                    "tell application \"Terminal\" to do script \"{}\"",
-                    applescript_escape(&format!("sh -c {}", sh_quote(script)))
-                ),
-                "-e".into(),
-                "tell application \"Terminal\" to activate".into(),
-            ],
-            cwd: None,
-        }),
-        (AgentRuntime::Native, Os::Linux) => {
-            let prefix = settings
-                .terminal
-                .clone()
-                .or_else(|| default_terminal.map(str::to_owned))
-                .unwrap_or_else(|| "x-terminal-emulator -e".into());
-            let mut parts = prefix.split_whitespace().map(str::to_owned);
-            let program = parts.next().unwrap_or_else(|| "x-terminal-emulator".into());
-            let mut args: Vec<String> = parts.collect();
-            args.extend(sh);
-            Some(Launch {
-                program,
-                args,
-                cwd: None,
-            })
-        }
-    }
-}
 
 /// Windows without Windows Terminal: a console window through `cmd /c start`.
 pub fn windows_console_fallback(
@@ -609,6 +530,52 @@ fn applescript_escape(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+/// Set only by the AppImage's runtime and launch hooks, meaningless outside it.
+const APPIMAGE_ONLY_VARS: &[&str] = &[
+    "APPDIR",
+    "APPIMAGE",
+    "ARGV0",
+    "OWD",
+    "GTK_THEME",
+    "PYTHONDONTWRITEBYTECODE",
+];
+
+/// The environment changes (`None`: remove) that give a program the app starts the user's
+/// environment back when the app runs as an AppImage (`APPDIR` set). Its runtime points
+/// `LD_LIBRARY_PATH`, `PYTHONHOME`, `PYTHONPATH`, `PATH`, `QT_PLUGIN_PATH`, the GTK and
+/// GStreamer variables and others into the image; inherited, they break other programs
+/// (kitty, which embeds Python, dies at start-up). Entries inside the image are dropped
+/// from path lists, and a variable left with none is removed. Empty outside an AppImage.
+pub fn host_env<'a>(
+    env: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Vec<(String, Option<String>)> {
+    let env: Vec<_> = env.into_iter().collect();
+    let Some(appdir) = env
+        .iter()
+        .find(|(name, _)| *name == "APPDIR")
+        .map(|(_, value)| value.trim_end_matches('/'))
+        .filter(|dir| !dir.is_empty())
+    else {
+        return Vec::new();
+    };
+    let inside = |entry: &str| entry == appdir || entry.starts_with(&format!("{appdir}/"));
+    env.iter()
+        .filter_map(|(name, value)| {
+            if APPIMAGE_ONLY_VARS.contains(name) {
+                return Some((name.to_string(), None));
+            }
+            if !value.split(':').any(inside) {
+                return None;
+            }
+            let kept: Vec<&str> = value
+                .split(':')
+                .filter(|entry| !entry.is_empty() && !inside(entry))
+                .collect();
+            Some((name.to_string(), (!kept.is_empty()).then(|| kept.join(":"))))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -627,6 +594,7 @@ mod tests {
             claude_session_id: "0199a000-0000-7000-8000-00000000abcd",
             resume,
             permission_mode: "acceptEdits",
+            model: None,
             mcp_config: "/mnt/c/Users/Alex J/AppData/agents/s1/mcp.json",
             rules: "/mnt/c/Users/Alex J/AppData/agents/s1/rules.md",
         }
@@ -938,82 +906,6 @@ mod tests {
     }
 
     #[test]
-    fn a_running_session_is_watched_read_only_in_a_terminal() {
-        let script = watch_script("/data/agents/s1/run.log", 15);
-        assert!(
-            script.starts_with("log='/data/agents/s1/run.log'; n=0\n"),
-            "{script}"
-        );
-        assert!(script.contains("grep -q '^=== Run ended'"), "{script}");
-        assert!(script.ends_with("sleep 15\n"), "{script}");
-        let linux = shell_terminal(
-            &settings(AgentRuntime::Native),
-            AgentRuntime::Native,
-            &script,
-            Os::Linux,
-            Some("kitty"),
-        )
-        .unwrap();
-        assert_eq!(linux.program, "kitty");
-        assert_eq!(linux.args[..2], ["sh", "-c"]);
-        let wsl = shell_terminal(
-            &settings(AgentRuntime::Wsl),
-            AgentRuntime::Wsl,
-            &script,
-            Os::Windows,
-            None,
-        )
-        .unwrap();
-        assert_eq!(wsl.program, "wt.exe");
-        assert_eq!(
-            wsl.args[..6],
-            ["wsl.exe", "-d", "Ubuntu", "--exec", "sh", "-c"]
-        );
-        assert!(
-            shell_terminal(
-                &settings(AgentRuntime::Native),
-                AgentRuntime::Native,
-                &script,
-                Os::Windows,
-                None,
-            )
-            .is_none()
-        );
-    }
-
-    /// The script itself, run by `sh` on a log that grows and then ends.
-    #[cfg(unix)]
-    #[test]
-    fn the_watch_script_shows_the_log_and_stops_at_its_end() {
-        let dir = std::env::temp_dir().join(format!("tm-watch-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let log = dir.join("run.log");
-        std::fs::write(&log, "● Agent started\n  → Running `ls`\n").unwrap();
-        let script = watch_script(log.to_str().unwrap(), 0);
-        let child = std::process::Command::new("sh")
-            .args(["-c", &script])
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(1500));
-        let mut more = std::fs::OpenOptions::new().append(true).open(&log).unwrap();
-        use std::io::Write as _;
-        writeln!(more, "Done.\n{RUN_END_PREFIX}: Done ===").unwrap();
-        let output = child.wait_with_output().unwrap();
-        let shown = String::from_utf8_lossy(&output.stdout);
-        let started = shown.find("● Agent started").unwrap();
-        let done = shown.find("Done.").unwrap();
-        assert!(started < done, "{shown}");
-        assert!(shown.contains("=== Run ended: Done ==="), "{shown}");
-        assert_eq!(
-            shown.matches("Running `ls`").count(),
-            1,
-            "each line once: {shown}"
-        );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
     fn windows_paths_become_wsl_paths() {
         assert_eq!(
             windows_to_wsl(r"\\wsl.localhost\Ubuntu\home\alex\Code"),
@@ -1061,5 +953,63 @@ mod tests {
         assert_eq!(found_path("claude not found"), None);
         let lookup = lookup_command(&settings(AgentRuntime::Wsl), Os::Windows);
         assert_eq!(lookup.args[..4], ["-d", "Ubuntu", "--exec", "sh"]);
+    }
+
+    #[test]
+    fn programs_started_from_an_appimage_get_the_users_environment_back() {
+        // What the AppImage runtime and its GTK hook set (seen in /proc/<pid>/environ).
+        let m = "/tmp/.mount_task-mmpDlmm";
+        let env = [
+            ("APPDIR", m.to_owned()),
+            (
+                "APPIMAGE",
+                "/home/alex/Downloads/task-master.AppImage".into(),
+            ),
+            ("ARGV0", "/home/alex/Downloads/task-master.AppImage".into()),
+            ("OWD", "/home/alex".into()),
+            ("GTK_THEME", "Adwaita:dark".into()),
+            ("PYTHONDONTWRITEBYTECODE", "1".into()),
+            ("PYTHONHOME", format!("{m}/usr/")),
+            ("PYTHONPATH", format!("{m}/usr/share/pyshared/:")),
+            (
+                "LD_LIBRARY_PATH",
+                format!("{m}/usr/lib/:{m}/usr/lib/x86_64-linux-gnu/:/opt/cuda/lib64"),
+            ),
+            (
+                "PATH",
+                format!("{m}/usr/bin/:{m}/bin/:/home/alex/.local/bin:/usr/bin"),
+            ),
+            ("GTK_PATH", format!("{m}//usr/lib/gtk-3.0")),
+            (
+                "XDG_DATA_DIRS",
+                format!("{m}/usr/share:/usr/share:/usr/local/share"),
+            ),
+            ("HOME", "/home/alex".into()),
+            // A neighbour whose name only starts like the mount stays.
+            ("EDITOR", format!("{m}x/bin/vi")),
+        ];
+        let mut changes = host_env(env.iter().map(|(k, v)| (*k, v.as_str())));
+        changes.sort();
+        let removed = |name: &str| (name.to_owned(), None);
+        let set = |name: &str, value: &str| (name.to_owned(), Some(value.to_owned()));
+        assert_eq!(
+            changes,
+            vec![
+                removed("APPDIR"),
+                removed("APPIMAGE"),
+                removed("ARGV0"),
+                removed("GTK_PATH"),
+                removed("GTK_THEME"),
+                set("LD_LIBRARY_PATH", "/opt/cuda/lib64"),
+                removed("OWD"),
+                set("PATH", "/home/alex/.local/bin:/usr/bin"),
+                removed("PYTHONDONTWRITEBYTECODE"),
+                removed("PYTHONHOME"),
+                removed("PYTHONPATH"),
+                set("XDG_DATA_DIRS", "/usr/share:/usr/local/share"),
+            ]
+        );
+        // Outside an AppImage, nothing changes.
+        assert!(host_env([("PATH", "/usr/bin"), ("GTK_THEME", "Breeze")]).is_empty());
     }
 }

@@ -1,7 +1,13 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
-import { type ReactNode, useMemo, useState } from "react";
+import {
+  type MouseEvent,
+  type ReactNode,
+  type PointerEvent as ReactPointerEvent,
+  useMemo,
+  useState,
+} from "react";
 import appIcon from "../../assets/brand/app-icon.svg";
 import {
   ArchiveIcon as Archive,
@@ -11,6 +17,7 @@ import {
   AgentsIcon as Bot,
   CalendarIcon as CalendarDays,
   MetricsIcon as ChartNoAxesCombined,
+  CrownIcon,
   LineageIcon as GitBranch,
   TagIcon as Hash,
   InboxIcon as Inbox,
@@ -22,6 +29,7 @@ import {
   SearchIcon as Search,
   SettingsIcon as Settings2,
   TodayIcon as Sun,
+  TagIcon,
   DeleteIcon as Trash2,
 } from "../../components/TaskIcons";
 import {
@@ -50,7 +58,59 @@ import { ProjectTree } from "./ProjectTree";
 import { useProjectOrder } from "./useProjectOrder";
 
 /** The expanded sidebar adapts to the window; the Windows title bar uses the same width. */
-export const SIDEBAR_WIDTH = { open: "clamp(208px, 22vw, 264px)", rail: 60 } as const;
+export const SIDEBAR_WIDTH = {
+  open: "var(--sidebar-w, clamp(208px, 22vw, 264px))",
+  rail: 60,
+} as const;
+
+const SIDEBAR_W_KEY = "tm.sidebarWidth";
+const SIDEBAR_MIN = 208;
+const SIDEBAR_MAX = 480;
+
+function applySidebarWidth(px: number | null) {
+  if (px == null) document.documentElement.style.removeProperty("--sidebar-w");
+  else document.documentElement.style.setProperty("--sidebar-w", `${px}px`);
+}
+
+function loadSidebarWidth() {
+  const saved = Number(localStorage.getItem(SIDEBAR_W_KEY));
+  if (saved >= SIDEBAR_MIN && saved <= SIDEBAR_MAX) applySidebarWidth(saved);
+}
+if (typeof localStorage !== "undefined") loadSidebarWidth();
+
+/** Drag handle on the sidebar's right edge. Double-click resets to the default width. */
+function SidebarResizer() {
+  const onPointerDown = (e: ReactPointerEvent<HTMLHRElement>) => {
+    e.preventDefault();
+    const left = e.currentTarget.parentElement?.getBoundingClientRect().left ?? 0;
+    let last = 0;
+    const move = (ev: PointerEvent) => {
+      last = Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX - left)));
+      applySidebarWidth(last);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+      if (last) localStorage.setItem(SIDEBAR_W_KEY, String(last));
+    };
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return (
+    <hr
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      onPointerDown={onPointerDown}
+      onDoubleClick={() => {
+        applySidebarWidth(null);
+        localStorage.removeItem(SIDEBAR_W_KEY);
+      }}
+      className="absolute inset-y-0 right-0 z-20 w-1.5 cursor-col-resize hover:bg-accent/30"
+    />
+  );
+}
 
 const rowBaseClass =
   "group flex min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-ink-2 transition-colors hover:bg-hover hover:text-ink";
@@ -103,7 +163,7 @@ function TagRow({ tag, count }: { tag: Tag; count?: number }) {
         params={{ tagId: tag.id }}
         search={{}}
         className={cx("flex min-w-0 flex-1 items-center gap-2.5 py-[5px]", FOCUS)}
-        onContextMenu={(e) => {
+        onContextMenu={(e: MouseEvent<HTMLAnchorElement>) => {
           e.preventDefault();
           setMenu(true);
         }}
@@ -156,7 +216,7 @@ function ShortcutsButton({
       title={withKeys(keymap, "help", "Keyboard shortcuts")}
       onClick={onClick}
       className={cx(
-        matchRow ? "self-stretch aspect-square" : "size-7",
+        matchRow ? "size-10" : "size-7",
         "inline-flex shrink-0 items-center justify-center rounded-md border border-line-strong font-display text-[15px] text-ink-3 transition-colors hover:border-ink-3 hover:bg-hover hover:text-ink",
         FOCUS,
         className,
@@ -182,6 +242,7 @@ function Collapsible({
   id,
   title,
   count,
+  icon,
   defaultOpen = false,
   onAdd,
   children,
@@ -189,6 +250,7 @@ function Collapsible({
   id: string;
   title: string;
   count?: number;
+  icon?: ReactNode;
   defaultOpen?: boolean;
   onAdd?: () => void;
   children: ReactNode;
@@ -216,6 +278,7 @@ function Collapsible({
           )}
         >
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          {icon}
           <span className="flex-1 font-display tracking-wide">{title}</span>
           {count !== undefined && count > 0 && (
             <span className="text-[12.5px] text-ink-3 tabular-nums">{count}</span>
@@ -349,11 +412,11 @@ function ProjectRow({
         search={{}}
         title={shortcut ? `${project.name}  (Ctrl+${shortcut})` : project.name}
         className={cx("flex min-w-0 flex-1 items-center gap-2.5 py-[5px]", FOCUS)}
-        onDoubleClick={(e) => {
+        onDoubleClick={(e: MouseEvent<HTMLAnchorElement>) => {
           e.preventDefault();
           setRenaming(true);
         }}
-        onContextMenu={(e) => {
+        onContextMenu={(e: MouseEvent<HTMLAnchorElement>) => {
           e.preventDefault();
           setMenu(true);
         }}
@@ -521,13 +584,13 @@ export function Sidebar({
           <Layers size={18} />
         </RailLink>
         <RailLink to="/lineage" label="Lineage">
-          <GitBranch size={18} />
+          <GitBranch size={18} className="text-green-700 dark:text-green-300" />
         </RailLink>
         <RailLink to="/agents" label="Agents">
           <Bot size={18} className={cx(runningAgents > 0 && "animate-pulse text-accent")} />
         </RailLink>
         <RailLink to="/metrics" label="Metrics">
-          <ChartNoAxesCombined size={18} />
+          <ChartNoAxesCombined size={18} className="text-purple-700 dark:text-purple-300" />
         </RailLink>
         <div className="my-2 h-px w-6 bg-line" />
         {order.map((id, i) => {
@@ -558,8 +621,9 @@ export function Sidebar({
     <nav
       aria-label="Sidebar"
       style={{ width: SIDEBAR_WIDTH.open }}
-      className="tex-sidebar @container/sidebar flex shrink-0 flex-col overflow-y-auto border-r border-line bg-sidebar px-3 pt-4 pb-3"
+      className="tex-sidebar @container/sidebar relative flex shrink-0 flex-col overflow-y-auto border-r border-line bg-sidebar px-3 pt-4 pb-3"
     >
+      <SidebarResizer />
       <div className="flex items-center gap-2 px-2 pb-3">
         <img
           src={appIcon}
@@ -623,7 +687,10 @@ export function Sidebar({
         <NavItem to="/all" icon={<Layers size={17} className="shrink-0" />}>
           All tasks
         </NavItem>
-        <NavItem to="/lineage" icon={<GitBranch size={17} className="shrink-0" />}>
+        <NavItem
+          to="/lineage"
+          icon={<GitBranch size={17} className="shrink-0 text-green-700 dark:text-green-300" />}
+        >
           Lineage
         </NavItem>
         <NavItem
@@ -634,7 +701,15 @@ export function Sidebar({
         >
           Agents
         </NavItem>
-        <NavItem to="/metrics" icon={<ChartNoAxesCombined size={17} className="shrink-0" />}>
+        <NavItem
+          to="/metrics"
+          icon={
+            <ChartNoAxesCombined
+              size={17}
+              className="shrink-0 text-purple-700 dark:text-purple-300"
+            />
+          }
+        >
           Metrics
         </NavItem>
       </div>
@@ -705,6 +780,7 @@ export function Sidebar({
       <Collapsible
         id="epics"
         title="Epics"
+        icon={<CrownIcon size={16} className="shrink-0" />}
         count={epicList.length}
         onAdd={() => setAdding("epic")}
         defaultOpen={false}
@@ -763,7 +839,12 @@ export function Sidebar({
         />
       )}
 
-      <Collapsible id="views" title="Saved views" count={viewList.length}>
+      <Collapsible
+        id="views"
+        title="Saved views"
+        icon={<Bookmark size={16} className="shrink-0" />}
+        count={viewList.length}
+      >
         {viewList.map((view) => (
           <NavItem
             key={view.id}
@@ -781,7 +862,12 @@ export function Sidebar({
         )}
       </Collapsible>
 
-      <Collapsible id="tags" title="Tags" count={tagList.length}>
+      <Collapsible
+        id="tags"
+        title="Tags"
+        icon={<TagIcon size={16} className="shrink-0" />}
+        count={tagList.length}
+      >
         {tagList.map((tag) => (
           <TagRow key={tag.id} tag={tag} count={counts.perTag.get(tag.id)} />
         ))}
@@ -793,7 +879,7 @@ export function Sidebar({
       <div className="mt-auto flex flex-col gap-1 pt-4">
         <UpdatePill />
         <div className="flex items-stretch gap-1">
-          <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col [&>a]:flex-1">
             <NavItem
               to="/settings"
               icon={<Settings2 size={20} className="shrink-0" />}
