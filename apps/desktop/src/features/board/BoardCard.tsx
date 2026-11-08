@@ -96,7 +96,10 @@ export const CardFace = memo(function CardFace(p: Props) {
           </span>
         )}
         {epic && (
-          <span className="flex max-w-24 shrink-0 items-center gap-1 truncate text-violet-800 dark:text-violet-300">
+          <span
+            className="flex max-w-24 shrink-0 items-center gap-1 truncate text-violet-800 dark:text-violet-300"
+            style={epic.color ? { color: epic.color } : undefined}
+          >
             <EpicMark epic={epic} size={10} />
             <span className="truncate">{epic.name}</span>
           </span>
