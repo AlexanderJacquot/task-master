@@ -71,7 +71,15 @@ const allRoute = createRoute({
 const lineageRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "lineage",
-  component: LineagePage,
+  // ?around=<task id> opens on one task's lineage (a task's "Lineage" button).
+  validateSearch: (search: Record<string, unknown>): { around?: string } => ({
+    ...(typeof search.around === "string" && { around: search.around }),
+  }),
+  component: function LineageView() {
+    const { around } = lineageRoute.useSearch();
+    // Remount per task so the selection and the fitted view start from it.
+    return <LineagePage key={around ?? ""} {...(around && { around })} />;
+  },
 });
 
 const agentsRoute = createRoute({

@@ -1,6 +1,14 @@
 import { expect, it } from "vitest";
-import { task } from "../../test/fixtures";
-import { layoutGraph, wouldCycle } from "./graph";
+import { STATUS, statuses, task } from "../../test/fixtures";
+import {
+  closedTaskIds,
+  filterLineage,
+  type LineageFilter,
+  layoutGraph,
+  lineageOf,
+  openBlockers,
+  wouldCycle,
+} from "./graph";
 
 it("lays out branching and joining chains in dependency order", () => {
   const a = task();
@@ -42,4 +50,35 @@ it("spreads unconnected tasks across a grid without overlapping the dependency c
       ...graph.nodes.filter((node) => [a.id, b.id].includes(node.task.id)).map((node) => node.y),
     ) + 100,
   );
+});
+
+it("filters by completion, tag, project and a task's lineage", () => {
+  const done = task({ title: "Done", status_id: STATUS.done });
+  const open = task({ title: "Open" });
+  const waiting = task({ title: "Waiting", dependency_ids: [open.id], tag_ids: ["tag"] });
+  const free = task({ title: "Free", dependency_ids: [done.id], project_id: "p" });
+  const loner = task({ title: "Loner" });
+  const all = [done, open, waiting, free, loner];
+  const tasks = Object.fromEntries(all.map((t) => [t.id, t]));
+  const closed = closedTaskIds(all, statuses);
+  expect([...closed]).toEqual([done.id]);
+  expect(openBlockers(waiting, tasks, closed)).toEqual([open]);
+  expect(openBlockers(free, tasks, closed)).toEqual([]);
+  const titles = (filter: Partial<LineageFilter>) =>
+    filterLineage(all, tasks, closed, {
+      project: "",
+      tag: "",
+      completion: "all",
+      linkedOnly: false,
+      ...filter,
+    }).map((t) => t.title);
+  expect(titles({})).toHaveLength(5);
+  expect(titles({ completion: "open" })).toEqual(["Open", "Waiting", "Free", "Loner"]);
+  expect(titles({ completion: "ready" })).toEqual(["Open", "Free", "Loner"]);
+  expect(titles({ tag: "tag" })).toEqual(["Waiting"]);
+  expect(titles({ project: "p" })).toEqual(["Free"]);
+  expect(titles({ linkedOnly: true })).toEqual(["Done", "Open", "Waiting", "Free"]);
+  expect(titles({ around: waiting.id })).toEqual(["Open", "Waiting"]);
+  expect(titles({ around: done.id })).toEqual(["Done", "Free"]);
+  expect([...lineageOf(all, loner.id)]).toEqual([loner.id]);
 });

@@ -111,7 +111,10 @@ pub fn session_rules(task_title: &str, task_id: &str, done_status: &str) -> Stri
          Track your work with those tools as you go: create agent tasks for the steps you \
          plan (they become subtasks of this task), move them to in_progress and done, add \
          short notes for findings and decisions, and call complete_session with a summary \
-         (done, left, to check) before you finish. The app then moves this task to \
+         (done, left, to check) before you finish. If this task has subtasks of its own \
+         (the user's), mark each one done with update_task as soon as you finish it; \
+         complete_session refuses while a subtask is open unless you list it in \
+         left_open. The app then moves this task to \
          {done_status} for the user to check: do not mark it done yourself.\n\n\
          You run in the background: nobody can answer a question or approve a tool while \
          you work. If you need a decision, stop, say what you need in your final message and \
@@ -1856,6 +1859,7 @@ mod tests {
         assert!(rules.contains("\"Fix sync\" (id `0190-id`)"));
         assert!(rules.contains("complete_session"));
         assert!(rules.contains("moves this task to To check"));
+        assert!(rules.contains("mark each one done"), "{rules}");
         let picked: serde_json::Value =
             serde_json::from_str(&mcp_config("tm-mcp", "tm.sqlite", "s1", Some("st1"))).unwrap();
         assert_eq!(

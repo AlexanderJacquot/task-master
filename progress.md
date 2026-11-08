@@ -45,6 +45,47 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Release 0.8.0 integration (2026-11-08)
+
+- Integrated the new Lineage planning tools, board column fitting and agent subtask
+  completion rules with the work already on `main`. Prepared release notes and the
+  desktop/server version bump to 0.8.0; migration 0012 makes the schema 12.
+- Updated the board resize integration test for columns that fit the viewport.
+- Before tagging: frozen pnpm install, Biome, TypeScript, 312 frontend tests, Rust fmt,
+  clippy, the full Rust suite, generated bindings check and the Linux `.deb` build pass.
+
+### Agents keep subtasks up to date (2026-11-08)
+
+- Agents finished tasks but left their subtasks open (they could not close the user's
+  subtasks at all). `update_task` now lets them mark the user's subtasks of the session's
+  task done (not cancelled; the session's task itself still goes to Review).
+- Software rule: `complete_session` refuses while any subtask (user's or agent's, any
+  depth) is open, listing them, unless named in its new `left_open` parameter. Server
+  instructions and session rules say so. ADR 017 amended.
+- Tests: MCP `tools.rs` (subtask done/cancel rules, the completion check), session rules.
+  Not run in that session: cargo needed approval in the background run; run
+  `cargo test -p taskmaster-mcp`, clippy and fmt before committing.
+
+### Lineage view improvements (2026-11-08)
+
+- Filters: tag, and completion ("Open and done", "Open only", "Ready (not blocked)": open
+  tasks with no open prerequisite), next to project and connected-only. Filters are kept on
+  this machine (`task-master.lineage-filter`).
+- Done and cancelled cards are faded, colorless and struck through; links from a done
+  prerequisite are dashed and faded. Open cards waiting on open prerequisites show
+  "Blocked · N"; the inspector says Blocked / Ready.
+- Plus buttons on a card's top corners (left: prerequisite, right: dependent) open a small
+  popover: type a title to create a linked task (one batch, one undo; it keeps the current
+  project/tag filter), or pick a matching existing task to link. The new card is placed one
+  column to the side in the first free row.
+- `/lineage?around=<id>` shows only that task's ancestors and descendants ("Lineage of …"
+  chip to go back to all). Reached from the inspector ("Show only its lineage") and from
+  the new Lineage section of the task panel and page ("Plan in Lineage"), which lists what
+  blocks the task and what waits on it.
+- Tests: graph filters, free slot placement, page interactions, task page section, and a
+  core test that a create + link batch works and undoes as one. 309 frontend tests, Rust
+  suite, clippy, fmt, Biome and TypeScript pass. Not checked by hand in the running app.
+
 ### Main integration and relaunch (2026-11-08)
 
 - Integrated the terminal takeover updates and sidebar resize hit area into `main`.
@@ -1197,6 +1238,8 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- Lineage: a "Ready (not blocked)" filter for list and board views needs a new
+  `ViewFilter` field in core (spec, bindings); only the Lineage canvas has it so far.
 - Sync: op compaction together with the 30-day purge. Device sync, outside-writer
   reload, server Calendar and its runner handoff are implemented.
 

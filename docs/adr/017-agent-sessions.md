@@ -162,8 +162,9 @@ in the same space without cluttering the user's views. Decided with the user:
   a session a subtask of the session's task unless `parent_id` or `top_level`; project
   from the parent, else the session task; status by name or category; `depends_on`),
   `update_task` (agent tasks: status, title, description or `append_description`,
-  priority, prerequisites; the user's tasks: status only, never a done or cancelled one,
-  and only the session's task and its subtasks at any depth), `add_note`, `complete_session` (stores the summary; for a
+  priority, prerequisites; the user's tasks: status only, and only the session's task and
+  its subtasks at any depth; never cancelled, and done only for a subtask, see below),
+  `add_note`, `complete_session` (stores the summary; for a
   `running` session the shell still sets the state when the run ends, which keeps the
   agent's summary over Claude's last message; any other session, in a terminal or
   outliving an app that quit and marked it `interrupted`, is marked `done` here, since
@@ -187,6 +188,16 @@ in the same space without cluttering the user's views. Decided with the user:
   ends `done`, whether or not the agent called `complete_session`; a task the user
   closed stays closed. A failed, cancelled or interrupted run moves nothing, nor does Mark
   done or a terminal closing. A pick whose status was deleted falls back to the default.
+- **Subtasks (amended 2026-11-08).** Agents finished the work but left the session task's
+  subtasks open. The subtasks are steps of the work, so `update_task` now lets the agent
+  mark the user's subtasks of the session's task (any depth) done; the session's task
+  itself still goes to review, and cancelling any of the user's tasks stays refused. As a
+  software rule, `complete_session` refuses while a subtask (the user's or an agent's, any
+  depth) is open, naming each one, unless its id is in the new `left_open` parameter (the
+  ones deliberately not finished, explained in the summary); an id in `left_open` that is
+  not an open subtask is refused too. The server instructions and the session rules tell
+  the agent this. A headless run that ends without `complete_session` is not checked:
+  the app cannot tell which subtasks were finished.
 - Server instructions tell the agent how to track its work and which task it is on.
 - **Dependency: `rmcp` 3.9** (official Rust MCP SDK; features `server`, `macros`,
   `transport-io`) rather than a hand-written JSON-RPC loop.

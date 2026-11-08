@@ -1,4 +1,4 @@
-import type { Task } from "../../lib/types";
+import type { Status, Task } from "../../lib/types";
 
 export const NODE_WIDTH = 232;
 export const NODE_HEIGHT = 100;
@@ -85,4 +85,83 @@ export function layoutGraph(tasks: Task[]) {
     width: Math.max(700, ...nodes.map((node) => node.x + NODE_WIDTH + 60)),
     height: Math.max(400, ...nodes.map((node) => node.y + NODE_HEIGHT + 60)),
   };
+}
+
+/** Done and cancelled tasks no longer block anything. */
+export function closedTaskIds(tasks: Iterable<Task>, statuses: Status[]): Set<string> {
+  const closed = new Set(
+    statuses.filter((s) => s.category === "done" || s.category === "cancelled").map((s) => s.id),
+  );
+  const ids = new Set<string>();
+  for (const task of tasks) if (closed.has(task.status_id)) ids.add(task.id);
+  return ids;
+}
+
+/** Prerequisites still open: the tasks that block this one. Deleted ones are ignored. */
+export function openBlockers(task: Task, tasks: Record<string, Task>, closed: Set<string>) {
+  return (task.dependency_ids ?? []).flatMap((id) => {
+    const prerequisite = tasks[id];
+    return prerequisite && !closed.has(id) ? [prerequisite] : [];
+  });
+}
+
+/** A task with every ancestor and descendant through dependency links. */
+export function lineageOf(tasks: Task[], id: string): Set<string> {
+  const dependents = new Map<string, string[]>();
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  for (const task of tasks)
+    for (const dep of task.dependency_ids ?? [])
+      dependents.set(dep, [...(dependents.get(dep) ?? []), task.id]);
+  const seen = new Set<string>([id]);
+  const walk = (next: (id: string) => string[]) => {
+    const pending = [id];
+    while (pending.length) {
+      for (const other of next(pending.pop() as string))
+        if (!seen.has(other)) {
+          seen.add(other);
+          pending.push(other);
+        }
+    }
+  };
+  walk((current) => byId.get(current)?.dependency_ids ?? []);
+  walk((current) => dependents.get(current) ?? []);
+  return seen;
+}
+
+export type Completion = "all" | "open" | "ready";
+
+export interface LineageFilter {
+  project: string;
+  tag: string;
+  completion: Completion;
+  linkedOnly: boolean;
+  /** Only this task's lineage (ancestors and descendants). */
+  around?: string | undefined;
+}
+
+/**
+ * The tasks the canvas shows. `open` hides done and cancelled tasks; `ready` also hides
+ * tasks still waiting on an open prerequisite.
+ */
+export function filterLineage(
+  all: Task[],
+  tasks: Record<string, Task>,
+  closed: Set<string>,
+  filter: LineageFilter,
+): Task[] {
+  const linked = new Set(
+    all.flatMap((task) =>
+      (task.dependency_ids ?? []).length ? [task.id, ...(task.dependency_ids ?? [])] : [],
+    ),
+  );
+  const around = filter.around && tasks[filter.around] ? lineageOf(all, filter.around) : null;
+  return all.filter(
+    (task) =>
+      (!around || around.has(task.id)) &&
+      (!filter.project || task.project_id === filter.project) &&
+      (!filter.tag || task.tag_ids.includes(filter.tag)) &&
+      (!filter.linkedOnly || linked.has(task.id)) &&
+      (filter.completion === "all" || !closed.has(task.id)) &&
+      (filter.completion !== "ready" || !openBlockers(task, tasks, closed).length),
+  );
 }

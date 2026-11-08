@@ -9,7 +9,7 @@
 //! freely, but of the user's tasks only the status, and only of the session's task and its
 //! subtasks. Notes and the session summary need a session.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
@@ -205,6 +205,11 @@ pub struct AddNote {
 pub struct CompleteSession {
     /// What was done, what is left, and anything the user must check. Markdown.
     pub summary: String,
+    /// Ids of the session task's subtasks you are deliberately leaving open (not finished,
+    /// or not yours to do); say why in the summary. Every other open subtask must be
+    /// marked done first.
+    #[serde(default)]
+    pub left_open: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------------------
@@ -403,15 +408,32 @@ impl TaskServer {
         let mut changes = Vec::new();
         if let Some(status) = &p.status {
             let id = resolve_status(&snapshot, status)?;
-            let closes = snapshot.statuses.iter().any(|s| {
-                s.id == id && matches!(s.category, StatusCategory::Done | StatusCategory::Cancelled)
-            });
-            if !own && closes {
-                return Err(format!(
-                    "the user closes their own tasks after reviewing them; call \
-                     complete_session when you are done, which moves this task to {}",
-                    self.done_status_name()
-                ));
+            let category = snapshot
+                .statuses
+                .iter()
+                .find(|s| s.id == id)
+                .map(|s| s.category);
+            // The user's subtasks of the session's task are steps of the work: the agent
+            // marks them done as it finishes them. The session's task itself goes to the
+            // user's review (complete_session), and cancelling stays the user's call.
+            let is_session_task = self.session.as_ref().is_some_and(|s| s.task_id == task.id);
+            match category {
+                Some(StatusCategory::Done) if !own && is_session_task => {
+                    return Err(format!(
+                        "the user closes this task after reviewing it; call complete_session \
+                         when you are done, which moves it to {}",
+                        self.done_status_name()
+                    ));
+                }
+                Some(StatusCategory::Cancelled) if !own => {
+                    return Err(format!(
+                        "only the user cancels their tasks; leave it open, list it in \
+                         complete_session's left_open and say why in the summary (the task \
+                         moves to {} for them)",
+                        self.done_status_name()
+                    ));
+                }
+                _ => {}
             }
             changes.push(TaskChange::StatusId(id));
         }
@@ -479,12 +501,46 @@ impl TaskServer {
         description = "Before you finish, record the session summary the user sees on the \
                        task: what was done, what is left, what to check. This reports the \
                        work done: the task moves to the status the user picked for agent \
-                       work done (Review by default) for them to check."
+                       work done (Review by default) for them to check. First mark every \
+                       subtask you finished done with update_task (the user's subtasks \
+                       too); list the ids of any you leave open in left_open, or this is \
+                       refused."
     )]
     pub fn complete_session(&self, Parameters(p): Parameters<CompleteSession>) -> ToolResult {
         let session = self.session()?;
         if p.summary.trim().is_empty() {
             return Err("the summary cannot be empty".into());
+        }
+        // The software rule for subtasks: none is left open by oversight. Each open one is
+        // either marked done first or named in left_open.
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let statuses = by_id(&snapshot.statuses);
+        let open = open_subtasks(&snapshot, &statuses, &session.task_id);
+        let unaccounted: Vec<&Task> = open
+            .iter()
+            .copied()
+            .filter(|t| !p.left_open.contains(&t.id))
+            .collect();
+        if !unaccounted.is_empty() {
+            let lines: Vec<String> = unaccounted
+                .iter()
+                .map(|t| task_line(&statuses, t))
+                .collect();
+            return Err(format!(
+                "these subtasks are still open:\n{}\nMark the ones you finished done with \
+                 update_task, then call complete_session again with the ids of the others \
+                 in left_open (and say in the summary why they are left).",
+                lines.join("\n")
+            ));
+        }
+        if let Some(stray) = p
+            .left_open
+            .iter()
+            .find(|id| !open.iter().any(|t| &t.id == *id))
+        {
+            return Err(format!(
+                "`{stray}` in left_open is not an open subtask of this session's task"
+            ));
         }
         // A headless run is ended by the app when Claude exits. Any other session (resumed
         // in a terminal, or still going after the app quit) ends here, or nothing would.
@@ -499,7 +555,6 @@ impl TaskServer {
         }];
         // The software rule (ADR 017): the user's task goes to the status picked for agent
         // work done, unless it is there already or the user closed it.
-        let snapshot = self.with_store(|s| s.snapshot())?;
         let target = self.workflow.done_status(&snapshot.statuses);
         let moved = snapshot
             .tasks
@@ -547,9 +602,11 @@ impl TaskServer {
             "task-master is the user's task manager. Use these tools to read task context \
              and to track your own progress: create agent tasks for the steps you plan, move \
              them to in_progress and done as you go, add short notes for findings and \
-             decisions, and call complete_session with a summary before you finish. The app \
-             then moves the task to {} for the user to check: never mark the user's task \
-             done yourself. Agent tasks are kept apart from the user's own; never try to \
+             decisions, and call complete_session with a summary before you finish. When \
+             you finish a subtask of the task (yours or the user's), mark it done right \
+             away; complete_session refuses while a subtask is open unless you list it in \
+             left_open. The app then moves the task to {} for the user to check: never \
+             mark the user's task done yourself. Agent tasks are kept apart from the user's own; never try to \
              change the user's other tasks.",
             self.done_status_name()
         );
@@ -580,6 +637,42 @@ impl ServerHandler for TaskServer {
 
 fn by_id(statuses: &[Status]) -> HashMap<&str, &Status> {
     statuses.iter().map(|s| (s.id.as_str(), s)).collect()
+}
+
+/// The open (not done or cancelled) subtasks of `root`, at any depth, the user's and the
+/// agents', in tree order.
+fn open_subtasks<'a>(
+    snapshot: &'a Snapshot,
+    statuses: &HashMap<&str, &Status>,
+    root: &str,
+) -> Vec<&'a Task> {
+    let mut children: HashMap<&str, Vec<&Task>> = HashMap::new();
+    for task in &snapshot.tasks {
+        if let Some(parent) = task.parent_id.as_deref()
+            && task.deleted_at.is_none()
+        {
+            children.entry(parent).or_default().push(task);
+        }
+    }
+    for list in children.values_mut() {
+        list.sort_by(|a, b| a.rank.cmp(&b.rank).then_with(|| a.id.cmp(&b.id)));
+    }
+    let mut open = Vec::new();
+    let mut seen = HashSet::new();
+    let mut stack: Vec<&Task> = children.get(root).cloned().unwrap_or_default();
+    stack.reverse();
+    while let Some(task) = stack.pop() {
+        if !seen.insert(task.id.as_str()) {
+            continue;
+        }
+        if !closed(statuses, task) {
+            open.push(task);
+        }
+        if let Some(kids) = children.get(task.id.as_str()) {
+            stack.extend(kids.iter().rev());
+        }
+    }
+    open
 }
 
 fn closed(statuses: &HashMap<&str, &Status>, task: &Task) -> bool {

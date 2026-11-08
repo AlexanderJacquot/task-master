@@ -30,6 +30,7 @@ import { ProjectMark } from "../organize/ProjectMark";
 import { useOpenTask } from "../shell/useOpenTask";
 import { ActivityFeed } from "./ActivityFeed";
 import { AttachmentList } from "./AttachmentList";
+import { DependencyList } from "./DependencyList";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { PropertyPills } from "./PropertyPills";
 import { SubtaskList } from "./SubtaskList";
@@ -326,6 +327,7 @@ export function TaskEditor({
       </section>
       {/* The page follows the mockup: subtasks right under the text, files after. */}
       {page ? [subtasks, attachmentList] : [attachmentList, subtasks]}
+      <DependencyList task={task} page={page} />
       <SessionsPanel task={task} page={page} />
       {page ? (
         <details className="pl-10">

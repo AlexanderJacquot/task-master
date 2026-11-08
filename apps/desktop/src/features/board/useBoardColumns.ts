@@ -46,6 +46,35 @@ export function loadColumnPrefs(): ColumnPrefs {
   }
 }
 
+/** The board's measured inner width and its columns, to size unsized columns to fit. */
+export interface ColumnFit {
+  /** Width available to the board's content, in px. */
+  available: number;
+  statusIds: string[];
+}
+
+/** Horizontal padding of the board (both sides) and the gap between columns. */
+const BOARD_PADDING = 56;
+const COLUMN_GAP = 14;
+
+/**
+ * Width for columns without a chosen width, so that they exactly fill the screen: what is
+ * left after the padding, gaps, collapsed strips and manually sized columns, shared equally.
+ * Never below the minimum width (then the board scrolls) nor above the maximum.
+ */
+export function fitWidth({ available, statusIds }: ColumnFit, prefs: ColumnPrefs): number {
+  let free = available - BOARD_PADDING - COLUMN_GAP * Math.max(0, statusIds.length - 1);
+  let auto = 0;
+  for (const id of statusIds) {
+    const pref = prefs[id];
+    if (pref?.collapsed) free -= COLLAPSED_WIDTH;
+    else if (pref?.width !== undefined) free -= pref.width;
+    else auto++;
+  }
+  if (auto === 0 || available <= 0) return COLUMN_WIDTH;
+  return clampWidth(Math.floor(free / auto));
+}
+
 export interface BoardColumns {
   isCollapsed(statusId: string): boolean;
   widthOf(statusId: string): number;
@@ -58,8 +87,9 @@ export interface BoardColumns {
  * Collapsed columns and column widths, by status. Remembered on this machine and shared by
  * every board (statuses are global), like the other layout conveniences in `localStorage`.
  */
-export function useBoardColumns(): BoardColumns {
+export function useBoardColumns(fit?: ColumnFit): BoardColumns {
   const [prefs, setPrefs] = useState(loadColumnPrefs);
+  const fillWidth = fit ? fitWidth(fit, prefs) : COLUMN_WIDTH;
 
   const patch = useCallback((statusId: string, change: ColumnPref) => {
     setPrefs((prev) => {
@@ -79,7 +109,7 @@ export function useBoardColumns(): BoardColumns {
 
   return {
     isCollapsed: (id) => prefs[id]?.collapsed === true,
-    widthOf: (id) => prefs[id]?.width ?? COLUMN_WIDTH,
+    widthOf: (id) => prefs[id]?.width ?? fillWidth,
     setCollapsed: (id, collapsed) => patch(id, { collapsed }),
     setWidth: (id, width) => patch(id, { width: width === null ? undefined : clampWidth(width) }),
   };

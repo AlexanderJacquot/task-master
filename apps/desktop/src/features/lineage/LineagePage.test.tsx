@@ -7,7 +7,7 @@ import type { Command, Task } from "../../lib/types";
 import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore } from "../../store/store";
-import { fakeParse, snapshot, task } from "../../test/fixtures";
+import { fakeParse, STATUS, snapshot, task } from "../../test/fixtures";
 import { pickOption } from "../../test/select";
 import { CANVAS_KEY, loadCanvas } from "./canvas";
 
@@ -16,7 +16,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-async function setup(tasks: Task[], fail = false) {
+async function setup(tasks: Task[], fail = false, path = "/lineage") {
   const commands: Command[][] = [];
   const api: Api = {
     snapshot: async () => snapshot({ tasks }),
@@ -49,12 +49,10 @@ async function setup(tasks: Task[], fail = false) {
   await store.getState().hydrate();
   render(
     <StoreProvider store={store} api={api}>
-      <RouterProvider
-        router={createAppRouter(createMemoryHistory({ initialEntries: ["/lineage"] }))}
-      />
+      <RouterProvider router={createAppRouter(createMemoryHistory({ initialEntries: [path] }))} />
     </StoreProvider>,
   );
-  await screen.findByRole("heading", { name: "Lineage" });
+  if (path.startsWith("/lineage")) await screen.findByRole("heading", { name: "Lineage" });
   return { store, commands };
 }
 
@@ -258,4 +256,100 @@ it("cancels connection mode and clears the inspector when a filter hides its tas
   expect(screen.queryByRole("complementary", { name: "Dependency editor" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Select Other work" })).toBeNull();
   expect(screen.getByRole("button", { name: "Select Build" })).toBeTruthy();
+});
+
+it("creates a linked task from a card's plus buttons and places it beside the card", async () => {
+  const a = task({ title: "Plan", project_id: null });
+  place([a]);
+  const { store, commands } = await setup([a]);
+  fireEvent.click(screen.getByRole("button", { name: "Add a task after Plan" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Title of the dependent task" }), {
+    target: { value: "Ship" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "+ Create “Ship”" }));
+  await waitFor(() => expect(store.getState().pending).toBe(0));
+  const ship = Object.values(store.getState().tasks).find((t) => t.title === "Ship");
+  expect(ship?.dependency_ids).toEqual([a.id]);
+  expect(commands[0]?.map((c) => c.type)).toEqual(["create_task", "update_task"]);
+  await waitFor(() => expect(loadCanvas().positions[ship?.id ?? ""]?.x).toBeGreaterThan(100));
+  expect(loadCanvas().positions[ship?.id ?? ""]?.y).toBe(100);
+
+  fireEvent.click(screen.getByRole("button", { name: "Add a task before Plan" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Title of the prerequisite" }), {
+    target: { value: "Research" },
+  });
+  fireEvent.submit(screen.getByRole("form", { name: "New task before Plan" }));
+  await waitFor(() => expect(store.getState().pending).toBe(0));
+  const research = Object.values(store.getState().tasks).find((t) => t.title === "Research");
+  expect(store.getState().tasks[a.id]?.dependency_ids).toEqual([research?.id]);
+  expect(commands[1]?.[1]).toMatchObject({ type: "update_task", id: a.id });
+});
+
+it("links an existing task from a plus button", async () => {
+  const a = task({ title: "Plan" });
+  const b = task({ title: "Build" });
+  place([a, b]);
+  const { store } = await setup([a, b]);
+  fireEvent.click(screen.getByRole("button", { name: "Add a task before Build" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Title of the prerequisite" }), {
+    target: { value: "pla" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Link “Plan”" }));
+  await waitFor(() => expect(store.getState().tasks[b.id]?.dependency_ids).toEqual([a.id]));
+});
+
+it("fades done tasks and filters by completion and readiness", async () => {
+  const a = task({ title: "Plan", status_id: STATUS.done });
+  const b = task({ title: "Build", dependency_ids: [a.id] });
+  const c = task({ title: "Ship", dependency_ids: [b.id] });
+  place([a, b, c]);
+  await setup([a, b, c]);
+  const node = (title: string) =>
+    screen.queryByRole("button", { name: `Select ${title}` })?.parentElement ?? null;
+  expect(node("Plan")?.dataset.closed).toBe("true");
+  expect(node("Plan")?.className).toContain("opacity-45");
+  expect(node("Build")?.dataset.closed).toBeUndefined();
+  expect(
+    document
+      .querySelector(`[data-lineage-edge="${a.id}:${b.id}"]`)
+      ?.getAttribute("stroke-dasharray"),
+  ).toBe("5 5");
+  expect(node("Ship")?.textContent).toContain("Blocked · 1");
+  expect(node("Build")?.textContent).not.toContain("Blocked");
+  await pickOption("Filter lineage by completion", "Open only");
+  expect(node("Plan")).toBeNull();
+  expect(node("Ship")).toBeTruthy();
+  await pickOption("Filter lineage by completion", "Ready (not blocked)");
+  expect(node("Build")).toBeTruthy();
+  expect(node("Ship")).toBeNull();
+});
+
+it("opens on one task's lineage and goes back to every task", async () => {
+  const a = task({ title: "Plan" });
+  const b = task({ title: "Build", dependency_ids: [a.id] });
+  const c = task({ title: "Elsewhere" });
+  place([a, b, c]);
+  await setup([a, b, c], false, `/lineage?around=${b.id}`);
+  expect(screen.getByText("Lineage of “Build”")).toBeTruthy();
+  expect(screen.getByRole("complementary", { name: "Dependency editor" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Select Elsewhere" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Select Plan" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Show all tasks" }));
+  expect(await screen.findByRole("button", { name: "Select Elsewhere" })).toBeTruthy();
+});
+
+it("shows what blocks a task on its page and opens Lineage on it", async () => {
+  const a = task({ title: "Plan" });
+  const d = task({ title: "Draft", status_id: STATUS.done });
+  const b = task({ title: "Build", dependency_ids: [a.id, d.id] });
+  const c = task({ title: "Ship", dependency_ids: [b.id] });
+  await setup([a, b, c, d], false, `/task/${b.id}`);
+  const section = await screen.findByRole("region", { name: "Lineage" });
+  expect(section.textContent).toContain("Blocked by 1 open task");
+  expect(within(section).getByRole("list", { name: "Prerequisites" }).textContent).toContain(
+    "Draft",
+  );
+  expect(within(section).getByRole("list", { name: "Dependents" }).textContent).toContain("Ship");
+  fireEvent.click(within(section).getByRole("button", { name: /Plan in Lineage/ }));
+  expect(await screen.findByText("Lineage of “Build”")).toBeTruthy();
 });

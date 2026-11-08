@@ -61,6 +61,8 @@ export interface WithTask {
   upsert?: { tags?: Tag[]; projects?: Project[]; epics?: Epic[] };
   /** Also puts the new task on the calendar (same batch, so one undo removes both). */
   schedule?: { start_at: number; end_at: number };
+  /** Links the new task to an existing one in the same batch (Lineage's plus buttons). */
+  link?: { prerequisiteOf: string } | { dependentOf: string };
 }
 
 export async function createTask(
@@ -100,7 +102,7 @@ export async function createTask(
     today_on: input.today_on ?? null,
     estimate_min: null,
     rank,
-    dependency_ids: [],
+    dependency_ids: extra.link && "dependentOf" in extra.link ? [extra.link.dependentOf] : [],
     tag_ids: [...new Set(input.tag_ids ?? [])].sort(),
     created_at: now,
     updated_at: now,
@@ -120,6 +122,16 @@ export async function createTask(
           deleted_at: null,
         }
       : null;
+  const linked =
+    extra.link && "prerequisiteOf" in extra.link ? s.tasks[extra.link.prerequisiteOf] : undefined;
+  const linkChanges: TaskChange[] = linked
+    ? [{ dependency_ids: [...(linked.dependency_ids ?? []), id] }]
+    : [];
+  const linkCommands: Command[] = linked
+    ? [{ type: "update_task", id: linked.id, changes: linkChanges }]
+    : task.dependency_ids.length
+      ? [{ type: "update_task", id, changes: [{ dependency_ids: task.dependency_ids }] }]
+      : [];
   const changes = await store.getState().mutate(
     [
       ...(extra.before ?? []),
@@ -153,8 +165,15 @@ export async function createTask(
             },
           ]
         : []),
+      ...linkCommands,
     ],
-    { upsert: { ...extra.upsert, tasks: [task], ...(block && { time_blocks: [block] }) } },
+    {
+      upsert: {
+        ...extra.upsert,
+        tasks: [task, ...(linked ? [applyTaskChanges(linked, linkChanges, s.statuses, now)] : [])],
+        ...(block && { time_blocks: [block] }),
+      },
+    },
   );
   return changes ? id : null;
 }

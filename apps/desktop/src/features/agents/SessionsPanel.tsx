@@ -149,7 +149,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           disabled={!!busy}
           onClick={() => void act("terminal", () => api.openTerminal(session.id))}
         >
-          <SquareTerminal size={15} />
+          <SquareTerminal size={19} />
         </IconButton>
         {session.state === "interrupted" && (
           <Button

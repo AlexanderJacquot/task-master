@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   clampWidth,
+  fitWidth,
   lanesFor,
   loadColumnPrefs,
   MAX_COLUMN_WIDTH,
@@ -9,6 +10,20 @@ import {
 } from "./useBoardColumns";
 
 afterEach(() => localStorage.clear());
+
+describe("fitWidth", () => {
+  const ids = ["a", "b", "c", "d"];
+  it("shares the free width between unsized columns", () => {
+    expect(fitWidth({ available: 1400, statusIds: ids }, {})).toBe(325);
+  });
+  it("leaves out collapsed strips and manually sized columns", () => {
+    const prefs = { a: { collapsed: true }, b: { width: 300 } };
+    expect(fitWidth({ available: 1400, statusIds: ids }, prefs)).toBe(479);
+  });
+  it("never goes under the minimum width", () => {
+    expect(fitWidth({ available: 600, statusIds: ids }, {})).toBe(MIN_COLUMN_WIDTH);
+  });
+});
 
 describe("board column prefs", () => {
   it("lays cards side by side as a column widens", () => {

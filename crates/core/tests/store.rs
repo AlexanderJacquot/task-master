@@ -1603,3 +1603,28 @@ fn dependency_batch_rejects_cycles_atomically() {
     assert!(task(&s, &a.id).dependency_ids.is_empty());
     assert!(task(&s, &b.id).dependency_ids.is_empty());
 }
+
+/// Lineage's plus buttons create a task and link it in one batch (one undo removes both).
+#[test]
+fn create_and_link_a_task_in_one_batch() {
+    let mut s = store();
+    let a = add_task(&mut s, new_task("Plan"));
+    let id = "01a1bb90-0000-7000-8000-00000000abcd".to_string();
+    s.execute_all(vec![
+        Command::CreateTask {
+            task: NewTask {
+                id: Some(id.clone()),
+                ..new_task("Research")
+            },
+        },
+        Command::UpdateTask {
+            id: a.id.clone(),
+            changes: vec![TaskChange::DependencyIds(vec![id.clone()])],
+        },
+    ])
+    .unwrap();
+    assert_eq!(task(&s, &a.id).dependency_ids, vec![id.clone()]);
+    s.undo().unwrap();
+    assert!(task(&s, &a.id).dependency_ids.is_empty());
+    assert!(s.snapshot().unwrap().tasks.iter().all(|t| t.id != id));
+}

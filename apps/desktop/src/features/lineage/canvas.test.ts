@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { fitCamera, MAX_ZOOM, MIN_ZOOM, worldPoint, zoomAt } from "./canvas";
+import { fitCamera, freeSlot, MAX_ZOOM, MIN_ZOOM, worldPoint, zoomAt } from "./canvas";
 import { NODE_HEIGHT, NODE_WIDTH } from "./graph";
 
 it("keeps the canvas point under the cursor fixed while zooming and clamps zoom", () => {
@@ -28,4 +28,15 @@ it("fits freely placed cards, including negative coordinates, inside the viewpor
     expect((point.x + NODE_WIDTH) * camera.zoom + camera.x).toBeLessThanOrEqual(1150);
     expect((point.y + NODE_HEIGHT) * camera.zoom + camera.y).toBeLessThanOrEqual(820);
   }
+});
+
+it("places a new linked card beside its origin without covering another card", () => {
+  const origin = { x: 0, y: 0 };
+  const right = freeSlot(origin, "out", [origin]);
+  expect(right.x).toBeGreaterThan(NODE_WIDTH);
+  expect(right.y).toBe(0);
+  const below = freeSlot(origin, "out", [origin, right]);
+  expect(below.x).toBe(right.x);
+  expect(below.y).toBeGreaterThanOrEqual(NODE_HEIGHT);
+  expect(freeSlot(origin, "in", [origin]).x).toBeLessThan(-NODE_WIDTH);
 });

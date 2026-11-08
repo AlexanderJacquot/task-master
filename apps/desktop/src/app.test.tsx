@@ -265,15 +265,17 @@ describe("the board", () => {
     const todo = await openBoard();
     expect(todo.dataset.lanes).toBe("1");
     const handle = screen.getByRole("separator", { name: "Resize To do" });
-    expect(handle.getAttribute("aria-valuenow")).toBe("280");
+    // The columns fit the test viewport until a width is chosen by hand.
+    const initialWidth = Number(handle.getAttribute("aria-valuenow"));
+    expect(initialWidth).toBe(224);
     fireEvent.keyDown(handle, { key: "ArrowRight", shiftKey: true });
-    expect(handle.getAttribute("aria-valuenow")).toBe("344");
+    expect(handle.getAttribute("aria-valuenow")).toBe(String(initialWidth + 64));
     fireEvent.keyDown(handle, { key: "End" });
     expect(screen.getByRole("list", { name: "To do" }).dataset.lanes).toBe("3");
     expect(within(todo).getByRole("button", { name: "Renew passport" })).toBeTruthy();
     expect(localStorage.getItem("task-master.board.columns")).toContain('"width":960');
     fireEvent.doubleClick(handle);
-    expect(handle.getAttribute("aria-valuenow")).toBe("280");
+    expect(handle.getAttribute("aria-valuenow")).toBe(String(initialWidth));
     expect(localStorage.getItem("task-master.board.columns")).toBe("{}");
   });
 });

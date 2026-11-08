@@ -1,4 +1,4 @@
-import { NODE_HEIGHT, NODE_WIDTH } from "./graph";
+import { COLUMN_GAP, NODE_HEIGHT, NODE_WIDTH, ROW_GAP } from "./graph";
 
 export interface Point {
   x: number;
@@ -47,6 +47,27 @@ export function fitCamera(points: Point[], width: number, height: number): Camer
     y: (height - (bottom - top) * zoom) / 2 - top * zoom,
     zoom,
   };
+}
+
+/**
+ * Where a task created from a card's plus button goes: one column to the side
+ * (right for a dependent, left for a prerequisite), in the first row no card covers.
+ */
+export function freeSlot(origin: Point, side: Connector["side"], taken: Point[]): Point {
+  const x = origin.x + (side === "out" ? 1 : -1) * (NODE_WIDTH + COLUMN_GAP);
+  const overlaps = (y: number) =>
+    taken.some(
+      (p) => Math.abs(p.x - x) < NODE_WIDTH + COLUMN_GAP / 2 && Math.abs(p.y - y) < NODE_HEIGHT,
+    );
+  for (let row = 0; row < 200; row++) {
+    // Search downward and upward from the card's own row, nearest first.
+    for (const y of [
+      origin.y + row * (NODE_HEIGHT + ROW_GAP),
+      origin.y - row * (NODE_HEIGHT + ROW_GAP),
+    ])
+      if (!overlaps(y)) return { x, y };
+  }
+  return { x, y: origin.y };
 }
 
 export function connectorPoint(position: Point, side: Connector["side"]): Point {

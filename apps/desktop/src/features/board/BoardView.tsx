@@ -94,7 +94,11 @@ function sameOrder(a: string[] | undefined, b: string[] | undefined): boolean {
  */
 export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   const store = useTaskStore();
-  const columns = useBoardColumns();
+  const [available, setAvailable] = useState(0);
+  const columns = useBoardColumns({
+    available,
+    statusIds: board.columns.map((c) => c.status.id),
+  });
   const [overlayWidth, setOverlayWidth] = useState<number | null>(null);
   const cards = useMemo(() => {
     const map = new Map<string, Card>();
@@ -265,6 +269,17 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   const active = activeId ? cards.get(activeId) : undefined;
   const lanes = board.lanes.length > 1 || board.lanes[0]?.key !== "all";
   const panRef = useMiddleDragPan<HTMLDivElement>();
+  // Columns without a chosen width share the board's width, so nothing scrolls sideways.
+  useEffect(() => {
+    const el = panRef.current;
+    if (!el) return;
+    const measure = () => setAvailable(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [panRef]);
 
   return (
     <DndContext

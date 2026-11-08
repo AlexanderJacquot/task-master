@@ -427,7 +427,7 @@ function ProjectRow({
       <IconButton
         label={`Add task to ${project.name}`}
         onClick={() => shell.openNewTask({ project_id: project.id })}
-        className="size-6 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+        className="size-6 w-0 shrink-0 overflow-hidden opacity-0 group-hover:w-6 group-hover:opacity-100 focus-visible:w-6 focus-visible:opacity-100"
       >
         <Plus size={14} />
       </IconButton>

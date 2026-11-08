@@ -87,12 +87,12 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Fixes heavy lag in the parchment theme on the Linux AppImage while dragging tasks or typing, and redraws the parchment as a pre-rendered calfskin texture.
-            New in Settings → Appearance: optional parchment weathering (burnt edges, coffee rings, water damage, a four-way fold).
+            Plan tasks in the expanded Lineage view: filter by tag or readiness, add linked tasks from cards, and focus on one task's dependencies. Boards now fit their columns to the window.
+            Agent sessions keep subtasks up to date, follow the chosen status workflow, and continue in an interactive terminal with their model and permission settings. This release also adds engraved project icons and a Linux title bar.
 
-            No database changes (schema 11): 0.7.0 and 0.7.1 desktops and servers sync with each other. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.7.1.
+            Database schema 12: upgrade the desktop and sync server together. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.8.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.7.1/docs/releases/0.7.1.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.8.0/docs/releases/0.8.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

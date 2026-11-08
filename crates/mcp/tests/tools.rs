@@ -283,12 +283,26 @@ async fn the_users_tasks_are_mostly_off_limits() {
         json!({ "task_id": sub, "status": "in_progress" }),
     )
     .await;
-    // Closing them is the user's call, after review.
+    // A finished step of the work is marked done; cancelling is the user's call.
+    let message = refused(
+        &client,
+        "update_task",
+        json!({ "task_id": sub, "status": "Cancelled" }),
+    )
+    .await;
+    assert!(message.contains("only the user cancels"), "{message}");
+    ok(
+        &client,
+        "update_task",
+        json!({ "task_id": sub, "status": "done" }),
+    )
+    .await;
+    // The session's task itself waits for the user's review.
     for status in ["done", "Cancelled"] {
         let message = refused(
             &client,
             "update_task",
-            json!({ "task_id": sub, "status": status }),
+            json!({ "task_id": task, "status": status }),
         )
         .await;
         assert!(message.contains("Review"), "{message}");
@@ -333,7 +347,7 @@ async fn the_users_tasks_are_mostly_off_limits() {
     let snapshot = server_snapshot(&server);
     let find = |id: &str| snapshot.tasks.iter().find(|t| t.id == id).unwrap().clone();
     assert_eq!(find(&task).status_id, IN_PROGRESS);
-    assert_eq!(find(&sub).status_id, IN_PROGRESS, "not closed by the agent");
+    assert_eq!(find(&sub).status_id, DONE, "a finished subtask");
     assert_eq!(
         find(&other).status_id,
         "00000000-0000-7000-8000-000000000002"
@@ -373,6 +387,91 @@ async fn notes_and_the_summary_land_on_the_session() {
     assert_eq!(notes[0].body, "Found the bug in sync.rs");
     assert_eq!(stored.summary.as_deref(), Some("Fixed and tested."));
     assert_eq!(stored.state, SessionState::Running, "the shell ends it");
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn completing_needs_every_subtask_done_or_left_open_on_purpose() {
+    let mut f = fixture();
+    let task = f.task.clone();
+    // The user's subtask, with a nested one of its own.
+    let users = f
+        .store
+        .execute(Command::CreateTask {
+            task: NewTask {
+                title: "Write the docs".into(),
+                parent_id: Some(task.clone()),
+                ..NewTask::default()
+            },
+        })
+        .unwrap()
+        .tasks
+        .remove(0)
+        .id;
+    let nested = f
+        .store
+        .execute(Command::CreateTask {
+            task: NewTask {
+                title: "Screenshot".into(),
+                parent_id: Some(users.clone()),
+                ..NewTask::default()
+            },
+        })
+        .unwrap()
+        .tasks
+        .remove(0)
+        .id;
+    let session = f.session.clone();
+    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    let client = connect(server.clone()).await;
+    let step = id_in(&ok(&client, "create_task", json!({ "title": "Implement" })).await);
+
+    // All three are open: refused, and each is named.
+    let message = refused(
+        &client,
+        "complete_session",
+        json!({ "summary": "Implemented." }),
+    )
+    .await;
+    for id in [&users, &nested, &step] {
+        assert!(message.contains(id.as_str()), "{message}");
+    }
+    assert!(message.contains("left_open"), "{message}");
+
+    // The agent's step and the user's nested one are done; the docs are left on purpose.
+    for id in [&step, &nested] {
+        ok(
+            &client,
+            "update_task",
+            json!({ "task_id": id, "status": "done" }),
+        )
+        .await;
+    }
+    let message = refused(
+        &client,
+        "complete_session",
+        json!({ "summary": "Implemented.", "left_open": [users, step] }),
+    )
+    .await;
+    assert!(message.contains("not an open subtask"), "{message}");
+    let reply = ok(
+        &client,
+        "complete_session",
+        json!({ "summary": "Implemented; docs left for you.", "left_open": [users] }),
+    )
+    .await;
+    assert!(reply.contains("moved to Review"), "{reply}");
+    client.cancel().await.unwrap();
+
+    let (snapshot, stored) =
+        with_store(&server, |s| Ok((s.snapshot()?, s.agent_session(&session)?)));
+    let find = |id: &str| snapshot.tasks.iter().find(|t| t.id == id).unwrap().clone();
+    assert_eq!(find(&nested).status_id, DONE);
+    assert_ne!(find(&users).status_id, DONE);
+    assert_eq!(find(&task).status_id, REVIEW_STATUS_ID);
+    assert_eq!(
+        stored.summary.as_deref(),
+        Some("Implemented; docs left for you.")
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
