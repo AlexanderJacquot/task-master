@@ -107,7 +107,7 @@ function SidebarResizer() {
         applySidebarWidth(null);
         localStorage.removeItem(SIDEBAR_W_KEY);
       }}
-      className="absolute inset-y-0 right-0 z-20 w-1.5 cursor-col-resize hover:bg-accent/30"
+      className="absolute inset-y-0 right-0 z-20 m-0 h-full w-1.5 cursor-col-resize border-0 hover:bg-accent/30"
     />
   );
 }
@@ -618,280 +618,284 @@ export function Sidebar({
   }
 
   return (
-    <nav
-      aria-label="Sidebar"
-      style={{ width: SIDEBAR_WIDTH.open }}
-      className="tex-sidebar @container/sidebar relative flex shrink-0 flex-col overflow-y-auto border-r border-line bg-sidebar px-3 pt-4 pb-3"
-    >
-      <SidebarResizer />
-      <div className="flex items-center gap-2 px-2 pb-3">
-        <img
-          src={appIcon}
-          width={30}
-          height={30}
-          alt=""
-          className="hidden shrink-0 @[216px]/sidebar:block"
-        />
-        <span className="min-w-0 flex-1 truncate font-display text-[21px] tracking-wide text-accent">
-          Task Master
-        </span>
-        <IconButton label="Collapse sidebar" onClick={onToggleCollapsed}>
-          <PanelLeftClose size={16} />
-        </IconButton>
-      </div>
-      <div className="flex gap-1.5 px-0.5 pb-4">
-        <button
-          type="button"
-          onClick={() => shell.openNewTask()}
-          title={withKeys(keymap, "newTask", "New task")}
-          className={cx(
-            "flex h-9 flex-1 items-center justify-center gap-2 rounded-[10px] bg-accent font-display text-[15px] tracking-wide text-accent-ink shadow-sm transition-colors hover:bg-accent-hover",
-            FOCUS,
-          )}
-        >
-          <Plus size={16} />
-          New task
-        </button>
-        <button
-          type="button"
-          aria-label="Jump to"
-          title={withKeys(keymap, "palette", "Jump to…")}
-          onClick={shell.openPalette}
-          className={cx(
-            "flex size-9 items-center justify-center rounded-[10px] border border-line-strong text-ink-2 transition-colors hover:bg-hover hover:text-ink",
-            FOCUS,
-          )}
-        >
-          <Search size={26} />
-        </button>
-      </div>
-
-      <div className="flex flex-col gap-px">
-        <NavItem
-          to="/inbox"
-          count={counts.inbox}
-          icon={<Inbox size={17} className="shrink-0 text-sky-700 dark:text-sky-300" />}
-        >
-          Inbox
-        </NavItem>
-        <NavItem
-          to="/today"
-          count={counts.today}
-          icon={<Sun size={17} className="shrink-0 text-amber-700 dark:text-amber-300" />}
-        >
-          Today
-        </NavItem>
-        <NavItem to="/calendar" icon={<CalendarDays size={17} className="shrink-0 text-rubric" />}>
-          Calendar
-        </NavItem>
-        <NavItem to="/all" icon={<Layers size={17} className="shrink-0" />}>
-          All tasks
-        </NavItem>
-        <NavItem
-          to="/lineage"
-          icon={<GitBranch size={17} className="shrink-0 text-green-700 dark:text-green-300" />}
-        >
-          Lineage
-        </NavItem>
-        <NavItem
-          to="/agents"
-          count={runningAgents || undefined}
-          title={runningAgents ? `${runningAgents} active` : undefined}
-          icon={<Bot size={17} className={cx("shrink-0", runningAgents > 0 && "text-accent")} />}
-        >
-          Agents
-        </NavItem>
-        <NavItem
-          to="/metrics"
-          icon={
-            <ChartNoAxesCombined
-              size={17}
-              className="shrink-0 text-purple-700 dark:text-purple-300"
-            />
-          }
-        >
-          Metrics
-        </NavItem>
-      </div>
-
-      <section className="mt-5">
-        <div className="group/section flex items-center justify-between px-2.5 pb-1.5">
-          <span className="flex items-center gap-2 font-display text-[14px] tracking-wide text-rubric">
-            <ProjectsIcon size={16} />
-            Projects
+    <div className="relative flex shrink-0" style={{ width: SIDEBAR_WIDTH.open }}>
+      <nav
+        aria-label="Sidebar"
+        className="tex-sidebar @container/sidebar relative flex h-full min-w-0 flex-1 flex-col overflow-y-auto border-r border-line bg-sidebar px-3 pt-4 pb-3"
+      >
+        <div className="flex items-center gap-2 px-2 pb-3">
+          <img
+            src={appIcon}
+            width={30}
+            height={30}
+            alt=""
+            className="hidden shrink-0 @[216px]/sidebar:block"
+          />
+          <span className="min-w-0 flex-1 truncate font-display text-[21px] tracking-wide text-accent">
+            Task Master
           </span>
-          <IconButton label="New project" onClick={() => setAdding("project")} className="size-6">
-            <Plus size={14} />
+          <IconButton label="Collapse sidebar" onClick={onToggleCollapsed}>
+            <PanelLeftClose size={16} />
           </IconButton>
         </div>
+        <div className="flex gap-1.5 px-0.5 pb-4">
+          <button
+            type="button"
+            onClick={() => shell.openNewTask()}
+            title={withKeys(keymap, "newTask", "New task")}
+            className={cx(
+              "flex h-9 flex-1 items-center justify-center gap-2 rounded-[10px] bg-accent font-display text-[15px] tracking-wide text-accent-ink shadow-sm transition-colors hover:bg-accent-hover",
+              FOCUS,
+            )}
+          >
+            <Plus size={16} />
+            New task
+          </button>
+          <button
+            type="button"
+            aria-label="Jump to"
+            title={withKeys(keymap, "palette", "Jump to…")}
+            onClick={shell.openPalette}
+            className={cx(
+              "flex size-9 items-center justify-center rounded-[10px] border border-line-strong text-ink-2 transition-colors hover:bg-hover hover:text-ink",
+              FOCUS,
+            )}
+          >
+            <Search size={26} />
+          </button>
+        </div>
+
         <div className="flex flex-col gap-px">
-          <ProjectTree
-            nodes={areas}
-            renderProject={(p, children) => (
-              <ProjectRow
-                project={p}
-                count={projectCount(p.id, children)}
-                shortcut={shortcutOf(p.id)}
+          <NavItem
+            to="/inbox"
+            count={counts.inbox}
+            icon={<Inbox size={17} className="shrink-0 text-sky-700 dark:text-sky-300" />}
+          >
+            Inbox
+          </NavItem>
+          <NavItem
+            to="/today"
+            count={counts.today}
+            icon={<Sun size={17} className="shrink-0 text-amber-700 dark:text-amber-300" />}
+          >
+            Today
+          </NavItem>
+          <NavItem
+            to="/calendar"
+            icon={<CalendarDays size={17} className="shrink-0 text-rubric" />}
+          >
+            Calendar
+          </NavItem>
+          <NavItem to="/all" icon={<Layers size={17} className="shrink-0" />}>
+            All tasks
+          </NavItem>
+          <NavItem
+            to="/lineage"
+            icon={<GitBranch size={17} className="shrink-0 text-green-700 dark:text-green-300" />}
+          >
+            Lineage
+          </NavItem>
+          <NavItem
+            to="/agents"
+            count={runningAgents || undefined}
+            title={runningAgents ? `${runningAgents} active` : undefined}
+            icon={<Bot size={17} className={cx("shrink-0", runningAgents > 0 && "text-accent")} />}
+          >
+            Agents
+          </NavItem>
+          <NavItem
+            to="/metrics"
+            icon={
+              <ChartNoAxesCombined
+                size={17}
+                className="shrink-0 text-purple-700 dark:text-purple-300"
+              />
+            }
+          >
+            Metrics
+          </NavItem>
+        </div>
+
+        <section className="mt-5">
+          <div className="group/section flex items-center justify-between px-2.5 pb-1.5">
+            <span className="flex items-center gap-2 font-display text-[14px] tracking-wide text-rubric">
+              <ProjectsIcon size={16} />
+              Projects
+            </span>
+            <IconButton label="New project" onClick={() => setAdding("project")} className="size-6">
+              <Plus size={14} />
+            </IconButton>
+          </div>
+          <div className="flex flex-col gap-px">
+            <ProjectTree
+              nodes={areas}
+              renderProject={(p, children) => (
+                <ProjectRow
+                  project={p}
+                  count={projectCount(p.id, children)}
+                  shortcut={shortcutOf(p.id)}
+                />
+              )}
+            />
+            {adding === "project" && (
+              <InlineInput
+                initial=""
+                placeholder="Project name"
+                autoFocus
+                onCommit={(name) => {
+                  setAdding(null);
+                  void createProject(store, name);
+                }}
+                onCancel={() => setAdding(null)}
+                className="mt-1"
               />
             )}
-          />
-          {adding === "project" && (
-            <InlineInput
-              initial=""
-              placeholder="Project name"
-              autoFocus
-              onCommit={(name) => {
-                setAdding(null);
-                void createProject(store, name);
-              }}
-              onCancel={() => setAdding(null)}
-              className="mt-1"
-            />
-          )}
-          {!areas.length && adding !== "project" && (
-            <button
-              type="button"
-              onClick={() => setAdding("project")}
-              className="rounded-lg px-2.5 py-1 text-left text-[13px] text-ink-3 hover:bg-hover"
-            >
-              Create your first project
-            </button>
-          )}
-          {archived.length > 0 && (
-            <>
+            {!areas.length && adding !== "project" && (
               <button
                 type="button"
-                aria-expanded={showArchived}
-                onClick={() => setShowArchived((v) => !v)}
-                className="mt-1 flex items-center gap-1.5 px-2.5 py-0.5 text-left text-[12.5px] text-ink-3 hover:text-ink"
+                onClick={() => setAdding("project")}
+                className="rounded-lg px-2.5 py-1 text-left text-[13px] text-ink-3 hover:bg-hover"
               >
-                {showArchived ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                Archived ({archived.length})
+                Create your first project
               </button>
-              {showArchived &&
-                archived.map((p) => <ProjectRow key={p.id} project={p} count={0} muted />)}
-            </>
-          )}
-        </div>
-      </section>
+            )}
+            {archived.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  aria-expanded={showArchived}
+                  onClick={() => setShowArchived((v) => !v)}
+                  className="mt-1 flex items-center gap-1.5 px-2.5 py-0.5 text-left text-[12.5px] text-ink-3 hover:text-ink"
+                >
+                  {showArchived ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                  Archived ({archived.length})
+                </button>
+                {showArchived &&
+                  archived.map((p) => <ProjectRow key={p.id} project={p} count={0} muted />)}
+              </>
+            )}
+          </div>
+        </section>
 
-      <div className="mx-2 mt-4 mb-2 h-px bg-line" />
+        <div className="mx-2 mt-4 mb-2 h-px bg-line" />
 
-      <Collapsible
-        id="epics"
-        title="Epics"
-        icon={<CrownIcon size={16} className="shrink-0" />}
-        count={epicList.length}
-        onAdd={() => setAdding("epic")}
-        defaultOpen={false}
-      >
-        {epicList.map((epic) => {
-          const progress = counts.perEpic.get(epic.id) ?? { done: 0, total: 0 };
-          return (
+        <Collapsible
+          id="epics"
+          title="Epics"
+          icon={<CrownIcon size={16} className="shrink-0" />}
+          count={epicList.length}
+          onAdd={() => setAdding("epic")}
+          defaultOpen={false}
+        >
+          {epicList.map((epic) => {
+            const progress = counts.perEpic.get(epic.id) ?? { done: 0, total: 0 };
+            return (
+              <NavItem
+                key={epic.id}
+                to="/epic/$epicId"
+                params={{ epicId: epic.id }}
+                icon={<EpicMark epic={epic} />}
+                title={`${progress.done} of ${progress.total} done`}
+              >
+                <span className="flex items-center gap-2">
+                  <span className="truncate">{epic.name}</span>
+                  <span className="h-1 w-10 shrink-0 overflow-hidden rounded-full bg-line-strong">
+                    <span
+                      className="block h-full bg-green-700 dark:bg-green-500"
+                      style={{
+                        width: progress.total ? `${(100 * progress.done) / progress.total}%` : 0,
+                      }}
+                    />
+                  </span>
+                </span>
+              </NavItem>
+            );
+          })}
+          {finishedEpics.map((epic) => (
             <NavItem
               key={epic.id}
               to="/epic/$epicId"
               params={{ epicId: epic.id }}
               icon={<EpicMark epic={epic} />}
-              title={`${progress.done} of ${progress.total} done`}
             >
-              <span className="flex items-center gap-2">
-                <span className="truncate">{epic.name}</span>
-                <span className="h-1 w-10 shrink-0 overflow-hidden rounded-full bg-line-strong">
-                  <span
-                    className="block h-full bg-green-700 dark:bg-green-500"
-                    style={{
-                      width: progress.total ? `${(100 * progress.done) / progress.total}%` : 0,
-                    }}
-                  />
-                </span>
+              <span className="text-ink-3">
+                {epic.name} · {epic.state}
               </span>
             </NavItem>
-          );
-        })}
-        {finishedEpics.map((epic) => (
-          <NavItem
-            key={epic.id}
-            to="/epic/$epicId"
-            params={{ epicId: epic.id }}
-            icon={<EpicMark epic={epic} />}
-          >
-            <span className="text-ink-3">
-              {epic.name} · {epic.state}
-            </span>
-          </NavItem>
-        ))}
-        {!epicList.length && !finishedEpics.length && (
-          <p className="px-2.5 py-1 text-[12.5px] text-ink-3">No epics yet</p>
+          ))}
+          {!epicList.length && !finishedEpics.length && (
+            <p className="px-2.5 py-1 text-[12.5px] text-ink-3">No epics yet</p>
+          )}
+        </Collapsible>
+        {adding === "epic" && (
+          <InlineInput
+            initial=""
+            placeholder="Epic name"
+            autoFocus
+            onCommit={(name) => {
+              setAdding(null);
+              void createEpic(store, name);
+            }}
+            onCancel={() => setAdding(null)}
+            className="mt-1"
+          />
         )}
-      </Collapsible>
-      {adding === "epic" && (
-        <InlineInput
-          initial=""
-          placeholder="Epic name"
-          autoFocus
-          onCommit={(name) => {
-            setAdding(null);
-            void createEpic(store, name);
-          }}
-          onCancel={() => setAdding(null)}
-          className="mt-1"
-        />
-      )}
 
-      <Collapsible
-        id="views"
-        title="Saved views"
-        icon={<Bookmark size={16} className="shrink-0" />}
-        count={viewList.length}
-      >
-        {viewList.map((view) => (
-          <NavItem
-            key={view.id}
-            to="/view/$viewId"
-            params={{ viewId: view.id }}
-            icon={<Bookmark size={14} className="shrink-0" />}
-          >
-            {view.name}
-          </NavItem>
-        ))}
-        {viewList.length === 0 && (
-          <p className="px-2.5 py-1 text-[12.5px] text-ink-3">
-            Use "Save as view" in any view's Display menu
-          </p>
-        )}
-      </Collapsible>
-
-      <Collapsible
-        id="tags"
-        title="Tags"
-        icon={<TagIcon size={16} className="shrink-0" />}
-        count={tagList.length}
-      >
-        {tagList.map((tag) => (
-          <TagRow key={tag.id} tag={tag} count={counts.perTag.get(tag.id)} />
-        ))}
-        {tagList.length === 0 && (
-          <p className="px-2.5 py-1 text-[12.5px] text-ink-3">Type #tag when adding a task</p>
-        )}
-      </Collapsible>
-
-      <div className="mt-auto flex flex-col gap-1 pt-4">
-        <UpdatePill />
-        <div className="flex items-stretch gap-1">
-          <div className="flex min-w-0 flex-1 flex-col [&>a]:flex-1">
+        <Collapsible
+          id="views"
+          title="Saved views"
+          icon={<Bookmark size={16} className="shrink-0" />}
+          count={viewList.length}
+        >
+          {viewList.map((view) => (
             <NavItem
-              to="/settings"
-              icon={<Settings2 size={20} className="shrink-0" />}
-              title={withKeys(keymap, "goSettings", "Settings")}
+              key={view.id}
+              to="/view/$viewId"
+              params={{ viewId: view.id }}
+              icon={<Bookmark size={14} className="shrink-0" />}
             >
-              <span className="font-display text-[15px] tracking-wide">Settings</span>
+              {view.name}
             </NavItem>
+          ))}
+          {viewList.length === 0 && (
+            <p className="px-2.5 py-1 text-[12.5px] text-ink-3">
+              Use "Save as view" in any view's Display menu
+            </p>
+          )}
+        </Collapsible>
+
+        <Collapsible
+          id="tags"
+          title="Tags"
+          icon={<TagIcon size={16} className="shrink-0" />}
+          count={tagList.length}
+        >
+          {tagList.map((tag) => (
+            <TagRow key={tag.id} tag={tag} count={counts.perTag.get(tag.id)} />
+          ))}
+          {tagList.length === 0 && (
+            <p className="px-2.5 py-1 text-[12.5px] text-ink-3">Type #tag when adding a task</p>
+          )}
+        </Collapsible>
+
+        <div className="mt-auto flex flex-col gap-1 pt-4">
+          <UpdatePill />
+          <div className="flex items-stretch gap-1">
+            <div className="flex min-w-0 flex-1 flex-col [&>a]:flex-1">
+              <NavItem
+                to="/settings"
+                icon={<Settings2 size={20} className="shrink-0" />}
+                title={withKeys(keymap, "goSettings", "Settings")}
+              >
+                <span className="font-display text-[15px] tracking-wide">Settings</span>
+              </NavItem>
+            </div>
+            <ShortcutsButton onClick={shell.showShortcuts} matchRow />
           </div>
-          <ShortcutsButton onClick={shell.showShortcuts} matchRow />
         </div>
-      </div>
-    </nav>
+      </nav>
+      <SidebarResizer />
+    </div>
   );
 }
 

@@ -170,18 +170,56 @@ pub fn detect_linux_terminal(installed: impl Fn(&str) -> bool) -> Option<String>
         .map(|(name, _)| linux_terminal_prefix(name))
 }
 
+/// How a terminal continues a session by hand (see [`resume_args`]).
+#[derive(Debug, Clone, Copy)]
+pub struct Resume<'a> {
+    pub claude_session_id: &'a str,
+    /// The session's MCP config, as the runtime sees it.
+    pub mcp_config: Option<&'a str>,
+    /// The session's `--permission-mode`, so the terminal asks no more than the run did.
+    pub permission_mode: &'a str,
+    /// `--model` for this session; the settings' model when `None`.
+    pub model: Option<&'a str>,
+    /// The terminal stopped a turn in progress: a first message makes claude pick it up
+    /// instead of waiting at an interrupted conversation.
+    pub interrupted: bool,
+}
+
+/// First message of a terminal that took over a turn in progress.
+pub const CONTINUE_PROMPT: &str =
+    "The app stopped your turn to open this terminal. Continue where you left off.";
+
 /// `claude` arguments that continue a session by hand: `--resume <id>`, plus the session's
 /// MCP config (as the runtime sees it), so the agent keeps its task-master tools and can
-/// add notes and record its summary from the terminal too.
-pub fn resume_args(claude_session_id: &str, mcp_config: Option<&str>) -> Vec<String> {
-    let mut args = vec!["--resume".to_owned(), claude_session_id.to_owned()];
-    if let Some(config) = mcp_config {
+/// add notes and record its summary from the terminal too, its permission mode and model.
+/// The prompt, when any, comes last, after single-value options: `--mcp-config` and
+/// `--allowedTools` take several values and would swallow it.
+pub fn resume_args(settings: &AgentSettings, resume: &Resume<'_>) -> Vec<String> {
+    let mut args = vec!["--resume".to_owned(), resume.claude_session_id.to_owned()];
+    if let Some(config) = resume.mcp_config {
         args.extend([
             "--mcp-config".into(),
             config.to_owned(),
             "--allowedTools".into(),
             format!("mcp__{MCP_SERVER}"),
         ]);
+    }
+    if !resume.permission_mode.is_empty() {
+        args.extend([
+            "--permission-mode".into(),
+            resume.permission_mode.to_owned(),
+        ]);
+    }
+    let model = resume.model.or(settings.model.as_deref());
+    if let Some(model) = model {
+        args.extend(["--model".into(), model.to_owned()]);
+    }
+    if resume.interrupted {
+        if resume.permission_mode.is_empty() && model.is_none() {
+            // Nothing single-valued since `--allowedTools`: end the options.
+            args.push("--".into());
+        }
+        args.push(CONTINUE_PROMPT.into());
     }
     args
 }
@@ -669,11 +707,70 @@ mod tests {
         assert_eq!(claude_command(&s, &run(false)).args[0], "--cd");
     }
 
+    /// `resume_args` with no permission mode, model or interrupted turn.
+    fn plain_resume(id: &str, mcp_config: Option<&str>) -> Vec<String> {
+        resume_args(
+            &settings(AgentRuntime::Native),
+            &Resume {
+                claude_session_id: id,
+                mcp_config,
+                permission_mode: "",
+                model: None,
+                interrupted: false,
+            },
+        )
+    }
+
+    #[test]
+    fn terminals_keep_the_sessions_mode_and_model_and_pick_up_a_stopped_turn() {
+        let id = "0199a000-0000-7000-8000-00000000abcd";
+        let mut s = settings(AgentRuntime::Native);
+        s.model = Some("sonnet".into());
+        let resume = Resume {
+            claude_session_id: id,
+            mcp_config: Some("/data/agents/s1/mcp.json"),
+            permission_mode: "bypassPermissions",
+            model: Some("opus"),
+            interrupted: true,
+        };
+        assert_eq!(
+            resume_args(&s, &resume),
+            [
+                "--resume",
+                id,
+                "--mcp-config",
+                "/data/agents/s1/mcp.json",
+                "--allowedTools",
+                "mcp__task-master",
+                "--permission-mode",
+                "bypassPermissions",
+                "--model",
+                "opus",
+                CONTINUE_PROMPT,
+            ]
+        );
+        // The settings' model when the session has none; nothing sent when no turn stopped.
+        let idle = Resume {
+            model: None,
+            interrupted: false,
+            ..resume
+        };
+        assert_eq!(resume_args(&s, &idle)[8..], ["--model", "sonnet"]);
+        // Without a single-valued option after `--allowedTools`, `--` ends the options.
+        let bare = Resume {
+            permission_mode: "",
+            model: None,
+            ..resume
+        };
+        let args = resume_args(&settings(AgentRuntime::Native), &bare);
+        assert_eq!(args[6..], ["--", CONTINUE_PROMPT]);
+    }
+
     #[test]
     fn terminals_resume_the_session_on_each_os() {
         let id = "0199a000-0000-7000-8000-00000000abcd";
         let folder = "/home/alex/it's here";
-        let resume = resume_args(id, None);
+        let resume = plain_resume(id, None);
         let wt = terminal_command(
             &settings(AgentRuntime::Wsl),
             AgentRuntime::Wsl,
@@ -798,7 +895,7 @@ mod tests {
         );
 
         // With the session's MCP config, the terminal keeps the task-master tools.
-        let with_tools = resume_args(id, Some("/data/agents/s1/mcp.json"));
+        let with_tools = plain_resume(id, Some("/data/agents/s1/mcp.json"));
         assert_eq!(
             with_tools,
             [
@@ -831,7 +928,7 @@ mod tests {
     #[test]
     fn terminals_record_claudes_pid_so_the_app_can_stop_it() {
         let id = "0199a000-0000-7000-8000-00000000abcd";
-        let resume = resume_args(id, None);
+        let resume = plain_resume(id, None);
         let linux = terminal_command(
             &settings(AgentRuntime::Native),
             AgentRuntime::Native,

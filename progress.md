@@ -45,6 +45,29 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Main integration and relaunch (2026-11-08)
+
+- Integrated the terminal takeover updates and sidebar resize hit area into `main`.
+- Verified `pnpm lint`, `pnpm typecheck`, `pnpm test` (302 passed),
+  `cargo test --workspace --locked`, `cargo clippy --workspace --all-targets --locked -- -D warnings`,
+  and `cargo fmt --all -- --check` before rebuilding the desktop app.
+
+### Taken-over terminal: in color, and it keeps working (2026-11-08)
+
+- Open in terminal on a running session stopped the run mid-turn and started a bare
+  `claude --resume`, which then sat at the interrupted conversation (you had to type
+  "continue"). It also asked for permissions the run never needed, and used the default
+  model. Now the terminal gets the session's `--permission-mode` and `--model` (the
+  settings' model when the session has none). When it stopped a turn in progress, it also
+  gets a first message (`launch::CONTINUE_PROMPT`), so claude carries on by itself. The
+  prompt goes after the single-value options, because `--mcp-config` and `--allowedTools`
+  take several values and would eat it; when there is no such option it goes after `--`.
+- No color: the app inherited `NO_COLOR=1` from the agent shell that started it (here, a
+  release build started by Codex). The terminal's process now drops `NO_COLOR`. Headless
+  runs keep it.
+- Checks: clippy and `cargo test -p taskmaster-desktop` pass (new test in `launch.rs`).
+  Not tested by hand in the running app.
+
 ### Main integration and local verification (2026-11-08)
 
 - All branch tips are contained in `main`; committed the remaining desktop, agent workflow,

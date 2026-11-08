@@ -798,7 +798,8 @@ pub fn agent_open_terminal(
     // A run in progress cannot be joined (`claude --resume` would fork it and load none of
     // its current turn), so the terminal takes it over: the headless run stops (its turn so
     // far is kept in the conversation) and the terminal continues the session.
-    if is_live(&state, &session.id)? {
+    let was_live = is_live(&state, &session.id)?;
+    if was_live {
         stop_for_terminal(&state, &session.id)?;
     }
     // The session's MCP config, up to date when it can be (the agent keeps its tools).
@@ -851,7 +852,17 @@ pub fn agent_open_terminal(
     } else {
         None
     };
-    let resume = launch::resume_args(&session.claude_session_id, config.as_deref());
+    let resume = launch::resume_args(
+        &settings,
+        &launch::Resume {
+            claude_session_id: &session.claude_session_id,
+            mcp_config: config.as_deref(),
+            permission_mode: &session.permission_mode,
+            model: session.model.as_deref(),
+            // Stopped mid-turn: the terminal picks the turn up rather than waiting.
+            interrupted: was_live && takes_over,
+        },
+    );
     let launch = launch::terminal_command(
         &settings,
         session.runtime,
@@ -866,7 +877,10 @@ pub fn agent_open_terminal(
         std::fs::File::create(session_dir.join(TERMINAL_LOG_FILE))
             .map_or_else(|_| Stdio::null(), Stdio::from)
     };
+    // `NO_COLOR` comes from agent shells (a build started by Codex or Claude Code), not
+    // from the user: the terminal is the user's, in color.
     let started = process(&launch)
+        .env_remove("NO_COLOR")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(errors())
