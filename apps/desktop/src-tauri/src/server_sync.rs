@@ -4,7 +4,7 @@
 //!
 //! A round runs about 2 seconds after local edits (several quick edits make one round),
 //! when the server announces new ops, when the window gets focus, at start and every
-//! 5 minutes. The app never waits on it: edits always land in the local database first.
+//! N minutes (Settings; 5 by default, 0 turns the periodic round off). The app never waits on it: edits always land in the local database first.
 
 use std::io::{ErrorKind, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -25,7 +25,6 @@ use crate::config::SyncAccount;
 use crate::google;
 use crate::{AppState, CommandError, CommandResult, internal, invalid, with_store};
 
-const CYCLE: Duration = Duration::from_secs(5 * 60);
 /// Edits within this pause make one round.
 const SETTLE: Duration = Duration::from_secs(2);
 const FIRST: Duration = Duration::from_secs(5);
@@ -215,7 +214,11 @@ pub fn run(app: AppHandle, kicks: Receiver<()>) {
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
-        wait = CYCLE;
+        wait = match lock(&app.state::<AppState>().config).schedule.sync_minutes {
+            // No periodic round: only edits, announcements, focus and "Sync now" wake us.
+            0 => Duration::from_secs(365 * 24 * 3600),
+            m => Duration::from_secs(60 * u64::from(m)),
+        };
         // Edits made during a round are not kicked (see `local_change`): go again while
         // a round ends with local work left.
         loop {

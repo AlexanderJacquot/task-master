@@ -2,7 +2,12 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { type ReactNode, useEffect, useState } from "react";
 import { cx, Dot, InlineInput, Select } from "../../components/ui";
-import { loadOpenInPanel, saveOpenInPanel } from "../../lib/capturePrefs";
+import {
+  loadDefaultProject,
+  loadOpenInPanel,
+  saveDefaultProject,
+  saveOpenInPanel,
+} from "../../lib/capturePrefs";
 import { formatAgo, isoDate } from "../../lib/dates";
 import { settingsApi } from "../../lib/settingsApi";
 import { loadTheme, saveTheme, THEME_LABELS, type Theme } from "../../lib/theme";
@@ -238,6 +243,11 @@ function WeatheringChoice({ dark }: { dark: boolean }) {
 
 function AddingTasks() {
   const [open, setOpen] = useState(loadOpenInPanel);
+  const [projectId, setProjectId] = useState(loadDefaultProject);
+  const projects = useStoreState((s) => s.projects);
+  const choices = Object.values(projects)
+    .filter((p) => p.deleted_at === null && p.archived_at === null)
+    .sort((a, b) => a.name.localeCompare(b.name));
   return (
     <Section title="Adding tasks" hint="Remembered on this computer.">
       <label className="flex items-center gap-2">
@@ -252,12 +262,48 @@ function AddingTasks() {
         />
         Open a task added from a view's top row in the side panel, ready to describe
       </label>
+      <label className="flex items-center gap-2">
+        Default project
+        <select
+          aria-label="Default project"
+          value={projectId ?? ""}
+          onChange={(e) => {
+            const id = e.target.value || null;
+            setProjectId(id);
+            saveDefaultProject(id);
+          }}
+          className="rounded border border-border bg-transparent px-2 py-1"
+        >
+          <option value="">Inbox (no project)</option>
+          {choices.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
     </Section>
   );
 }
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+const BACKUP_MINUTES = [5, 15, 30, 60, 360, 1440];
+const SYNC_MINUTES = [0, 1, 5, 15, 30, 60];
+
+function minutesLabel(m: number): string {
+  if (m === 0) return "Only on changes";
+  if (m < 60) return `Every ${m} min`;
+  if (m === 60) return "Every hour";
+  return m % 60 === 0 ? `Every ${m / 60} h` : `Every ${m} min`;
+}
+
+/** The presets, plus the saved value when it is not one of them. */
+function frequencyOptions(presets: number[], current: number) {
+  const all = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
+  return all.map((m) => ({ value: String(m), label: minutesLabel(m) }));
 }
 
 /** Desktop-only settings: data folder, backups, export/import, remote backup. */
@@ -317,6 +363,56 @@ function Data() {
         </div>
       </Section>
 
+      {config && (
+        <Section
+          title="Frequency"
+          hint="How often this device checks its backups (and retries a failed upload) and syncs with the server. Sync also runs shortly after each edit, when the server announces changes and when the window gets focus."
+        >
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
+            <div className="flex items-center gap-2">
+              Backups
+              <Select
+                aria-label="Backup frequency"
+                value={String(config.schedule.backup_minutes)}
+                onValueChange={(v) =>
+                  void run(async () => {
+                    setConfig(
+                      await settingsApi.setSchedule({
+                        ...config.schedule,
+                        backup_minutes: Number(v),
+                      }),
+                    );
+                    return "Saved.";
+                  })
+                }
+                className="w-40"
+                options={frequencyOptions(BACKUP_MINUTES, config.schedule.backup_minutes)}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              Sync
+              <Select
+                aria-label="Sync frequency"
+                value={String(config.schedule.sync_minutes)}
+                onValueChange={(v) =>
+                  void run(async () => {
+                    setConfig(
+                      await settingsApi.setSchedule({
+                        ...config.schedule,
+                        sync_minutes: Number(v),
+                      }),
+                    );
+                    return "Saved.";
+                  })
+                }
+                className="w-40"
+                options={frequencyOptions(SYNC_MINUTES, config.schedule.sync_minutes)}
+              />
+            </div>
+          </div>
+        </Section>
+      )}
+
       <Section
         title="Backups"
         hint="A copy of the database is made every day (the last 14 are kept), and before every import. Attached files are copied into the backup folder's attachments/ as they are added."
@@ -336,7 +432,7 @@ function Data() {
             <>
               <dt className="text-neutral-500">Upload problem</dt>
               <dd className="text-amber-700 dark:text-amber-400">
-                {status.remote_error} (retried every 15 minutes)
+                {status.remote_error} (retried at the backup frequency)
               </dd>
             </>
           )}

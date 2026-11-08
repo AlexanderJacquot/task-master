@@ -133,6 +133,7 @@ export type Completion = "all" | "open" | "ready";
 export interface LineageFilter {
   project: string;
   tag: string;
+  epic: string;
   completion: Completion;
   linkedOnly: boolean;
   /** Only this task's lineage (ancestors and descendants). */
@@ -159,6 +160,7 @@ export function filterLineage(
     (task) =>
       (!around || around.has(task.id)) &&
       (!filter.project || task.project_id === filter.project) &&
+      (!filter.epic || task.epic_id === filter.epic) &&
       (!filter.tag || task.tag_ids.includes(filter.tag)) &&
       (!filter.linkedOnly || linked.has(task.id)) &&
       (filter.completion === "all" || !closed.has(task.id)) &&

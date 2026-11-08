@@ -16,7 +16,7 @@ use crate::config::RemoteBackup;
 /// Daily backups kept on disk (plan section 4).
 pub const KEEP_DAILY: usize = 14;
 /// How often the background thread runs a cycle (and retries a failed upload).
-pub const CYCLE: Duration = Duration::from_secs(15 * 60);
+pub const DEFAULT_MINUTES: u32 = 15;
 
 /// Shown in settings.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]

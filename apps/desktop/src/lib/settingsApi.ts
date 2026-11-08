@@ -3,7 +3,14 @@
 
 import { commands } from "../bindings";
 import { ApiError } from "./api";
-import type { BackupStatus, CommandError, ConfigView, ImportSummary, RemoteInput } from "./types";
+import type {
+  BackupStatus,
+  CommandError,
+  ConfigView,
+  ImportSummary,
+  RemoteInput,
+  Schedule,
+} from "./types";
 
 type Result<T> = { status: "ok"; data: T } | { status: "error"; error: CommandError | string };
 
@@ -19,6 +26,7 @@ export const settingsApi = {
   getConfig: (): Promise<ConfigView> => unwrap(commands.getConfig()),
   setRemoteBackup: (input: RemoteInput): Promise<ConfigView> =>
     unwrap(commands.setRemoteBackup(input)),
+  setSchedule: (schedule: Schedule): Promise<ConfigView> => unwrap(commands.setSchedule(schedule)),
   testRemoteBackup: (input: RemoteInput): Promise<null> => unwrap(commands.testRemoteBackup(input)),
   backupStatus: (): Promise<BackupStatus> => unwrap(commands.backupStatus()),
   backupNow: (): Promise<BackupStatus> => unwrap(commands.backupNow()),

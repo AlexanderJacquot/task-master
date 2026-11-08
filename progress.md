@@ -45,6 +45,27 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Release 0.9.0 (2026-11-08)
+
+- Integrated the uncommitted work since 0.8.0: backup and sync frequency, default project
+  for new tasks, live view search, Lineage epic filter and same-project connections,
+  sidebar project indent. Fixed on the way: the config round-trip test (missing
+  `schedule`), the Lineage filter test (missing `epic`), two a11y labels in Settings,
+  biome formatting. `bindings.ts` regenerated. All CI checks pass locally (fmt, clippy,
+  cargo test, bindings, biome, typecheck, pnpm test). Schema unchanged (12).
+- Notes in `docs/releases/0.9.0.md`; tagged `v0.9.0`.
+- Throwaway Obsidian import (`crates/core/examples/obsidian_import.rs`) was used once and
+  deleted; the real database was backed up first to
+  `backups/before-obsidian-import.sqlite` in the data folder.
+
+### Backup and sync frequency (2026-11-08)
+
+- Settings → Data and backups → Frequency: backup check (5 min to 24 h) and sync round
+  (1 min to 1 h, or only on changes), saved per device in `config.json` (`schedule`).
+  `set_schedule` command; the sync loop re-reads it on a kick, the backup thread every 30 s.
+- Built and checked in the 0.9.0 release. Frontend tests for the new selects are still to
+  write.
+
 ### Release 0.8.0 integration (2026-11-08)
 
 - Integrated the new Lineage planning tools, board column fitting and agent subtask

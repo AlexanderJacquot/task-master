@@ -348,6 +348,7 @@ fn config_view(state: &AppState) -> CommandResult<ConfigView> {
         data_dir: state.data_dir.display().to_string(),
         custom_data_dir: config.data_dir.is_some(),
         remote: config.remote.as_ref().map(RemoteView::from),
+        schedule: config.schedule,
         managed_by: std::env::current_exe()
             .ok()
             .and_then(|exe| config::managed_by(&exe)),
@@ -358,6 +359,29 @@ fn config_view(state: &AppState) -> CommandResult<ConfigView> {
 #[tauri::command]
 #[specta::specta]
 fn get_config(state: State<'_, AppState>) -> CommandResult<ConfigView> {
+    config_view(&state)
+}
+
+/// Saves how often backups and sync rounds run; they apply right away.
+#[tauri::command]
+#[specta::specta]
+fn set_schedule(
+    state: State<'_, AppState>,
+    schedule: config::Schedule,
+) -> CommandResult<ConfigView> {
+    let schedule = schedule.validated().map_err(invalid)?;
+    {
+        let mut config = state
+            .config
+            .lock()
+            .map_err(|_| internal("config lock poisoned"))?;
+        config.schedule = schedule;
+        config
+            .save(&state.config_path)
+            .map_err(|e| internal(format!("cannot save settings: {e}")))?;
+    }
+    // Wakes the sync loop so it re-reads its interval.
+    state.sync.kick();
     config_view(&state)
 }
 
@@ -564,6 +588,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             parse_capture,
             get_config,
             set_remote_backup,
+            set_schedule,
             test_remote_backup,
             backup_status,
             backup_now,
@@ -765,7 +790,20 @@ pub fn run() {
                     std::thread::sleep(std::time::Duration::from_secs(20));
                     loop {
                         backup_cycle(&handle.state::<AppState>(), false);
-                        std::thread::sleep(backups::CYCLE);
+                        // Wake every 30 s so a changed interval applies soon.
+                        let started = std::time::Instant::now();
+                        loop {
+                            std::thread::sleep(std::time::Duration::from_secs(30));
+                            let minutes = handle
+                                .state::<AppState>()
+                                .config
+                                .lock()
+                                .map_or(backups::DEFAULT_MINUTES, |c| c.schedule.backup_minutes);
+                            let due = std::time::Duration::from_secs(60 * u64::from(minutes));
+                            if started.elapsed() >= due {
+                                break;
+                            }
+                        }
                     }
                 })?;
             Ok(())

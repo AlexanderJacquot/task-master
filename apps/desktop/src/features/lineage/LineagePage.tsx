@@ -25,13 +25,26 @@ const control = "rounded-lg border border-line-strong bg-raised px-3 py-2 text-s
 
 /** Filters survive leaving the page, like the canvas layout (a local view preference). */
 const FILTER_KEY = "task-master.lineage-filter";
-type SavedFilter = { project: string; tag: string; completion: Completion; linkedOnly: boolean };
+type SavedFilter = {
+  project: string;
+  epic: string;
+  tag: string;
+  completion: Completion;
+  linkedOnly: boolean;
+};
 function loadFilter(): SavedFilter {
-  const fallback: SavedFilter = { project: "", tag: "", completion: "all", linkedOnly: false };
+  const fallback: SavedFilter = {
+    project: "",
+    epic: "",
+    tag: "",
+    completion: "all",
+    linkedOnly: false,
+  };
   try {
     const raw = JSON.parse(localStorage.getItem(FILTER_KEY) ?? "{}");
     return {
       project: typeof raw?.project === "string" ? raw.project : "",
+      epic: typeof raw?.epic === "string" ? raw.epic : "",
       tag: typeof raw?.tag === "string" ? raw.tag : "",
       completion: ["all", "open", "ready"].includes(raw?.completion) ? raw.completion : "all",
       linkedOnly: raw?.linkedOnly === true,
@@ -48,13 +61,15 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const tasks = useStoreState((s) => s.tasks);
   const projects = useStoreState((s) => s.projects);
   const tags = useStoreState((s) => s.tags);
+  const epics = useStoreState((s) => s.epics);
   const statuses = useStoreState((s) => s.statuses);
   const pending = useStoreState((s) => s.pending);
   const openTask = useOpenTask();
   const [selected, setSelected] = useState<string | null>(around ?? null);
   const [connecting, setConnecting] = useState<Connector | null>(null);
   const [filter, setFilter] = useState(loadFilter);
-  const { project, tag, completion, linkedOnly } = filter;
+  const { project, epic, tag, completion, linkedOnly } = filter;
+  const [otherProjects, setOtherProjects] = useState(false);
   const [query, setQuery] = useState("");
   const [direction, setDirection] = useState<"prerequisite" | "dependent">("prerequisite");
   const [error, setError] = useState("");
@@ -99,6 +114,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
         return (
           !tasks[to]?.dependency_ids?.includes(from) &&
           !wouldCycle(tasks, from, to) &&
+          (otherProjects || task.project_id === current.project_id) &&
           task.title.toLowerCase().includes(query.toLowerCase())
         );
       })
@@ -145,7 +161,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
         title: pick.title,
         // Keep the new card inside the current filters.
         project_id: project || source.project_id,
-        epic_id: source.epic_id,
+        epic_id: epic || source.epic_id,
         ...(tag && { tag_ids: [tag] }),
       },
       { link: side === "out" ? { dependentOf: id } : { prerequisiteOf: id } },
@@ -187,10 +203,28 @@ export function LineagePage({ around }: { around?: string } = {}) {
             aria-label="Filter lineage by project"
             className={cx(control, FOCUS)}
             value={project}
-            onValueChange={(value) => changeFilter({ project: value })}
+            onValueChange={(value) =>
+              changeFilter({
+                project: value,
+                ...(epic && value && epics[epic]?.project_id !== value && { epic: "" }),
+              })
+            }
             options={[
               { value: "", label: "All projects" },
               ...Object.values(projects).map((p) => ({ value: p.id, label: p.name })),
+            ]}
+          />
+          <Select
+            aria-label="Filter lineage by epic"
+            className={cx(control, FOCUS)}
+            value={epic}
+            onValueChange={(value) => changeFilter({ epic: value })}
+            options={[
+              { value: "", label: "All epics" },
+              ...Object.values(epics)
+                .filter((e) => !project || e.project_id === project)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((e) => ({ value: e.id, label: e.name })),
             ]}
           />
           <Select
@@ -237,7 +271,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
       <div className="flex min-h-0 flex-1">
         <LineageCanvas
           graph={graph}
-          scope={`${project}:${tag}:${completion}:${linkedOnly}:${focus?.id ?? ""}`}
+          scope={`${project}:${epic}:${tag}:${completion}:${linkedOnly}:${focus?.id ?? ""}`}
           statuses={statuses}
           closed={closed}
           blocked={blocked}
@@ -373,6 +407,14 @@ export function LineagePage({ around }: { around?: string } = {}) {
                 { value: "dependent", label: "Add dependent" },
               ]}
             />
+            <label className="mt-2 flex items-center gap-2 text-xs text-ink-2">
+              <input
+                type="checkbox"
+                checked={otherProjects}
+                onChange={(e) => setOtherProjects(e.target.checked)}
+              />
+              Include other projects
+            </label>
             <input
               aria-label="Find task to connect"
               placeholder="Search tasks…"

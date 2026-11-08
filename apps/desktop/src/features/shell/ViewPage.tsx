@@ -11,7 +11,7 @@ import {
 } from "../../components/TaskIcons";
 import { Button, cx, FOCUS, InlineInput, Select } from "../../components/ui";
 import { buildBoard } from "../../lib/board";
-import { loadOpenInPanel } from "../../lib/capturePrefs";
+import { loadOpenInPanel, withDefaultProject } from "../../lib/capturePrefs";
 import { isoDate } from "../../lib/dates";
 import type { GroupBy, SortBy, Swimlane, TaskChange, View, ViewScope } from "../../lib/types";
 import { buildRows, filterIsEmpty, type ViewContext } from "../../lib/views";
@@ -250,6 +250,16 @@ function ViewBody({
   const spec = useMemo(() => specOf(stableScope, display), [stableScope, display]);
   // Search narrows whichever view is open (list or board); the view's own filters still apply.
   const searchActive = !!query;
+  // Filter live while typing: follow the input after a short pause (clearing is immediate).
+  useEffect(() => {
+    const text = searchText.trim();
+    if (!text) {
+      setQuery("");
+      return;
+    }
+    const timer = setTimeout(() => setQuery(text), 150);
+    return () => clearTimeout(timer);
+  }, [searchText]);
   useEffect(() => {
     if (!searchActive) {
       setSearchIds(null);
@@ -469,7 +479,11 @@ function ViewBody({
         <CaptureBox
           id={NEW_TASK_INPUT_ID}
           className="min-w-0"
-          defaults={captureDefaults(scope, today)}
+          defaults={withDefaultProject(
+            captureDefaults(scope, today),
+            projects,
+            scope.kind === "inbox",
+          )}
           placeholder={`Add a task${typeof title === "string" ? ` to ${title}` : ""}…   ${CAPTURE_HINT}`}
           onCaptured={(id, how) => {
             if (how.open)
@@ -507,7 +521,6 @@ function ViewBody({
               value={searchText}
               onChange={(event) => {
                 setSearchText(event.target.value);
-                if (!event.target.value.trim()) setQuery("");
               }}
               className="min-w-0 flex-1 bg-transparent py-0.5 text-ink placeholder:text-ink-3 focus:outline-none"
             />

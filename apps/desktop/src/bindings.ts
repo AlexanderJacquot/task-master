@@ -25,6 +25,8 @@ export const commands = {
 	getConfig: () => typedError<ConfigView_Serialize, CommandError>(__TAURI_INVOKE("get_config")),
 	/**  Saves the remote backup settings. An empty secret keeps the stored one. */
 	setRemoteBackup: (input: RemoteInput) => typedError<ConfigView_Serialize, CommandError>(__TAURI_INVOKE("set_remote_backup", { input })),
+	/**  Saves how often backups and sync rounds run; they apply right away. */
+	setSchedule: (schedule: Schedule_Deserialize) => typedError<ConfigView_Serialize, CommandError>(__TAURI_INVOKE("set_schedule", { schedule })),
 	/**  Writes a small probe object with these settings, without saving them. */
 	testRemoteBackup: (input: RemoteInput) => typedError<null, CommandError>(__TAURI_INVOKE("test_remote_backup", { input })),
 	backupStatus: () => typedError<BackupStatus_Serialize, CommandError>(__TAURI_INVOKE("backup_status")),
@@ -806,6 +808,7 @@ export type ConfigView_Deserialize = {
 	/**  Whether it was chosen in settings (vs the OS default). */
 	custom_data_dir: boolean,
 	remote?: RemoteView | null,
+	schedule: Schedule_Deserialize,
 	/**
 	 *  Set when a system package manager owns this install (ADR 018): the in-app updater
 	 *  then stays off and the text names where updates come from.
@@ -820,6 +823,7 @@ export type ConfigView_Serialize = {
 	/**  Whether it was chosen in settings (vs the OS default). */
 	custom_data_dir: boolean,
 	remote: RemoteView | null,
+	schedule: Schedule_Serialize,
 	/**
 	 *  Set when a system package manager owns this install (ADR 018): the in-app updater
 	 *  then stays off and the text names where updates come from.
@@ -1264,6 +1268,31 @@ export type RemoteView = {
 	access_key: string,
 	prefix: string,
 	has_secret: boolean,
+};
+
+/**  How often the background workers run on this device, in minutes. */
+export type Schedule = Schedule_Serialize | Schedule_Deserialize;
+
+/**  How often the background workers run on this device, in minutes. */
+export type Schedule_Deserialize = {
+	/**  Local backup check and remote upload retry (5 to 1440). */
+	backup_minutes?: number,
+	/**
+	 *  Periodic sync round with the server (1 to 1440); 0 syncs only after edits, server
+	 *  announcements, focus and "Sync now".
+	 */
+	sync_minutes?: number,
+};
+
+/**  How often the background workers run on this device, in minutes. */
+export type Schedule_Serialize = {
+	/**  Local backup check and remote upload retry (5 to 1440). */
+	backup_minutes: number,
+	/**
+	 *  Periodic sync round with the server (1 to 1440); 0 syncs only after edits, server
+	 *  announcements, focus and "Sync now".
+	 */
+	sync_minutes: number,
 };
 
 /**  Where an [`AgentSession`] is. */

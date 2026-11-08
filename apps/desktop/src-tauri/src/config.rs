@@ -135,8 +135,51 @@ impl AgentSettings {
     }
 }
 
+/// How often the background workers run on this device, in minutes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct Schedule {
+    /// Local backup check and remote upload retry (5 to 1440).
+    #[serde(default = "default_backup_minutes")]
+    pub backup_minutes: u32,
+    /// Periodic sync round with the server (1 to 1440); 0 syncs only after edits, server
+    /// announcements, focus and "Sync now".
+    #[serde(default = "default_sync_minutes")]
+    pub sync_minutes: u32,
+}
+
+fn default_backup_minutes() -> u32 {
+    15
+}
+
+fn default_sync_minutes() -> u32 {
+    5
+}
+
+impl Default for Schedule {
+    fn default() -> Self {
+        Self {
+            backup_minutes: default_backup_minutes(),
+            sync_minutes: default_sync_minutes(),
+        }
+    }
+}
+
+impl Schedule {
+    pub fn validated(self) -> Result<Self, String> {
+        if !(5..=1440).contains(&self.backup_minutes) {
+            return Err("backup interval must be between 5 minutes and 24 hours".into());
+        }
+        if self.sync_minutes > 1440 {
+            return Err("sync interval must be at most 24 hours".into());
+        }
+        Ok(self)
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default)]
+    pub schedule: Schedule,
     #[serde(default)]
     pub agents: AgentSettings,
     /// A data folder chosen in settings; the OS app-data folder when `None`.
@@ -186,6 +229,7 @@ pub struct ConfigView {
     /// Whether it was chosen in settings (vs the OS default).
     pub custom_data_dir: bool,
     pub remote: Option<RemoteView>,
+    pub schedule: Schedule,
     /// Set when a system package manager owns this install (ADR 018): the in-app updater
     /// then stays off and the text names where updates come from.
     pub managed_by: Option<String>,
@@ -290,6 +334,24 @@ mod tests {
     }
 
     #[test]
+    fn schedule_defaults_and_limits() {
+        assert_eq!(Schedule::default().validated().unwrap().backup_minutes, 15);
+        let cfg: AppConfig = serde_json::from_str(r#"{"schedule":{"sync_minutes":1}}"#).unwrap();
+        assert_eq!(cfg.schedule.backup_minutes, 15);
+        assert_eq!(cfg.schedule.sync_minutes, 1);
+        let bad = |b, s| {
+            Schedule {
+                backup_minutes: b,
+                sync_minutes: s,
+            }
+            .validated()
+            .is_err()
+        };
+        assert!(bad(1, 5) && bad(15, 2000));
+        assert!(!bad(5, 0));
+    }
+
+    #[test]
     fn the_package_marker_names_who_manages_updates() {
         let prefix = std::env::temp_dir().join(format!("tm-prefix-{}", taskmaster_core::new_id()));
         let exe = prefix.join("bin/taskmaster-desktop");
@@ -314,6 +376,10 @@ mod tests {
         let path = dir.join("config.json");
         assert_eq!(AppConfig::load(&path), AppConfig::default());
         let config = AppConfig {
+            schedule: Schedule {
+                backup_minutes: 60,
+                sync_minutes: 0,
+            },
             agents: AgentSettings {
                 runtime: taskmaster_core::AgentRuntime::Wsl,
                 wsl_distro: Some("Ubuntu".into()),

@@ -67,6 +67,7 @@ it("filters by completion, tag, project and a task's lineage", () => {
   const titles = (filter: Partial<LineageFilter>) =>
     filterLineage(all, tasks, closed, {
       project: "",
+      epic: "",
       tag: "",
       completion: "all",
       linkedOnly: false,

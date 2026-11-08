@@ -3,6 +3,7 @@ import { Dialog } from "radix-ui";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { KeyList } from "../../components/Keys";
 import { Kbd } from "../../components/ui";
+import { withDefaultProject } from "../../lib/capturePrefs";
 import { isoDate } from "../../lib/dates";
 import { FIXED_SHORTCUTS, SHORTCUT_DEFS, useKeymap } from "../../lib/keymap";
 import type { AppSearch } from "../../router";
@@ -57,6 +58,7 @@ export function Layout() {
   const order = useProjectOrder();
   const [palette, setPalette] = useState(false);
   const [help, setHelp] = useState(false);
+  const projects = useStoreState((s) => s.projects);
   const [newTask, setNewTask] = useState<Defaults | null>(null);
   const [collapsedPref, setCollapsedPref] = useState(loadCollapsed);
   const [expandOnTaskPage, setExpandOnTaskPage] = useState(false);
@@ -78,8 +80,15 @@ export function Layout() {
   };
 
   const openNewTask = useCallback(
-    (defaults?: Defaults) => setNewTask(defaults ?? defaultsForPath(pathname, isoDate())),
-    [pathname],
+    (defaults?: Defaults) =>
+      setNewTask(
+        withDefaultProject(
+          defaults ?? defaultsForPath(pathname, isoDate()),
+          projects,
+          pathname === "/inbox",
+        ),
+      ),
+    [pathname, projects],
   );
   const shell: ShellActions = useMemo(
     () => ({

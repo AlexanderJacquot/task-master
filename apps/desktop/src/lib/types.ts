@@ -42,6 +42,7 @@ export type {
   ProjectChange_Deserialize as ProjectChange,
   ProjectFolder,
   RemoteInput,
+  Schedule,
   SessionState,
   Snapshot_Serialize as Snapshot,
   SortBy,
