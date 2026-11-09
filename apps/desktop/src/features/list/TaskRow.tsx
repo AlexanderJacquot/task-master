@@ -142,10 +142,12 @@ export const TaskRow = memo(function TaskRow(p: Props) {
         today={p.today}
         onValueChange={(due_date) => p.onChange(task.id, [{ due_date }])}
         className={cx(
-          "shrink-0 rounded px-1 text-right text-[12.5px] tabular-nums hover:bg-hover",
+          "shrink-0 rounded text-right text-[12.5px] tabular-nums hover:bg-hover",
           overdue ? "text-danger" : "text-ink-2",
-          !task.due_date &&
-            "w-0 overflow-hidden group-hover:w-auto focus-visible:w-auto data-[state=open]:w-auto",
+          task.due_date
+            ? "px-1"
+            : // No padding while hidden: a zero-width box with padding still shows a sliver.
+              "w-0 overflow-hidden group-hover:w-auto group-hover:px-1 focus-visible:w-auto focus-visible:px-1 data-[state=open]:w-auto data-[state=open]:px-1",
         )}
         aria-label="Set due date"
       >

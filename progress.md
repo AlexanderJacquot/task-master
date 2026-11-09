@@ -51,6 +51,18 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### README with branding, screenshots and a quickstart (2026-11-09)
+
+- README rewritten: banner and wordmark header, badges, features with three screenshots
+  (board dark, Lineage lanes dark, Today light), quickstart (install table, first steps,
+  optional setup), build from source, license. Images in `docs/images/` (WebP, ~240 KB).
+- Screenshots come from `apps/desktop/showcase.html` (`src/showcase/`): the real UI on
+  sample data with Tauri calls stubbed, development only (the release build has only
+  index.html). `pnpm -C apps/desktop dev`, then `/showcase.html#/<route>`, `?theme=light`.
+- Fixed on the way: list rows without a due date showed a sliver of the hidden "Due…"
+  button (zero width but padded); the padding now applies only when it shows.
+- `.playwright-mcp/` is gitignored.
+
 ### License: AGPL-3.0-or-later (2026-11-09, ADR 020)
 
 - `LICENSE` (unmodified text from gnu.org), SPDX `AGPL-3.0-or-later` in the Cargo

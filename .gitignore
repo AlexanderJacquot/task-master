@@ -22,3 +22,6 @@ dist/
 apps/desktop/src-tauri/gen/schemas/
 # The MCP sidecar, built by apps/desktop/scripts/sidecar.mjs (ADR 017).
 apps/desktop/src-tauri/binaries/
+
+# Playwright MCP screenshots and logs
+.playwright-mcp/
