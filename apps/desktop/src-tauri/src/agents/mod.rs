@@ -320,6 +320,56 @@ fn process(launch: &Launch) -> Process {
     p
 }
 
+/// `settings` with `claude_path` usable by a `runtime` launch: in WSL, a bare name is
+/// looked up once per distribution through the login shell (see
+/// [`launch::wsl_needs_lookup`]) and remembered until the app restarts.
+fn resolve_claude(
+    settings: &AgentSettings,
+    runtime: AgentRuntime,
+) -> Result<AgentSettings, String> {
+    if !launch::wsl_needs_lookup(settings, runtime) {
+        return Ok(settings.clone());
+    }
+    static FOUND: Mutex<Vec<(Option<String>, String, String)>> = Mutex::new(Vec::new());
+    let key = (settings.wsl_distro.clone(), settings.claude_path.clone());
+    let cached = FOUND.lock().ok().and_then(|f| {
+        f.iter()
+            .find(|(d, n, _)| (d, n) == (&key.0, &key.1))
+            .map(|(.., p)| p.clone())
+    });
+    let path = match cached {
+        Some(path) => path,
+        None => {
+            let lookup_settings = AgentSettings {
+                runtime: AgentRuntime::Wsl,
+                ..settings.clone()
+            };
+            let out = hidden(&mut process(&launch::lookup_command(
+                &lookup_settings,
+                Os::current(),
+            )))
+            .stdin(Stdio::null())
+            .output()
+            .map_err(|e| format!("cannot look for claude in WSL: {e}"))?;
+            let path = launch::found_path(&String::from_utf8_lossy(&out.stdout)).ok_or_else(|| {
+                format!(
+                    "cannot start claude: not found in WSL{} (not even through your login shell); \
+                     set its full path in the agent settings",
+                    settings.wsl_distro.as_deref().map(|d| format!(" ({d})")).unwrap_or_default()
+                )
+            })?;
+            if let Ok(mut f) = FOUND.lock() {
+                f.push((key.0, key.1, path.clone()));
+            }
+            path
+        }
+    };
+    Ok(AgentSettings {
+        claude_path: path,
+        ..settings.clone()
+    })
+}
+
 /// [`launch::host_env`] for this process, read once (the AppImage sets it before start).
 fn host_env() -> &'static [(String, Option<String>)] {
     static CHANGES: std::sync::OnceLock<Vec<(String, Option<String>)>> = std::sync::OnceLock::new();
@@ -345,6 +395,7 @@ fn spawn_run(
     if runtime == AgentRuntime::Wsl && !cfg!(windows) {
         return Err("the WSL runtime only works in the Windows app; choose Native".into());
     }
+    let settings = resolve_claude(&settings, runtime)?;
     if runtime == AgentRuntime::Native && !Path::new(&session.folder).is_dir() {
         return Err(format!("the folder {} does not exist", session.folder));
     }
@@ -855,6 +906,7 @@ pub fn agent_open_terminal(
     } else {
         None
     };
+    let settings = resolve_claude(&settings, session.runtime).map_err(invalid)?;
     let resume = launch::resume_args(
         &settings,
         &launch::Resume {

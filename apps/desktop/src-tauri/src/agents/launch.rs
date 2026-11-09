@@ -441,7 +441,9 @@ fn in_unix<const N: usize>(
 /// Finds `claude` through the user's login shell, which sets up the PATH a GUI app (or
 /// `wsl.exe --exec`) does not get. Prints the path on its last line.
 pub fn lookup_command(settings: &AgentSettings, os: Os) -> Launch {
-    let lookup = r#"exec "${SHELL:-/bin/sh}" -lic 'command -v claude'"#;
+    // `wsl.exe --exec` may not set $SHELL: fall back to the user's login shell from
+    // passwd, so a PATH set only in ~/.zshrc (say) is still found.
+    let lookup = r#"s=${SHELL:-$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)}; exec "${s:-/bin/sh}" -lic 'command -v claude'"#;
     match (settings.runtime, os) {
         (AgentRuntime::Wsl, _) => {
             let mut args = wsl_prefix(settings);
@@ -463,6 +465,14 @@ pub fn lookup_command(settings: &AgentSettings, os: Os) -> Launch {
             cwd: None,
         },
     }
+}
+
+/// Whether `claude_path` must be looked up before a WSL launch: `wsl.exe --exec` runs no
+/// shell, so the PATH a profile sets up (`~/.local/bin`, nvm, …) is missing and a bare
+/// `claude` fails inside the distribution (`execvpe(claude) failed`), where the app cannot
+/// catch it. Native launches retry on `NotFound` instead.
+pub fn wsl_needs_lookup(settings: &AgentSettings, runtime: AgentRuntime) -> bool {
+    runtime == AgentRuntime::Wsl && !settings.claude_path.starts_with('/')
 }
 
 /// `claude --version` in the runtime.
@@ -1000,6 +1010,16 @@ mod tests {
         assert_eq!(wsl.program, "wsl.exe");
         assert_eq!(wsl.args, ["-d", "Ubuntu", "--exec", "kill", "-KILL", "7"]);
         assert!(probe_command(&native, AgentRuntime::Native, Os::Windows, 1).is_none());
+    }
+
+    #[test]
+    fn a_bare_claude_is_looked_up_only_for_wsl() {
+        let mut s = settings(AgentRuntime::Wsl);
+        s.claude_path = "claude".into();
+        assert!(wsl_needs_lookup(&s, AgentRuntime::Wsl));
+        assert!(!wsl_needs_lookup(&s, AgentRuntime::Native));
+        s.claude_path = "/home/alex/.local/bin/claude".into();
+        assert!(!wsl_needs_lookup(&s, AgentRuntime::Wsl));
     }
 
     #[test]
