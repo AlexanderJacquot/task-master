@@ -45,6 +45,17 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Release 0.10.0 (2026-11-09)
+
+- Integrated the uncommitted work since 0.9.0 (Lineage side panel and linking, subtask
+  picker, "No epic"/"No tag" filters, Metrics burn-down and focus, sharp Lineage cards)
+  with the asset pack already on `main`. Fixed on the way: strict-null type errors in
+  `actions.ts`, `hierarchy.ts` and `TaskPicker.tsx`; test fixtures made invalid fractional
+  ranks past 9 (`a10`), now `fixtureRank()`; the subtask picker test raced the panel's
+  re-render after opening. All CI checks pass locally (fmt, clippy, cargo test, bindings,
+  biome, typecheck, 331 frontend tests). Schema unchanged (12).
+- Notes in `docs/releases/0.10.0.md`; tagged `v0.10.0`.
+
 ### Metrics: medieval figures, burn-down, project focus (2026-11-09)
 
 - Each figure card has a medieval title with the plain measure under it ("Quests fulfilled"

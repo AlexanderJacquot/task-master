@@ -87,11 +87,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Choose how often each device backs up and syncs (Settings → Data and backups → Frequency), and pick a default project for new tasks. List and board search filters as you type; Lineage gains an epic filter and keeps task connections within the project unless you include other projects.
+            Lineage gets an always-visible side panel to search, link and create tasks, sharper cards on Linux, and dependents that follow their prerequisite's project, epic and tags. Tasks can become subtasks of another task, or adopt one, from their details. Filters gain "No epic" and "No tag". Metrics gains a burn-down chart and a focus on one project or tag. New purple app icon and banner logo.
 
-            No database changes (schema 12): 0.8.0 and 0.9.0 desktops and servers sync with each other. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.9.0.
+            No database changes (schema 12): 0.8.0 to 0.10.0 desktops and servers sync with each other. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.10.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.9.0/docs/releases/0.9.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.10.0/docs/releases/0.10.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.
