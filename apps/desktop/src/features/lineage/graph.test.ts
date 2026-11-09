@@ -104,3 +104,23 @@ it("filters by completion, epic, tag, project and a task's lineage", () => {
   expect(titles({ around: done.id, completion: "open" })).toEqual(["Done", "Free"]);
   expect(titles({ around: waiting.id, tags: ["tag"] })).toEqual(["Waiting"]);
 });
+
+it("hides subtasks on request, but keeps a focused subtask", () => {
+  const parent = task({ title: "Parent" });
+  const child = task({ title: "Child", parent_id: parent.id, dependency_ids: [parent.id] });
+  const all = [parent, child];
+  const tasks = Object.fromEntries(all.map((t) => [t.id, t]));
+  const titles = (filter: Partial<LineageFilter>) =>
+    filterLineage(all, tasks, new Set(), {
+      project: "",
+      epics: [],
+      tags: [],
+      completion: "all",
+      linkedOnly: false,
+      ...filter,
+    }).map((t) => t.title);
+  expect(titles({})).toEqual(["Parent", "Child"]);
+  expect(titles({ subtasks: true })).toEqual(["Parent", "Child"]);
+  expect(titles({ subtasks: false })).toEqual(["Parent"]);
+  expect(titles({ subtasks: false, around: child.id })).toEqual(["Parent", "Child"]);
+});

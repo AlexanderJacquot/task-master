@@ -1,10 +1,16 @@
 import {
+  BookmarkIcon,
+  BranchIcon,
   RoundelIcon as Circle,
   CrownIcon,
   LozengeIcon as Diamond,
+  EstimateIcon,
   BezantIcon as Hexagon,
+  LineageIcon,
+  MapPinIcon,
   PriorityIcon,
   ShieldIcon,
+  TagIcon,
   BilletIcon as Square,
   MulletIcon as Star,
   PileIcon as Triangle,
@@ -21,6 +27,12 @@ export const EPIC_SHAPES = {
   flag: PriorityIcon,
   crown: CrownIcon,
   shield: ShieldIcon,
+  bookmark: BookmarkIcon,
+  pin: MapPinIcon,
+  tag: TagIcon,
+  branch: BranchIcon,
+  lineage: LineageIcon,
+  hourglass: EstimateIcon,
 };
 
 export function EpicMark({ epic, size = 13 }: { epic: Epic; size?: number }) {

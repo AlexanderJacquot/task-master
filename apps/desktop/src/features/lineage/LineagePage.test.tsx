@@ -761,3 +761,22 @@ it("removes a link with the × on its arrow, shown when hovering a linked card",
   ]);
   expect(screen.queryByRole("button", { name: label })).toBeNull();
 });
+
+it("shows or hides subtasks on the canvas and remembers the choice", async () => {
+  const parent = task({ title: "Epic work" });
+  const child = task({ title: "Small step", parent_id: parent.id });
+  await setup([parent, child]);
+  expect(screen.getByRole("button", { name: "Select Small step" })).toBeTruthy();
+  const toggle = screen.getByRole("checkbox", { name: "Show subtasks" }) as HTMLInputElement;
+  expect(toggle.checked).toBe(true);
+  fireEvent.click(toggle);
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Select Small step" })).toBeNull(),
+  );
+  expect(screen.getByRole("button", { name: "Select Epic work" })).toBeTruthy();
+  expect(JSON.parse(localStorage.getItem("task-master.lineage-filter") ?? "{}").subtasks).toBe(
+    false,
+  );
+  fireEvent.click(toggle);
+  expect(await screen.findByRole("button", { name: "Select Small step" })).toBeTruthy();
+});

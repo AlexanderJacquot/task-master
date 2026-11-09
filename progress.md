@@ -51,6 +51,28 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Lineage: show or hide subtasks (2026-11-09, branch `card-drag-to-sidebar`, uncommitted)
+
+- A "Show subtasks" checkbox in the Lineage filter bar (on by default) hides tasks with a
+  parent from the canvas and from the panel's "Not on the canvas" list. Saved with the other
+  Lineage filters (`subtasks` in `task-master.lineage-filter`); a task whose lineage is open
+  stays visible even if it is a subtask. Their links to visible cards are hidden with them.
+- Tests: `graph.test.ts` (filter), `LineagePage.test.tsx` (toggle and persistence).
+
+### Board: drag cards to the sidebar and the detail panel (2026-11-09, branch `card-drag-to-sidebar`)
+
+- A board card dropped on a sidebar project moves the task to that project, on an epic
+  sets its epic, on Today puts it on today's list. Dropped on the open task's detail panel,
+  it becomes a subtask (lower zone) or the parent (top strip) of that task. Each is one
+  undoable write (`updateTask` / `setParent`); drops that change nothing or would make a
+  cycle are not offered.
+- Each view has its own `DndContext`, so these targets are not dnd-kit droppables:
+  `features/shell/taskDrop.ts` marks them with `data-task-drop` and hit-tests the pointer
+  (`elementsFromPoint`) during a drag; the board's collision detection yields while a
+  target is under the pointer. Pointer drags only (keyboard drags stay on the board).
+- Tests: `taskDrop.test.ts` (keys, `canDrop`, the writes). The drag itself is not tested
+  (dnd-kit drags need layout) and has not been tried by hand yet.
+
 ### Release 0.12.0 (2026-11-09)
 
 - Collapsible board swimlanes (hold-to-open while dragging), calendar blocks resizable
@@ -1475,6 +1497,11 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 3. Then Phase 2 (folder workspaces and the `tk` CLI on the same core and parser).
 
 ## Later
+
+- Task drop targets (`features/shell/taskDrop.ts`): let the calendar tray and blocks use
+  them too; open the collapsed Epics section on hover while dragging; targets in the
+  collapsed sidebar rail; drop on the Lineage nav item to open Lineage focused on the
+  dragged task and the open one.
 
 - Lineage: drag a task from the side panel onto the canvas (left/right half of a card =
   prerequisite/dependent). Left out for now: HTML5 drag and drop is unreliable in the

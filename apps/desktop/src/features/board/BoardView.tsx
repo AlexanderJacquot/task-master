@@ -44,6 +44,7 @@ import { cx, Dot } from "../../components/ui";
 import { adjacentStatus, type Board, type Card, type Column, type Lane } from "../../lib/board";
 import { moveCard } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
+import { applyTaskDrop, finishTaskDrag, startTaskDrag, taskDropOver } from "../shell/taskDrop";
 import { CARD_SLOT, CardFace, type CardLookups } from "./BoardCard";
 import {
   type BoardColumns,
@@ -103,6 +104,8 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
     statusIds: board.columns.map((c) => c.status.id),
   });
   const [overlayWidth, setOverlayWidth] = useState<number | null>(null);
+  // Dropped outside the board: the overlay does not fly back to the card's old place.
+  const [droppedOutside, setDroppedOutside] = useState(false);
   const cards = useMemo(() => {
     const map = new Map<string, Card>();
     for (const lane of board.lanes) {
@@ -165,6 +168,8 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   /** Pointer first, then overlap; over a cell, its closest card. */
   const collisionDetection: CollisionDetection = useCallback(
     (args) => {
+      // Over a target outside the board (sidebar, detail panel): no cell.
+      if (taskDropOver()) return [];
       const byPointer = pointerWithin(args);
       const hits = byPointer.length > 0 ? byPointer : rectIntersection(args);
       let overId = getFirstCollision(hits, "id");
@@ -221,6 +226,8 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
     setOverlayWidth(active.rect.current.initial?.width ?? null);
     setActiveId(String(active.id));
     setDragCells(boardCells);
+    setDroppedOutside(false);
+    startTaskDrag(String(active.id));
   };
 
   const onDragOver = ({ active, over }: DragOverEvent) => {
@@ -252,9 +259,15 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     const current = dragCells ?? boardCells;
     const opened = springOpen;
+    const outside = finishTaskDrag();
     endDrag();
-    if (!over) return;
     const id = String(active.id);
+    if (outside) {
+      setDroppedOutside(true);
+      void applyTaskDrop(store, id, outside);
+      return;
+    }
+    if (!over) return;
     const to = findCell(String(over.id), current);
     if (!to) return;
     let order = current[to] ?? [];
@@ -274,7 +287,13 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
     drop(id, to, order);
   };
 
-  const onDragCancel = endDrag;
+  // Unmounted mid-drag (route change): stop tracking the pointer.
+  useEffect(() => () => void finishTaskDrag(), []);
+
+  const onDragCancel = () => {
+    finishTaskDrag();
+    endDrag();
+  };
 
   /** Alt+←/→: to the top of the same lane in the previous or next column. */
   const onCardKey = useCallback(
@@ -414,7 +433,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
           ))}
         </div>
       </div>
-      <DragOverlay>
+      <DragOverlay dropAnimation={droppedOutside ? null : undefined}>
         {active && (
           <div style={{ width: overlayWidth ?? undefined }}>
             <CardFace

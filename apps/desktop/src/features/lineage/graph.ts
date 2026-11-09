@@ -156,13 +156,15 @@ export interface LineageFilter {
   tags: string[];
   completion: Completion;
   linkedOnly: boolean;
+  /** Show subtasks (tasks with a parent). Missing: shown. */
+  subtasks?: boolean;
   /** Only this task's lineage (ancestors and descendants). */
   around?: string | undefined;
 }
 
 /**
  * The tasks the canvas shows. `open` hides done and cancelled tasks; `ready` also hides
- * tasks still waiting on an open prerequisite.
+ * tasks still waiting on an open prerequisite. `subtasks: false` hides tasks with a parent.
  */
 export function filterLineage(
   all: Task[],
@@ -185,6 +187,7 @@ export function filterLineage(
         ? task.tag_ids.some((id) => filter.tags.includes(id))
         : filter.tags.includes(FILTER_NONE))) &&
     (!filter.linkedOnly || linked.has(task.id)) &&
+    (filter.subtasks !== false || !task.parent_id) &&
     (filter.completion === "all" || !closed.has(task.id)) &&
     (filter.completion !== "ready" || !openBlockers(task, tasks, closed).length);
   // The task whose lineage is open stays, whatever the saved filters say.

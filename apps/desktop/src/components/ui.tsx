@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Select as RadixSelect } from "radix-ui";
-import type { ComponentProps, CSSProperties, ReactNode } from "react";
+import { type ComponentProps, type CSSProperties, type KeyboardEvent, type ReactNode, useRef } from "react";
 import type { Priority } from "../lib/types";
 import { CheckIcon as Check } from "./TaskIcons";
 
@@ -62,6 +62,15 @@ export type SelectOption<T extends string = string> = {
 const NONE = "\u0000none";
 
 /** The list part of a select, shared by `Select` and custom triggers (property pills). */
+/** Typeahead for an open list: typed letters jump to the first label starting with them,
+ * else the first containing them (Radix alone matches prefixes only). */
+export function typeaheadMatch(labels: string[], query: string): number {
+  const q = query.toLowerCase();
+  const lower = labels.map((l) => l.trim().toLowerCase());
+  const at = lower.findIndex((l) => l.startsWith(q));
+  return at >= 0 ? at : lower.findIndex((l) => l.includes(q));
+}
+
 export function SelectRoot<T extends string>({
   value,
   onValueChange,
@@ -73,6 +82,22 @@ export function SelectRoot<T extends string>({
   options: SelectOption<T>[];
   children: ReactNode;
 }) {
+  const typed = useRef({ text: "", at: 0 });
+  const onTypeahead = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === " " && !typed.current.text) return;
+    const now = Date.now();
+    const text = (now - typed.current.at > 800 ? "" : typed.current.text) + e.key;
+    typed.current = { text, at: now };
+    const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("[role=option]"));
+    const hit = typeaheadMatch(
+      items.map((i) => i.textContent ?? ""),
+      text,
+    );
+    e.stopPropagation();
+    e.preventDefault();
+    if (hit >= 0) items[hit]?.focus();
+  };
   return (
     <RadixSelect.Root
       value={value === "" ? NONE : value}
@@ -87,6 +112,7 @@ export function SelectRoot<T extends string>({
           position="popper"
           sideOffset={6}
           collisionPadding={12}
+          onKeyDownCapture={onTypeahead}
           className={cx(
             MENU,
             "max-h-[min(20rem,var(--radix-select-content-available-height))] min-w-[max(11rem,var(--radix-select-trigger-width))] max-w-[calc(100vw-1.5rem)]",

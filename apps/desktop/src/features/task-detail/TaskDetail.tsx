@@ -27,6 +27,7 @@ import { adoptTask, deleteTask, setParent, toggleDone, updateTask } from "../../
 import { useStoreState, useTaskStore } from "../../store/context";
 import { SessionsPanel } from "../agents/SessionsPanel";
 import { ProjectMark } from "../organize/ProjectMark";
+import { DROP_OVER_CLASS, useTaskDropTarget } from "../shell/taskDrop";
 import { useOpenTask } from "../shell/useOpenTask";
 import { ActivityFeed } from "./ActivityFeed";
 import { AttachmentList } from "./AttachmentList";
@@ -359,6 +360,36 @@ export function TaskEditor({
   );
 }
 
+/**
+ * While a task is dragged from a view (a board card), the panel shows two drop zones:
+ * a strip at the top makes the dragged task this task's parent, the rest adds it as a
+ * subtask. A zone that would change nothing or make a cycle is not shown.
+ */
+function DropZones({ taskId }: { taskId: string }) {
+  const parent = useTaskDropTarget({ kind: "parent-of", id: taskId });
+  const subtask = useTaskDropTarget({ kind: "subtask-of", id: taskId });
+  if (!parent.active && !subtask.active) return null;
+  const zone =
+    "flex items-center justify-center rounded-xl border-2 border-dashed border-accent/50 bg-raised/90 text-[13.5px] text-ink-2 backdrop-blur-sm";
+  return (
+    <div className="absolute inset-0 z-20 flex flex-col gap-2 p-2">
+      {parent.active && (
+        <div
+          {...parent.props}
+          className={cx(zone, "h-24 shrink-0", parent.isOver && DROP_OVER_CLASS)}
+        >
+          Make it the parent of this task
+        </div>
+      )}
+      {subtask.active && (
+        <div {...subtask.props} className={cx(zone, "flex-1", subtask.isOver && DROP_OVER_CLASS)}>
+          Add as a subtask
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Right-hand panel for one task, opened with `?task=<id>`. Every field saves on change. */
 export function TaskDetail({
   taskId,
@@ -392,8 +423,9 @@ export function TaskDetail({
   return (
     <aside
       aria-label="Task details"
-      className="tex-sheet m-2 ml-0 flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-raised shadow-2xl shadow-black/15"
+      className="tex-sheet relative m-2 ml-0 flex w-[30rem] shrink-0 flex-col overflow-hidden rounded-2xl border border-line bg-raised shadow-2xl shadow-black/15"
     >
+      <DropZones taskId={task.id} />
       <div className="flex items-center gap-1 border-b border-line px-3 py-2 text-[13px] text-ink-3">
         {parent ? (
           <button

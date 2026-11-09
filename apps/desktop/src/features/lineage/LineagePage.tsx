@@ -40,6 +40,8 @@ type SavedFilter = {
   tags: string[];
   completion: Completion;
   linkedOnly: boolean;
+  /** Show subtasks (tasks with a parent) on the canvas. */
+  subtasks: boolean;
   arrange: Arrange;
 };
 function loadFilter(): SavedFilter {
@@ -49,6 +51,7 @@ function loadFilter(): SavedFilter {
     tags: [],
     completion: "all",
     linkedOnly: false,
+    subtasks: true,
     arrange: "free",
   };
   try {
@@ -59,6 +62,7 @@ function loadFilter(): SavedFilter {
       tags: savedIds(raw?.tags, raw?.tag),
       completion: ["all", "open", "ready"].includes(raw?.completion) ? raw.completion : "all",
       linkedOnly: raw?.linkedOnly === true,
+      subtasks: raw?.subtasks !== false,
       arrange: ["free", "epic", "project"].includes(raw?.arrange) ? raw.arrange : "free",
     };
   } catch {
@@ -127,7 +131,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const [selected, setSelected] = useState<string | null>(around ?? null);
   const [connecting, setConnecting] = useState<Connector | null>(null);
   const [filter, setFilter] = useState(loadFilter);
-  const { project, completion, linkedOnly, arrange } = filter;
+  const { project, completion, linkedOnly, subtasks, arrange } = filter;
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [panelOpen, setPanelOpen] = useState(loadPanelOpen);
@@ -150,10 +154,22 @@ export function LineagePage({ around }: { around?: string } = {}) {
           tags: filter.tags,
           completion,
           linkedOnly,
+          subtasks,
           around: focus?.id,
         }),
       ),
-    [all, tasks, closed, project, filter.epics, filter.tags, completion, linkedOnly, focus?.id],
+    [
+      all,
+      tasks,
+      closed,
+      project,
+      filter.epics,
+      filter.tags,
+      completion,
+      linkedOnly,
+      subtasks,
+      focus?.id,
+    ],
   );
   /** Lanes in order: epics (or projects) by rank, the "none" lane last. */
   const laneSpecs = useMemo((): LaneSpec[] => {
@@ -263,6 +279,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
       tags: filter.tags,
       completion,
       linkedOnly: false,
+      subtasks,
     }).filter((task) => !onCanvas.has(task.id));
     return { title: "Not on the canvas", tasks: inScope };
   }, [
@@ -275,6 +292,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
     filter.epics,
     filter.tags,
     completion,
+    subtasks,
     onCanvas,
   ]);
   const canLink = (from: string, to: string) =>
@@ -516,6 +534,14 @@ export function LineagePage({ around }: { around?: string } = {}) {
             />
             Connected tasks only
           </label>
+          <label className="flex items-center gap-2 text-sm text-ink-2">
+            <input
+              type="checkbox"
+              checked={subtasks}
+              onChange={(e) => changeFilter({ subtasks: e.target.checked })}
+            />
+            Show subtasks
+          </label>
           <span className="text-xs text-ink-3">
             {graph.nodes.length} tasks · {graph.edges.length} links
           </span>
@@ -529,7 +555,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
       <div className="flex min-h-0 flex-1">
         <LineageCanvas
           graph={graph}
-          scope={`${project}:${filter.epics.join(",")}:${filter.tags.join(",")}:${completion}:${linkedOnly}:${focus?.id ?? ""}:${arrange}`}
+          scope={`${project}:${filter.epics.join(",")}:${filter.tags.join(",")}:${completion}:${linkedOnly}:${subtasks}:${focus?.id ?? ""}:${arrange}`}
           arrange={arrange}
           laneSpecs={laneSpecs}
           epics={epics}

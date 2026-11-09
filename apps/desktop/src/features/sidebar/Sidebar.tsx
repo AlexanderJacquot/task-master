@@ -54,6 +54,7 @@ import { PROJECT_COLORS } from "../organize/projectColors";
 import { TagMenu } from "../organize/TagMenu";
 import { AppLogo, NavIcon, Wordmark } from "../ornaments/Ornaments";
 import { useShell } from "../shell/shellContext";
+import { DROP_OVER_CLASS, type TaskDropTarget, useTaskDropTarget } from "../shell/taskDrop";
 import { ProjectTree } from "./ProjectTree";
 import { useProjectOrder } from "./useProjectOrder";
 
@@ -124,6 +125,8 @@ function NavItem({
   children,
   count,
   title,
+  dropProps,
+  dropOver,
 }: {
   to: string;
   params?: Record<string, string>;
@@ -131,6 +134,9 @@ function NavItem({
   children: ReactNode;
   count?: number;
   title?: string;
+  /** From `useTaskDropTarget` (see `DropNavItem`). */
+  dropProps?: Record<string, string>;
+  dropOver?: boolean;
 }) {
   return (
     <Link
@@ -138,7 +144,8 @@ function NavItem({
       params={params as never}
       search={{}}
       title={title}
-      className={cx(rowClass, FOCUS)}
+      {...dropProps}
+      className={cx(rowClass, FOCUS, dropOver && DROP_OVER_CLASS)}
       activeProps={{ className: activeClass }}
     >
       {icon}
@@ -148,6 +155,15 @@ function NavItem({
       )}
     </Link>
   );
+}
+
+/** A nav row that takes a task dragged from a view (board card) and applies `drop`. */
+function DropNavItem({
+  drop,
+  ...rest
+}: Omit<Parameters<typeof NavItem>[0], "dropProps" | "dropOver"> & { drop: TaskDropTarget }) {
+  const target = useTaskDropTarget(drop);
+  return <NavItem {...rest} dropProps={target.props} dropOver={target.isOver} />;
 }
 
 /** A tag in the sidebar: link, open-task count, ⋯ menu (also on right-click). */
@@ -392,6 +408,7 @@ function ProjectRow({
   const active = useRouterState({
     select: (r) => r.location.pathname === `/project/${project.id}`,
   });
+  const drop = useTaskDropTarget({ kind: "project", id: project.id });
 
   if (renaming) {
     return (
@@ -412,7 +429,16 @@ function ProjectRow({
   }
 
   return (
-    <div className={cx(rowClass, "py-0 pr-1", active && activeClass, muted && "text-ink-3")}>
+    <div
+      {...drop.props}
+      className={cx(
+        rowClass,
+        "py-0 pr-1",
+        active && activeClass,
+        muted && "text-ink-3",
+        drop.isOver && DROP_OVER_CLASS,
+      )}
+    >
       <Link
         to="/project/$projectId"
         params={{ projectId: project.id }}
@@ -680,7 +706,8 @@ export function Sidebar({
           >
             Inbox
           </NavItem>
-          <NavItem
+          <DropNavItem
+            drop={{ kind: "today" }}
             to="/today"
             count={counts.today}
             icon={
@@ -692,7 +719,7 @@ export function Sidebar({
             }
           >
             Today
-          </NavItem>
+          </DropNavItem>
           <NavItem
             to="/calendar"
             icon={
@@ -818,8 +845,9 @@ export function Sidebar({
           {epicList.map((epic) => {
             const progress = counts.perEpic.get(epic.id) ?? { done: 0, total: 0 };
             return (
-              <NavItem
+              <DropNavItem
                 key={epic.id}
+                drop={{ kind: "epic", id: epic.id }}
                 to="/epic/$epicId"
                 params={{ epicId: epic.id }}
                 icon={<EpicMark epic={epic} />}
@@ -836,7 +864,7 @@ export function Sidebar({
                     />
                   </span>
                 </span>
-              </NavItem>
+              </DropNavItem>
             );
           })}
           {finishedEpics.map((epic) => (
