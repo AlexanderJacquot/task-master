@@ -53,6 +53,7 @@ import {
   MIN_COLUMN_WIDTH,
   useBoardColumns,
 } from "./useBoardColumns";
+import { useCollapsedLanes } from "./useCollapsedLanes";
 import { useMiddleDragPan } from "./useMiddleDragPan";
 
 interface Props {
@@ -68,6 +69,8 @@ type Cells = Record<string, string[]>;
 const SEP = "|";
 /** Gap between cards side by side in a wide column. */
 const LANE_GAP = 8;
+/** Hovering a dragged card this long over a collapsed swimlane opens it until the drop. */
+export const SPRING_OPEN_MS = 1000;
 const cellId = (lane: Lane, statusId: string) => `${lane.key}${SEP}${statusId}`;
 
 function cellsOf(board: Board): Cells {
@@ -115,6 +118,32 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   const [dragCells, setDragCells] = useState<Cells | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const cells = dragCells ?? boardCells;
+
+  // Collapsed swimlanes show a strip of drop targets. Holding a dragged card over one for
+  // a moment opens that lane until the drag ends, so the card can be placed among its cards.
+  const collapsedLanes = useCollapsedLanes();
+  const [hoverLane, setHoverLane] = useState<string | null>(null);
+  const [springOpen, setSpringOpen] = useState<ReadonlySet<string>>(new Set());
+  const laneOpen = (key: string) => !collapsedLanes.isCollapsed(key) || springOpen.has(key);
+  const hoverCollapsed =
+    activeId !== null &&
+    hoverLane !== null &&
+    collapsedLanes.isCollapsed(hoverLane) &&
+    !springOpen.has(hoverLane);
+  useEffect(() => {
+    if (!hoverCollapsed || hoverLane === null) return;
+    const timer = setTimeout(
+      () => setSpringOpen((prev) => new Set(prev).add(hoverLane)),
+      SPRING_OPEN_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [hoverCollapsed, hoverLane]);
+  const endDrag = () => {
+    setDragCells(null);
+    setActiveId(null);
+    setHoverLane(null);
+    setSpringOpen(new Set());
+  };
 
   // Moving a card to another cell shifts the layout, which can make the next collision
   // point back at the cell it came from, then forward again: shaking a card between
@@ -195,6 +224,8 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   };
 
   const onDragOver = ({ active, over }: DragOverEvent) => {
+    const overCell = over ? findCell(String(over.id), cellsRef.current) : undefined;
+    setHoverLane(overCell ? (overCell.split(SEP)[0] as string) : null);
     if (!over || recentlyMoved.current) return;
     setDragCells((prev) => {
       const current = prev ?? boardCells;
@@ -220,8 +251,8 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
 
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     const current = dragCells ?? boardCells;
-    setDragCells(null);
-    setActiveId(null);
+    const opened = springOpen;
+    endDrag();
     if (!over) return;
     const id = String(active.id);
     const to = findCell(String(over.id), current);
@@ -232,8 +263,10 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
     if (oldIndex >= 0 && newIndex >= 0 && oldIndex !== newIndex) {
       order = arrayMove(order, oldIndex, newIndex);
     }
-    // Dropped on a collapsed column: on top, where it shows once the column is expanded.
-    if (columns.isCollapsed(to.split(SEP)[1] as string)) {
+    // Dropped on a collapsed column or lane: on top, where it shows once it is expanded.
+    const [toLane, toStatus] = to.split(SEP) as [string, string];
+    const laneShut = collapsedLanes.isCollapsed(toLane) && !opened.has(toLane);
+    if (columns.isCollapsed(toStatus) || laneShut) {
       order = [id, ...order.filter((other) => other !== id)];
     }
     const origin = findCell(id, boardCells);
@@ -241,10 +274,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
     drop(id, to, order);
   };
 
-  const onDragCancel = () => {
-    setDragCells(null);
-    setActiveId(null);
-  };
+  const onDragCancel = endDrag;
 
   /** Alt+←/→: to the top of the same lane in the previous or next column. */
   const onCardKey = useCallback(
@@ -281,6 +311,65 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
     return () => observer.disconnect();
   }, [panRef]);
 
+  const laneCount = (lane: Lane) =>
+    board.columns.reduce((sum, c) => sum + (cells[cellId(lane, c.status.id)] ?? []).length, 0);
+
+  /** A collapsed lane: one low drop strip per column, aligned with the columns. */
+  const laneStrips = (lane: Lane) => (
+    <div className="flex gap-3.5 px-7 pb-2">
+      {board.columns.map((column) => {
+        const id = cellId(lane, column.status.id);
+        const statusId = column.status.id;
+        return (
+          <LaneStrip
+            key={id}
+            id={id}
+            label={`${column.status.name}, ${lane.label}`}
+            count={(cells[id] ?? []).length}
+            width={columns.isCollapsed(statusId) ? COLLAPSED_WIDTH : columns.widthOf(statusId)}
+            dragging={activeId !== null}
+          />
+        );
+      })}
+    </div>
+  );
+
+  const laneCells = (lane: Lane) => (
+    <div className={cx("flex gap-3.5 px-7 pb-4", !lanes && "min-h-0 flex-1")}>
+      {board.columns.map((column) => {
+        const id = cellId(lane, column.status.id);
+        if (columns.isCollapsed(column.status.id)) {
+          return (
+            <CollapsedCell
+              key={id}
+              id={id}
+              column={column}
+              count={(cells[id] ?? []).length}
+              inLane={lanes}
+              onExpand={() => columns.setCollapsed(column.status.id, false)}
+            />
+          );
+        }
+        return (
+          <BoardCell
+            key={id}
+            id={id}
+            label={lanes ? `${column.status.name}, ${lane.label}` : column.status.name}
+            ids={cells[id] ?? []}
+            width={columns.widthOf(column.status.id)}
+            cards={cards}
+            bounded={lanes}
+            activeId={activeId}
+            selectedId={selectedId}
+            onOpen={onOpen}
+            onCardKey={onCardKey}
+            lookups={lookups}
+          />
+        );
+      })}
+    </div>
+  );
+
   return (
     <DndContext
       sensors={sensors}
@@ -313,44 +402,14 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
               className={cx("flex flex-col", !lanes && "min-h-0 flex-1")}
             >
               {lanes && (
-                <h2 className="flex items-center gap-2 px-9 pt-4 pb-1.5 font-display text-[15px] tracking-wide text-rubric">
-                  {lane.color !== null && <Dot color={lane.color} />}
-                  {lane.label}
-                </h2>
+                <LaneHeader
+                  lane={lane}
+                  collapsed={collapsedLanes.isCollapsed(lane.key)}
+                  count={laneCount(lane)}
+                  onToggle={(collapsed) => collapsedLanes.setCollapsed(lane.key, collapsed)}
+                />
               )}
-              <div className={cx("flex gap-3.5 px-7 pb-4", !lanes && "min-h-0 flex-1")}>
-                {board.columns.map((column) => {
-                  const id = cellId(lane, column.status.id);
-                  if (columns.isCollapsed(column.status.id)) {
-                    return (
-                      <CollapsedCell
-                        key={id}
-                        id={id}
-                        column={column}
-                        count={(cells[id] ?? []).length}
-                        inLane={lanes}
-                        onExpand={() => columns.setCollapsed(column.status.id, false)}
-                      />
-                    );
-                  }
-                  return (
-                    <BoardCell
-                      key={id}
-                      id={id}
-                      label={lanes ? `${column.status.name}, ${lane.label}` : column.status.name}
-                      ids={cells[id] ?? []}
-                      width={columns.widthOf(column.status.id)}
-                      cards={cards}
-                      bounded={lanes}
-                      activeId={activeId}
-                      selectedId={selectedId}
-                      onOpen={onOpen}
-                      onCardKey={onCardKey}
-                      lookups={lookups}
-                    />
-                  );
-                })}
-              </div>
+              {lanes && !laneOpen(lane.key) ? laneStrips(lane) : laneCells(lane)}
             </section>
           ))}
         </div>
@@ -558,6 +617,79 @@ function CollapsedCell({
       </span>
       <ColumnCount column={column} />
     </button>
+  );
+}
+
+/** A swimlane's title; a click collapses the lane to a strip (with its count) or opens it. */
+function LaneHeader({
+  lane,
+  collapsed,
+  count,
+  onToggle,
+}: {
+  lane: Lane;
+  collapsed: boolean;
+  count: number;
+  onToggle(collapsed: boolean): void;
+}) {
+  return (
+    <h2 className="px-7 pt-4 pb-1.5">
+      <button
+        type="button"
+        aria-expanded={!collapsed}
+        title={collapsed ? `Expand ${lane.label}` : `Collapse ${lane.label}`}
+        onClick={() => onToggle(!collapsed)}
+        className="flex items-center gap-2 rounded-md px-2 py-0.5 font-display text-[15px] tracking-wide text-rubric hover:bg-hover"
+      >
+        <ChevronsRight
+          size={14}
+          className={cx("text-ink-3 transition-transform", !collapsed && "rotate-90")}
+        />
+        {lane.color !== null && <Dot color={lane.color} />}
+        {lane.label}
+        {collapsed && (
+          <span className="font-sans text-[12.5px] tracking-normal text-ink-3 tabular-nums">
+            {count}
+          </span>
+        )}
+      </button>
+    </h2>
+  );
+}
+
+/**
+ * A cell of a collapsed swimlane: a low strip with the cell's count that still takes drops
+ * (on top of the cell). While a card is dragged, it says that holding it there opens the lane.
+ */
+function LaneStrip({
+  id,
+  label,
+  count,
+  width,
+  dragging,
+}: {
+  id: string;
+  label: string;
+  count: number;
+  width: number;
+  dragging: boolean;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    // biome-ignore lint/a11y/useSemanticElements: a drop strip, not a form control group; <fieldset> would be wrong
+    <div
+      ref={setNodeRef}
+      role="group"
+      aria-label={`${label} (collapsed)`}
+      data-testid="lane-strip"
+      className={cx(
+        "flex h-9 shrink-0 items-center justify-center rounded-[14px] border border-dashed border-line bg-hover/40 text-[12.5px] text-ink-3 tabular-nums",
+        isOver && "border-solid ring-2 ring-accent/60",
+      )}
+      style={{ width }}
+    >
+      {isOver && dragging && width > COLLAPSED_WIDTH ? "Hold to open" : count > 0 ? count : ""}
+    </div>
   );
 }
 

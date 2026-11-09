@@ -268,6 +268,23 @@ describe("the board", () => {
     expect(await screen.findByRole("region", { name: "Lane Normal" })).toBeTruthy();
   });
 
+  it("collapses a lane to a strip of drop targets, remembers it, and opens it again", async () => {
+    await openBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    await pickOption("Swimlanes", "Lanes by priority");
+    const lane = await screen.findByRole("region", { name: "Lane Normal" });
+    const toggle = within(lane).getByRole("button", { name: /Normal/, expanded: true });
+    fireEvent.click(toggle);
+    expect(within(lane).queryByRole("list", { name: "To do, Normal" })).toBeNull();
+    expect(within(lane).queryByRole("button", { name: "Renew passport" })).toBeNull();
+    expect(within(lane).getByRole("group", { name: "To do, Normal (collapsed)" })).toBeTruthy();
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(localStorage.getItem("task-master.board.lanes")).toBe('["priority:normal"]');
+    fireEvent.click(toggle);
+    expect(await within(lane).findByRole("list", { name: "To do, Normal" })).toBeTruthy();
+    expect(localStorage.getItem("task-master.board.lanes")).toBe("[]");
+  });
+
   it("collapses a column to a strip, remembers it, and expands it again", async () => {
     await openBoard();
     fireEvent.click(screen.getByRole("button", { name: "Collapse Waiting" }));

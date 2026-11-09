@@ -271,6 +271,58 @@ describe("creating a task on the grid", () => {
   });
 });
 
+describe("resizing a block", () => {
+  const y = (hour: number) => hour * 48;
+  const dentist = async () =>
+    within(await screen.findByTestId(`time-column-${today}`)).getByRole("button", {
+      name: /^Dentist, /,
+    });
+
+  it("drags the bottom edge to change the end, without opening the menu", async () => {
+    await renderCalendar();
+    const handle = within(await dentist()).getByTestId("resize-handle");
+    fireEvent.pointerDown(handle, { button: 0, clientY: y(11) });
+    fireEvent.pointerMove(window, { clientY: y(12.6) });
+    expect((await dentist()).textContent).toContain("2 h 30");
+    fireEvent.pointerUp(window, { clientY: y(12.6) });
+    fireEvent.click(await dentist());
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(fake.executed[0]).toEqual([
+      {
+        type: "update_time_block",
+        id: block.id,
+        changes: [{ end_at: atMinute(today, 12 * 60 + 30) }],
+      },
+    ]);
+    expect(screen.queryByRole("dialog", { name: "Time block" })).toBeNull();
+  });
+
+  it("drags the top edge to change the start, keeping at least a quarter hour", async () => {
+    await renderCalendar();
+    const handle = within(await dentist()).getByTestId("resize-handle-start");
+    fireEvent.pointerDown(handle, { button: 0, clientY: y(10) });
+    fireEvent.pointerMove(window, { clientY: y(11.5) });
+    fireEvent.pointerUp(window, { clientY: y(11.5) });
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(fake.executed[0]).toEqual([
+      {
+        type: "update_time_block",
+        id: block.id,
+        changes: [{ start_at: atMinute(today, 10 * 60 + 45) }],
+      },
+    ]);
+  });
+
+  it("Shift+arrows lengthen and shorten a block by a quarter hour", async () => {
+    await renderCalendar();
+    fireEvent.keyDown(await dentist(), { key: "ArrowDown", shiftKey: true });
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(fake.executed[0]?.[0]).toMatchObject({
+      changes: [{ end_at: atMinute(today, 11 * 60 + 15) }],
+    });
+  });
+});
+
 describe("events from Google Calendar", () => {
   const standup = {
     calendar_id: "me@example.com",

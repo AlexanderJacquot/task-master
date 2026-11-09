@@ -1,6 +1,6 @@
 // Day and week views: an all-day lane per day (tasks planned or due that day) above a
-// 24-hour grid of time blocks. Blocks move by drag, resize from their bottom edge, and
-// open a small menu on click (outcome, open the task, remove). Clicking or dragging on an
+// 24-hour grid of time blocks. Blocks move by drag, resize from their top or bottom edge
+// (or Shift+↑/↓ for the end), and open a small menu on click (outcome, open the task, remove). Clicking or dragging on an
 // empty spot creates a task there (NewBlock.tsx).
 
 import { useDraggable, useDroppable } from "@dnd-kit/core";
@@ -281,41 +281,65 @@ function BlockView({ iso, placed }: { iso: string; placed: Placed<TimeBlock> }) 
   const task = tasks[block.task_id];
   const color = projectColor(task, projects);
   const [open, setOpen] = useState(false);
-  const [resizeEnd, setResizeEnd] = useState<number | null>(null);
+  // The edge being dragged and where it is, until the pointer is released.
+  const [resize, setResize] = useState<{ edge: "start" | "end"; minute: number } | null>(null);
+  // The click that ends a resize must not open the menu.
+  const resizedAt = useRef(0);
   const data: DragData = { ref: `block:${block.id}`, label: task?.title ?? "", color };
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `block:${block.id}`,
     data,
   });
 
-  const endMin = resizeEnd ?? placed.endMin;
-  const top = (placed.startMin / 60) * HOUR_PX;
-  const height = Math.max(((endMin - placed.startMin) / 60) * HOUR_PX - 2, 16);
+  const startMin = resize?.edge === "start" ? resize.minute : placed.startMin;
+  const endMin = resize?.edge === "end" ? resize.minute : placed.endMin;
+  const top = (startMin / 60) * HOUR_PX;
+  const height = Math.max(((endMin - startMin) / 60) * HOUR_PX - 2, 16);
   const minutes = Math.round((block.end_at - block.start_at) / 60_000);
   const title = task?.title ?? "Deleted task";
   const label = `${title}, ${formatRange(block.start_at, block.end_at)}`;
+  const shownStart = resize?.edge === "start" ? atMinute(iso, resize.minute) : block.start_at;
+  const shownEnd = resize?.edge === "end" ? atMinute(iso, resize.minute) : block.end_at;
 
-  const startResize = (e: React.PointerEvent) => {
+  const startResize = (edge: "start" | "end") => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
     const column = (e.currentTarget as HTMLElement).closest("[data-time-column]");
     const columnTop = column?.getBoundingClientRect().top ?? 0;
-    let latest = placed.endMin;
+    const initial = edge === "start" ? placed.startMin : placed.endMin;
+    let latest = initial;
     const move = (ev: PointerEvent) => {
       const minute = snapMinute(minuteAt(ev.clientY, columnTop));
-      latest = Math.min(Math.max(minute, placed.startMin + SNAP_MIN), DAY_MIN);
-      setResizeEnd(latest);
+      latest =
+        edge === "start"
+          ? Math.max(Math.min(minute, placed.endMin - SNAP_MIN), 0)
+          : Math.min(Math.max(minute, placed.startMin + SNAP_MIN), DAY_MIN);
+      setResize({ edge, minute: latest });
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      setResizeEnd(null);
-      if (latest !== placed.endMin) {
-        void moveBlock(store, block.id, block.start_at, atMinute(iso, latest));
-      }
+      setResize(null);
+      resizedAt.current = Date.now();
+      if (latest === initial) return;
+      if (edge === "start") void moveBlock(store, block.id, atMinute(iso, latest), block.end_at);
+      else void moveBlock(store, block.id, block.start_at, atMinute(iso, latest));
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+  };
+
+  /** Shift+↑/↓ shortens or lengthens the block by a quarter hour. */
+  const resizeByKey = (e: React.KeyboardEvent) => {
+    if (!e.shiftKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return false;
+    e.preventDefault();
+    const step = (e.key === "ArrowDown" ? SNAP_MIN : -SNAP_MIN) * 60_000;
+    const end = block.end_at + step;
+    if (end - block.start_at >= SNAP_MIN * 60_000) {
+      void moveBlock(store, block.id, block.start_at, end);
+    }
+    return true;
   };
 
   return (
@@ -328,15 +352,20 @@ function BlockView({ iso, placed }: { iso: string; placed: Placed<TimeBlock> }) 
           {...listeners}
           aria-label={label}
           data-testid="time-block"
-          onClick={() => !justDragged() && setOpen(true)}
+          onClick={() => {
+            if (justDragged() || Date.now() - resizedAt.current < 250) return;
+            setOpen(true);
+          }}
           onKeyDown={(e) => {
+            if (resizeByKey(e)) return;
             listeners?.onKeyDown?.(e);
             if (e.key === "Enter") setOpen(true);
             if (e.key === "Delete" || e.key === "Backspace") void deleteBlock(store, block.id);
           }}
           className={cx(
             "absolute flex flex-col items-stretch overflow-hidden rounded-md border-l-[3px] px-1.5 py-0.5 text-left text-[12px] leading-4 text-ink shadow-sm",
-            "cursor-grab select-none hover:brightness-110",
+            "group cursor-grab select-none hover:brightness-110",
+            resize && "z-20 shadow-md",
             block.outcome === "cancelled" && "text-ink-3 line-through",
             block.outcome === "done" && "text-ink-2",
             isDragging && "opacity-40",
@@ -357,17 +386,26 @@ function BlockView({ iso, placed }: { iso: string; placed: Placed<TimeBlock> }) 
           </span>
           {height >= 34 && (
             <span className="truncate text-[11px] text-ink-2 tabular-nums">
-              {resizeEnd !== null
-                ? `${formatTime(block.start_at)} – ${formatTime(atMinute(iso, resizeEnd))}`
+              {resize
+                ? `${formatTime(shownStart)} – ${formatTime(shownEnd)} · ${formatDuration(
+                    Math.round((shownEnd - shownStart) / 60_000),
+                  )}`
                 : formatRange(block.start_at, block.end_at)}
             </span>
           )}
+          {/* Short blocks keep their middle free to move them: only the bottom edge resizes. */}
+          {!placed.continuesBefore && height >= 28 && (
+            <ResizeHandle
+              edge="start"
+              active={resize?.edge === "start"}
+              onPointerDown={startResize("start")}
+            />
+          )}
           {!placed.continuesAfter && (
-            <span
-              aria-hidden
-              data-testid="resize-handle"
-              onPointerDown={startResize}
-              className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize"
+            <ResizeHandle
+              edge="end"
+              active={resize?.edge === "end"}
+              onPointerDown={startResize("end")}
             />
           )}
         </button>
@@ -442,6 +480,36 @@ function BlockView({ iso, placed }: { iso: string; placed: Placed<TimeBlock> }) 
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/** A strip along a block's top or bottom edge; dragging it moves that edge. */
+function ResizeHandle({
+  edge,
+  active,
+  onPointerDown,
+}: {
+  edge: "start" | "end";
+  active: boolean;
+  onPointerDown(e: React.PointerEvent): void;
+}) {
+  return (
+    <span
+      aria-hidden
+      data-testid={edge === "start" ? "resize-handle-start" : "resize-handle"}
+      onPointerDown={onPointerDown}
+      className={cx(
+        "absolute inset-x-0 flex h-2 cursor-ns-resize justify-center",
+        edge === "start" ? "top-0 items-start" : "bottom-0 items-end",
+      )}
+    >
+      <span
+        className={cx(
+          "mx-auto my-0.5 h-[3px] w-6 rounded-full bg-current transition-opacity",
+          active ? "opacity-60" : "opacity-0 group-hover:opacity-40",
+        )}
+      />
+    </span>
   );
 }
 

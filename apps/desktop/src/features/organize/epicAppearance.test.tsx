@@ -46,7 +46,7 @@ async function renderEpic(p: Epic) {
       <RouterProvider router={router} />
     </StoreProvider>,
   );
-  await screen.findByRole("combobox", { name: "Epic icon shape" });
+  await screen.findByRole("button", { name: "Epic color and icon" });
   return { executed, store };
 }
 
@@ -71,11 +71,11 @@ it("changes an epic's color and shape through its controls", async () => {
     deleted_at: null,
   };
   const { store, executed } = await renderEpic(epic);
-  fireEvent.click(screen.getByRole("combobox", { name: "Epic icon shape" }));
-  fireEvent.click(await screen.findByRole("option", { name: "Star" }));
+  fireEvent.click(screen.getByRole("button", { name: "Epic color and icon" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Shape star" }));
   await waitFor(() => expect(store.getState().epics.e1?.icon).toBe("star"));
-  fireEvent.click(screen.getByRole("combobox", { name: "Epic color" }));
-  fireEvent.click(await screen.findByRole("option", { name: "#ef4444" }));
+  fireEvent.click(screen.getByRole("button", { name: "Epic color and icon" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Color #ef4444" }));
   await waitFor(() => expect(store.getState().epics.e1?.color).toBe("#ef4444"));
   expect(executed.flat()).toEqual([
     { type: "update_epic", id: "e1", changes: [{ icon: "star" }] },

@@ -51,6 +51,33 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Board: collapsible swimlanes (2026-11-09)
+
+- With swimlanes on, a lane's title is a toggle: collapsed, the lane shows its card count
+  and a row of low strips, one per column, aligned with the columns. Cards dropped on a strip
+  go on top of that cell. Collapsed lanes are remembered on this machine by lane key
+  (`task-master.board.lanes`, e.g. `epic:<id>`), so an epic stays collapsed on every board.
+- While dragging, holding a card over a collapsed lane for 1 s (`SPRING_OPEN_MS`) opens it
+  until the drop, so the card can be placed among the lane's cards. The lane closes again
+  after the drop.
+- Tests: a collapse/persist/reopen test in `app.test.tsx`, `useCollapsedLanes.test.ts`.
+  The hold-to-open drag is not covered by tests (dnd-kit drags need layout).
+
+### Calendar: resize time blocks from both edges (2026-11-09)
+
+- Blocks in the day/week grid resize from their top edge (start) as well as their bottom
+  edge (end), on quarter hours, never shorter than 15 min. The handles are 8 px strips with
+  a grip that shows on hover; while dragging, the block shows the new range and length.
+  Blocks under ~28 px keep only the bottom handle, so they can still be moved.
+- Releasing a resize no longer opens the block's menu. Shift+↑/↓ on a focused block
+  shortens or lengthens it by 15 min.
+- Three new tests in `calendar.test.tsx`.
+
+### Epic page: color and shape picker (2026-11-09)
+
+- The epic's mark beside its name opens a popover with the colors and shapes, like a
+  project's icon, replacing the two Select menus in the details row.
+
 ### Release 0.11.0 (2026-11-09)
 
 - Lineage lanes, pins, epic on cards, link removal, browsing and multi-value filters; the

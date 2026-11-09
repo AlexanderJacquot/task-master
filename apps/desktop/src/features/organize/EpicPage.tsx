@@ -1,7 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
+import { Popover } from "radix-ui";
 import { useMemo } from "react";
 import { DatePicker } from "../../components/DatePicker";
-import { Dot, Select } from "../../components/ui";
+import { cx, MENU, Select } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
 import type { Epic, EpicState } from "../../lib/types";
 import { categoryOf } from "../../lib/views";
@@ -38,6 +39,65 @@ export function useEpicProgress(epicId: string): { done: number; total: number }
   }, [tasks, statuses, epicId]);
 }
 
+/** The mark beside the epic's name; click to pick its color and shape (like a project's). */
+function EpicIconPicker({ epic }: { epic: Epic }) {
+  const store = useTaskStore();
+  return (
+    <Popover.Root>
+      <Popover.Trigger
+        aria-label="Epic color and icon"
+        title="Color and icon"
+        className="flex size-9 shrink-0 items-center justify-center rounded-md hover:bg-hover"
+      >
+        <EpicMark epic={epic} size={24} />
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="start"
+          sideOffset={4}
+          className={cx(MENU, "grid min-w-0 grid-cols-5 gap-1.5 p-2.5")}
+        >
+          {PROJECT_COLORS.map((color) => (
+            <Popover.Close
+              key={color}
+              aria-label={`Color ${color}`}
+              onClick={() => void updateEpic(store, epic.id, [{ color }])}
+              className={cx(
+                "h-5 w-5 rounded-full",
+                epic.color === color && "ring-2 ring-ink ring-offset-1 ring-offset-overlay",
+              )}
+              style={{ background: color }}
+            />
+          ))}
+          <Popover.Close
+            onClick={() => void updateEpic(store, epic.id, [{ color: null }])}
+            className="col-span-5 mt-1 text-xs text-ink-3 hover:underline"
+          >
+            Default color
+          </Popover.Close>
+          <div className="col-span-5 my-1 h-px bg-line" />
+          {Object.entries(EPIC_SHAPES).map(([value, Shape]) => (
+            <Popover.Close
+              key={value}
+              aria-label={`Shape ${value}`}
+              title={value.charAt(0).toUpperCase() + value.slice(1)}
+              onClick={() =>
+                void updateEpic(store, epic.id, [{ icon: value === "diamond" ? null : value }])
+              }
+              className={cx(
+                "flex size-8 items-center justify-center rounded-md hover:bg-hover",
+                (epic.icon ?? "diamond") === value && "bg-hover ring-1 ring-line-strong",
+              )}
+            >
+              <Shape size={18} style={epic.color ? { color: epic.color } : undefined} />
+            </Popover.Close>
+          ))}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
 function EpicDetails({ epic }: { epic: Epic }) {
   const store = useTaskStore();
   const projects = useStoreState((s) => s.projects);
@@ -47,31 +107,6 @@ function EpicDetails({ epic }: { epic: Epic }) {
   return (
     <div className="flex flex-col gap-2 px-10 pb-3 text-[13px]">
       <div className="flex flex-wrap items-center gap-3 text-ink-2">
-        <Select
-          aria-label="Epic color"
-          value={epic.color ?? ""}
-          onValueChange={(color) => void updateEpic(store, epic.id, [{ color: color || null }])}
-          options={[
-            { value: "", label: "Default color" },
-            ...PROJECT_COLORS.map((color) => ({
-              value: color,
-              label: color,
-              icon: <Dot color={color} />,
-            })),
-          ]}
-        />
-        <Select
-          aria-label="Epic icon shape"
-          value={epic.icon ?? "diamond"}
-          onValueChange={(icon) =>
-            void updateEpic(store, epic.id, [{ icon: icon === "diamond" ? null : icon }])
-          }
-          options={Object.entries(EPIC_SHAPES).map(([value, Shape]) => ({
-            value,
-            label: value.charAt(0).toUpperCase() + value.slice(1),
-            icon: <Shape size={13} />,
-          }))}
-        />
         <Select
           aria-label="Epic state"
           value={epic.state}
@@ -135,7 +170,7 @@ export function EpicPage({ epic }: { epic: Epic }) {
       scope={{ kind: "epic", id: epic.id }}
       title={
         <span className="flex min-w-0 items-center gap-2">
-          <EpicMark epic={epic} size={24} />
+          <EpicIconPicker epic={epic} />
           <EditableTitle
             value={epic.name}
             placeholder="Epic name"
