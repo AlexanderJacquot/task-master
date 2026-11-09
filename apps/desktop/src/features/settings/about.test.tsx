@@ -21,6 +21,9 @@ describe("About and updates", () => {
     renderAbout({ check: async () => null, relaunch: async () => {} });
     expect(screen.getByTestId("app-version").textContent).toBe(`Version ${BUILD.version}`);
     expect(screen.getByText(new RegExp(`build ${BUILD.commit}`))).toBeTruthy();
+    expect(screen.getByTestId("app-license").textContent).toContain(
+      "GNU Affero General Public License, version 3 or later",
+    );
   });
 
   it("checks, installs and offers a restart", async () => {

@@ -11,7 +11,7 @@ pkgrel=1
 pkgdesc="Local-first task manager with boards, calendar sync and agent sessions"
 arch=('x86_64')
 url="https://github.com/AlexanderJacquot/task-master"
-license=('LicenseRef-UNLICENSED')
+license=('AGPL-3.0-or-later')
 depends=(
   'cairo'
   'dbus'

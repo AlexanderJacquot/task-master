@@ -27,6 +27,11 @@ export function useTaskStore(): TaskStore {
   return useContextValue().store;
 }
 
+/** The API when a provider is present (screens that also render standalone, like About). */
+export function useOptionalApi(): Api | undefined {
+  return useContext(Context)?.api;
+}
+
 export function useApi(): Api {
   return useContextValue().api;
 }

@@ -51,6 +51,17 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### License: AGPL-3.0-or-later (2026-11-09, ADR 020)
+
+- `LICENSE` (unmodified text from gnu.org), SPDX `AGPL-3.0-or-later` in the Cargo
+  workspace (all crates and the Tauri bundles), both `package.json`, and the AUR
+  `PKGBUILD` / `.SRCINFO`. README "License" section; Settings → About states the license
+  and links to the source (`useOptionalApi`, so About still renders without a store).
+- Checked: every Rust and JS dependency has an AGPL-compatible license.
+- Lineage arrows: hovering a card or arrow shows a × to remove the link; settings
+  categories use the app's icons (lucide kept for Shortcuts, Data, About until glyphs
+  exist); the site's app icon is the purple one.
+
 ### Lineage as the main working view: lanes, pins, epic on cards, browsing (2026-11-09)
 
 - "Arrange" select: Freeform, Lanes by epic, Lanes by project (`lanes.ts`, saved with the

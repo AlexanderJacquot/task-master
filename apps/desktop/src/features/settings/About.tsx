@@ -7,6 +7,7 @@ import {
 } from "../../components/TaskIcons";
 import { Button } from "../../components/ui";
 import { BUILD, useUpdates } from "../../lib/updater";
+import { useOptionalApi } from "../../store/context";
 import { AboutHero, AppLogo } from "../ornaments/Ornaments";
 
 function time(ms: number): string {
@@ -14,8 +15,12 @@ function time(ms: number): string {
 }
 
 /** Version, build and the update button (Settings → About and updates). */
+const SOURCE = "https://github.com/AlexanderJacquot/task-master";
+const LICENSE = "https://www.gnu.org/licenses/agpl-3.0.html";
+
 export function About() {
   const updates = useUpdates();
+  const files = useOptionalApi()?.files;
   const status = updates?.status ?? { kind: "idle" as const };
 
   return (
@@ -34,6 +39,25 @@ export function About() {
           build {BUILD.commit} · {BUILD.builtAt}
         </span>
       </div>
+      <p className="text-[13px] text-ink-2" data-testid="app-license">
+        Free software under the{" "}
+        <button
+          type="button"
+          className="text-accent underline"
+          onClick={() => void files?.openUrl(LICENSE).catch(() => {})}
+        >
+          GNU Affero General Public License
+        </button>
+        , version 3 or later. The{" "}
+        <button
+          type="button"
+          className="text-accent underline"
+          onClick={() => void files?.openUrl(SOURCE).catch(() => {})}
+        >
+          source code
+        </button>{" "}
+        is on GitHub.
+      </p>
 
       {!updates ? (
         <p className="text-[13.5px] text-ink-3">Updates are available in the desktop app.</p>
