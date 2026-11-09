@@ -1,4 +1,5 @@
 import type { Status, Task } from "../../lib/types";
+import { FILTER_NONE } from "../../lib/views";
 
 export const NODE_WIDTH = 232;
 export const NODE_HEIGHT = 100;
@@ -149,8 +150,10 @@ export type Completion = "all" | "open" | "ready";
 
 export interface LineageFilter {
   project: string;
-  tag: string;
-  epic: string;
+  /** Any of these epics; `FILTER_NONE` matches tasks without an epic. Empty: all. */
+  epics: string[];
+  /** Any of these tags; `FILTER_NONE` matches tasks without tags. Empty: all. */
+  tags: string[];
   completion: Completion;
   linkedOnly: boolean;
   /** Only this task's lineage (ancestors and descendants). */
@@ -176,8 +179,11 @@ export function filterLineage(
   const matches = (task: Task) =>
     (!around || around.has(task.id)) &&
     (!filter.project || task.project_id === filter.project) &&
-    (!filter.epic || task.epic_id === filter.epic) &&
-    (!filter.tag || task.tag_ids.includes(filter.tag)) &&
+    (!filter.epics.length || filter.epics.includes(task.epic_id ?? FILTER_NONE)) &&
+    (!filter.tags.length ||
+      (task.tag_ids.length
+        ? task.tag_ids.some((id) => filter.tags.includes(id))
+        : filter.tags.includes(FILTER_NONE))) &&
     (!filter.linkedOnly || linked.has(task.id)) &&
     (filter.completion === "all" || !closed.has(task.id)) &&
     (filter.completion !== "ready" || !openBlockers(task, tasks, closed).length);

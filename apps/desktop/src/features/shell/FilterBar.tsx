@@ -10,13 +10,16 @@ interface Option {
 }
 
 /** A chip that opens a checklist; shows how many values are picked. */
-function MultiPick({
+export function MultiPick({
   label,
+  ariaLabel,
   options,
   selected,
   onChange,
 }: {
   label: string;
+  /** Defaults to "Filter by <label>". */
+  ariaLabel?: string;
   options: Option[];
   selected: string[];
   onChange(next: string[]): void;
@@ -27,7 +30,7 @@ function MultiPick({
   return (
     <Popover.Root>
       <Popover.Trigger
-        aria-label={`Filter by ${label.toLowerCase()}`}
+        aria-label={ariaLabel ?? `Filter by ${label.toLowerCase()}`}
         className={cx(
           "max-w-52 truncate rounded-full border px-3 py-0.5 text-[13px]",
           selected.length

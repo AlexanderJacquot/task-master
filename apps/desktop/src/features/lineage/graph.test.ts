@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import { FILTER_NONE } from "../../lib/views";
 import { STATUS, statuses, task } from "../../test/fixtures";
 import {
   closedTaskIds,
@@ -63,9 +64,9 @@ it("spreads unconnected tasks across a grid without overlapping the dependency c
   );
 });
 
-it("filters by completion, tag, project and a task's lineage", () => {
+it("filters by completion, epic, tag, project and a task's lineage", () => {
   const done = task({ title: "Done", status_id: STATUS.done });
-  const open = task({ title: "Open" });
+  const open = task({ title: "Open", epic_id: "e" });
   const waiting = task({ title: "Waiting", dependency_ids: [open.id], tag_ids: ["tag"] });
   const free = task({ title: "Free", dependency_ids: [done.id], project_id: "p" });
   const loner = task({ title: "Loner" });
@@ -78,8 +79,8 @@ it("filters by completion, tag, project and a task's lineage", () => {
   const titles = (filter: Partial<LineageFilter>) =>
     filterLineage(all, tasks, closed, {
       project: "",
-      epic: "",
-      tag: "",
+      epics: [],
+      tags: [],
       completion: "all",
       linkedOnly: false,
       ...filter,
@@ -87,7 +88,12 @@ it("filters by completion, tag, project and a task's lineage", () => {
   expect(titles({})).toHaveLength(5);
   expect(titles({ completion: "open" })).toEqual(["Open", "Waiting", "Free", "Loner"]);
   expect(titles({ completion: "ready" })).toEqual(["Open", "Free", "Loner"]);
-  expect(titles({ tag: "tag" })).toEqual(["Waiting"]);
+  expect(titles({ tags: ["tag"] })).toEqual(["Waiting"]);
+  expect(titles({ tags: [FILTER_NONE] })).toEqual(["Done", "Open", "Free", "Loner"]);
+  expect(titles({ tags: [FILTER_NONE, "tag"] })).toHaveLength(5);
+  expect(titles({ epics: ["e"] })).toEqual(["Open"]);
+  expect(titles({ epics: [FILTER_NONE] })).toEqual(["Done", "Waiting", "Free", "Loner"]);
+  expect(titles({ epics: ["e"], tags: ["tag"] })).toEqual([]);
   expect(titles({ project: "p" })).toEqual(["Free"]);
   expect(titles({ linkedOnly: true })).toEqual(["Done", "Open", "Waiting", "Free"]);
   expect(titles({ around: waiting.id })).toEqual(["Open", "Waiting"]);
@@ -96,5 +102,5 @@ it("filters by completion, tag, project and a task's lineage", () => {
   // The focused task survives filters that would hide it; its lineage still filters.
   expect(titles({ around: loner.id, linkedOnly: true, project: "p" })).toEqual(["Loner"]);
   expect(titles({ around: done.id, completion: "open" })).toEqual(["Done", "Free"]);
-  expect(titles({ around: waiting.id, tag: "tag" })).toEqual(["Waiting"]);
+  expect(titles({ around: waiting.id, tags: ["tag"] })).toEqual(["Waiting"]);
 });
