@@ -1,5 +1,16 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import {
+  Bot,
+  CalendarDays,
+  Database,
+  Info,
+  Keyboard,
+  type LucideIcon,
+  RefreshCw,
+  SlidersHorizontal,
+  Workflow as WorkflowIcon,
+} from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { Button, cx, Dot, InlineInput, Select } from "../../components/ui";
 import {
@@ -302,8 +313,6 @@ function message(err: unknown): string {
 }
 
 const BACKUP_MINUTES = [5, 15, 30, 60, 360, 1440];
-const SYNC_MINUTES = [0, 1, 5, 15, 30, 60];
-
 function minutesLabel(m: number): string {
   if (m === 0) return "Only on changes";
   if (m < 60) return `Every ${m} min`;
@@ -312,7 +321,7 @@ function minutesLabel(m: number): string {
 }
 
 /** The presets, plus the saved value when it is not one of them. */
-function frequencyOptions(presets: number[], current: number) {
+export function frequencyOptions(presets: number[], current: number) {
   const all = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
   return all.map((m) => ({ value: String(m), label: minutesLabel(m) }));
 }
@@ -376,8 +385,8 @@ function Data() {
 
       {config && (
         <Section
-          title="Frequency"
-          hint="How often this device checks its backups (and retries a failed upload) and syncs with the server. Sync also runs shortly after each edit, when the server announces changes and when the window gets focus."
+          title="Backup frequency"
+          hint="How often this device checks its backups and retries a failed upload."
         >
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs">
             <div className="flex items-center gap-2">
@@ -398,26 +407,6 @@ function Data() {
                 }
                 className="w-40"
                 options={frequencyOptions(BACKUP_MINUTES, config.schedule.backup_minutes)}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              Sync
-              <Select
-                aria-label="Sync frequency"
-                value={String(config.schedule.sync_minutes)}
-                onValueChange={(v) =>
-                  void run(async () => {
-                    setConfig(
-                      await settingsApi.setSchedule({
-                        ...config.schedule,
-                        sync_minutes: Number(v),
-                      }),
-                    );
-                    return "Saved.";
-                  })
-                }
-                className="w-40"
-                options={frequencyOptions(SYNC_MINUTES, config.schedule.sync_minutes)}
               />
             </div>
           </div>
@@ -643,11 +632,12 @@ function Shortcuts() {
 }
 
 /** A settings category; one is shown at a time and the URL hash picks it (`/settings#shortcuts`). */
-type SettingsCategory = { id: string; label: string; render: () => ReactNode };
+type SettingsCategory = { id: string; label: string; icon: LucideIcon; render: () => ReactNode };
 
 const GENERAL: SettingsCategory = {
   id: "general",
   label: "General",
+  icon: SlidersHorizontal,
   render: () => (
     <>
       <Appearance />
@@ -658,13 +648,13 @@ const GENERAL: SettingsCategory = {
 
 const SETTINGS_CATEGORIES: SettingsCategory[] = [
   GENERAL,
-  { id: "workflow", label: "Workflow", render: () => <Workflow /> },
-  { id: "shortcuts", label: "Shortcuts", render: () => <Shortcuts /> },
-  { id: "sync", label: "Sync", render: () => <SyncSettings /> },
-  { id: "calendar", label: "Calendar", render: () => <CalendarSettings /> },
-  { id: "agents", label: "Agents", render: () => <AgentSettings /> },
-  { id: "data", label: "Data and backups", render: () => <Data /> },
-  { id: "about", label: "About", render: () => <About /> },
+  { id: "workflow", label: "Workflow", icon: WorkflowIcon, render: () => <Workflow /> },
+  { id: "shortcuts", label: "Shortcuts", icon: Keyboard, render: () => <Shortcuts /> },
+  { id: "sync", label: "Sync", icon: RefreshCw, render: () => <SyncSettings /> },
+  { id: "calendar", label: "Calendar", icon: CalendarDays, render: () => <CalendarSettings /> },
+  { id: "agents", label: "Agents", icon: Bot, render: () => <AgentSettings /> },
+  { id: "data", label: "Data and backups", icon: Database, render: () => <Data /> },
+  { id: "about", label: "About", icon: Info, render: () => <About /> },
 ];
 
 export function SettingsPage() {
@@ -690,12 +680,13 @@ export function SettingsPage() {
                 void navigate({ to: "/settings", search: {}, hash: c.id, replace: true })
               }
               className={cx(
-                "shrink-0 rounded px-2.5 py-1.5 text-left text-sm whitespace-nowrap",
+                "flex shrink-0 items-center gap-2 rounded px-2.5 py-1.5 text-left text-sm whitespace-nowrap",
                 c.id === current.id
                   ? "bg-accent/15 text-accent"
                   : "text-ink-2 hover:bg-neutral-500/10 hover:text-ink",
               )}
             >
+              <c.icon aria-hidden size={16} className="shrink-0" />
               {c.label}
             </button>
           ))}
