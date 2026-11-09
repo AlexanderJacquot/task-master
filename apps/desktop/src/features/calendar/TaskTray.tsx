@@ -15,7 +15,14 @@ import { type DragData, projectColor, useCalendar } from "./shared";
 /** Rows shown in "Other tasks"; typing narrows them. Keeps the list short (no virtualizer). */
 const MAX_OTHERS = 50;
 
-export function TaskTray({ onSchedule }: { onSchedule(task: Task): void }) {
+export function TaskTray({
+  onSchedule,
+  filter,
+}: {
+  onSchedule(task: Task): void;
+  /** Plan mode's focus: only these tasks are listed. */
+  filter?: (task: Task) => boolean;
+}) {
   const { tasks, projects, statuses, today } = useCalendar();
   const timeBlocks = useStoreState((s) => s.time_blocks);
   const [query, setQuery] = useState("");
@@ -39,7 +46,7 @@ export function TaskTray({ onSchedule }: { onSchedule(task: Task): void }) {
       scheduled.add(block.task_id);
       if (block.start_at < end) scheduledToday.add(block.task_id);
     }
-    const open = Object.values(tasks).filter((t) => isOpen(t, ctx));
+    const open = Object.values(tasks).filter((t) => isOpen(t, ctx) && (!filter || filter(t)));
     const todayTasks = open
       .filter((t) => scheduledToday.has(t.id) || inView({ kind: "today" }, t, ctx))
       .sort((a, b) => compareTasks(a, b, ctx));
@@ -56,7 +63,7 @@ export function TaskTray({ onSchedule }: { onSchedule(task: Task): void }) {
       others: matching.slice(0, MAX_OTHERS),
       more: Math.max(matching.length - MAX_OTHERS, 0),
     };
-  }, [tasks, timeBlocks, today, ctx, query]);
+  }, [tasks, timeBlocks, today, ctx, query, filter]);
 
   return (
     <aside
@@ -64,7 +71,9 @@ export function TaskTray({ onSchedule }: { onSchedule(task: Task): void }) {
       className="flex w-64 shrink-0 flex-col border-r border-line"
     >
       <div className="px-4 pt-1 pb-2 text-[12.5px] text-ink-3">
-        Drag a task onto the calendar, or onto a day to plan it.
+        {filter
+          ? "Tasks in the plan's focus. Suggest fills the free time with them."
+          : "Drag a task onto the calendar, or onto a day to plan it."}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
         <SectionLabel className="block px-2 pb-1">Today</SectionLabel>

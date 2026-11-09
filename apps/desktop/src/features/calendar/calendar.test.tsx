@@ -10,7 +10,7 @@ import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore, type TaskStore } from "../../store/store";
 import { fakeCalendar } from "../../test/fakeCalendar";
-import { fakeParse, snapshot, task, timeBlock } from "../../test/fixtures";
+import { fakeParse, STATUS, snapshot, task, timeBlock } from "../../test/fixtures";
 
 const today = isoDate();
 
@@ -415,5 +415,56 @@ describe("events from Google Calendar", () => {
     fireEvent.click(screen.getByRole("button", { name: "month" }));
     const cell = screen.getByTestId(`month-cell-${today}`);
     await waitFor(() => expect(within(cell).getByText("Standup")).toBeTruthy());
+  });
+});
+
+describe("planning the calendar", () => {
+  it("suggests a plan for the shown day and approves it as one batch", async () => {
+    localStorage.setItem("task-master.calendar-mode", "day");
+    await renderCalendar();
+    await screen.findByRole("heading", { name: "Calendar" });
+    // Tomorrow, so working hours are never past.
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(screen.getByTestId("plan-summary").textContent).toMatch(/tasks to plan · 8 h free/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Suggest" }));
+    const column = screen.getByTestId(`time-column-${addDays(today, 1)}`);
+    const proposed = within(column).getAllByTestId("proposed-block");
+    expect(proposed.length).toBeGreaterThanOrEqual(3);
+    expect(
+      within(column).getByRole("button", { name: /^Suggested: Write the report, / }),
+    ).toBeTruthy();
+
+    // Leave one out, then approve the rest.
+    fireEvent.click(
+      within(column).getByRole("button", { name: "Leave Write the report out of the plan" }),
+    );
+    expect(within(column).getAllByTestId("proposed-block")).toHaveLength(proposed.length - 1);
+    const before = fake.executed.length;
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(fake.executed.length).toBe(before + 1));
+    const batch = fake.executed.at(-1) ?? [];
+    expect(batch).toHaveLength(proposed.length - 1);
+    expect(batch.every((c) => c.type === "create_time_block")).toBe(true);
+    // Approved: drawn as real blocks, no proposals left.
+    await waitFor(() => expect(within(column).queryAllByTestId("proposed-block")).toHaveLength(0));
+    expect(within(column).getAllByTestId("time-block").length).toBeGreaterThanOrEqual(batch.length);
+  });
+
+  it("narrows the tray and the plan to the focus, and remembers it", async () => {
+    localStorage.setItem(
+      "task-master.calendar-plan",
+      JSON.stringify({ focus: { projectId: "inbox", epicId: null, statusId: STATUS.inProgress } }),
+    );
+    await renderCalendar();
+    await screen.findByRole("heading", { name: "Calendar" });
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(screen.getByTestId("plan-summary").textContent).toMatch(/^0 tasks to plan/);
+    expect(screen.getByRole("button", { name: "Suggest" })).toHaveProperty("disabled", true);
+    expect(screen.queryByRole("button", { name: /^Fix the gate/ })).toBeNull();
+    // Month view has no plan.
+    fireEvent.click(screen.getByRole("button", { name: "month" }));
+    expect(screen.queryByRole("region", { name: "Plan" })).toBeNull();
   });
 });

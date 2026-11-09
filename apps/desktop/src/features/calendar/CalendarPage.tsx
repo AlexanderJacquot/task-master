@@ -15,7 +15,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Dices } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { CalendarIcon as CalendarDays } from "../../components/TaskIcons";
 import { Button, cx, Dot, FOCUS, IconButton } from "../../components/ui";
@@ -37,11 +37,24 @@ import {
   visibleDays,
 } from "../../lib/calendar";
 import { formatAgo, isoDate } from "../../lib/dates";
+import {
+  DEFAULT_FOCUS,
+  DEFAULT_HOURS,
+  freeMinutes,
+  freeSlots,
+  matchesFocus,
+  type Plan,
+  type PlanFocus,
+  type PlanHours,
+  planCandidates,
+  suggestPlan,
+} from "../../lib/planner";
 import type { Task } from "../../lib/types";
-import { moveBlock, scheduleTask, updateTask } from "../../store/actions";
+import { moveBlock, scheduleBlocks, scheduleTask, updateTask } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
 import { MonthGrid } from "./MonthGrid";
+import { PlanBar } from "./PlanBar";
 import { CalendarContext, type CalendarData, type DragData } from "./shared";
 import { TaskTray } from "./TaskTray";
 import { type DropPreview, TimeGrid, useNow } from "./TimeGrid";
@@ -67,6 +80,33 @@ function saveMode(mode: CalendarMode) {
   }
 }
 
+const PLAN_KEY = "task-master.calendar-plan";
+
+interface PlanPrefs {
+  focus: PlanFocus;
+  hours: PlanHours;
+}
+
+function loadPlanPrefs(): PlanPrefs {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PLAN_KEY) ?? "null") as Partial<PlanPrefs> | null;
+    return {
+      focus: { ...DEFAULT_FOCUS, ...saved?.focus },
+      hours: { ...DEFAULT_HOURS, ...saved?.hours },
+    };
+  } catch {
+    return { focus: DEFAULT_FOCUS, hours: DEFAULT_HOURS };
+  }
+}
+
+function savePlanPrefs(prefs: PlanPrefs) {
+  try {
+    localStorage.setItem(PLAN_KEY, JSON.stringify(prefs));
+  } catch {
+    // Not remembered; fine.
+  }
+}
+
 /** Time columns first: a pointer over a day's grid means a time, not the whole day. */
 const collision: CollisionDetection = (args) => {
   const hits = pointerWithin(args);
@@ -84,6 +124,7 @@ export function CalendarPage() {
   const projects = useStoreState((s) => s.projects);
   const statuses = useStoreState((s) => s.statuses);
   const timeBlocks = useStoreState((s) => s.time_blocks);
+  const epicMap = useStoreState((s) => s.epics);
   const openTaskPanel = useOpenTask();
   const now = useNow();
   const today = isoDate(new Date(now));
@@ -109,10 +150,69 @@ export function CalendarPage() {
   }, []);
 
   const blocks = useMemo(() => Object.values(timeBlocks), [timeBlocks]);
+  const [planning, setPlanning] = useState(false);
+  const [planPrefs, setPlanPrefsState] = useState<PlanPrefs>(loadPlanPrefs);
+  // A suggestion belongs to the days it was made for.
+  const [plan, setPlan] = useState<{ days: string; plan: Plan } | null>(null);
+  const setPlanPrefs = (next: PlanPrefs) => {
+    setPlanPrefsState(next);
+    savePlanPrefs(next);
+    setPlan(null);
+  };
   const api = useApi();
   const range = useMemo(() => viewRange(mode, date), [mode, date]);
   const { events, status } = useCalendarEvents(api.calendar, range);
   const sources = status?.sources;
+  const statusMap = useMemo(() => Object.fromEntries(statuses.map((s) => [s.id, s])), [statuses]);
+  const planDays = mode === "month" ? [] : visibleDays(mode, date);
+  const planDaysKey = planDays.join(",");
+  const busyEvents = useMemo(
+    () =>
+      events.flatMap((e) =>
+        e.start_at != null && e.end_at != null
+          ? [{ id: `${e.calendar_id}:${e.id}`, start_at: e.start_at, end_at: e.end_at }]
+          : [],
+      ),
+    [events],
+  );
+  const planOn = planning && mode !== "month";
+  const planInfo = useMemo(() => {
+    if (!planOn) return null;
+    const days = planDaysKey.split(",");
+    const input = {
+      days,
+      now,
+      hours: planPrefs.hours,
+      focus: planPrefs.focus,
+      tasks: Object.values(tasks),
+      statuses: statusMap,
+      blocks,
+      events: busyEvents,
+    };
+    return {
+      matching: planCandidates(input).length,
+      freeMin: freeMinutes(freeSlots(input)),
+      input,
+    };
+  }, [planOn, planDaysKey, now, planPrefs, tasks, statusMap, blocks, busyEvents]);
+  const shownPlan = plan && plan.days === planDaysKey && planOn ? plan.plan : null;
+  const focusFilter = useMemo(
+    () => (planOn ? (t: Task) => matchesFocus(t, planPrefs.focus) : undefined),
+    [planOn, planPrefs.focus],
+  );
+  const suggest = () => {
+    if (!planInfo) return;
+    setPlan({ days: planDaysKey, plan: suggestPlan({ ...planInfo.input, random: Math.random }) });
+  };
+  const approve = async () => {
+    if (!shownPlan) return;
+    const ids = await scheduleBlocks(store, shownPlan.blocks);
+    if (ids.length) setPlan(null);
+  };
+  const dropProposal = (id: string) =>
+    setPlan((p) =>
+      p ? { ...p, plan: { ...p.plan, blocks: p.plan.blocks.filter((b) => b.id !== id) } } : p,
+    );
   const data: CalendarData = useMemo(
     () => ({
       tasks,
@@ -285,6 +385,20 @@ export function CalendarPage() {
                 <ChevronRight size={16} />
               </IconButton>
             </div>
+            <Button
+              size="sm"
+              aria-pressed={planOn}
+              disabled={mode === "month"}
+              title={mode === "month" ? "Plan a day or a week" : "Fill the free time with tasks"}
+              onClick={() => {
+                setPlanning((p) => !p);
+                setPlan(null);
+              }}
+              className={cx(planOn && "bg-selected text-ink")}
+            >
+              <Dices size={14} />
+              Plan
+            </Button>
             <fieldset
               aria-label="Calendar range"
               className="flex rounded-[9px] bg-hover p-0.5 text-[13px]"
@@ -307,6 +421,31 @@ export function CalendarPage() {
             </fieldset>
           </div>
         </header>
+        {planInfo && (
+          <PlanBar
+            focus={planPrefs.focus}
+            onFocus={(focus) => setPlanPrefs({ ...planPrefs, focus })}
+            hours={planPrefs.hours}
+            onHours={(hours) => setPlanPrefs({ ...planPrefs, hours })}
+            week={mode === "week"}
+            projects={Object.values(projects)
+              .filter((p) => !p.deleted_at && !p.archived_at)
+              .sort((a, b) => (a.rank < b.rank ? -1 : 1))}
+            epics={Object.values(epicMap)
+              .filter(
+                (e) => !e.deleted_at && (e.state === "active" || e.id === planPrefs.focus.epicId),
+              )
+              .sort((a, b) => (a.rank < b.rank ? -1 : 1))}
+            statuses={statuses.filter((s) => s.category !== "done" && s.category !== "cancelled")}
+            matching={planInfo.matching}
+            freeMin={planInfo.freeMin}
+            plan={shownPlan}
+            onSuggest={suggest}
+            onApprove={() => void approve()}
+            onClear={() => setPlan(null)}
+            today={today}
+          />
+        )}
         <DndContext
           sensors={sensors}
           collisionDetection={collision}
@@ -316,7 +455,7 @@ export function CalendarPage() {
           onDragCancel={finish}
         >
           <div className="flex min-h-0 flex-1 border-t border-line">
-            <TaskTray onSchedule={schedule} />
+            <TaskTray onSchedule={schedule} filter={focusFilter} />
             {mode === "month" ? (
               <MonthGrid date={date} blocks={blocks} events={events} onPickDay={pickDay} />
             ) : (
@@ -326,6 +465,8 @@ export function CalendarPage() {
                 events={events}
                 preview={preview}
                 onPickDay={mode === "week" ? pickDay : undefined}
+                proposals={shownPlan?.blocks}
+                onDropProposal={dropProposal}
               />
             )}
           </div>

@@ -51,6 +51,28 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Calendar: plan a day or a week (2026-11-09, branch `calendar-planner`, uncommitted)
+
+- A **Plan** button in the Calendar header (day and week views) opens a planning bar: a
+  focus (project or Inbox, epic, open status), working hours (9 AM to 5 PM by default) and
+  a Weekends switch in the week view. The tray lists only the focus's tasks. Remembered on
+  this machine (`task-master.calendar-plan`).
+- **Suggest** draws a plan as dashed ghost blocks; **Reshuffle** draws another, × on a
+  ghost leaves it out, **Approve** writes all of them as one batch of `create_time_block`
+  commands (`scheduleBlocks`, one undo), **Clear** drops it. A plan belongs to the days it
+  was made for; changing the focus, hours or range drops it.
+- `lib/planner.ts` (pure, seeded random in tests): candidates are the user's open tasks
+  in the focus, not on the calendar from now on, without open subtasks. Free time is the
+  working hours from the next quarter hour, minus live blocks and timed Google events.
+  Order is weighted random (priority; ×3 in progress, ×3 planned for the range, ×4
+  overdue, ×3 due in range, ×1.5 due within a week after; ×0.25 waiting on open work
+  outside the plan), then prerequisites first. Each task goes in the earliest slot of a day
+  still under its equal share of the demand (so a light week is spread over its days), on
+  or before its due date when shown; a long task is split into pieces of 30 min or more
+  when no slot holds it. Tasks that don't fit are counted in the bar.
+- Tests: `planner.test.ts` (11), two page tests in `calendar.test.tsx`. Checked in the
+  showcase (`/showcase.html#/calendar`). No core change, no new dependency.
+
 ### Lineage: show or hide subtasks (2026-11-09, branch `card-drag-to-sidebar`, uncommitted)
 
 - A "Show subtasks" checkbox in the Lineage filter bar (on by default) hides tasks with a

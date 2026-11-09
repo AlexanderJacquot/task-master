@@ -933,6 +933,50 @@ export async function scheduleTask(
   return changes ? block.id : null;
 }
 
+/**
+ * Puts several blocks on the calendar as one undoable batch (the planner's approved
+ * plan). Blocks of unknown tasks or with no length are skipped. Resolves to the new ids.
+ */
+export async function scheduleBlocks(
+  store: TaskStore,
+  wanted: Array<{ task_id: string; start_at: number; end_at: number }>,
+): Promise<string[]> {
+  const s = store.getState();
+  const now = Date.now();
+  const blocks: TimeBlock[] = [];
+  const touched = new Map<string, Task>();
+  for (const w of wanted) {
+    const task = s.tasks[w.task_id];
+    if (!task || w.end_at <= w.start_at) continue;
+    blocks.push({
+      id: uuidv7(now),
+      task_id: w.task_id,
+      start_at: w.start_at,
+      end_at: w.end_at,
+      outcome: "planned",
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    });
+    touched.set(task.id, { ...task, updated_at: now });
+  }
+  if (!blocks.length) return [];
+  const changes = await s.mutate(
+    blocks.map((b) => ({
+      type: "create_time_block" as const,
+      block: {
+        id: b.id,
+        task_id: b.task_id,
+        start_at: b.start_at,
+        end_at: b.end_at,
+        outcome: "planned" as const,
+      },
+    })),
+    { upsert: { time_blocks: blocks, tasks: [...touched.values()] } },
+  );
+  return changes ? blocks.map((b) => b.id) : [];
+}
+
 /** Moves or resizes a block. */
 export function moveBlock(store: TaskStore, id: string, start_at: number, end_at: number) {
   const s = store.getState();

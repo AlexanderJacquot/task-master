@@ -35,6 +35,7 @@ import {
   snapMinute,
   timedSpans,
 } from "../../lib/calendar";
+import type { ProposedBlock } from "../../lib/planner";
 import type { BlockOutcome, CalendarEvent, Task, TimeBlock } from "../../lib/types";
 import { deleteBlock, moveBlock, setBlockOutcome } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
@@ -58,6 +59,8 @@ export function TimeGrid({
   events = [],
   preview,
   onPickDay,
+  proposals = [],
+  onDropProposal,
 }: {
   days: string[];
   blocks: TimeBlock[];
@@ -65,6 +68,9 @@ export function TimeGrid({
   events?: CalendarEvent[];
   preview: DropPreview | null;
   onPickDay?(iso: string): void;
+  /** The planner's suggested blocks, not yet approved. */
+  proposals?: ProposedBlock[];
+  onDropProposal?(id: string): void;
 }) {
   const { tasks, statuses, today, now } = useCalendar();
   const scroller = useRef<HTMLDivElement>(null);
@@ -81,6 +87,20 @@ export function TimeGrid({
     const minute = showsToday ? Math.max(minuteOfDay(now) - 90, 0) : 7 * 60;
     el.scrollTop = (minute / 60) * HOUR_PX;
   }, [firstDay, days.length]);
+
+  // A new plan: bring its first suggestion into view.
+  const firstProposal = proposals.reduce<ProposedBlock | null>(
+    (min, p) => (min === null || p.start_at < min.start_at ? p : min),
+    null,
+  );
+  const firstProposalId = firstProposal?.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scroll only when the plan changes
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || !firstProposal) return;
+    const minute = Math.max(minuteOfDay(firstProposal.start_at) - 30, 0);
+    el.scrollTop = (minute / 60) * HOUR_PX;
+  }, [firstProposalId]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -154,6 +174,8 @@ export function TimeGrid({
               iso={iso}
               blocks={blocks}
               events={spans}
+              proposals={proposals}
+              onDropProposal={onDropProposal}
               preview={preview?.iso === iso ? preview : null}
               showNow={iso === today}
             />
@@ -205,22 +227,32 @@ function TimeColumn({
   iso,
   blocks,
   events,
+  proposals,
+  onDropProposal,
   preview,
   showNow,
 }: {
   iso: string;
   blocks: TimeBlock[];
   events: EventSpan[];
+  proposals: ProposedBlock[];
+  onDropProposal?(id: string): void;
   preview: DropPreview | null;
   showNow: boolean;
 }) {
   const { now } = useCalendar();
   const { setNodeRef } = useDroppable({ id: dropId.time(iso) });
   const { draft, setDraft, onPointerDown } = useDrawBlock();
-  // Blocks and events share the day's width where they overlap.
+  // Blocks, events and proposals share the day's width where they overlap.
   const placed = useMemo(
-    () => layoutDay(segmentsOn<TimeBlock | EventSpan>([...blocks, ...events], iso)),
-    [blocks, events, iso],
+    () =>
+      layoutDay(
+        segmentsOn<TimeBlock | EventSpan | ProposedBlock>(
+          [...blocks, ...events, ...proposals],
+          iso,
+        ),
+      ),
+    [blocks, events, proposals, iso],
   );
   return (
     <div
@@ -236,8 +268,14 @@ function TimeColumn({
       {placed.map((p) =>
         "event" in p.item ? (
           <EventView key={p.item.id} placed={p as Placed<EventSpan>} />
-        ) : (
+        ) : "outcome" in p.item ? (
           <BlockView key={p.item.id} iso={iso} placed={p as Placed<TimeBlock>} />
+        ) : (
+          <ProposalView
+            key={p.item.id}
+            placed={p as Placed<ProposedBlock>}
+            onDrop={onDropProposal}
+          />
         ),
       )}
       {draft && <DraftBlock iso={iso} draft={draft} onClose={() => setDraft(null)} />}
@@ -480,6 +518,66 @@ function BlockView({ iso, placed }: { iso: string; placed: Placed<TimeBlock> }) 
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  );
+}
+
+/** A suggested block: dashed, not draggable; × leaves it out of the plan. */
+function ProposalView({
+  placed,
+  onDrop,
+}: {
+  placed: Placed<ProposedBlock>;
+  onDrop?(id: string): void;
+}) {
+  const { tasks, projects, openTask } = useCalendar();
+  const proposal = placed.item;
+  const task = tasks[proposal.task_id];
+  const color = projectColor(task, projects) ?? "var(--tm-accent)";
+  const title = task?.title ?? "Deleted task";
+  const top = (placed.startMin / 60) * HOUR_PX;
+  const height = Math.max(((placed.endMin - placed.startMin) / 60) * HOUR_PX - 2, 16);
+  return (
+    <div
+      data-testid="proposed-block"
+      // Not a place to draw a new block.
+      onPointerDown={(e) => e.stopPropagation()}
+      className="group absolute flex items-start gap-1 overflow-hidden rounded-md border border-dashed px-1.5 py-0.5 text-[12px] leading-4 text-ink"
+      style={{
+        top,
+        height,
+        left: `calc(${(placed.column / placed.columns) * 100}% + 2px)`,
+        width: `calc(${100 / placed.columns}% - 4px)`,
+        borderColor: color,
+        background: `color-mix(in srgb, ${color} 10%, transparent)`,
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => task && openTask(task.id)}
+        aria-label={`Suggested: ${title}, ${formatRange(proposal.start_at, proposal.end_at)}`}
+        className={cx("min-w-0 flex-1 text-left", FOCUS)}
+      >
+        <span className="block truncate font-medium">{title}</span>
+        {height >= 34 && (
+          <span className="block truncate text-[11px] text-ink-2 tabular-nums">
+            {formatRange(proposal.start_at, proposal.end_at)}
+          </span>
+        )}
+      </button>
+      {onDrop && (
+        <button
+          type="button"
+          aria-label={`Leave ${title} out of the plan`}
+          onClick={() => onDrop(proposal.id)}
+          className={cx(
+            "shrink-0 rounded p-0.5 text-ink-3 opacity-0 group-hover:opacity-100 hover:bg-hover hover:text-ink focus-visible:opacity-100",
+            FOCUS,
+          )}
+        >
+          <X size={12} />
+        </button>
+      )}
+    </div>
   );
 }
 
