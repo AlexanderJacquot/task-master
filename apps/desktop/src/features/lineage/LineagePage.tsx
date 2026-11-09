@@ -9,8 +9,10 @@ import {
 } from "../../components/TaskIcons";
 import { cx, FOCUS, IconButton, Select } from "../../components/ui";
 import type { Task } from "../../lib/types";
+import { FILTER_NONE } from "../../lib/views";
 import { copyBelonging, createTask, setParent, updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { MultiPick } from "../shell/FilterBar";
 import { useOpenTask } from "../shell/useOpenTask";
 import { parentCandidates, subtaskCandidates } from "../task-detail/hierarchy";
 import type { Connector } from "./canvas";
@@ -24,6 +26,7 @@ import {
   wouldCycle,
 } from "./graph";
 import { LineageCanvas } from "./LineageCanvas";
+import type { Arrange, LaneSpec } from "./lanes";
 
 const control = "rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink";
 
@@ -31,31 +34,42 @@ const control = "rounded-lg border border-line-strong bg-raised px-3 py-2 text-s
 const FILTER_KEY = "task-master.lineage-filter";
 type SavedFilter = {
   project: string;
-  epic: string;
-  tag: string;
+  /** Epic ids, or `FILTER_NONE` for tasks without an epic; empty shows all. */
+  epics: string[];
+  /** Tag ids, or `FILTER_NONE` for tasks without tags; empty shows all. */
+  tags: string[];
   completion: Completion;
   linkedOnly: boolean;
+  arrange: Arrange;
 };
 function loadFilter(): SavedFilter {
   const fallback: SavedFilter = {
     project: "",
-    epic: "",
-    tag: "",
+    epics: [],
+    tags: [],
     completion: "all",
     linkedOnly: false,
+    arrange: "free",
   };
   try {
     const raw = JSON.parse(localStorage.getItem(FILTER_KEY) ?? "{}");
     return {
       project: typeof raw?.project === "string" ? raw.project : "",
-      epic: typeof raw?.epic === "string" ? raw.epic : "",
-      tag: typeof raw?.tag === "string" ? raw.tag : "",
+      epics: savedIds(raw?.epics, raw?.epic),
+      tags: savedIds(raw?.tags, raw?.tag),
       completion: ["all", "open", "ready"].includes(raw?.completion) ? raw.completion : "all",
       linkedOnly: raw?.linkedOnly === true,
+      arrange: ["free", "epic", "project"].includes(raw?.arrange) ? raw.arrange : "free",
     };
   } catch {
     return fallback;
   }
+}
+
+/** A saved list of ids; filters saved before 0.10.1 held a single id ("" for all). */
+function savedIds(list: unknown, single: unknown): string[] {
+  if (Array.isArray(list)) return list.filter((id): id is string => typeof id === "string");
+  return typeof single === "string" && single ? [single] : [];
 }
 
 /** A task created from the side panel, to place beside the card it was linked to. */
@@ -113,7 +127,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const [selected, setSelected] = useState<string | null>(around ?? null);
   const [connecting, setConnecting] = useState<Connector | null>(null);
   const [filter, setFilter] = useState(loadFilter);
-  const { project, epic, tag, completion, linkedOnly } = filter;
+  const { project, completion, linkedOnly, arrange } = filter;
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [panelOpen, setPanelOpen] = useState(loadPanelOpen);
@@ -128,9 +142,59 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const closed = useMemo(() => closedTaskIds(all, statuses), [all, statuses]);
   const focus = around && tasks[around] ? tasks[around] : undefined;
   const graph = useMemo(
-    () => layoutGraph(filterLineage(all, tasks, closed, { ...filter, around: focus?.id })),
-    [all, tasks, closed, filter, focus?.id],
+    () =>
+      layoutGraph(
+        filterLineage(all, tasks, closed, {
+          project,
+          epics: filter.epics,
+          tags: filter.tags,
+          completion,
+          linkedOnly,
+          around: focus?.id,
+        }),
+      ),
+    [all, tasks, closed, project, filter.epics, filter.tags, completion, linkedOnly, focus?.id],
   );
+  /** Lanes in order: epics (or projects) by rank, the "none" lane last. */
+  const laneSpecs = useMemo((): LaneSpec[] => {
+    if (arrange === "free") return [];
+    const present = new Set(
+      graph.nodes.map((node) => (arrange === "epic" ? node.task.epic_id : node.task.project_id)),
+    );
+    const byRank = <T extends { rank: string }>(a: T, b: T) => (a.rank < b.rank ? -1 : 1);
+    const picked = filter.epics.filter((id) => id !== FILTER_NONE);
+    const specs: LaneSpec[] =
+      arrange === "epic"
+        ? Object.values(epics)
+            .filter(
+              (e) =>
+                present.has(e.id) ||
+                // Empty lanes for active epics in view, to drop cards into.
+                (e.state === "active" &&
+                  !focus &&
+                  (picked.length ? picked.includes(e.id) : !filter.epics.length) &&
+                  (!project || !e.project_id || e.project_id === project)),
+            )
+            .sort(byRank)
+            .map((e) => ({ key: e.id, label: e.name, color: e.color }))
+        : Object.values(projects)
+            .filter((p) => present.has(p.id) || (!focus && p.id === project))
+            .sort(byRank)
+            .map((p) => ({ key: p.id, label: p.name, color: p.color }));
+    const showNone =
+      present.has(null) ||
+      (!focus &&
+        (arrange === "epic"
+          ? !filter.epics.length || filter.epics.includes(FILTER_NONE)
+          : !project));
+    if (showNone)
+      specs.push({
+        key: FILTER_NONE,
+        label: arrange === "epic" ? "No epic" : "No project",
+        color: null,
+      });
+    return specs;
+  }, [arrange, graph.nodes, epics, projects, filter.epics, project, focus]);
   const blocked = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const task of all) {
@@ -139,6 +203,19 @@ export function LineagePage({ around }: { around?: string } = {}) {
     }
     return counts;
   }, [all, tasks, closed]);
+  /** Epics shown under a project filter: that project's, plus epics without a project. */
+  const epicFits = (id: string, projectId: string) =>
+    id === FILTER_NONE || !epics[id]?.project_id || epics[id]?.project_id === projectId;
+  /** Arranging keeps the selection: the same cards stay, only their places change. */
+  function changeArrange(value: Arrange) {
+    const next = { ...filter, arrange: value };
+    setFilter(next);
+    try {
+      localStorage.setItem(FILTER_KEY, JSON.stringify(next));
+    } catch {
+      /* Arranging still works without storage. */
+    }
+  }
   function changeFilter(next: Partial<SavedFilter>) {
     const value = { ...filter, ...next };
     setFilter(value);
@@ -157,6 +234,49 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const search = query.trim().toLowerCase();
   const results = search ? all.filter((task) => task.title.toLowerCase().includes(search)) : [];
   const onCanvas = useMemo(() => new Set(graph.nodes.map((node) => node.task.id)), [graph.nodes]);
+  /**
+   * Tasks to browse without typing. With a card selected: its epic's tasks, then its
+   * project's. Otherwise: tasks the filters match that the canvas doesn't show (only its
+   * connected tasks, or one task's lineage).
+   */
+  const browse = useMemo((): { title: string; tasks: Task[] } | null => {
+    if (search) return null;
+    const mine = all.filter((task) => task.owner !== "agent");
+    if (current) {
+      const rank = (task: Task) =>
+        current.epic_id && task.epic_id === current.epic_id
+          ? 0
+          : current.project_id && task.project_id === current.project_id
+            ? 1
+            : 2;
+      const list = mine
+        .filter((task) => task.id !== current.id && rank(task) < 2)
+        .sort((a, b) => rank(a) - rank(b) || Number(closed.has(a.id)) - Number(closed.has(b.id)));
+      return {
+        title: current.epic_id ? "Same epic, then same project" : "Same project",
+        tasks: list,
+      };
+    }
+    const inScope = filterLineage(mine, tasks, closed, {
+      project,
+      epics: filter.epics,
+      tags: filter.tags,
+      completion,
+      linkedOnly: false,
+    }).filter((task) => !onCanvas.has(task.id));
+    return { title: "Not on the canvas", tasks: inScope };
+  }, [
+    search,
+    all,
+    current,
+    closed,
+    tasks,
+    project,
+    filter.epics,
+    filter.tags,
+    completion,
+    onCanvas,
+  ]);
   const canLink = (from: string, to: string) =>
     from !== to && !tasks[to]?.dependency_ids?.includes(from) && !wouldCycle(tasks, from, to);
   const canParent = useMemo(
@@ -252,16 +372,41 @@ export function LineagePage({ around }: { around?: string } = {}) {
       store,
       {
         title: pick.title,
-        // Keep the new card inside the current filters.
+        // A linked task belongs where its card does: same project, epic and tags,
+        // moved inside the current filters when its card is only shown as a focus.
         project_id: project || source.project_id,
-        epic_id: epic || source.epic_id,
-        // A linked task belongs where its card does: same project, epic and tags.
-        tag_ids: tag ? [...source.tag_ids, tag] : source.tag_ids,
+        epic_id: insideEpics(source.epic_id),
+        tag_ids: insideTags(source.tag_ids),
       },
       { link: side === "out" ? { dependentOf: id } : { prerequisiteOf: id } },
     );
     if (!created) setError(store.getState().lastError ?? "Could not create the task.");
     return created;
+  }
+  function insideEpics(epicId: string | null): string | null {
+    const picked = filter.epics;
+    if (!picked.length || picked.includes(epicId ?? FILTER_NONE)) return epicId;
+    return picked.includes(FILTER_NONE) ? null : (picked[0] ?? epicId);
+  }
+  function insideTags(tagIds: string[]): string[] {
+    const picked = filter.tags;
+    if (!picked.length) return tagIds;
+    if (tagIds.length ? tagIds.some((id) => picked.includes(id)) : picked.includes(FILTER_NONE))
+      return tagIds;
+    const first = picked.find((id) => id !== FILTER_NONE);
+    return first ? [...tagIds, first] : tagIds;
+  }
+  /** A card dropped into another lane takes that lane's epic or project. */
+  function moveToLane(id: string, key: string) {
+    if (arrange === "free") return;
+    const value = key === FILTER_NONE ? null : key;
+    void updateTask(
+      store,
+      id,
+      arrange === "epic" ? [{ epic_id: value }] : [{ project_id: value }],
+    ).then((result) => {
+      if (!result) setError(store.getState().lastError ?? "Could not move the task.");
+    });
   }
   /** Makes `child` a subtask of `parent`, or a top-level task when null. */
   async function adopt(child: string, parent: string | null) {
@@ -307,7 +452,8 @@ export function LineagePage({ around }: { around?: string } = {}) {
             onValueChange={(value) =>
               changeFilter({
                 project: value,
-                ...(epic && value && epics[epic]?.project_id !== value && { epic: "" }),
+                // Drop picked epics that belong to another project.
+                epics: filter.epics.filter((id) => !value || epicFits(id, value)),
               })
             }
             options={[
@@ -315,30 +461,30 @@ export function LineagePage({ around }: { around?: string } = {}) {
               ...Object.values(projects).map((p) => ({ value: p.id, label: p.name })),
             ]}
           />
-          <Select
-            aria-label="Filter lineage by epic"
-            className={cx(control, FOCUS)}
-            value={epic}
-            onValueChange={(value) => changeFilter({ epic: value })}
+          <MultiPick
+            label="Epic"
+            ariaLabel="Filter lineage by epic"
             options={[
-              { value: "", label: "All epics" },
+              { value: FILTER_NONE, label: "No epic" },
               ...Object.values(epics)
-                .filter((e) => !project || e.project_id === project)
+                .filter((e) => !project || epicFits(e.id, project))
                 .sort((a, b) => a.name.localeCompare(b.name))
-                .map((e) => ({ value: e.id, label: e.name })),
+                .map((e) => ({ value: e.id, label: e.name, color: e.color })),
             ]}
+            selected={filter.epics}
+            onChange={(next) => changeFilter({ epics: next })}
           />
-          <Select
-            aria-label="Filter lineage by tag"
-            className={cx(control, FOCUS)}
-            value={tag}
-            onValueChange={(value) => changeFilter({ tag: value })}
+          <MultiPick
+            label="Tags"
+            ariaLabel="Filter lineage by tag"
             options={[
-              { value: "", label: "All tags" },
+              { value: FILTER_NONE, label: "No tag" },
               ...Object.values(tags)
                 .sort((a, b) => a.name.localeCompare(b.name))
-                .map((t) => ({ value: t.id, label: `#${t.name}` })),
+                .map((t) => ({ value: t.id, label: `#${t.name}`, color: t.color })),
             ]}
+            selected={filter.tags}
+            onChange={(next) => changeFilter({ tags: next })}
           />
           <Select<Completion>
             aria-label="Filter lineage by completion"
@@ -349,6 +495,17 @@ export function LineagePage({ around }: { around?: string } = {}) {
               { value: "all", label: "Open and done" },
               { value: "open", label: "Open only" },
               { value: "ready", label: "Ready (not blocked)" },
+            ]}
+          />
+          <Select<Arrange>
+            aria-label="Arrange lineage"
+            className={cx(control, FOCUS)}
+            value={arrange}
+            onValueChange={(value) => changeArrange(value)}
+            options={[
+              { value: "free", label: "Freeform" },
+              { value: "epic", label: "Lanes by epic" },
+              { value: "project", label: "Lanes by project" },
             ]}
           />
           <label className="flex items-center gap-2 text-sm text-ink-2">
@@ -372,7 +529,11 @@ export function LineagePage({ around }: { around?: string } = {}) {
       <div className="flex min-h-0 flex-1">
         <LineageCanvas
           graph={graph}
-          scope={`${project}:${epic}:${tag}:${completion}:${linkedOnly}:${focus?.id ?? ""}`}
+          scope={`${project}:${filter.epics.join(",")}:${filter.tags.join(",")}:${completion}:${linkedOnly}:${focus?.id ?? ""}:${arrange}`}
+          arrange={arrange}
+          laneSpecs={laneSpecs}
+          epics={epics}
+          onMoveToLane={moveToLane}
           fitOnOpen={!!focus}
           statuses={statuses}
           closed={closed}
@@ -484,6 +645,36 @@ export function LineagePage({ around }: { around?: string } = {}) {
                   </p>
                 )}
               </div>
+            )}
+            {browse && browse.tasks.length > 0 && (
+              <section aria-label="Browse tasks" className="mt-4">
+                <h3 className="text-xs font-medium tracking-wide text-ink-3 uppercase">
+                  {browse.title}
+                </h3>
+                <ul aria-label={browse.title} className="mt-1 max-h-72 overflow-y-auto">
+                  {browse.tasks.slice(0, 40).map((task) => (
+                    <SearchResult
+                      key={task.id}
+                      task={task}
+                      current={current}
+                      selected={false}
+                      done={closed.has(task.id)}
+                      visible={onCanvas.has(task.id)}
+                      busy={pending > 0}
+                      canLink={canLink}
+                      canParent={canParent}
+                      onShow={show}
+                      onConnect={(from, to) => void connect(from, to)}
+                      onSetParent={(child, parent) => void adopt(child, parent)}
+                    />
+                  ))}
+                </ul>
+                {browse.tasks.length > 40 && (
+                  <p className="mt-1 text-xs text-ink-3">
+                    Showing 40 of {browse.tasks.length}. Search to narrow.
+                  </p>
+                )}
+              </section>
             )}
             {current && (
               <section aria-label="Dependency editor" className="mt-6 border-t border-line pt-5">

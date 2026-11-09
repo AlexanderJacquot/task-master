@@ -1,4 +1,4 @@
-import { GripVertical } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical, Pin } from "lucide-react";
 import {
   type PointerEvent as ReactPointerEvent,
   useEffect,
@@ -17,7 +17,8 @@ import {
   CloseIcon as X,
 } from "../../components/TaskIcons";
 import { Button, cx, Dot, FOCUS, IconButton } from "../../components/ui";
-import type { Project, Status, Task } from "../../lib/types";
+import type { Epic, Project, Status, Task } from "../../lib/types";
+import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import {
   anyInView,
@@ -31,11 +32,22 @@ import {
   loadCanvas,
   type Point,
   type Positions,
+  type SavedCanvas,
   saveCanvas,
   worldPoint,
   zoomAt,
 } from "./canvas";
 import { type layoutGraph, NODE_HEIGHT, NODE_WIDTH } from "./graph";
+import {
+  type Arrange,
+  avoidPinned,
+  LANE_HEADER,
+  type Lane,
+  type LaneSpec,
+  laneAt,
+  laneKey,
+  layoutLanes,
+} from "./lanes";
 
 type Graph = ReturnType<typeof layoutGraph>;
 type Node = Graph["nodes"][number];
@@ -70,6 +82,10 @@ export function LineageCanvas({
   onAddLinked,
   reveal = null,
   placement = null,
+  arrange = "free",
+  laneSpecs = [],
+  epics = {},
+  onMoveToLane,
 }: {
   graph: Graph;
   statuses: Status[];
@@ -102,6 +118,13 @@ export function LineageCanvas({
   reveal?: { id: string; seq: number } | null;
   /** A task just linked to `near` from elsewhere (the side panel): placed beside its card. */
   placement?: { id: string; near: string; side: Connector["side"] } | null;
+  /** Freeform, or one lane per epic or project. */
+  arrange?: Arrange;
+  /** The lanes to draw, in order (empty ones included, to drop cards into). */
+  laneSpecs?: LaneSpec[];
+  epics?: Record<string, Epic>;
+  /** A card dropped into another lane: give it that lane's epic or project. */
+  onMoveToLane?: (id: string, key: string) => void;
 }) {
   const [saved] = useState(loadCanvas);
   const [positions, setPositions] = useState<Positions>(() => ({
@@ -109,6 +132,11 @@ export function LineageCanvas({
     ...saved.positions,
   }));
   const [camera, setCamera] = useState<Camera>(saved.camera ?? { x: 40, y: 40, zoom: 1 });
+  const [laneRel, setLaneRel] = useState(saved.lanes);
+  const [pinned, setPinned] = useState(() => new Set(saved.pinned));
+  const [collapsed, setCollapsed] = useState(saved.collapsed);
+  /** A card being dragged in lanes: drawn here until it is dropped into a lane. */
+  const [dragOverride, setDragOverride] = useState<{ id: string; point: Point } | null>(null);
   const [size, setSize] = useState({ width: 1000, height: 700 });
   const [draft, setDraft] = useState<{ point: Point; target: string | null } | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -116,6 +144,11 @@ export function LineageCanvas({
   const canvas = useRef<HTMLDivElement>(null);
   const positionsRef = useRef(positions);
   const cameraRef = useRef(camera);
+  const laneRef = useRef(laneRel);
+  const pinnedRef = useRef(pinned);
+  const collapsedRef = useRef(collapsed);
+  const fitNext = useRef(false);
+  const dragPoint = useRef<Point | null>(null);
   const gesture = useRef<Gesture | null>(null);
   const captor = useRef<Element | null>(null);
   const suppressClick = useRef(false);
@@ -131,8 +164,107 @@ export function LineageCanvas({
     positionsRef.current = next;
     setPositions(next);
   }
+  function snapshot(): SavedCanvas {
+    return {
+      positions: positionsRef.current,
+      camera: cameraRef.current,
+      pinned: [...pinnedRef.current],
+      lanes: laneRef.current,
+      collapsed: collapsedRef.current,
+    };
+  }
   function persist() {
-    saveCanvas(positionsRef.current, cameraRef.current);
+    saveCanvas(snapshot());
+  }
+  function updateLanes(next: SavedCanvas["lanes"]) {
+    laneRef.current = next;
+    setLaneRel(next);
+  }
+
+  const lanesMode = arrange === "free" ? null : arrange;
+  const laneView = useMemo(
+    () =>
+      lanesMode
+        ? layoutLanes(
+            graph.nodes,
+            lanesMode,
+            laneSpecs,
+            laneRel[lanesMode],
+            new Set(collapsed[lanesMode]),
+          )
+        : null,
+    [graph.nodes, lanesMode, laneSpecs, laneRel, collapsed],
+  );
+  /** Where every card is now, in canvas coordinates (lanes resolved). */
+  const world: Positions = laneView ? laneView.world : positions;
+  const worldRef = useRef(world);
+  worldRef.current = world;
+  const laneViewRef = useRef(laneView);
+  laneViewRef.current = laneView;
+  const hiddenLanes = useMemo(
+    () => new Set(lanesMode ? collapsed[lanesMode] : []),
+    [lanesMode, collapsed],
+  );
+  const isHidden = (task: Task) => !!lanesMode && hiddenLanes.has(laneKey(task, lanesMode));
+
+  /** Moves a card to a canvas point: freely, or inside its lane. */
+  function setWorld(id: string, point: Point) {
+    const view = laneViewRef.current;
+    const task = graph.nodes.find((node) => node.task.id === id)?.task;
+    if (!lanesMode || !view || !task) {
+      updatePositions({ ...positionsRef.current, [id]: point });
+      return;
+    }
+    const lane = view.lanes.find((l) => l.key === laneKey(task, lanesMode));
+    const top = lane?.top ?? 0;
+    updateLanes({
+      ...laneRef.current,
+      [lanesMode]: {
+        ...laneRef.current[lanesMode],
+        [id]: { x: point.x, y: Math.max(LANE_HEADER, point.y - top) },
+      },
+    });
+  }
+  function togglePin(id: string) {
+    const next = new Set(pinnedRef.current);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    pinnedRef.current = next;
+    setPinned(next);
+    persist();
+  }
+  function toggleLane(key: string) {
+    if (!lanesMode) return;
+    const current = collapsedRef.current[lanesMode];
+    const next = {
+      ...collapsedRef.current,
+      [lanesMode]: current.includes(key) ? current.filter((k) => k !== key) : [...current, key],
+    };
+    collapsedRef.current = next;
+    setCollapsed(next);
+    persist();
+  }
+  /** Lays the cards out again; pinned cards stay where they are. */
+  function arrangeAgain() {
+    const ids = graph.nodes.map((node) => node.task.id).filter((id) => !pinnedRef.current.has(id));
+    if (lanesMode) {
+      const kept = { ...laneRef.current[lanesMode] };
+      for (const id of ids) delete kept[id];
+      updateLanes({ ...laneRef.current, [lanesMode]: kept });
+    } else {
+      const fixed = Object.fromEntries(
+        graph.nodes
+          .filter((node) => pinnedRef.current.has(node.task.id))
+          .map((node) => [node.task.id, positionsRef.current[node.task.id] ?? node]),
+      );
+      const fresh = Object.fromEntries(
+        graph.nodes
+          .filter((node) => !pinnedRef.current.has(node.task.id))
+          .map((node) => [node.task.id, { x: node.x, y: node.y }]),
+      );
+      updatePositions({ ...positionsRef.current, ...avoidPinned(fresh, fixed) });
+    }
+    fitNext.current = true;
   }
   function relativePoint(event: { clientX: number; clientY: number }): Point {
     const rect = canvas.current?.getBoundingClientRect();
@@ -141,18 +273,35 @@ export function LineageCanvas({
   function fitView() {
     updateCamera(
       fitCamera(
-        graph.nodes.map((node) => positionsRef.current[node.task.id] ?? node),
+        graph.nodes
+          .filter((node) => !isHidden(node.task))
+          .map((node) => worldRef.current[node.task.id] ?? node),
         size.width,
         size.height,
       ),
     );
     persist();
   }
+  // After "Arrange": frame the cards once the new layout has rendered.
+  useEffect(() => {
+    if (!fitNext.current) return;
+    fitNext.current = false;
+    fitView();
+  });
+  // New cards placed in their lane: keep that placement.
+  useEffect(() => {
+    if (!lanesMode || !laneView) return;
+    const saved = laneRef.current[lanesMode];
+    if (Object.keys(laneView.relative).length === Object.keys(saved).length) return;
+    updateLanes({ ...laneRef.current, [lanesMode]: laneView.relative });
+    persist();
+  });
   function zoom(next: number, anchor = { x: size.width / 2, y: size.height / 2 }) {
     updateCamera(zoomAt(cameraRef.current, anchor, next));
     persist();
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: persist reads refs only.
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
@@ -196,19 +345,22 @@ export function LineageCanvas({
       cameraRef.current = next;
       setCamera(next);
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => saveCanvas(positionsRef.current, cameraRef.current), 180);
+      saveTimer = setTimeout(persist, 180);
     };
     element.addEventListener("wheel", wheel, { passive: false });
     return () => {
       observer.disconnect();
       element.removeEventListener("wheel", wheel);
       clearTimeout(saveTimer);
-      saveCanvas(positionsRef.current, cameraRef.current);
+      persist();
     };
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reads the current layout from refs.
   useEffect(() => {
-    const missing = graph.nodes.filter((node) => !positionsRef.current[node.task.id]);
+    const missing = lanesMode
+      ? []
+      : graph.nodes.filter((node) => !positionsRef.current[node.task.id]);
     let next = positionsRef.current;
     if (missing.length) {
       next = {
@@ -226,7 +378,9 @@ export function LineageCanvas({
       const bounds = canvas.current?.getBoundingClientRect();
       const width = bounds?.width || size.width;
       const height = bounds?.height || size.height;
-      const points = graph.nodes.map((node) => next[node.task.id] ?? node);
+      const points = graph.nodes
+        .filter((node) => !isHidden(node.task))
+        .map((node) => (lanesMode ? worldRef.current : next)[node.task.id] ?? node);
       // The saved camera belongs to whatever view was open last: on open it can point at an
       // area with none of these cards (a task's lineage, or other filters).
       if (
@@ -239,7 +393,7 @@ export function LineageCanvas({
         setCamera(fitted);
       }
     }
-    saveCanvas(next, cameraRef.current);
+    persist();
   }, [graph.nodes, saved.camera, size.width, size.height, scope, fitOnOpen]);
 
   const placed = useRef<string | null>(null);
@@ -255,7 +409,7 @@ export function LineageCanvas({
   // biome-ignore lint/correctness/useExhaustiveDependencies: see above.
   useEffect(() => {
     if (!reveal) return;
-    const point = positionsRef.current[reveal.id];
+    const point = worldRef.current[reveal.id];
     if (!point) return;
     const bounds = canvas.current?.getBoundingClientRect();
     const width = bounds?.width || size.width;
@@ -265,8 +419,15 @@ export function LineageCanvas({
   }, [reveal]);
 
   const nodes = useMemo(
-    () => graph.nodes.map((node) => ({ ...node, ...(positions[node.task.id] ?? {}) })),
-    [graph.nodes, positions],
+    () =>
+      graph.nodes
+        .filter((node) => !(lanesMode && hiddenLanes.has(laneKey(node.task, lanesMode))))
+        .map((node) => ({
+          ...node,
+          ...(world[node.task.id] ?? {}),
+          ...(dragOverride?.id === node.task.id ? dragOverride.point : {}),
+        })),
+    [graph.nodes, world, dragOverride, lanesMode, hiddenLanes],
   );
   const byId = useMemo(() => new Map(nodes.map((node) => [node.task.id, node])), [nodes]);
   const visible = nodes.filter(
@@ -289,7 +450,7 @@ export function LineageCanvas({
     captor.current.setPointerCapture?.(event.pointerId);
   }
   function startMove(event: ReactPointerEvent, node: Node) {
-    if (event.button !== 0 || connecting) return;
+    if (event.button !== 0 || connecting || pinnedRef.current.has(node.task.id)) return;
     capture(event, {
       kind: "move",
       pointerId: event.pointerId,
@@ -339,13 +500,14 @@ export function LineageCanvas({
       updateCamera({ ...active.camera, x: active.camera.x + dx, y: active.camera.y + dy });
     } else if (active.kind === "move") {
       setDragging(true);
-      updatePositions({
-        ...positionsRef.current,
-        [active.id]: {
-          x: active.position.x + dx / cameraRef.current.zoom,
-          y: active.position.y + dy / cameraRef.current.zoom,
-        },
-      });
+      const point = {
+        x: active.position.x + dx / cameraRef.current.zoom,
+        y: active.position.y + dy / cameraRef.current.zoom,
+      };
+      if (lanesMode) {
+        dragPoint.current = point;
+        setDragOverride({ id: active.id, point });
+      } else updatePositions({ ...positionsRef.current, [active.id]: point });
     } else {
       const world = worldPoint(point, cameraRef.current);
       setDraft({ point: world, target: targetAt(world) });
@@ -370,16 +532,39 @@ export function LineageCanvas({
           onConnect(from, to);
         } else onCancelConnection();
       }
-    } else if (active.moved) persist();
-    else if (active.kind === "pan") {
+    } else if (active.moved) {
+      if (active.kind === "move" && lanesMode) dropInLane(active.id);
+      persist();
+    } else if (active.kind === "pan") {
       onSelect(null);
       onCancelConnection();
     }
   }
+  /** Ends a drag in lanes: the card lands in the lane under it, changing epic or project. */
+  function dropInLane(id: string) {
+    const view = laneViewRef.current;
+    const task = graph.nodes.find((node) => node.task.id === id)?.task;
+    const dropped = dragPoint.current;
+    dragPoint.current = null;
+    setDragOverride(null);
+    if (!lanesMode || !view || !task || !dropped) return;
+    const lane = laneAt(view.lanes, dropped.y + NODE_HEIGHT / 2);
+    if (!lane) return;
+    updateLanes({
+      ...laneRef.current,
+      [lanesMode]: {
+        ...laneRef.current[lanesMode],
+        [id]: { x: dropped.x, y: Math.max(LANE_HEADER, dropped.y - lane.top) },
+      },
+    });
+    if (lane.key !== laneKey(task, lanesMode)) onMoveToLane?.(id, lane.key);
+  }
   function cancel() {
     const active = gesture.current;
     gesture.current = null;
-    if (active?.kind === "move")
+    dragPoint.current = null;
+    setDragOverride(null);
+    if (active?.kind === "move" && !lanesMode)
       updatePositions({ ...positionsRef.current, [active.id]: active.position });
     if (active?.kind === "pan") updateCamera(active.camera);
     if (active) captor.current?.releasePointerCapture?.(active.pointerId);
@@ -391,12 +576,12 @@ export function LineageCanvas({
   }
   /** Puts a new card one column beside `near`, in the first row no card covers. */
   function placeBeside(id: string, near: string, side: Connector["side"]) {
-    const origin = positionsRef.current[near];
+    const origin = worldRef.current[near];
     if (!origin) return;
-    const taken = Object.entries(positionsRef.current)
+    const taken = Object.entries(worldRef.current)
       .filter(([other]) => other !== id && graph.nodes.some((node) => node.task.id === other))
       .map(([, point]) => point);
-    updatePositions({ ...positionsRef.current, [id]: freeSlot(origin, side, taken) });
+    setWorld(id, freeSlot(origin, side, taken));
     persist();
   }
   async function addLinked(connector: Connector, pick: { title: string } | { existing: string }) {
@@ -587,17 +772,34 @@ export function LineageCanvas({
           style={{ transform: `translate(${shift.x}px, ${shift.y}px)` }}
         >
           <div className="absolute inset-0" style={{ zoom: camera.zoom }}>
+            {laneView && (
+              <LaneBands
+                lanes={laneView.lanes}
+                left={Math.min(-camera.x / camera.zoom, ...nodes.map((node) => node.x - 60))}
+                right={Math.max(
+                  (size.width - camera.x) / camera.zoom,
+                  ...nodes.map((node) => node.x + NODE_WIDTH + 60),
+                )}
+                viewLeft={-camera.x / camera.zoom}
+                arrange={lanesMode ?? "epic"}
+                epics={epics}
+                onToggle={toggleLane}
+              />
+            )}
             {visible.map((node) => {
               const task = node.task;
               const status = statusById.get(task.status_id);
               const project = task.project_id ? projects[task.project_id] : undefined;
               const isClosed = closed.has(task.id);
               const blockers = blocked[task.id] ?? 0;
+              const isPinned = pinned.has(task.id);
+              const epic = task.epic_id && lanesMode !== "epic" ? epics[task.epic_id] : undefined;
               return (
                 <div
                   key={task.id}
                   data-lineage-node={task.id}
                   data-closed={isClosed || undefined}
+                  data-pinned={isPinned || undefined}
                   className={cx(
                     "group/node pointer-events-auto absolute transition-opacity",
                     // Done work stays visible as context, faded and colorless.
@@ -635,19 +837,21 @@ export function LineageCanvas({
                         ArrowDown: { x: 0, y: 16 },
                       };
                       const offset = delta[event.key];
-                      if (!event.altKey || !offset) return;
+                      if (!event.altKey || !offset || isPinned) return;
                       event.preventDefault();
                       event.stopPropagation();
-                      const current = positionsRef.current[task.id] ?? node;
-                      updatePositions({
-                        ...positionsRef.current,
-                        [task.id]: { x: current.x + offset.x, y: current.y + offset.y },
-                      });
+                      const current = worldRef.current[task.id] ?? node;
+                      setWorld(task.id, { x: current.x + offset.x, y: current.y + offset.y });
                       persist();
                     }}
-                    title="Drag to move · Double-click to open · Alt + arrows to nudge"
+                    title={
+                      isPinned
+                        ? "Pinned: stays where it is · Double-click to open"
+                        : "Drag to move · Double-click to open · Alt + arrows to nudge"
+                    }
                     className={cx(
-                      "flex size-full cursor-grab flex-col justify-between rounded-xl border bg-raised px-4 py-3 text-left shadow-md shadow-black/5 transition-colors active:cursor-grabbing",
+                      "flex size-full flex-col justify-between rounded-xl border bg-raised px-4 py-3 text-left shadow-md shadow-black/5 transition-colors",
+                      isPinned ? "cursor-pointer" : "cursor-grab active:cursor-grabbing",
                       FOCUS,
                       selected === task.id
                         ? "border-accent ring-2 ring-accent/15"
@@ -660,15 +864,29 @@ export function LineageCanvas({
                     )}
                   >
                     <span className="flex w-full items-start gap-2">
-                      <span
-                        className={cx(
-                          "line-clamp-2 min-w-0 flex-1 text-[13px] font-medium leading-snug",
-                          isClosed ? "text-ink-3 line-through" : "text-ink",
+                      <span className="min-w-0 flex-1">
+                        {epic && (
+                          <span
+                            data-card-epic
+                            className="mb-0.5 flex items-center gap-1 truncate text-[11px] font-medium text-violet-800 dark:text-violet-300"
+                            style={epic.color ? { color: epic.color } : undefined}
+                          >
+                            <EpicMark epic={epic} size={10} />
+                            <span className="truncate">{epic.name}</span>
+                          </span>
                         )}
-                      >
-                        {task.title}
+                        <span
+                          className={cx(
+                            "text-[13px] font-medium leading-snug",
+                            epic ? "line-clamp-1" : "line-clamp-2",
+                            isClosed ? "text-ink-3 line-through" : "text-ink",
+                          )}
+                        >
+                          {task.title}
+                        </span>
                       </span>
-                      <GripVertical size={13} className="mt-0.5 shrink-0 text-ink-3/50" />
+                      {/* Room for the pin button, laid over the card. */}
+                      <span className="size-[13px] shrink-0" />
                     </span>
                     <span className="flex w-full items-center gap-1.5 text-[11px] text-ink-3">
                       <Dot color={status?.color ?? null} />
@@ -681,13 +899,42 @@ export function LineageCanvas({
                           Blocked · {blockers}
                         </span>
                       )}
-                      {project && (
+                      {project && lanesMode !== "project" && (
                         <span className="ml-auto flex min-w-0 items-center gap-1 truncate">
                           <ProjectMark project={project} />
                           <span className="truncate">{project.name}</span>
                         </span>
                       )}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={isPinned ? `Unpin ${task.title}` : `Pin ${task.title}`}
+                    aria-pressed={isPinned}
+                    title={
+                      isPinned ? "Unpin: it can move again" : "Pin: keep this card where it is"
+                    }
+                    onClick={() => togglePin(task.id)}
+                    className={cx(
+                      "group/pin absolute top-2.5 right-2.5 flex size-6 items-center justify-center rounded-md hover:bg-hover",
+                      isPinned ? "text-accent" : "text-ink-3/50 hover:text-accent",
+                      FOCUS,
+                    )}
+                  >
+                    {isPinned ? (
+                      <Pin size={13} className="fill-current" />
+                    ) : (
+                      <>
+                        <GripVertical
+                          size={13}
+                          className="group-hover/node:hidden group-focus-visible/pin:hidden"
+                        />
+                        <Pin
+                          size={13}
+                          className="hidden group-hover/node:block group-focus-visible/pin:block"
+                        />
+                      </>
+                    )}
                   </button>
                   {(["in", "out"] as const).map((side) => (
                     <button
@@ -827,15 +1074,12 @@ export function LineageCanvas({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => {
-            updatePositions({
-              ...positionsRef.current,
-              ...Object.fromEntries(
-                graph.nodes.map((node) => [node.task.id, { x: node.x, y: node.y }]),
-              ),
-            });
-            fitView();
-          }}
+          title={
+            pinned.size
+              ? "Lay the cards out again; pinned cards stay where they are"
+              : "Lay the cards out again"
+          }
+          onClick={arrangeAgain}
         >
           <LayoutGrid size={14} /> Auto arrange
         </Button>
@@ -847,7 +1091,92 @@ export function LineageCanvas({
   );
 }
 
+/** The lanes behind the cards; each header stays at the left edge of the view. */
+function LaneBands({
+  lanes,
+  left,
+  right,
+  viewLeft,
+  arrange,
+  epics,
+  onToggle,
+}: {
+  lanes: Lane[];
+  left: number;
+  right: number;
+  viewLeft: number;
+  arrange: "epic" | "project";
+  epics: Record<string, Epic>;
+  onToggle: (key: string) => void;
+}) {
+  const headerX = Math.max(left, viewLeft) - left + 12;
+  return (
+    <>
+      {lanes.map((lane) => {
+        const epic = arrange === "epic" ? epics[lane.key] : undefined;
+        const Chevron = lane.collapsed ? ChevronRight : ChevronDown;
+        return (
+          <section
+            key={lane.key}
+            data-lane={lane.key}
+            aria-label={`Lane ${lane.label}`}
+            className="absolute rounded-xl border border-line bg-ink/[0.025]"
+            style={{
+              left,
+              top: lane.top,
+              width: right - left,
+              height: lane.height,
+              borderLeft: `4px solid ${lane.color ?? "var(--tm-line-strong)"}`,
+            }}
+          >
+            <button
+              type="button"
+              aria-expanded={!lane.collapsed}
+              aria-label={`${lane.collapsed ? "Expand" : "Collapse"} lane ${lane.label}`}
+              onClick={() => onToggle(lane.key)}
+              className={cx(
+                "pointer-events-auto absolute top-2 flex max-w-80 items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[13px] font-medium text-ink-2 hover:bg-hover",
+                FOCUS,
+              )}
+              style={{ left: headerX, ...(lane.color && { color: lane.color }) }}
+            >
+              <Chevron size={14} className="shrink-0" />
+              {epic ? <EpicMark epic={epic} size={11} /> : <Dot color={lane.color} />}
+              <span className="truncate">{lane.label}</span>
+              <span className="shrink-0 text-xs font-normal text-ink-3">{lane.count}</span>
+            </button>
+          </section>
+        );
+      })}
+    </>
+  );
+}
+
 const ADD_WIDTH = 260;
+
+/**
+ * Tasks to link without typing: same epic first, then same project. Open tasks only, never
+ * agent tasks.
+ */
+export function suggestions(origin: Task, tasks: Task[], canLink: (id: string) => boolean) {
+  const near = (t: Task) =>
+    origin.epic_id && t.epic_id === origin.epic_id
+      ? 0
+      : origin.project_id && t.project_id === origin.project_id
+        ? 1
+        : 2;
+  return tasks
+    .filter(
+      (t) =>
+        t.id !== origin.id &&
+        t.owner !== "agent" &&
+        near(t) < 2 &&
+        t.completed_at === null &&
+        canLink(t.id),
+    )
+    .sort((a, b) => near(a) - near(b))
+    .slice(0, 6);
+}
 
 /** The plus button's popover: type a title to create a task, or pick an existing one. */
 function AddLinked({
@@ -871,7 +1200,7 @@ function AddLinked({
     ? tasks
         .filter((t) => t.title.toLowerCase().includes(title.toLowerCase()) && canLink(t.id))
         .slice(0, 6)
-    : [];
+    : suggestions(origin.task, tasks, canLink);
   const label = side === "out" ? "New task after" : "New task before";
   return (
     <form
@@ -915,17 +1244,23 @@ function AddLinked({
             onCancel();
         }}
       />
-      {title && (
+      {(title || matches.length > 0) && (
         <div className="mt-1 flex flex-col">
-          <button
-            type="submit"
-            className={cx(
-              "truncate rounded-md px-2 py-1.5 text-left text-sm text-ink hover:bg-hover",
-              FOCUS,
-            )}
-          >
-            + Create “{title}”
-          </button>
+          {title ? (
+            <button
+              type="submit"
+              className={cx(
+                "truncate rounded-md px-2 py-1.5 text-left text-sm text-ink hover:bg-hover",
+                FOCUS,
+              )}
+            >
+              + Create “{title}”
+            </button>
+          ) : (
+            <p className="px-2 pt-1 pb-0.5 text-[11px] text-ink-3">
+              {origin.task.epic_id ? "From the same epic or project" : "From the same project"}
+            </p>
+          )}
           {matches.map((t) => (
             <button
               type="button"

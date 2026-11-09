@@ -45,6 +45,46 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Lineage as the main working view: lanes, pins, epic on cards, browsing (2026-11-09)
+
+- "Arrange" select: Freeform, Lanes by epic, Lanes by project (`lanes.ts`, saved with the
+  filters). Lanes stack top to bottom in rank order, with "No epic" / "No project" last;
+  active epics in view get an empty lane to drop into. New cards go in their dependency
+  column, so links still read left to right across lanes. Inside a lane cards move
+  freely (positions are relative to the lane, saved per arrangement); dropping a card in
+  another lane sets its epic or project (`update_task`, undoable). Lane headers stay at
+  the left edge of the view and collapse (hidden cards and their arrows).
+- Pins: the grip on each card becomes a pin on hover. A pinned card doesn't drag or
+  nudge, and "Auto arrange" (both modes) leaves it in place, moving other cards off it.
+- Cards show their epic (EpicMark in the epic color, title on one line then); hidden in
+  epic lanes, as the project is in project lanes.
+- Browsing without typing: with a card selected, the side panel lists its epic's tasks
+  then its project's, with the link chips; with none selected, the tasks the filters
+  match but the canvas leaves out ("Connected tasks only", a task's lineage). The plus
+  popover suggests open tasks of the same epic, then project, before you type.
+- Layout (positions, pins, lanes, collapsed) stays in the webview's local storage, per
+  machine, on purpose: links sync through the core, the arrangement does not.
+- Tests: `lanes.test.ts`, and `LineagePage.test.tsx` (epic lanes and dropping into
+  another, project lanes, collapse, pins, suggestions, the "not on the canvas" list).
+  Biome, typecheck and 341 frontend tests pass. Not checked in the real app (no browser
+  mode without Tauri): look at lanes, dragging between them and the pin button on Linux
+  and Windows.
+
+### Lineage: filter by several epics and tags, "No epic", "No tag" (2026-11-09)
+
+- Bug: with a project picked, the Epic select listed only epics whose home project was that
+  project, so epics without a project disappeared (often leaving just "All epics").
+- The Epic and Tag selects are now the FilterBar chips (`MultiPick`, exported with an
+  `ariaLabel`): several values, "any of", with "No epic" / "No tag" (`FILTER_NONE`). Under
+  a project filter the Epic chip lists that project's epics plus epics without a project;
+  changing project drops picked epics of another project. Saved filters with the old
+  single `epic` / `tag` strings are read as one-item lists.
+- A card created from a plus button keeps its source's epic and tags, moved inside the
+  filters only when the source itself doesn't match (a focused card).
+- Tests: `graph.test.ts` (none sentinels, any-of) and `LineagePage.test.tsx` (chip
+  options under a project, filtering, old saved filter). Biome, typecheck and the 333
+  frontend tests pass.
+
 ### Release 0.10.0 (2026-11-09)
 
 - Integrated the uncommitted work since 0.9.0 (Lineage side panel and linking, subtask
@@ -1362,6 +1402,10 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 3. Then Phase 2 (folder workspaces and the `tk` CLI on the same core and parser).
 
 ## Later
+
+- Lineage: drag a task from the side panel onto the canvas (left/right half of a card =
+  prerequisite/dependent). Left out for now: HTML5 drag and drop is unreliable in the
+  Windows webview while Tauri's file drop is on; the panel's link chips cover it.
 
 - Lineage: a "Ready (not blocked)" filter for list and board views needs a new
   `ViewFilter` field in core (spec, bindings); only the Lineage canvas has it so far.

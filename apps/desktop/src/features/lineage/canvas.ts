@@ -116,18 +116,51 @@ function isPoint(value: unknown): value is Point {
   );
 }
 
-/** Layout is a local view preference, like board column widths. */
-export function loadCanvas(): { positions: Positions; camera?: Camera } {
+function readPositions(value: unknown): Positions {
+  const positions: Positions = {};
+  if (value && typeof value === "object")
+    for (const [id, point] of Object.entries(value))
+      if (isPoint(point)) positions[id] = { x: point.x, y: point.y };
+  return positions;
+}
+function readIds(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : [];
+}
+
+/**
+ * The canvas layout, saved on this machine only (the webview's storage), like board column
+ * widths: links live in the core and sync, where the cards sit does not.
+ */
+export interface SavedCanvas {
+  /** Freeform positions. */
+  positions: Positions;
+  camera?: Camera;
+  /** Cards that stay where they are: no dragging, and arranging leaves them alone. */
+  pinned: string[];
+  /** Positions inside a lane (y from the lane's top), per arrangement. */
+  lanes: { epic: Positions; project: Positions };
+  /** Collapsed lanes, per arrangement. */
+  collapsed: { epic: string[]; project: string[] };
+}
+
+export function loadCanvas(): SavedCanvas {
+  const empty: SavedCanvas = {
+    positions: {},
+    pinned: [],
+    lanes: { epic: {}, project: {} },
+    collapsed: { epic: [], project: [] },
+  };
   try {
     const raw = JSON.parse(localStorage.getItem(CANVAS_KEY) ?? "{}");
-    const positions: Positions = {};
-    if (raw?.positions && typeof raw.positions === "object") {
-      for (const [id, value] of Object.entries(raw.positions))
-        if (isPoint(value)) positions[id] = { x: value.x, y: value.y };
-    }
     const camera = raw?.camera;
     return {
-      positions,
+      positions: readPositions(raw?.positions),
+      pinned: readIds(raw?.pinned),
+      lanes: { epic: readPositions(raw?.lanes?.epic), project: readPositions(raw?.lanes?.project) },
+      collapsed: {
+        epic: readIds(raw?.collapsed?.epic),
+        project: readIds(raw?.collapsed?.project),
+      },
       ...(isPoint(camera) &&
         "zoom" in camera &&
         typeof camera.zoom === "number" &&
@@ -140,13 +173,13 @@ export function loadCanvas(): { positions: Positions; camera?: Camera } {
         }),
     };
   } catch {
-    return { positions: {} };
+    return empty;
   }
 }
 
-export function saveCanvas(positions: Positions, camera: Camera) {
+export function saveCanvas(canvas: SavedCanvas) {
   try {
-    localStorage.setItem(CANVAS_KEY, JSON.stringify({ positions, camera }));
+    localStorage.setItem(CANVAS_KEY, JSON.stringify(canvas));
   } catch {
     /* Layout still works without storage. */
   }
