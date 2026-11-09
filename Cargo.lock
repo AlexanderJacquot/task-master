@@ -4660,7 +4660,7 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "taskmaster-client"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.3.4",
@@ -4674,7 +4674,7 @@ dependencies = [
 
 [[package]]
 name = "taskmaster-core"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "insta",
  "rusqlite",
@@ -4689,7 +4689,7 @@ dependencies = [
 
 [[package]]
 name = "taskmaster-desktop"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.3.4",
@@ -4715,7 +4715,7 @@ dependencies = [
 
 [[package]]
 name = "taskmaster-mcp"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "rmcp",
  "schemars 1.2.3",
@@ -4727,7 +4727,7 @@ dependencies = [
 
 [[package]]
 name = "taskmaster-server"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "axum",
  "futures-util",

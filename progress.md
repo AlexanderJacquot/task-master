@@ -51,6 +51,14 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Release 0.13.0 (2026-11-09)
+
+- Calendar planner (Plan mode: focus, Suggest/Reshuffle/Approve), board cards dropped on
+  the sidebar and the detail panel, idle swimlanes collapsed by default, Lineage "Show
+  subtasks", dropdown typeahead, six more epic shapes. Schema unchanged (12). Checks pass
+  locally (clippy, cargo test, biome, typecheck, 376 frontend tests). Notes in
+  `docs/releases/0.13.0.md`; tagged `v0.13.0`.
+
 ### Board: idle swimlanes start collapsed (2026-11-09, on `main`, uncommitted)
 
 - A swimlane whose cards are all done or cancelled starts collapsed. The lane's default
