@@ -51,6 +51,14 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Board: idle swimlanes start collapsed (2026-11-09, on `main`, uncommitted)
+
+- A swimlane whose cards are all done or cancelled starts collapsed. The lane's default
+  follows its cards (a card moved in or reopened opens it); a lane opened or collapsed by
+  hand keeps that choice. `task-master.board.lanes` is now `{laneKey: boolean}`; the
+  earlier list of collapsed keys still loads (each as collapsed).
+- Tests: `useCollapsedLanes.test.ts`, a new board test in `app.test.tsx`.
+
 ### Calendar: plan a day or a week (2026-11-09, branch `calendar-planner`, uncommitted)
 
 - A **Plan** button in the Calendar header (day and week views) opens a planning bar: a

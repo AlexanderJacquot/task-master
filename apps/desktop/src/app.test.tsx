@@ -279,10 +279,43 @@ describe("the board", () => {
     expect(within(lane).queryByRole("button", { name: "Renew passport" })).toBeNull();
     expect(within(lane).getByRole("group", { name: "To do, Normal (collapsed)" })).toBeTruthy();
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(localStorage.getItem("task-master.board.lanes")).toBe('["priority:normal"]');
+    expect(localStorage.getItem("task-master.board.lanes")).toBe('{"priority:normal":true}');
     fireEvent.click(toggle);
     expect(await within(lane).findByRole("list", { name: "To do, Normal" })).toBeTruthy();
-    expect(localStorage.getItem("task-master.board.lanes")).toBe("[]");
+    expect(localStorage.getItem("task-master.board.lanes")).toBe('{"priority:normal":false}');
+  });
+
+  it("starts lanes with nothing left to do collapsed, until opened by hand", async () => {
+    cleanup();
+    const finished = task({
+      title: "File the receipts",
+      priority: "low",
+      status_id: STATUS.done,
+      completed_at: Date.now(),
+    });
+    fake = fakeApi(() => store, [existing, finished]);
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    render(
+      <StoreProvider store={store} api={fake.api}>
+        <RouterProvider
+          router={createAppRouter(createMemoryHistory({ initialEntries: ["/inbox"] }))}
+        />
+      </StoreProvider>,
+    );
+    await screen.findByRole("heading", { name: "Inbox" });
+    await openBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    await pickOption("Swimlanes", "Lanes by priority");
+    // Low has only a done card; Normal has an open one.
+    const normal = await screen.findByRole("region", { name: "Lane Normal" });
+    expect(within(normal).getByRole("button", { name: /Normal/, expanded: true })).toBeTruthy();
+    const low = screen.getByRole("region", { name: "Lane Low" });
+    const toggle = within(low).getByRole("button", { name: /Low/, expanded: false });
+    expect(within(low).queryByRole("button", { name: "File the receipts" })).toBeNull();
+    fireEvent.click(toggle);
+    expect(await within(low).findByRole("button", { name: "File the receipts" })).toBeTruthy();
+    expect(localStorage.getItem("task-master.board.lanes")).toBe('{"priority:low":false}');
   });
 
   it("collapses a column to a strip, remembers it, and expands it again", async () => {

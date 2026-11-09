@@ -125,13 +125,27 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   // Collapsed swimlanes show a strip of drop targets. Holding a dragged card over one for
   // a moment opens that lane until the drag ends, so the card can be placed among its cards.
   const collapsedLanes = useCollapsedLanes();
+  // Lanes with nothing left to do (every card done or cancelled, or no cards) start collapsed.
+  const idleLanes = useMemo(() => {
+    const open = new Set(
+      board.columns
+        .filter((c) => c.status.category !== "done" && c.status.category !== "cancelled")
+        .map((c) => c.status.id),
+    );
+    return new Set(
+      board.lanes
+        .filter((l) => l.key !== "all" && ![...open].some((id) => (l.cells[id]?.length ?? 0) > 0))
+        .map((l) => l.key),
+    );
+  }, [board]);
+  const laneCollapsed = (key: string) => collapsedLanes.isCollapsed(key, idleLanes.has(key));
   const [hoverLane, setHoverLane] = useState<string | null>(null);
   const [springOpen, setSpringOpen] = useState<ReadonlySet<string>>(new Set());
-  const laneOpen = (key: string) => !collapsedLanes.isCollapsed(key) || springOpen.has(key);
+  const laneOpen = (key: string) => !laneCollapsed(key) || springOpen.has(key);
   const hoverCollapsed =
     activeId !== null &&
     hoverLane !== null &&
-    collapsedLanes.isCollapsed(hoverLane) &&
+    laneCollapsed(hoverLane) &&
     !springOpen.has(hoverLane);
   useEffect(() => {
     if (!hoverCollapsed || hoverLane === null) return;
@@ -278,7 +292,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
     }
     // Dropped on a collapsed column or lane: on top, where it shows once it is expanded.
     const [toLane, toStatus] = to.split(SEP) as [string, string];
-    const laneShut = collapsedLanes.isCollapsed(toLane) && !opened.has(toLane);
+    const laneShut = laneCollapsed(toLane) && !opened.has(toLane);
     if (columns.isCollapsed(toStatus) || laneShut) {
       order = [id, ...order.filter((other) => other !== id)];
     }
@@ -423,7 +437,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
               {lanes && (
                 <LaneHeader
                   lane={lane}
-                  collapsed={collapsedLanes.isCollapsed(lane.key)}
+                  collapsed={laneCollapsed(lane.key)}
                   count={laneCount(lane)}
                   onToggle={(collapsed) => collapsedLanes.setCollapsed(lane.key, collapsed)}
                 />
