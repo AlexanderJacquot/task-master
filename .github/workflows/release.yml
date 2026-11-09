@@ -87,11 +87,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Lineage gets an always-visible side panel to search, link and create tasks, sharper cards on Linux, and dependents that follow their prerequisite's project, epic and tags. Tasks can become subtasks of another task, or adopt one, from their details. Filters gain "No epic" and "No tag". Metrics gains a burn-down chart and a focus on one project or tag. New purple app icon and banner logo.
+            Lineage can be the place you work from: arrange cards in lanes by epic or project (drop a card into another lane to move it), pin cards so arranging leaves them alone, see each card's epic, remove a link with the × on its arrow, and link nearby tasks without searching. Lineage filters take several epics and tags, plus "No epic" and "No tag". Claude sessions under WSL find Claude Code installed in ~/.local/bin. task-master is now open source under the AGPL-3.0.
 
-            No database changes (schema 12): 0.8.0 to 0.10.0 desktops and servers sync with each other. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.10.0.
+            No database changes (schema 12): 0.8.0 to 0.11.0 desktops and servers sync with each other. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.11.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.10.0/docs/releases/0.10.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.11.0/docs/releases/0.11.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

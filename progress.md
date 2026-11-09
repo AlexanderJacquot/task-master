@@ -51,6 +51,14 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Release 0.11.0 (2026-11-09)
+
+- Lineage lanes, pins, epic on cards, link removal, browsing and multi-value filters; the
+  WSL agent fix; sync frequency in Sync settings; app icons in Settings; AGPL-3.0 license;
+  new README. Schema unchanged (12). All CI checks pass locally (fmt, clippy, 212 Rust
+  tests, bindings, biome, typecheck, 342 frontend tests). Notes in
+  `docs/releases/0.11.0.md`; tagged `v0.11.0`.
+
 ### README with branding, screenshots and a quickstart (2026-11-09)
 
 - README rewritten: banner and wordmark header, badges, features with three screenshots
