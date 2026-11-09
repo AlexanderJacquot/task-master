@@ -1,6 +1,12 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Select as RadixSelect } from "radix-ui";
-import { type ComponentProps, type CSSProperties, type KeyboardEvent, type ReactNode, useRef } from "react";
+import {
+  type ComponentProps,
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+  useRef,
+} from "react";
 import type { Priority } from "../lib/types";
 import { CheckIcon as Check } from "./TaskIcons";
 

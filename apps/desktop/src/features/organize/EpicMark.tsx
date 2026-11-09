@@ -10,9 +10,9 @@ import {
   MapPinIcon,
   PriorityIcon,
   ShieldIcon,
-  TagIcon,
   BilletIcon as Square,
   MulletIcon as Star,
+  TagIcon,
   PileIcon as Triangle,
 } from "../../components/TaskIcons";
 import type { Epic } from "../../lib/types";
