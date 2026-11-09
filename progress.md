@@ -51,6 +51,13 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Release 0.12.0 (2026-11-09)
+
+- Collapsible board swimlanes (hold-to-open while dragging), calendar blocks resizable
+  from both edges with Shift+↑/↓, the epic color and shape picker. Schema unchanged (12).
+  Checks pass locally (clippy, cargo test, biome, typecheck, 349 frontend tests). Notes in
+  `docs/releases/0.12.0.md`; tagged `v0.12.0`.
+
 ### Board: collapsible swimlanes (2026-11-09)
 
 - With swimlanes on, a lane's title is a toggle: collapsed, the lane shows its card count
