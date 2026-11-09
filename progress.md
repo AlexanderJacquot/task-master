@@ -4,6 +4,12 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**WSL agent fix** (2026-11-09, on `main`, uncommitted): runs and "Open in terminal" with the
+WSL runtime failed with `execvpe(claude) failed` because `wsl.exe --exec` runs no shell, so
+the profile's PATH (`~/.local/bin`) is missing, and the native NotFound retry never fired
+(wsl.exe itself started). A bare `claude_path` is now resolved once per distro through the
+login shell (`$SHELL`, else the passwd shell) before a WSL launch. Not yet verified on Windows.
+
 **M16 Agent sessions** (ADR 017) is merged into `main` (from `m16-agent-sessions`):
 "Send to Claude" from a task, headless Claude Code runs with a live status, an MCP server
 for agents to track their work, and agent-owned tasks hidden from the user's views. Steps
