@@ -1,17 +1,15 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
+// Database, Info and Keyboard have no glyph in the app's icon set yet.
+import { Database, Info, Keyboard } from "lucide-react";
+import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import {
-  Bot,
-  CalendarDays,
-  Database,
-  Info,
-  Keyboard,
-  type LucideIcon,
-  RefreshCw,
-  SlidersHorizontal,
-  Workflow as WorkflowIcon,
-} from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+  AgentsIcon,
+  CalendarIcon,
+  ColumnsIcon,
+  OptionsIcon,
+  RefreshIcon,
+} from "../../components/TaskIcons";
 import { Button, cx, Dot, InlineInput, Select } from "../../components/ui";
 import {
   loadDefaultProject,
@@ -632,12 +630,18 @@ function Shortcuts() {
 }
 
 /** A settings category; one is shown at a time and the URL hash picks it (`/settings#shortcuts`). */
-type SettingsCategory = { id: string; label: string; icon: LucideIcon; render: () => ReactNode };
+type CategoryIcon = ComponentType<{ size?: number; className?: string; "aria-hidden"?: boolean }>;
+type SettingsCategory = {
+  id: string;
+  label: string;
+  icon: CategoryIcon;
+  render: () => ReactNode;
+};
 
 const GENERAL: SettingsCategory = {
   id: "general",
   label: "General",
-  icon: SlidersHorizontal,
+  icon: OptionsIcon,
   render: () => (
     <>
       <Appearance />
@@ -648,11 +652,11 @@ const GENERAL: SettingsCategory = {
 
 const SETTINGS_CATEGORIES: SettingsCategory[] = [
   GENERAL,
-  { id: "workflow", label: "Workflow", icon: WorkflowIcon, render: () => <Workflow /> },
+  { id: "workflow", label: "Workflow", icon: ColumnsIcon, render: () => <Workflow /> },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard, render: () => <Shortcuts /> },
-  { id: "sync", label: "Sync", icon: RefreshCw, render: () => <SyncSettings /> },
-  { id: "calendar", label: "Calendar", icon: CalendarDays, render: () => <CalendarSettings /> },
-  { id: "agents", label: "Agents", icon: Bot, render: () => <AgentSettings /> },
+  { id: "sync", label: "Sync", icon: RefreshIcon, render: () => <SyncSettings /> },
+  { id: "calendar", label: "Calendar", icon: CalendarIcon, render: () => <CalendarSettings /> },
+  { id: "agents", label: "Agents", icon: AgentsIcon, render: () => <AgentSettings /> },
   { id: "data", label: "Data and backups", icon: Database, render: () => <Data /> },
   { id: "about", label: "About", icon: Info, render: () => <About /> },
 ];
