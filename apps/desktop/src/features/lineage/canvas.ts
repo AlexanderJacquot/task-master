@@ -103,6 +103,18 @@ export function connectionPath(from: Point, to: Point): string {
   return `M ${from.x} ${from.y} C ${from.x + bend} ${from.y}, ${to.x - bend} ${to.y}, ${to.x} ${to.y}`;
 }
 
+/** The middle of a connection drawn by `connectionPath`: where its remove button goes. */
+export function connectionMidpoint(from: Point, to: Point): Point {
+  if (to.x < from.x + 60)
+    return { x: (from.x + to.x) / 2, y: Math.max(from.y, to.y) + NODE_HEIGHT / 2 + 40 };
+  // A cubic Bezier at t = 0.5, with the control points of `connectionPath`.
+  const bend = Math.max(60, Math.min(180, (to.x - from.x) * 0.45));
+  return {
+    x: (from.x + 3 * (from.x + bend) + 3 * (to.x - bend) + to.x) / 8,
+    y: (from.y + to.y) / 2,
+  };
+}
+
 function isPoint(value: unknown): value is Point {
   return (
     !!value &&

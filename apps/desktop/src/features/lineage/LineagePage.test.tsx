@@ -744,3 +744,20 @@ it("lists the tasks the canvas leaves out when it shows connected tasks only", a
   expect(list.textContent).toContain("Loner");
   expect(list.textContent).not.toContain("Plan");
 });
+
+it("removes a link with the × on its arrow, shown when hovering a linked card", async () => {
+  const a = task({ title: "Plan" });
+  const b = task({ title: "Build", dependency_ids: [a.id] });
+  place([a, b]);
+  const { store, commands } = await setup([a, b]);
+  const label = "Remove link from Plan to Build";
+  expect(screen.queryByRole("button", { name: label })).toBeNull();
+  const node = screen.getByRole("button", { name: "Select Build" }).parentElement as HTMLElement;
+  fireEvent.pointerEnter(node);
+  fireEvent.click(await screen.findByRole("button", { name: label }));
+  await waitFor(() => expect(store.getState().tasks[b.id]?.dependency_ids).toEqual([]));
+  expect(commands.at(-1)).toEqual([
+    { type: "update_task", id: b.id, changes: [{ dependency_ids: [] }] },
+  ]);
+  expect(screen.queryByRole("button", { name: label })).toBeNull();
+});

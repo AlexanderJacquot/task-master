@@ -68,6 +68,8 @@ the app daily for two weeks before Phase 2 (plan section 10).
   then its project's, with the link chips; with none selected, the tasks the filters
   match but the canvas leaves out ("Connected tasks only", a task's lineage). The plus
   popover suggests open tasks of the same epic, then project, before you type.
+- Removing a link: hovering a card (or an arrow, or selecting a card) shows a × in the
+  middle of its arrows; clicking it removes the dependency.
 - Layout (positions, pins, lanes, collapsed) stays in the webview's local storage, per
   machine, on purpose: links sync through the core, the arrangement does not.
 - Tests: `lanes.test.ts`, and `LineagePage.test.tsx` (epic lanes and dropping into

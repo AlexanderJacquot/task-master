@@ -25,6 +25,7 @@ import {
   type Camera,
   type Connector,
   centerOn,
+  connectionMidpoint,
   connectionPath,
   connectorPoint,
   fitCamera,
@@ -73,6 +74,7 @@ export function LineageCanvas({
   onStartConnection,
   onCancelConnection,
   onConnect,
+  onDisconnect,
   canConnect,
   scope,
   fitOnOpen = false,
@@ -98,6 +100,8 @@ export function LineageCanvas({
   onStartConnection: (connector: Connector) => void;
   onCancelConnection: () => void;
   onConnect: (from: string, to: string) => void;
+  /** Removes the link from a prerequisite to its dependent (the × on an arrow). */
+  onDisconnect?: (from: string, to: string) => void;
   canConnect: (from: string, to: string) => boolean;
   scope: string;
   /** Frame the cards on open instead of restoring the saved camera (a task's lineage). */
@@ -141,6 +145,9 @@ export function LineageCanvas({
   const [draft, setDraft] = useState<{ point: Point; target: string | null } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [adding, setAdding] = useState<Connector | null>(null);
+  /** A hovered card or arrow: its arrows show a remove button. */
+  const [hoverNode, setHoverNode] = useState<string | null>(null);
+  const [hoverEdge, setHoverEdge] = useState<string | null>(null);
   const canvas = useRef<HTMLDivElement>(null);
   const positionsRef = useRef(positions);
   const cameraRef = useRef(camera);
@@ -596,6 +603,28 @@ export function LineageCanvas({
     } else onSelect(id);
   }
 
+  // Arrows on screen (or close), culled like the cards; include the backward bend.
+  const shownEdges = graph.edges.flatMap((edge) => {
+    const from = byId.get(edge.from.task.id);
+    const to = byId.get(edge.to.task.id);
+    if (!from || !to) return [];
+    if (
+      (Math.max(from.x, to.x) + NODE_WIDTH + 180) * camera.zoom + camera.x < -300 ||
+      (Math.min(from.x, to.x) - 180) * camera.zoom + camera.x > size.width + 300 ||
+      (Math.max(from.y, to.y) + NODE_HEIGHT + 90) * camera.zoom + camera.y < -300 ||
+      Math.min(from.y, to.y) * camera.zoom + camera.y > size.height + 300
+    )
+      return [];
+    const key = `${from.task.id}:${to.task.id}`;
+    const touches = (id: string | null) => !!id && (from.task.id === id || to.task.id === id);
+    const removable =
+      !!onDisconnect &&
+      !connecting &&
+      !dragging &&
+      (hoverEdge === key || touches(hoverNode) || touches(selected));
+    return [{ key, from, to, removable }];
+  });
+
   // Whole pixels: a layer at a fractional offset is resampled, which blurs its text.
   const shift = { x: Math.round(camera.x), y: Math.round(camera.y) };
   const origin = connecting ? byId.get(connecting.id) : undefined;
@@ -712,37 +741,41 @@ export function LineageCanvas({
             </marker>
           </defs>
           <g transform={`translate(${shift.x} ${shift.y}) scale(${camera.zoom})`}>
-            {graph.edges.map((edge) => {
-              const from = byId.get(edge.from.task.id);
-              const to = byId.get(edge.to.task.id);
-              if (!from || !to) return null;
-              // Cull offscreen connections as well as cards; include the backward bend.
-              if (
-                (Math.max(from.x, to.x) + NODE_WIDTH + 180) * camera.zoom + camera.x < -300 ||
-                (Math.min(from.x, to.x) - 180) * camera.zoom + camera.x > size.width + 300 ||
-                (Math.max(from.y, to.y) + NODE_HEIGHT + 90) * camera.zoom + camera.y < -300 ||
-                Math.min(from.y, to.y) * camera.zoom + camera.y > size.height + 300
-              )
-                return null;
-              const highlighted = from.task.id === selected || to.task.id === selected;
+            {shownEdges.map(({ key, from, to }) => {
+              const highlighted =
+                from.task.id === selected || to.task.id === selected || hoverEdge === key;
               // A done prerequisite no longer blocks: its link fades and dashes.
               const satisfied = closed.has(from.task.id);
+              const d = connectionPath(connectorPoint(from, "out"), connectorPoint(to, "in"));
               return (
-                <path
-                  key={`${from.task.id}:${to.task.id}`}
-                  data-lineage-edge={`${from.task.id}:${to.task.id}`}
-                  d={connectionPath(connectorPoint(from, "out"), connectorPoint(to, "in"))}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={highlighted ? 2.5 : 1.8}
-                  strokeDasharray={satisfied ? "5 5" : undefined}
-                  data-satisfied={satisfied || undefined}
-                  className={cx(
-                    highlighted ? "text-accent" : "text-ink-3/55",
-                    satisfied && "opacity-45",
+                <g key={key}>
+                  <path
+                    data-lineage-edge={key}
+                    d={d}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={highlighted ? 2.5 : 1.8}
+                    strokeDasharray={satisfied ? "5 5" : undefined}
+                    data-satisfied={satisfied || undefined}
+                    className={cx(
+                      highlighted ? "text-accent" : "text-ink-3/55",
+                      satisfied && "opacity-45",
+                    )}
+                    markerEnd={`url(#${marker})`}
+                  />
+                  {/* A wide invisible stroke: hovering near the arrow shows its × button. */}
+                  {onDisconnect && (
+                    <path
+                      d={d}
+                      fill="none"
+                      stroke="transparent"
+                      strokeWidth={14}
+                      className="[pointer-events:stroke]"
+                      onPointerEnter={() => setHoverEdge(key)}
+                      onPointerLeave={() => setHoverEdge((h) => (h === key ? null : h))}
+                    />
                   )}
-                  markerEnd={`url(#${marker})`}
-                />
+                </g>
               );
             })}
             {draft && start && end && connecting && (
@@ -798,6 +831,8 @@ export function LineageCanvas({
                 <div
                   key={task.id}
                   data-lineage-node={task.id}
+                  onPointerEnter={() => setHoverNode(task.id)}
+                  onPointerLeave={() => setHoverNode((h) => (h === task.id ? null : h))}
                   data-closed={isClosed || undefined}
                   data-pinned={isPinned || undefined}
                   className={cx(
@@ -1002,6 +1037,36 @@ export function LineageCanvas({
                 </div>
               );
             })}
+            {shownEdges
+              .filter((edge) => edge.removable)
+              .map(({ key, from, to }) => {
+                const mid = connectionMidpoint(
+                  connectorPoint(from, "out"),
+                  connectorPoint(to, "in"),
+                );
+                return (
+                  <button
+                    key={`remove-${key}`}
+                    type="button"
+                    aria-label={`Remove link from ${from.task.title} to ${to.task.title}`}
+                    title="Remove this link"
+                    disabled={pending}
+                    onPointerEnter={() => setHoverEdge(key)}
+                    onPointerLeave={() => setHoverEdge((h) => (h === key ? null : h))}
+                    onClick={() => {
+                      setHoverEdge(null);
+                      onDisconnect?.(from.task.id, to.task.id);
+                    }}
+                    className={cx(
+                      "pointer-events-auto absolute z-[6] flex size-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-line-strong bg-raised text-ink-3 shadow-sm hover:border-danger hover:bg-danger/10 hover:text-danger disabled:opacity-50",
+                      FOCUS,
+                    )}
+                    style={{ left: mid.x, top: mid.y }}
+                  >
+                    <X size={11} />
+                  </button>
+                );
+              })}
             {adding &&
               (() => {
                 const origin = byId.get(adding.id);
@@ -1158,7 +1223,7 @@ const ADD_WIDTH = 260;
  * Tasks to link without typing: same epic first, then same project. Open tasks only, never
  * agent tasks.
  */
-export function suggestions(origin: Task, tasks: Task[], canLink: (id: string) => boolean) {
+function suggestions(origin: Task, tasks: Task[], canLink: (id: string) => boolean) {
   const near = (t: Task) =>
     origin.epic_id && t.epic_id === origin.epic_id
       ? 0

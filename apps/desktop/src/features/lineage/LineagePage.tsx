@@ -562,6 +562,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
           onConnect={(from, to) => {
             void connect(from, to);
           }}
+          onDisconnect={remove}
           canConnect={(from, to) =>
             !tasks[to]?.dependency_ids?.includes(from) && !wouldCycle(tasks, from, to)
           }
