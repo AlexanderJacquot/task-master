@@ -7,8 +7,8 @@ use serde_json::{Map, Value, json};
 use crate::clock::{check_date, check_id, new_id};
 use crate::error::{Error, Result};
 use crate::model::{
-    AgentRuntime, BlockOutcome, EpicState, Id, IsoDate, Priority, SessionState, Status,
-    StatusCategory, Task, TaskOwner, Timestamp, VIEW_SPEC_VERSION, ViewScope, ViewSpec,
+    AgentRuntime, BlockOutcome, EpicState, FILTER_NONE, Id, IsoDate, Priority, SessionState,
+    Status, StatusCategory, Task, TaskOwner, Timestamp, VIEW_SPEC_VERSION, ViewScope, ViewSpec,
 };
 use crate::ops::{Batch, Change, Entity, OpKind};
 use crate::{files, query, rank};
@@ -1287,10 +1287,10 @@ fn view_spec_json(b: &Batch<'_, '_>, spec: &ViewSpec) -> Result<String> {
     for id in &f.project_ids {
         live_project(b, id)?;
     }
-    for id in &f.epic_ids {
+    for id in f.epic_ids.iter().filter(|id| *id != FILTER_NONE) {
         live_epic(b, id)?;
     }
-    for id in &f.tag_ids {
+    for id in f.tag_ids.iter().filter(|id| *id != FILTER_NONE) {
         live_tag(b, id)?;
     }
     Ok(serde_json::to_string(spec)?)

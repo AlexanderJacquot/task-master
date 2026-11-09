@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { STATUS, statuses, task } from "../../test/fixtures";
 import {
   closedTaskIds,
+  downstream,
   filterLineage,
   type LineageFilter,
   layoutGraph,
@@ -9,6 +10,16 @@ import {
   openBlockers,
   wouldCycle,
 } from "./graph";
+
+it("lists every task downstream of one, once, ignoring unrelated tasks", () => {
+  const a = task();
+  const b = task({ dependency_ids: [a.id] });
+  const c = task({ dependency_ids: [a.id, b.id] });
+  const d = task({ dependency_ids: [c.id] });
+  const other = task();
+  expect(downstream(a.id, [a, b, c, d, other]).sort()).toEqual([b.id, c.id, d.id].sort());
+  expect(downstream(d.id, [a, b, c, d, other])).toEqual([]);
+});
 
 it("lays out branching and joining chains in dependency order", () => {
   const a = task();
@@ -82,4 +93,8 @@ it("filters by completion, tag, project and a task's lineage", () => {
   expect(titles({ around: waiting.id })).toEqual(["Open", "Waiting"]);
   expect(titles({ around: done.id })).toEqual(["Done", "Free"]);
   expect([...lineageOf(all, loner.id)]).toEqual([loner.id]);
+  // The focused task survives filters that would hide it; its lineage still filters.
+  expect(titles({ around: loner.id, linkedOnly: true, project: "p" })).toEqual(["Loner"]);
+  expect(titles({ around: done.id, completion: "open" })).toEqual(["Done", "Free"]);
+  expect(titles({ around: waiting.id, tag: "tag" })).toEqual(["Waiting"]);
 });

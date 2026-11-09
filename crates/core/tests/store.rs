@@ -1189,6 +1189,15 @@ fn view_specs_are_validated() {
         Err(Error::NotFound { .. })
     ));
 
+    let mut no_epic_or_tag = spec(ViewScope::All);
+    no_epic_or_tag.filter.epic_ids = vec![FILTER_NONE.into()];
+    no_epic_or_tag.filter.tag_ids = vec![FILTER_NONE.into()];
+    s.execute(create(no_epic_or_tag, "Loose")).unwrap();
+    s.execute(Command::DeleteView {
+        id: s.snapshot().unwrap().views[0].id.clone(),
+    })
+    .unwrap();
+
     let tag = add_tag(&mut s, "old");
     s.execute(Command::DeleteTag { id: tag.id.clone() })
         .unwrap();

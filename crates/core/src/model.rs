@@ -506,6 +506,9 @@ pub enum ViewScope {
     Tag { id: Id },
 }
 
+/// Stands for "no epic" in [`ViewFilter::epic_ids`] and "no tag" in [`ViewFilter::tag_ids`].
+pub const FILTER_NONE: &str = "none";
+
 /// Narrows the scope. Empty lists match everything; a task must match every non-empty
 /// list (any value within a list).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -517,9 +520,10 @@ pub struct ViewFilter {
     pub priorities: Vec<Priority>,
     #[serde(default)]
     pub project_ids: Vec<Id>,
+    /// Epic ids; [`FILTER_NONE`] matches tasks without an epic.
     #[serde(default)]
     pub epic_ids: Vec<Id>,
-    /// Tasks carrying any of these tags.
+    /// Tasks carrying any of these tags; [`FILTER_NONE`] matches tasks without tags.
     #[serde(default)]
     pub tag_ids: Vec<Id>,
     #[serde(default)]

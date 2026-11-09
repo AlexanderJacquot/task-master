@@ -1,7 +1,7 @@
 import { Popover } from "radix-ui";
 import { cx, Dot, MENU, MENU_ITEM, MENU_LABEL, PRIORITIES, Select } from "../../components/ui";
 import type { DueFilter, Epic, Priority, Project, Status, Tag, ViewFilter } from "../../lib/types";
-import { EMPTY_FILTER, filterIsEmpty } from "../../lib/views";
+import { EMPTY_FILTER, FILTER_NONE, filterIsEmpty } from "../../lib/views";
 
 interface Option {
   value: string;
@@ -115,17 +115,23 @@ export function FilterBar({
       />
       <MultiPick
         label="Epic"
-        options={Object.values(epics)
-          .sort(byRank)
-          .map((e) => ({ value: e.id, label: e.name }))}
+        options={[
+          { value: FILTER_NONE, label: "No epic" },
+          ...Object.values(epics)
+            .sort(byRank)
+            .map((e) => ({ value: e.id, label: e.name })),
+        ]}
         selected={filter.epic_ids}
         onChange={(epic_ids) => set({ epic_ids })}
       />
       <MultiPick
         label="Tags"
-        options={Object.values(tags)
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((t) => ({ value: t.id, label: `#${t.name}` }))}
+        options={[
+          { value: FILTER_NONE, label: "No tag" },
+          ...Object.values(tags)
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((t) => ({ value: t.id, label: `#${t.name}` })),
+        ]}
         selected={filter.tag_ids}
         onChange={(tag_ids) => set({ tag_ids })}
       />

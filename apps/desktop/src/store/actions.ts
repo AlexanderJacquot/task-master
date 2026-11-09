@@ -238,6 +238,37 @@ export function restoreTask(store: TaskStore, id: string, plan: RestorePlan) {
   return s.mutate(commands, { upsert: { tasks: [{ ...updated, tag_ids }] } });
 }
 
+/**
+ * Puts each target in the source's project and epic and adds the source's tags (tags the
+ * target already has stay), as one undoable batch. Lineage uses it to make a task's
+ * dependents follow it. Resolves to null when nothing needed to change.
+ */
+export function copyBelonging(store: TaskStore, sourceId: string, targetIds: string[]) {
+  const s = store.getState();
+  const source = s.tasks[sourceId];
+  if (!source) return Promise.resolve(null);
+  const now = Date.now();
+  const commands: Command[] = [];
+  const updated: Task[] = [];
+  for (const id of new Set(targetIds)) {
+    const target = s.tasks[id];
+    if (!target || id === sourceId) continue;
+    const changes: TaskChange[] = [];
+    if ((target.project_id ?? null) !== (source.project_id ?? null))
+      changes.push({ project_id: source.project_id ?? null });
+    if ((target.epic_id ?? null) !== (source.epic_id ?? null))
+      changes.push({ epic_id: source.epic_id ?? null });
+    const addTags = source.tag_ids.filter((tag) => !target.tag_ids.includes(tag));
+    if (!changes.length && !addTags.length) continue;
+    if (changes.length) commands.push({ type: "update_task", id, changes });
+    for (const tag_id of addTags) commands.push({ type: "tag_task", task_id: id, tag_id });
+    const next = applyTaskChanges(target, changes, s.statuses, now);
+    updated.push({ ...next, tag_ids: [...target.tag_ids, ...addTags].sort(), updated_at: now });
+  }
+  if (!commands.length) return Promise.resolve(null);
+  return s.mutate(commands, { upsert: { tasks: updated } });
+}
+
 /** Checkbox: open → first `done` status; done → first `todo` status. */
 export function toggleDone(store: TaskStore, id: string) {
   const s = store.getState();
@@ -264,15 +295,31 @@ export function setParent(store: TaskStore, id: string, parentId: string | null)
   const task = s.tasks[id];
   if (!task) return Promise.resolve(null);
   const parent = parentId ? s.tasks[parentId] : undefined;
-  const updated: Task = {
-    ...task,
-    parent_id: parentId,
-    project_id: parent ? parent.project_id : task.project_id,
-    epic_id: parent ? parent.epic_id : task.epic_id,
-    updated_at: Date.now(),
-  };
+  const now = Date.now();
+  const updated: Task[] = [
+    {
+      ...task,
+      parent_id: parentId,
+      project_id: parent ? parent.project_id : task.project_id,
+      epic_id: parent ? parent.epic_id : task.epic_id,
+      updated_at: now,
+    },
+  ];
+  // As the core does: subtasks that shared the task's project or epic follow it.
+  if (parent) {
+    const children = childrenByParent(Object.values(s.tasks));
+    for (const subId of descendantIds(id, children)) {
+      const sub = s.tasks[subId];
+      if (!sub) continue;
+      const project = sub.project_id === task.project_id ? parent.project_id : sub.project_id;
+      const epic = sub.epic_id === task.epic_id ? parent.epic_id : sub.epic_id;
+      if (project !== sub.project_id || epic !== sub.epic_id) {
+        updated.push({ ...sub, project_id: project, epic_id: epic, updated_at: now });
+      }
+    }
+  }
   return s.mutate([{ type: "set_parent", id, parent_id: parentId }], {
-    upsert: { tasks: [updated] },
+    upsert: { tasks: updated },
   });
 }
 

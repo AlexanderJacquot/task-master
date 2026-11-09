@@ -5,6 +5,7 @@ import {
   createRouter,
   type RouterHistory,
   redirect,
+  useNavigate,
 } from "@tanstack/react-router";
 import { MoreIcon as MoreHorizontal } from "./components/TaskIcons";
 import { IconButton } from "./components/ui";
@@ -91,7 +92,22 @@ const agentsRoute = createRoute({
 const metricsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "metrics",
-  component: MetricsPage,
+  // ?project=<project id | "inbox"> focuses one project's stats (a project's ⋯ → Metrics).
+  validateSearch: (search: Record<string, unknown>): { project?: string } => ({
+    ...(typeof search.project === "string" && search.project && { project: search.project }),
+  }),
+  component: function MetricsView() {
+    const { project } = metricsRoute.useSearch();
+    const navigate = useNavigate();
+    return (
+      <MetricsPage
+        project={project ?? ""}
+        onProject={(id) =>
+          void navigate({ to: "/metrics", search: id ? { project: id } : {}, replace: true })
+        }
+      />
+    );
+  },
 });
 
 const projectRoute = createRoute({

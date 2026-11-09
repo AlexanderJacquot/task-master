@@ -1,4 +1,4 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import {
@@ -312,13 +312,14 @@ function ProjectMenu({
   onRename(): void;
 }) {
   const store = useTaskStore();
+  const navigate = useNavigate();
   const archived = project.archived_at !== null;
   const item = MENU_ITEM;
   return (
     <DropdownMenu.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <DropdownMenu.Trigger
         aria-label={`${project.name} actions`}
-        title="Rename, color, archive, delete"
+        title="Rename, color, metrics, archive, delete"
         className={cx(
           "inline-flex size-6 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-hover hover:text-ink",
           "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
@@ -347,6 +348,12 @@ function ProjectMenu({
             ))}
           </div>
           <DropdownMenu.Separator className={MENU_SEPARATOR} />
+          <DropdownMenu.Item
+            className={item}
+            onSelect={() => void navigate({ to: "/metrics", search: { project: project.id } })}
+          >
+            <ChartNoAxesCombined size={14} /> Metrics
+          </DropdownMenu.Item>
           <DropdownMenu.Item
             className={item}
             onSelect={() => void updateProject(store, project.id, [{ archived: !archived }])}

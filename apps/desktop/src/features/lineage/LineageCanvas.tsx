@@ -20,8 +20,10 @@ import { Button, cx, Dot, FOCUS, IconButton } from "../../components/ui";
 import type { Project, Status, Task } from "../../lib/types";
 import { ProjectMark } from "../organize/ProjectMark";
 import {
+  anyInView,
   type Camera,
   type Connector,
+  centerOn,
   connectionPath,
   connectorPoint,
   fitCamera,
@@ -61,10 +63,13 @@ export function LineageCanvas({
   onConnect,
   canConnect,
   scope,
+  fitOnOpen = false,
   closed,
   blocked,
   tasks,
   onAddLinked,
+  reveal = null,
+  placement = null,
 }: {
   graph: Graph;
   statuses: Status[];
@@ -79,6 +84,8 @@ export function LineageCanvas({
   onConnect: (from: string, to: string) => void;
   canConnect: (from: string, to: string) => boolean;
   scope: string;
+  /** Frame the cards on open instead of restoring the saved camera (a task's lineage). */
+  fitOnOpen?: boolean;
   /** Done or cancelled: drawn faded. */
   closed: Set<string>;
   /** Open prerequisites per task (absent when none). */
@@ -91,6 +98,10 @@ export function LineageCanvas({
     side: Connector["side"],
     pick: { title: string } | { existing: string },
   ) => Promise<string | null>;
+  /** Center the camera on this card; `seq` changes on every request. */
+  reveal?: { id: string; seq: number } | null;
+  /** A task just linked to `near` from elsewhere (the side panel): placed beside its card. */
+  placement?: { id: string; near: string; side: Connector["side"] } | null;
 }) {
   const [saved] = useState(loadCanvas);
   const [positions, setPositions] = useState<Positions>(() => ({
@@ -210,20 +221,48 @@ export function LineageCanvas({
     const scopeChanged = previousScope.current !== scope;
     previousScope.current = scope;
     if ((!initialized.current || scopeChanged) && graph.nodes.length) {
+      const opening = !initialized.current;
       initialized.current = true;
-      if (scopeChanged || (!saved.camera && graph.nodes.length <= 30)) {
-        const bounds = canvas.current?.getBoundingClientRect();
-        const fitted = fitCamera(
-          graph.nodes.map((node) => next[node.task.id] ?? node),
-          bounds?.width ?? size.width,
-          bounds?.height ?? size.height,
-        );
+      const bounds = canvas.current?.getBoundingClientRect();
+      const width = bounds?.width || size.width;
+      const height = bounds?.height || size.height;
+      const points = graph.nodes.map((node) => next[node.task.id] ?? node);
+      // The saved camera belongs to whatever view was open last: on open it can point at an
+      // area with none of these cards (a task's lineage, or other filters).
+      if (
+        scopeChanged ||
+        (opening && (fitOnOpen || !anyInView(points, cameraRef.current, width, height))) ||
+        (!saved.camera && graph.nodes.length <= 30)
+      ) {
+        const fitted = fitCamera(points, width, height);
         cameraRef.current = fitted;
         setCamera(fitted);
       }
     }
     saveCanvas(next, cameraRef.current);
-  }, [graph.nodes, saved.camera, size.width, size.height, scope]);
+  }, [graph.nodes, saved.camera, size.width, size.height, scope, fitOnOpen]);
+
+  const placed = useRef<string | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: placeBeside reads refs only.
+  useEffect(() => {
+    if (!placement || placed.current === placement.id) return;
+    if (!graph.nodes.some((node) => node.task.id === placement.id)) return;
+    placed.current = placement.id;
+    placeBeside(placement.id, placement.near, placement.side);
+  }, [placement, graph.nodes]);
+
+  // Only a new request moves the camera, not resizes or edits.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above.
+  useEffect(() => {
+    if (!reveal) return;
+    const point = positionsRef.current[reveal.id];
+    if (!point) return;
+    const bounds = canvas.current?.getBoundingClientRect();
+    const width = bounds?.width || size.width;
+    const height = bounds?.height || size.height;
+    updateCamera(centerOn(point, cameraRef.current, width, height));
+    persist();
+  }, [reveal]);
 
   const nodes = useMemo(
     () => graph.nodes.map((node) => ({ ...node, ...(positions[node.task.id] ?? {}) })),
@@ -350,19 +389,20 @@ export function LineageCanvas({
     if (!active && !connecting) onSelect(null);
     onCancelConnection();
   }
-  async function addLinked(connector: Connector, pick: { title: string } | { existing: string }) {
-    const origin = positionsRef.current[connector.id];
-    setAdding(null);
-    const id = await onAddLinked(connector.id, connector.side, pick);
-    if (!id || !origin) return;
+  /** Puts a new card one column beside `near`, in the first row no card covers. */
+  function placeBeside(id: string, near: string, side: Connector["side"]) {
+    const origin = positionsRef.current[near];
+    if (!origin) return;
     const taken = Object.entries(positionsRef.current)
       .filter(([other]) => other !== id && graph.nodes.some((node) => node.task.id === other))
       .map(([, point]) => point);
-    updatePositions({
-      ...positionsRef.current,
-      [id]: freeSlot(origin, connector.side, taken),
-    });
+    updatePositions({ ...positionsRef.current, [id]: freeSlot(origin, side, taken) });
     persist();
+  }
+  async function addLinked(connector: Connector, pick: { title: string } | { existing: string }) {
+    setAdding(null);
+    const id = await onAddLinked(connector.id, connector.side, pick);
+    if (id) placeBeside(id, connector.id, connector.side);
   }
   function selectNode(id: string) {
     if (connecting) {
@@ -371,6 +411,8 @@ export function LineageCanvas({
     } else onSelect(id);
   }
 
+  // Whole pixels: a layer at a fractional offset is resampled, which blurs its text.
+  const shift = { x: Math.round(camera.x), y: Math.round(camera.y) };
   const origin = connecting ? byId.get(connecting.id) : undefined;
   const target = draft?.target ? byId.get(draft.target) : undefined;
   const valid =
@@ -403,6 +445,11 @@ export function LineageCanvas({
           backgroundImage: "radial-gradient(circle, var(--tm-line-strong) 1px, transparent 1px)",
           backgroundSize: `${24 * camera.zoom}px ${24 * camera.zoom}px`,
           backgroundPosition: `${camera.x}px ${camera.y}px`,
+        }}
+        onPointerDownCapture={(event) => {
+          // A click anywhere else on the canvas (cards included, which stop their pointer
+          // events) closes the plus button's popover, even with text typed in it.
+          if (adding && !(event.target as Element).closest("[data-add-linked]")) setAdding(null);
         }}
         onPointerDown={(event) => {
           if (event.button !== 0 && event.button !== 1) return;
@@ -479,7 +526,7 @@ export function LineageCanvas({
               <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
             </marker>
           </defs>
-          <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.zoom})`}>
+          <g transform={`translate(${shift.x} ${shift.y}) scale(${camera.zoom})`}>
             {graph.edges.map((edge) => {
               const from = byId.get(edge.from.task.id);
               const to = byId.get(edge.to.task.id);
@@ -531,199 +578,205 @@ export function LineageCanvas({
             )}
           </g>
         </svg>
+        {/* The cards zoom with CSS `zoom`, not `scale()`: WebKitGTK rasterizes a scaled layer
+            once and stretches the bitmap, which blurs the text at most zoom levels. `zoom`
+            lays the cards out at their real size, so the text stays crisp. The pan is a
+            whole-pixel translate on its own element (a fractional one blurs the text too). */}
         <div
-          className="pointer-events-none absolute inset-0 origin-top-left"
-          style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
+          className="pointer-events-none absolute inset-0"
+          style={{ transform: `translate(${shift.x}px, ${shift.y}px)` }}
         >
-          {visible.map((node) => {
-            const task = node.task;
-            const status = statusById.get(task.status_id);
-            const project = task.project_id ? projects[task.project_id] : undefined;
-            const isClosed = closed.has(task.id);
-            const blockers = blocked[task.id] ?? 0;
-            return (
-              <div
-                key={task.id}
-                data-lineage-node={task.id}
-                data-closed={isClosed || undefined}
-                className={cx(
-                  "group/node pointer-events-auto absolute transition-opacity",
-                  // Done work stays visible as context, faded and colorless.
-                  isClosed &&
-                    selected !== task.id &&
-                    "opacity-45 grayscale hover:opacity-80 focus-within:opacity-80",
-                )}
-                style={{
-                  left: node.x,
-                  top: node.y,
-                  width: NODE_WIDTH,
-                  height: NODE_HEIGHT,
-                  zIndex:
-                    gesture.current?.kind === "move" && gesture.current.id === task.id
-                      ? 10
-                      : selected === task.id
-                        ? 5
-                        : undefined,
-                }}
-              >
-                <button
-                  type="button"
-                  aria-label={`Select ${task.title}`}
-                  aria-pressed={selected === task.id}
-                  onPointerDown={(event) => startMove(event, node)}
-                  onClick={() => selectNode(task.id)}
-                  onDoubleClick={() => {
-                    if (!connecting && !suppressClick.current) onOpen(task.id);
-                  }}
-                  onKeyDown={(event) => {
-                    const delta: Record<string, Point> = {
-                      ArrowLeft: { x: -16, y: 0 },
-                      ArrowRight: { x: 16, y: 0 },
-                      ArrowUp: { x: 0, y: -16 },
-                      ArrowDown: { x: 0, y: 16 },
-                    };
-                    const offset = delta[event.key];
-                    if (!event.altKey || !offset) return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    const current = positionsRef.current[task.id] ?? node;
-                    updatePositions({
-                      ...positionsRef.current,
-                      [task.id]: { x: current.x + offset.x, y: current.y + offset.y },
-                    });
-                    persist();
-                  }}
-                  title="Drag to move · Double-click to open · Alt + arrows to nudge"
+          <div className="absolute inset-0" style={{ zoom: camera.zoom }}>
+            {visible.map((node) => {
+              const task = node.task;
+              const status = statusById.get(task.status_id);
+              const project = task.project_id ? projects[task.project_id] : undefined;
+              const isClosed = closed.has(task.id);
+              const blockers = blocked[task.id] ?? 0;
+              return (
+                <div
+                  key={task.id}
+                  data-lineage-node={task.id}
+                  data-closed={isClosed || undefined}
                   className={cx(
-                    "flex size-full cursor-grab flex-col justify-between rounded-xl border bg-raised px-4 py-3 text-left shadow-md shadow-black/5 transition-colors active:cursor-grabbing",
-                    FOCUS,
-                    selected === task.id
-                      ? "border-accent ring-2 ring-accent/15"
-                      : "border-line-strong hover:border-accent/50",
-                    draft?.target === task.id &&
-                      (valid
-                        ? "border-done ring-2 ring-done/30"
-                        : "border-danger ring-2 ring-danger/30"),
-                    connecting?.id === task.id && "border-accent",
+                    "group/node pointer-events-auto absolute transition-opacity",
+                    // Done work stays visible as context, faded and colorless.
+                    isClosed &&
+                      selected !== task.id &&
+                      "opacity-45 grayscale hover:opacity-80 focus-within:opacity-80",
                   )}
+                  style={{
+                    left: node.x,
+                    top: node.y,
+                    width: NODE_WIDTH,
+                    height: NODE_HEIGHT,
+                    zIndex:
+                      gesture.current?.kind === "move" && gesture.current.id === task.id
+                        ? 10
+                        : selected === task.id
+                          ? 5
+                          : undefined,
+                  }}
                 >
-                  <span className="flex w-full items-start gap-2">
-                    <span
+                  <button
+                    type="button"
+                    aria-label={`Select ${task.title}`}
+                    aria-pressed={selected === task.id}
+                    onPointerDown={(event) => startMove(event, node)}
+                    onClick={() => selectNode(task.id)}
+                    onDoubleClick={() => {
+                      if (!connecting && !suppressClick.current) onOpen(task.id);
+                    }}
+                    onKeyDown={(event) => {
+                      const delta: Record<string, Point> = {
+                        ArrowLeft: { x: -16, y: 0 },
+                        ArrowRight: { x: 16, y: 0 },
+                        ArrowUp: { x: 0, y: -16 },
+                        ArrowDown: { x: 0, y: 16 },
+                      };
+                      const offset = delta[event.key];
+                      if (!event.altKey || !offset) return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      const current = positionsRef.current[task.id] ?? node;
+                      updatePositions({
+                        ...positionsRef.current,
+                        [task.id]: { x: current.x + offset.x, y: current.y + offset.y },
+                      });
+                      persist();
+                    }}
+                    title="Drag to move · Double-click to open · Alt + arrows to nudge"
+                    className={cx(
+                      "flex size-full cursor-grab flex-col justify-between rounded-xl border bg-raised px-4 py-3 text-left shadow-md shadow-black/5 transition-colors active:cursor-grabbing",
+                      FOCUS,
+                      selected === task.id
+                        ? "border-accent ring-2 ring-accent/15"
+                        : "border-line-strong hover:border-accent/50",
+                      draft?.target === task.id &&
+                        (valid
+                          ? "border-done ring-2 ring-done/30"
+                          : "border-danger ring-2 ring-danger/30"),
+                      connecting?.id === task.id && "border-accent",
+                    )}
+                  >
+                    <span className="flex w-full items-start gap-2">
+                      <span
+                        className={cx(
+                          "line-clamp-2 min-w-0 flex-1 text-[13px] font-medium leading-snug",
+                          isClosed ? "text-ink-3 line-through" : "text-ink",
+                        )}
+                      >
+                        {task.title}
+                      </span>
+                      <GripVertical size={13} className="mt-0.5 shrink-0 text-ink-3/50" />
+                    </span>
+                    <span className="flex w-full items-center gap-1.5 text-[11px] text-ink-3">
+                      <Dot color={status?.color ?? null} />
+                      <span className="min-w-0 truncate">{status?.name}</span>
+                      {blockers > 0 && (
+                        <span
+                          className="shrink-0 rounded-full bg-danger/10 px-1.5 text-danger"
+                          title={`Waiting on ${blockers} open ${blockers === 1 ? "task" : "tasks"}`}
+                        >
+                          Blocked · {blockers}
+                        </span>
+                      )}
+                      {project && (
+                        <span className="ml-auto flex min-w-0 items-center gap-1 truncate">
+                          <ProjectMark project={project} />
+                          <span className="truncate">{project.name}</span>
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  {(["in", "out"] as const).map((side) => (
+                    <button
+                      key={side}
+                      type="button"
+                      aria-label={
+                        side === "out" ? `Connect from ${task.title}` : `Connect to ${task.title}`
+                      }
+                      disabled={pending}
+                      onPointerDown={(event) => startConnect(event, node, side)}
+                      onClick={() => {
+                        if (connecting && connecting.id !== task.id) selectNode(task.id);
+                        else onStartConnection({ id: task.id, side });
+                      }}
+                      title={
+                        side === "out"
+                          ? "Drag to a task that depends on this one"
+                          : "Drag to a prerequisite task"
+                      }
                       className={cx(
-                        "line-clamp-2 min-w-0 flex-1 text-[13px] font-medium leading-snug",
-                        isClosed ? "text-ink-3 line-through" : "text-ink",
+                        "absolute top-1/2 flex size-7 -translate-y-1/2 cursor-crosshair items-center justify-center rounded-full disabled:cursor-default",
+                        side === "in" ? "-left-3.5" : "-right-3.5",
+                        FOCUS,
                       )}
                     >
-                      {task.title}
-                    </span>
-                    <GripVertical size={13} className="mt-0.5 shrink-0 text-ink-3/50" />
-                  </span>
-                  <span className="flex w-full items-center gap-1.5 text-[11px] text-ink-3">
-                    <Dot color={status?.color ?? null} />
-                    <span className="min-w-0 truncate">{status?.name}</span>
-                    {blockers > 0 && (
                       <span
-                        className="shrink-0 rounded-full bg-danger/10 px-1.5 text-danger"
-                        title={`Waiting on ${blockers} open ${blockers === 1 ? "task" : "tasks"}`}
-                      >
-                        Blocked · {blockers}
-                      </span>
-                    )}
-                    {project && (
-                      <span className="ml-auto flex min-w-0 items-center gap-1 truncate">
-                        <ProjectMark project={project} />
-                        <span className="truncate">{project.name}</span>
-                      </span>
-                    )}
-                  </span>
-                </button>
-                {(["in", "out"] as const).map((side) => (
-                  <button
-                    key={side}
-                    type="button"
-                    aria-label={
-                      side === "out" ? `Connect from ${task.title}` : `Connect to ${task.title}`
-                    }
-                    disabled={pending}
-                    onPointerDown={(event) => startConnect(event, node, side)}
-                    onClick={() => {
-                      if (connecting && connecting.id !== task.id) selectNode(task.id);
-                      else onStartConnection({ id: task.id, side });
-                    }}
-                    title={
-                      side === "out"
-                        ? "Drag to a task that depends on this one"
-                        : "Drag to a prerequisite task"
-                    }
-                    className={cx(
-                      "absolute top-1/2 flex size-7 -translate-y-1/2 cursor-crosshair items-center justify-center rounded-full disabled:cursor-default",
-                      side === "in" ? "-left-3.5" : "-right-3.5",
-                      FOCUS,
-                    )}
-                  >
-                    <span
+                        className={cx(
+                          "size-3 rounded-full border-2 border-ink-3/50 bg-raised transition-all group-hover/node:size-3.5 group-hover/node:border-accent group-focus-within/node:border-accent",
+                          connecting && "border-accent bg-accent/20",
+                          draft?.target === task.id &&
+                            (valid ? "border-done bg-done/20" : "border-danger bg-danger/20"),
+                        )}
+                      />
+                    </button>
+                  ))}
+                  {(["in", "out"] as const).map((side) => (
+                    <button
+                      key={`add-${side}`}
+                      type="button"
+                      aria-label={
+                        side === "out"
+                          ? `Add a task after ${task.title}`
+                          : `Add a task before ${task.title}`
+                      }
+                      title={
+                        side === "out"
+                          ? "Add a task that depends on this one"
+                          : "Add a prerequisite of this task"
+                      }
+                      disabled={pending}
+                      onClick={() => {
+                        onCancelConnection();
+                        setAdding({ id: task.id, side });
+                      }}
                       className={cx(
-                        "size-3 rounded-full border-2 border-ink-3/50 bg-raised transition-all group-hover/node:size-3.5 group-hover/node:border-accent group-focus-within/node:border-accent",
-                        connecting && "border-accent bg-accent/20",
-                        draft?.target === task.id &&
-                          (valid ? "border-done bg-done/20" : "border-danger bg-danger/20"),
+                        "absolute -top-3 flex size-6 items-center justify-center rounded-full border border-line-strong bg-raised text-ink-2 opacity-0 shadow-sm transition-opacity hover:border-accent hover:text-accent focus-visible:opacity-100 group-hover/node:opacity-100 disabled:hidden",
+                        side === "in" ? "-left-3" : "-right-3",
+                        (selected === task.id || adding?.id === task.id) && "opacity-100",
+                        FOCUS,
                       )}
-                    />
-                  </button>
-                ))}
-                {(["in", "out"] as const).map((side) => (
-                  <button
-                    key={`add-${side}`}
-                    type="button"
-                    aria-label={
-                      side === "out"
-                        ? `Add a task after ${task.title}`
-                        : `Add a task before ${task.title}`
-                    }
-                    title={
-                      side === "out"
-                        ? "Add a task that depends on this one"
-                        : "Add a prerequisite of this task"
-                    }
-                    disabled={pending}
-                    onClick={() => {
-                      onCancelConnection();
-                      setAdding({ id: task.id, side });
-                    }}
-                    className={cx(
-                      "absolute -top-3 flex size-6 items-center justify-center rounded-full border border-line-strong bg-raised text-ink-2 opacity-0 shadow-sm transition-opacity hover:border-accent hover:text-accent focus-visible:opacity-100 group-hover/node:opacity-100 disabled:hidden",
-                      side === "in" ? "-left-3" : "-right-3",
-                      (selected === task.id || adding?.id === task.id) && "opacity-100",
-                      FOCUS,
-                    )}
-                  >
-                    <Plus size={13} />
-                  </button>
-                ))}
-              </div>
-            );
-          })}
-          {adding &&
-            (() => {
-              const origin = byId.get(adding.id);
-              if (!origin) return null;
-              return (
-                <AddLinked
-                  key={`${adding.id}:${adding.side}`}
-                  origin={origin}
-                  side={adding.side}
-                  tasks={tasks}
-                  canLink={(other) =>
-                    other !== adding.id &&
-                    (adding.side === "out"
-                      ? canConnect(adding.id, other)
-                      : canConnect(other, adding.id))
-                  }
-                  onPick={(pick) => void addLinked(adding, pick)}
-                  onCancel={() => setAdding(null)}
-                />
+                    >
+                      <Plus size={13} />
+                    </button>
+                  ))}
+                </div>
               );
-            })()}
+            })}
+            {adding &&
+              (() => {
+                const origin = byId.get(adding.id);
+                if (!origin) return null;
+                return (
+                  <AddLinked
+                    key={`${adding.id}:${adding.side}`}
+                    origin={origin}
+                    side={adding.side}
+                    tasks={tasks}
+                    canLink={(other) =>
+                      other !== adding.id &&
+                      (adding.side === "out"
+                        ? canConnect(adding.id, other)
+                        : canConnect(other, adding.id))
+                    }
+                    onPick={(pick) => void addLinked(adding, pick)}
+                    onCancel={() => setAdding(null)}
+                  />
+                );
+              })()}
+          </div>
         </div>
         {!nodes.length && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center p-10 text-center text-ink-3">
@@ -822,6 +875,7 @@ function AddLinked({
   const label = side === "out" ? "New task after" : "New task before";
   return (
     <form
+      data-add-linked
       aria-label={`${label} ${origin.task.title}`}
       className="pointer-events-auto absolute z-20 rounded-xl border border-accent/40 bg-overlay p-2 shadow-xl shadow-black/10"
       style={{

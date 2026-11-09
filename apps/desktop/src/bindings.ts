@@ -1649,8 +1649,9 @@ export type ViewFilter_Deserialize = {
 	status_ids?: string[],
 	priorities?: Priority[],
 	project_ids?: string[],
+	/**  Epic ids; [`FILTER_NONE`] matches tasks without an epic. */
 	epic_ids?: string[],
-	/**  Tasks carrying any of these tags. */
+	/**  Tasks carrying any of these tags; [`FILTER_NONE`] matches tasks without tags. */
 	tag_ids?: string[],
 	due?: DueFilter | null,
 };
@@ -1663,8 +1664,9 @@ export type ViewFilter_Serialize = {
 	status_ids: string[],
 	priorities: Priority[],
 	project_ids: string[],
+	/**  Epic ids; [`FILTER_NONE`] matches tasks without an epic. */
 	epic_ids: string[],
-	/**  Tasks carrying any of these tags. */
+	/**  Tasks carrying any of these tags; [`FILTER_NONE`] matches tasks without tags. */
 	tag_ids: string[],
 	due: DueFilter | null,
 };

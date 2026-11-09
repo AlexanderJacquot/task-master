@@ -4,16 +4,20 @@ import { type ReactNode, useMemo, useRef, useState } from "react";
 import {
   ArrowRightIcon as ArrowRight,
   LineageIcon as GitBranch,
+  SearchIcon as Search,
   CloseIcon as X,
 } from "../../components/TaskIcons";
 import { cx, FOCUS, IconButton, Select } from "../../components/ui";
-import { createTask, updateTask } from "../../store/actions";
+import type { Task } from "../../lib/types";
+import { copyBelonging, createTask, setParent, updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
+import { parentCandidates, subtaskCandidates } from "../task-detail/hierarchy";
 import type { Connector } from "./canvas";
 import {
   type Completion,
   closedTaskIds,
+  downstream,
   filterLineage,
   layoutGraph,
   openBlockers,
@@ -54,6 +58,47 @@ function loadFilter(): SavedFilter {
   }
 }
 
+/** A task created from the side panel, to place beside the card it was linked to. */
+type Placement = { id: string; near: string; side: Connector["side"] };
+
+/** Whether the side panel is open survives leaving the page (open by default). */
+const PANEL_KEY = "task-master.lineage-panel";
+function loadPanelOpen(): boolean {
+  try {
+    return localStorage.getItem(PANEL_KEY) !== "closed";
+  } catch {
+    return true;
+  }
+}
+
+function LinkChip({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={disabled ? "Already linked, or the link would make a circular chain" : label}
+      disabled={disabled}
+      onClick={onClick}
+      className={cx(
+        "shrink-0 rounded-md border border-line-strong px-1.5 py-0.5 text-[11px] text-ink-2 hover:border-accent hover:text-accent disabled:opacity-35 disabled:hover:border-line-strong disabled:hover:text-ink-2",
+        FOCUS,
+      )}
+    >
+      + {children}
+    </button>
+  );
+}
+
 /** `around`: open on one task's lineage (from a task's "Lineage" button). */
 export function LineagePage({ around }: { around?: string } = {}) {
   const store = useTaskStore();
@@ -69,10 +114,12 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const [connecting, setConnecting] = useState<Connector | null>(null);
   const [filter, setFilter] = useState(loadFilter);
   const { project, epic, tag, completion, linkedOnly } = filter;
-  const [otherProjects, setOtherProjects] = useState(false);
   const [query, setQuery] = useState("");
-  const [direction, setDirection] = useState<"prerequisite" | "dependent">("prerequisite");
   const [error, setError] = useState("");
+  const [panelOpen, setPanelOpen] = useState(loadPanelOpen);
+  const [reveal, setReveal] = useState<{ id: string; seq: number } | null>(null);
+  const [placement, setPlacement] = useState<Placement | null>(null);
+  const [wholeChain, setWholeChain] = useState(false);
   const all = useMemo(
     () =>
       Object.values(tasks).sort((a, b) => a.rank.localeCompare(b.rank) || a.id.localeCompare(b.id)),
@@ -107,18 +154,64 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const current = selected ? tasks[selected] : undefined;
   const prerequisites = current?.dependency_ids ?? [];
   const dependents = all.filter((task) => task.dependency_ids?.includes(selected ?? ""));
-  const candidates = current
-    ? all.filter((task) => {
-        const [from, to] =
-          direction === "prerequisite" ? [task.id, current.id] : [current.id, task.id];
-        return (
-          !tasks[to]?.dependency_ids?.includes(from) &&
-          !wouldCycle(tasks, from, to) &&
-          (otherProjects || task.project_id === current.project_id) &&
-          task.title.toLowerCase().includes(query.toLowerCase())
-        );
-      })
+  const search = query.trim().toLowerCase();
+  const results = search ? all.filter((task) => task.title.toLowerCase().includes(search)) : [];
+  const onCanvas = useMemo(() => new Set(graph.nodes.map((node) => node.task.id)), [graph.nodes]);
+  const canLink = (from: string, to: string) =>
+    from !== to && !tasks[to]?.dependency_ids?.includes(from) && !wouldCycle(tasks, from, to);
+  const canParent = useMemo(
+    () => ({
+      parents: new Set(selected ? parentCandidates(selected, tasks).map((t) => t.id) : []),
+      subtasks: new Set(selected ? subtaskCandidates(selected, tasks).map((t) => t.id) : []),
+    }),
+    [selected, tasks],
+  );
+  /** Dependents that don't share the selected task's project, epic or tags yet. */
+  const followers = current
+    ? (wholeChain ? downstream(current.id, all) : dependents.map((task) => task.id))
+        .map((id) => tasks[id])
+        .filter(
+          (task): task is Task =>
+            !!task &&
+            ((task.project_id ?? null) !== (current.project_id ?? null) ||
+              (task.epic_id ?? null) !== (current.epic_id ?? null) ||
+              current.tag_ids.some((tag) => !task.tag_ids.includes(tag))),
+        )
     : [];
+
+  function togglePanel(open: boolean) {
+    setPanelOpen(open);
+    try {
+      localStorage.setItem(PANEL_KEY, open ? "open" : "closed");
+    } catch {
+      /* The panel still toggles without storage. */
+    }
+  }
+  /** A search result: select it and bring its card into view, or open its lineage. */
+  function show(id: string) {
+    setSelected(id);
+    setConnecting(null);
+    setError("");
+    if (onCanvas.has(id)) setReveal({ id, seq: Date.now() });
+    else void navigate({ to: "/lineage", search: { around: id } });
+  }
+  async function createFromPanel(side: Connector["side"]) {
+    if (!current || !query.trim()) return;
+    const id = await addLinked(current.id, side, { title: query.trim() });
+    if (id) {
+      setPlacement({ id, near: current.id, side });
+      setQuery("");
+    }
+  }
+  async function copyToFollowers() {
+    if (!current || !followers.length) return;
+    const result = await copyBelonging(
+      store,
+      current.id,
+      followers.map((task) => task.id),
+    );
+    if (!result) setError(store.getState().lastError ?? "Could not update the dependents.");
+  }
 
   async function connect(from: string, to: string) {
     if (store.getState().pending > 0) return;
@@ -162,12 +255,20 @@ export function LineagePage({ around }: { around?: string } = {}) {
         // Keep the new card inside the current filters.
         project_id: project || source.project_id,
         epic_id: epic || source.epic_id,
-        ...(tag && { tag_ids: [tag] }),
+        // A linked task belongs where its card does: same project, epic and tags.
+        tag_ids: tag ? [...source.tag_ids, tag] : source.tag_ids,
       },
       { link: side === "out" ? { dependentOf: id } : { prerequisiteOf: id } },
     );
     if (!created) setError(store.getState().lastError ?? "Could not create the task.");
     return created;
+  }
+  /** Makes `child` a subtask of `parent`, or a top-level task when null. */
+  async function adopt(child: string, parent: string | null) {
+    if (store.getState().pending > 0) return;
+    const result = await setParent(store, child, parent);
+    if (result) setError("");
+    else setError(store.getState().lastError ?? "Could not change the parent.");
   }
   function remove(from: string, to: string) {
     void updateTask(store, to, [
@@ -272,6 +373,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
         <LineageCanvas
           graph={graph}
           scope={`${project}:${epic}:${tag}:${completion}:${linkedOnly}:${focus?.id ?? ""}`}
+          fitOnOpen={!!focus}
           statuses={statuses}
           closed={closed}
           blocked={blocked}
@@ -283,9 +385,10 @@ export function LineagePage({ around }: { around?: string } = {}) {
           pending={pending > 0}
           onSelect={(id) => {
             setSelected(id);
-            setQuery("");
             setError("");
           }}
+          reveal={reveal}
+          placement={placement}
           onOpen={openTask}
           onStartConnection={(connector) => {
             setConnecting(connector);
@@ -302,158 +405,365 @@ export function LineagePage({ around }: { around?: string } = {}) {
             !tasks[to]?.dependency_ids?.includes(from) && !wouldCycle(tasks, from, to)
           }
         />
-        {current && (
+        {!panelOpen && (
+          <div className="shrink-0 border-l border-line bg-raised p-2">
+            <IconButton label="Show the lineage panel" onClick={() => togglePanel(true)}>
+              <Search size={16} />
+            </IconButton>
+          </div>
+        )}
+        {panelOpen && (
           <aside
-            aria-label="Dependency editor"
-            className="w-72 shrink-0 overflow-y-auto border-l border-line bg-raised p-5"
+            aria-label="Lineage panel"
+            className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-line bg-raised p-5"
           >
-            <div className="flex items-start justify-between gap-2">
-              <h2 className="font-display text-xl text-ink">{current.title}</h2>
-              <IconButton label="Clear selection" onClick={() => setSelected(null)}>
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-medium text-ink">Find a task</h2>
+              <IconButton label="Hide the lineage panel" onClick={() => togglePanel(false)}>
                 <X size={15} />
               </IconButton>
             </div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-              <button
-                type="button"
-                className={cx("text-sm text-accent underline", FOCUS)}
-                onClick={() => openTask(current.id)}
-              >
-                Open task details
-              </button>
-              {focus?.id !== current.id && (
-                <button
-                  type="button"
-                  className={cx("text-sm text-accent underline", FOCUS)}
-                  onClick={() => void navigate({ to: "/lineage", search: { around: current.id } })}
-                >
-                  Show only its lineage
-                </button>
-              )}
-            </div>
-            <h3 className="mt-6 text-sm font-medium text-ink">
-              Prerequisites ({prerequisites.length})
-            </h3>
-            <p className="mt-1 text-xs text-ink-3">
-              {closed.has(current.id)
-                ? "Done."
-                : blocked[current.id]
-                  ? `Blocked by ${blocked[current.id]} open ${blocked[current.id] === 1 ? "task" : "tasks"}.`
-                  : "Ready: nothing blocks it."}
-            </p>
-            <RelationshipList
-              ids={prerequisites}
-              render={(id) => (
-                <div className="flex h-11 items-center gap-2 border-b border-line text-sm text-ink-2">
-                  <span
-                    className={cx(
-                      "min-w-0 flex-1 truncate",
-                      closed.has(id) && "text-ink-3 line-through",
-                    )}
-                    title={tasks[id]?.title}
-                  >
-                    {tasks[id]?.title ?? "Deleted task"}
-                  </span>
-                  <IconButton
-                    label={`Remove prerequisite ${tasks[id]?.title ?? "Deleted task"}`}
-                    disabled={pending > 0}
-                    onClick={() => remove(id, current.id)}
-                  >
-                    <X size={14} />
-                  </IconButton>
-                </div>
-              )}
-            />
-            {!prerequisites.length && <p className="mt-2 text-xs text-ink-3">No prerequisites.</p>}
-            <h3 className="mt-5 text-sm font-medium text-ink">Dependents ({dependents.length})</h3>
-            <RelationshipList
-              ids={dependents.map((task) => task.id)}
-              render={(id) => (
-                <div className="flex h-11 items-center gap-2 border-b border-line text-sm text-ink-2">
-                  <span className="min-w-0 flex-1 truncate" title={tasks[id]?.title}>
-                    {tasks[id]?.title}
-                  </span>
-                  <IconButton
-                    label={`Remove dependent ${tasks[id]?.title}`}
-                    disabled={pending > 0}
-                    onClick={() => remove(current.id, id)}
-                  >
-                    <X size={14} />
-                  </IconButton>
-                </div>
-              )}
-            />
-            {!dependents.length && <p className="mt-2 text-xs text-ink-3">No dependents.</p>}
-            <button
-              type="button"
-              disabled={pending > 0}
-              className={cx(control, "mt-5 flex w-full items-center justify-center gap-2", FOCUS)}
-              onClick={() => {
-                setConnecting({ id: current.id, side: "out" });
-                setError("");
-              }}
-            >
-              <ArrowRight size={15} />
-              Connect on graph
-            </button>
-            <h3 className="mt-6 text-sm font-medium text-ink">Add a connection</h3>
-            <Select<typeof direction>
-              aria-label="Connection type"
-              className={cx(control, "mt-2 w-full", FOCUS)}
-              value={direction}
-              onValueChange={setDirection}
-              options={[
-                { value: "prerequisite", label: "Add prerequisite" },
-                { value: "dependent", label: "Add dependent" },
-              ]}
-            />
-            <label className="mt-2 flex items-center gap-2 text-xs text-ink-2">
-              <input
-                type="checkbox"
-                checked={otherProjects}
-                onChange={(e) => setOtherProjects(e.target.checked)}
-              />
-              Include other projects
-            </label>
             <input
-              aria-label="Find task to connect"
+              type="search"
+              aria-label="Search tasks"
               placeholder="Search tasks…"
               className={cx(control, "mt-2 w-full", FOCUS)}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && query) {
+                  e.preventDefault();
+                  setQuery("");
+                }
+              }}
             />
-            <div className="mt-2 flex flex-col gap-1">
-              {candidates.slice(0, 50).map((task) => (
-                <button
-                  type="button"
-                  key={task.id}
-                  disabled={pending > 0}
-                  className={cx(
-                    "rounded-lg px-2 py-2 text-left text-sm text-ink-2 hover:bg-hover disabled:opacity-50",
-                    FOCUS,
-                  )}
-                  onClick={() =>
-                    void (direction === "prerequisite"
-                      ? connect(task.id, current.id)
-                      : connect(current.id, task.id))
-                  }
-                >
-                  + {task.title}
-                </button>
-              ))}
-            </div>
-            {!candidates.length && (
-              <p className="mt-3 text-xs text-ink-3">
-                No matching tasks available. Existing connections and circular chains are excluded.
-              </p>
+            <p className="mt-2 text-xs text-ink-3">
+              {current
+                ? `Click a result to select it, or link it to “${current.title}”: as a prerequisite, a dependent, its parent or a subtask.`
+                : "Click a result to find it on the canvas, or select a card to link tasks to it."}
+            </p>
+            {search && (
+              <div className="mt-2 flex max-h-80 flex-col overflow-y-auto">
+                {current &&
+                  (["in", "out"] as const).map((side) => (
+                    <button
+                      key={side}
+                      type="button"
+                      disabled={pending > 0}
+                      className={cx(
+                        "truncate rounded-lg px-2 py-1.5 text-left text-sm text-ink hover:bg-hover disabled:opacity-50",
+                        FOCUS,
+                      )}
+                      onClick={() => void createFromPanel(side)}
+                    >
+                      + New {side === "in" ? "prerequisite" : "dependent"} “{query.trim()}”
+                    </button>
+                  ))}
+                <ul aria-label="Search results" className="mt-1 border-t border-line">
+                  {results.slice(0, 50).map((task) => (
+                    <SearchResult
+                      key={task.id}
+                      task={task}
+                      current={current}
+                      selected={task.id === current?.id}
+                      done={closed.has(task.id)}
+                      visible={onCanvas.has(task.id)}
+                      busy={pending > 0}
+                      canLink={canLink}
+                      canParent={canParent}
+                      onShow={show}
+                      onConnect={(from, to) => void connect(from, to)}
+                      onSetParent={(child, parent) => void adopt(child, parent)}
+                    />
+                  ))}
+                </ul>
+                {!results.length && <p className="mt-2 text-xs text-ink-3">No matching tasks.</p>}
+                {results.length > 50 && (
+                  <p className="mt-2 text-xs text-ink-3">
+                    Showing 50 of {results.length}. Type more to narrow.
+                  </p>
+                )}
+              </div>
             )}
-            {candidates.length > 50 && (
-              <p className="mt-3 text-xs text-ink-3">Search to narrow {candidates.length} tasks.</p>
+            {current && (
+              <section aria-label="Dependency editor" className="mt-6 border-t border-line pt-5">
+                <DependencyEditor
+                  current={current}
+                  isFocus={focus?.id === current.id}
+                  tasks={tasks}
+                  prerequisites={prerequisites}
+                  dependents={dependents.map((task) => task.id)}
+                  closed={closed}
+                  blockers={blocked[current.id] ?? 0}
+                  busy={pending > 0}
+                  followers={followers.length}
+                  wholeChain={wholeChain}
+                  onWholeChain={setWholeChain}
+                  onCopy={() => void copyToFollowers()}
+                  onClear={() => setSelected(null)}
+                  onOpen={() => openTask(current.id)}
+                  onShowLineage={() =>
+                    void navigate({ to: "/lineage", search: { around: current.id } })
+                  }
+                  onRemove={remove}
+                  onSetParent={(child, parent) => void adopt(child, parent)}
+                  onConnectOnGraph={() => {
+                    setConnecting({ id: current.id, side: "out" });
+                    setError("");
+                  }}
+                />
+              </section>
             )}
           </aside>
         )}
       </div>
     </div>
+  );
+}
+
+/** A row of the side panel's search: show the task, or link it to the selected one. */
+function SearchResult({
+  task,
+  current,
+  selected,
+  done,
+  visible,
+  busy,
+  canLink,
+  canParent,
+  onShow,
+  onConnect,
+  onSetParent,
+}: {
+  task: Task;
+  current: Task | undefined;
+  selected: boolean;
+  done: boolean;
+  visible: boolean;
+  busy: boolean;
+  canLink: (from: string, to: string) => boolean;
+  /** Tasks that can become the selected task's parent, or its subtasks. */
+  canParent: { parents: Set<string>; subtasks: Set<string> };
+  onShow: (id: string) => void;
+  onConnect: (from: string, to: string) => void;
+  onSetParent: (child: string, parent: string) => void;
+}) {
+  return (
+    <li className="flex h-10 items-center gap-1 border-b border-line last:border-b-0">
+      <button
+        type="button"
+        title={visible ? "Show on the canvas" : "Open its lineage"}
+        className={cx(
+          "min-w-0 flex-1 truncate rounded-md px-2 py-1 text-left text-sm hover:bg-hover",
+          selected ? "font-medium text-accent" : "text-ink-2",
+          done && "text-ink-3 line-through",
+          FOCUS,
+        )}
+        onClick={() => onShow(task.id)}
+      >
+        {task.title}
+      </button>
+      {current && !selected && (
+        <>
+          <LinkChip
+            label={`Add ${task.title} as a prerequisite`}
+            disabled={busy || !canLink(task.id, current.id)}
+            onClick={() => onConnect(task.id, current.id)}
+          >
+            Prereq
+          </LinkChip>
+          <LinkChip
+            label={`Add ${task.title} as a dependent`}
+            disabled={busy || !canLink(current.id, task.id)}
+            onClick={() => onConnect(current.id, task.id)}
+          >
+            Dependent
+          </LinkChip>
+          <LinkChip
+            label={`Make ${task.title} the parent`}
+            disabled={busy || !canParent.parents.has(task.id)}
+            onClick={() => onSetParent(current.id, task.id)}
+          >
+            Parent
+          </LinkChip>
+          <LinkChip
+            label={`Make ${task.title} a subtask`}
+            disabled={busy || !canParent.subtasks.has(task.id)}
+            onClick={() => onSetParent(task.id, current.id)}
+          >
+            Subtask
+          </LinkChip>
+        </>
+      )}
+    </li>
+  );
+}
+
+/** The selected task: its links, and making its dependents follow its project, epic and tags. */
+function DependencyEditor({
+  current,
+  isFocus,
+  tasks,
+  prerequisites,
+  dependents,
+  closed,
+  blockers,
+  busy,
+  followers,
+  wholeChain,
+  onWholeChain,
+  onCopy,
+  onClear,
+  onOpen,
+  onShowLineage,
+  onRemove,
+  onSetParent,
+  onConnectOnGraph,
+}: {
+  current: Task;
+  /** The page already shows only this task's lineage. */
+  isFocus: boolean;
+  tasks: Record<string, Task>;
+  prerequisites: string[];
+  dependents: string[];
+  closed: Set<string>;
+  blockers: number;
+  busy: boolean;
+  /** How many dependents the copy would change. */
+  followers: number;
+  wholeChain: boolean;
+  onWholeChain: (value: boolean) => void;
+  onCopy: () => void;
+  onClear: () => void;
+  onOpen: () => void;
+  onShowLineage: () => void;
+  onRemove: (from: string, to: string) => void;
+  onSetParent: (child: string, parent: string | null) => void;
+  onConnectOnGraph: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <h2 className="font-display text-xl text-ink">{current.title}</h2>
+        <IconButton label="Clear selection" onClick={onClear}>
+          <X size={15} />
+        </IconButton>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+        <button
+          type="button"
+          className={cx("text-sm text-accent underline", FOCUS)}
+          onClick={onOpen}
+        >
+          Open task details
+        </button>
+        {!isFocus && (
+          <button
+            type="button"
+            className={cx("text-sm text-accent underline", FOCUS)}
+            onClick={onShowLineage}
+          >
+            Show only its lineage
+          </button>
+        )}
+      </div>
+      {current.parent_id && (
+        <div className="mt-3 flex items-center gap-2 text-sm text-ink-2">
+          <span className="shrink-0 text-ink-3">Subtask of</span>
+          <span className="min-w-0 flex-1 truncate" title={tasks[current.parent_id]?.title}>
+            {tasks[current.parent_id]?.title ?? "Deleted task"}
+          </span>
+          <IconButton
+            label="Make it a top-level task"
+            disabled={busy}
+            onClick={() => onSetParent(current.id, null)}
+          >
+            <X size={14} />
+          </IconButton>
+        </div>
+      )}
+      <h3 className="mt-6 text-sm font-medium text-ink">Prerequisites ({prerequisites.length})</h3>
+      <p className="mt-1 text-xs text-ink-3">
+        {closed.has(current.id)
+          ? "Done."
+          : blockers
+            ? `Blocked by ${blockers} open ${blockers === 1 ? "task" : "tasks"}.`
+            : "Ready: nothing blocks it."}
+      </p>
+      <RelationshipList
+        ids={prerequisites}
+        render={(id) => (
+          <div className="flex h-11 items-center gap-2 border-b border-line text-sm text-ink-2">
+            <span
+              className={cx("min-w-0 flex-1 truncate", closed.has(id) && "text-ink-3 line-through")}
+              title={tasks[id]?.title}
+            >
+              {tasks[id]?.title ?? "Deleted task"}
+            </span>
+            <IconButton
+              label={`Remove prerequisite ${tasks[id]?.title ?? "Deleted task"}`}
+              disabled={busy}
+              onClick={() => onRemove(id, current.id)}
+            >
+              <X size={14} />
+            </IconButton>
+          </div>
+        )}
+      />
+      {!prerequisites.length && <p className="mt-2 text-xs text-ink-3">No prerequisites.</p>}
+      <h3 className="mt-5 text-sm font-medium text-ink">Dependents ({dependents.length})</h3>
+      <RelationshipList
+        ids={dependents}
+        render={(id) => (
+          <div className="flex h-11 items-center gap-2 border-b border-line text-sm text-ink-2">
+            <span className="min-w-0 flex-1 truncate" title={tasks[id]?.title}>
+              {tasks[id]?.title}
+            </span>
+            <IconButton
+              label={`Remove dependent ${tasks[id]?.title}`}
+              disabled={busy}
+              onClick={() => onRemove(current.id, id)}
+            >
+              <X size={14} />
+            </IconButton>
+          </div>
+        )}
+      />
+      {!dependents.length && <p className="mt-2 text-xs text-ink-3">No dependents.</p>}
+      <button
+        type="button"
+        disabled={busy}
+        className={cx(control, "mt-5 flex w-full items-center justify-center gap-2", FOCUS)}
+        onClick={onConnectOnGraph}
+      >
+        <ArrowRight size={15} />
+        Connect on graph
+      </button>
+      <h3 className="mt-6 text-sm font-medium text-ink">Dependents follow this task</h3>
+      <p className="mt-1 text-xs text-ink-3">
+        Copy its project, epic and tags onto its dependents (tags they already have stay).
+      </p>
+      <label className="mt-2 flex items-center gap-2 text-xs text-ink-2">
+        <input
+          type="checkbox"
+          checked={wholeChain}
+          onChange={(e) => onWholeChain(e.target.checked)}
+        />
+        Include their dependents too (the whole chain)
+      </label>
+      <button
+        type="button"
+        disabled={busy || !followers}
+        className={cx(control, "mt-2 w-full disabled:opacity-50", FOCUS)}
+        onClick={onCopy}
+      >
+        {!dependents.length
+          ? "No dependents"
+          : followers
+            ? `Apply to ${followers} ${followers === 1 ? "dependent" : "dependents"}`
+            : "Dependents already match"}
+      </button>
+    </>
   );
 }
 

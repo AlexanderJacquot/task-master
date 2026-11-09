@@ -1,12 +1,12 @@
 // A task's agent sessions (ADR 017): status, summary, notes and the actions on each.
 
+import { SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
 import {
   AgentsIcon as Bot,
   DoneIcon,
   PlayIcon as Play,
   SendIcon as Send,
-  TerminalIcon as SquareTerminal,
   StopIcon,
   DeleteIcon as Trash2,
 } from "../../components/TaskIcons";
@@ -149,7 +149,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           disabled={!!busy}
           onClick={() => void act("terminal", () => api.openTerminal(session.id))}
         >
-          <SquareTerminal size={19} />
+          <SquareTerminal size={14} />
         </IconButton>
         {session.state === "interrupted" && (
           <Button

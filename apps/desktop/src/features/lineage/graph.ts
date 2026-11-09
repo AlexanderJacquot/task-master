@@ -18,6 +18,23 @@ export function wouldCycle(tasks: Record<string, Task>, prerequisite: string, de
   return false;
 }
 
+/** Every task that depends on `id`, directly or through other dependents. */
+export function downstream(id: string, tasks: Task[]): string[] {
+  const dependents = new Map<string, string[]>();
+  for (const task of tasks)
+    for (const prerequisite of task.dependency_ids ?? [])
+      dependents.set(prerequisite, [...(dependents.get(prerequisite) ?? []), task.id]);
+  const seen = new Set<string>();
+  const pending = [...(dependents.get(id) ?? [])];
+  while (pending.length) {
+    const next = pending.pop() as string;
+    if (next === id || seen.has(next)) continue;
+    seen.add(next);
+    pending.push(...(dependents.get(next) ?? []));
+  }
+  return [...seen];
+}
+
 /** Longest-path columns keep chains and joins flowing from left to right. */
 export function layoutGraph(tasks: Task[]) {
   const byId = new Map(tasks.map((task) => [task.id, task]));
@@ -156,14 +173,14 @@ export function filterLineage(
     ),
   );
   const around = filter.around && tasks[filter.around] ? lineageOf(all, filter.around) : null;
-  return all.filter(
-    (task) =>
-      (!around || around.has(task.id)) &&
-      (!filter.project || task.project_id === filter.project) &&
-      (!filter.epic || task.epic_id === filter.epic) &&
-      (!filter.tag || task.tag_ids.includes(filter.tag)) &&
-      (!filter.linkedOnly || linked.has(task.id)) &&
-      (filter.completion === "all" || !closed.has(task.id)) &&
-      (filter.completion !== "ready" || !openBlockers(task, tasks, closed).length),
-  );
+  const matches = (task: Task) =>
+    (!around || around.has(task.id)) &&
+    (!filter.project || task.project_id === filter.project) &&
+    (!filter.epic || task.epic_id === filter.epic) &&
+    (!filter.tag || task.tag_ids.includes(filter.tag)) &&
+    (!filter.linkedOnly || linked.has(task.id)) &&
+    (filter.completion === "all" || !closed.has(task.id)) &&
+    (filter.completion !== "ready" || !openBlockers(task, tasks, closed).length);
+  // The task whose lineage is open stays, whatever the saved filters say.
+  return all.filter((task) => (around !== null && task.id === filter.around) || matches(task));
 }

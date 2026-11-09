@@ -55,3 +55,44 @@ export function taskMetrics(
     trend,
   };
 }
+
+/** When a live task left the open workload, or null while it is open. Done tasks use their
+ *  completion time; cancelled ones (which keep no completion time) their last update. */
+function closedAt(t: Task, category: string | undefined): number | null {
+  if (category === "done") return t.completed_at ?? t.updated_at;
+  if (category === "cancelled") return t.updated_at;
+  return null;
+}
+
+/**
+ * Open tasks at the end of each day of the period (a burn-down), with the pace it moves at.
+ * `before` is the open count when the period began; `netPerDay` is how many open tasks the
+ * period removed per day (negative when the backlog grew); `clearInDays` projects that pace
+ * to zero (0 when nothing is open), or is null when the backlog is not shrinking.
+ */
+export function burnDown(tasks: Task[], statuses: Status[], today: string, days: number) {
+  const categories = new Map(statuses.map((s) => [s.id, s.category]));
+  const spans = tasks
+    .filter((t) => t.deleted_at === null)
+    .map((t) => ({ from: t.created_at, to: closedAt(t, categories.get(t.status_id)) }));
+  const openAt = (instant: number) =>
+    spans.filter((s) => s.from < instant && (s.to === null || s.to >= instant)).length;
+  const before = openAt(atMinute(addDays(today, 1 - days), 0));
+  const points = Array.from({ length: days }, (_, i) => {
+    const date = addDays(today, i + 1 - days);
+    return { date, open: openAt(atMinute(addDays(date, 1), 0)) };
+  });
+  const now = points.at(-1)?.open ?? before;
+  const netPerDay = (before - now) / days;
+  let clearInDays: number | null = null;
+  if (now === 0) clearInDays = 0;
+  else if (before > now) clearInDays = Math.ceil((now * days) / (before - now));
+  return {
+    before,
+    now,
+    peak: Math.max(before, ...points.map((p) => p.open)),
+    points,
+    netPerDay,
+    clearInDays,
+  };
+}

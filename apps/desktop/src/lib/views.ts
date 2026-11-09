@@ -44,6 +44,9 @@ export const EMPTY_FILTER: ViewFilter = {
   due: null,
 };
 
+/** In `epic_ids` / `tag_ids` of a filter: tasks without an epic / without tags (core's `FILTER_NONE`). */
+export const FILTER_NONE = "none";
+
 const PRIORITY_ORDER: Record<Priority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
 const PRIORITY_LABELS: Record<Priority, string> = {
   urgent: "Urgent",
@@ -141,9 +144,15 @@ export function matchesFilter(filter: ViewFilter, task: Task, ctx: ViewContext):
     !(task.project_id !== null && filter.project_ids.includes(task.project_id))
   )
     return false;
-  if (filter.epic_ids.length && !(task.epic_id !== null && filter.epic_ids.includes(task.epic_id)))
+  if (filter.epic_ids.length && !filter.epic_ids.includes(task.epic_id ?? FILTER_NONE))
     return false;
-  if (filter.tag_ids.length && !task.tag_ids.some((t) => filter.tag_ids.includes(t))) return false;
+  if (
+    filter.tag_ids.length &&
+    !(task.tag_ids.length === 0
+      ? filter.tag_ids.includes(FILTER_NONE)
+      : task.tag_ids.some((t) => filter.tag_ids.includes(t)))
+  )
+    return false;
   if (filter.due && !matchesDue(filter.due, task, ctx)) return false;
   return true;
 }

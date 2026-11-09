@@ -7,6 +7,7 @@ import {
   compareTasks,
   descendantIds,
   EMPTY_FILTER,
+  FILTER_NONE,
   inView,
   matchesFilter,
   type ViewContext,
@@ -190,6 +191,9 @@ describe("filters, grouping and sorting", () => {
     expect(f({ tag_ids: ["g2", "g1"], project_ids: ["p1"] })).toBe(true);
     expect(f({ tag_ids: ["g1"], project_ids: ["p2"] })).toBe(false);
     expect(f({ epic_ids: ["e1"] })).toBe(false);
+    expect(f({ epic_ids: ["e1", FILTER_NONE] })).toBe(true);
+    expect(f({ tag_ids: [FILTER_NONE] })).toBe(false);
+    expect(f({ tag_ids: [FILTER_NONE, "g1"] })).toBe(true);
     expect(f({ status_ids: [STATUS.todo] })).toBe(true);
     expect(f({ due: "today" })).toBe(true);
     expect(f({ due: "overdue" })).toBe(false);
@@ -200,6 +204,16 @@ describe("filters, grouping and sorting", () => {
     expect(
       matchesFilter({ ...EMPTY_FILTER, due: "week" }, task({ due_date: "2026-11-12" }), ctx()),
     ).toBe(false);
+  });
+
+  it("matches tasks without an epic or tags with the none value", () => {
+    const loose = task({});
+    const filed = task({ epic_id: "e1", tag_ids: ["g1"] });
+    const none = { ...EMPTY_FILTER, epic_ids: [FILTER_NONE], tag_ids: [FILTER_NONE] };
+    expect(matchesFilter(none, loose, ctx())).toBe(true);
+    expect(matchesFilter(none, filed, ctx())).toBe(false);
+    expect(matchesFilter({ ...EMPTY_FILTER, epic_ids: [FILTER_NONE] }, filed, ctx())).toBe(false);
+    expect(matchesFilter({ ...EMPTY_FILTER, tag_ids: [FILTER_NONE] }, loose, ctx())).toBe(true);
   });
 
   it("groups by project with the project-less group last", () => {

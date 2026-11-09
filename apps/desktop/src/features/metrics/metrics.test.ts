@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { atMinute } from "../../lib/calendar";
 import { STATUS, statuses, task } from "../../test/fixtures";
-import { taskMetrics } from "./metrics";
+import { burnDown, taskMetrics } from "./metrics";
 
 const today = "2026-11-05";
 const at = (date: string) => atMinute(date, 12 * 60);
@@ -74,5 +74,59 @@ describe("task metrics", () => {
     });
     expect(result.trend).toHaveLength(30);
     expect(result.trend.every((b) => b.created === 0 && b.completed === 0)).toBe(true);
+  });
+});
+
+describe("burn-down", () => {
+  it("counts open tasks at the end of each day and projects the pace to zero", () => {
+    const tasks = [
+      // Open throughout.
+      task({ created_at: at("2026-10-01") }),
+      // Open before the period, done on the third day.
+      task({
+        created_at: at("2026-10-01"),
+        status_id: STATUS.done,
+        completed_at: at("2026-11-01"),
+      }),
+      // Open before the period, cancelled on the fourth day (by its last update).
+      task({
+        created_at: at("2026-10-01"),
+        status_id: STATUS.cancelled,
+        updated_at: at("2026-11-02"),
+      }),
+      // Created on the last day and still open.
+      task({ created_at: at(today) }),
+      // Deleted tasks never count.
+      task({ created_at: at("2026-10-01"), deleted_at: at(today) }),
+      // Created and done before the period.
+      task({
+        created_at: at("2026-10-01"),
+        status_id: STATUS.done,
+        completed_at: at("2026-10-02"),
+      }),
+    ];
+    const result = burnDown(tasks, statuses, today, 7);
+    expect(result.points.map((p) => p.date)).toEqual([
+      "2026-10-30",
+      "2026-10-31",
+      "2026-11-01",
+      "2026-11-02",
+      "2026-11-03",
+      "2026-11-04",
+      today,
+    ]);
+    expect(result.points.map((p) => p.open)).toEqual([3, 3, 2, 1, 1, 1, 2]);
+    expect(result).toMatchObject({ before: 3, now: 2, peak: 3 });
+    expect(result.netPerDay).toBeCloseTo(1 / 7);
+    expect(result.clearInDays).toBe(14);
+  });
+
+  it("has no projection while the backlog grows, and zero once it is empty", () => {
+    expect(burnDown([task({ created_at: at(today) })], statuses, today, 7)).toMatchObject({
+      before: 0,
+      now: 1,
+      clearInDays: null,
+    });
+    expect(burnDown([], statuses, today, 7)).toMatchObject({ now: 0, clearInDays: 0, peak: 0 });
   });
 });

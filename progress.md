@@ -45,6 +45,87 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Metrics: medieval figures, burn-down, project focus (2026-11-09)
+
+- Each figure card has a medieval title with the plain measure under it ("Quests fulfilled"
+  / Completed, "Still afield" / Open now, ...), a medieval icon, and display-font numbers.
+  The header uses the title crest and flourish ornaments, and every section gets a themed
+  title plus a plain caption. Table columns stay plain.
+- Burn-down (`burnDown` in `metrics/metrics.ts`): open tasks at the end of each day of the
+  period, rebuilt from `created_at` and `completed_at`. Cancelled tasks have no
+  completion time, so they count as closed at their last update. The chart shows the open
+  count at the start and now, the net burn rate (open tasks removed per day) and a
+  projected clear date, with a hover crosshair. The daily values table has a new "Open at
+  day end" column.
+- Project focus: `/metrics?project=<id|inbox>` (route search). The Project picker, a
+  click on a "By project" row and the sidebar project ⋯ → Metrics all set it. A focused
+  banner offers "Show all projects". "By tag" rows focus a tag the same way.
+- Tests: `metrics.test.ts` (burn-down) and `MetricsPage.test.tsx` (focus from the URL,
+  the banner and a row). Not run in the session (no permission to run pnpm, vitest, tsc
+  or biome): `pnpm biome check`, `pnpm test`, typecheck, and a look at the page.
+
+### Filter by "No epic" and "No tag" (2026-11-09)
+
+- The Epic and Tags chips of the filter bar list "No epic" / "No tag" first. They store the
+  sentinel `"none"` (`FILTER_NONE` in core `model.rs` and `lib/views.ts`) in
+  `epic_ids` / `tag_ids`, so it combines with real ids as "any of" and saved views keep it
+  with no schema change. Core view validation skips the sentinel.
+- Tests: `views.test.ts` (matching) and `view_specs_are_validated` (a saved view with the
+  sentinel). Clippy, rustfmt, cargo test and the bindings export pass (bindings changed
+  only in doc comments). Not run in the session (no permission for pnpm):
+  `pnpm biome check`, `pnpm test`, typecheck.
+
+### Lineage canvas: blurry cards on Linux (2026-11-09)
+
+- The cards were zoomed with `transform: translate(x, y) scale(zoom)` at fractional
+  offsets. WebKitGTK rasterizes such a layer once and stretches the bitmap, so the card
+  text looked out of focus and changed sharpness with the zoom level.
+- `LineageCanvas.tsx` now pans with a whole-pixel `translate` on a wrapper and zooms the
+  cards with CSS `zoom` on an inner layer, which lays text out at its real size. The SVG
+  arrows use the same rounded offset so they stay aligned with the cards.
+- Not run in the session (no permission to run commands): `pnpm biome check`,
+  `pnpm test`, and a look at the canvas in the AppImage at a few zoom levels.
+
+### Make a task a subtask of another, or adopt one as a subtask (2026-11-09)
+
+- The core already had `set_parent`; the UI could only detach ("Promote"). Now:
+  task details have "Make it a subtask of…" (or "Move under another task…") and the
+  subtask list has "Add an existing task…", both a searchable task picker
+  (`task-detail/TaskPicker.tsx`). Candidates exclude cycles, the current parent or
+  children, and agent tasks (`task-detail/hierarchy.ts`).
+- Lineage side panel: search results get "+ Parent" and "+ Subtask" next to Prereq and
+  Dependent; the selected task shows "Subtask of …" with a button to make it top-level.
+- `setParent` now also moves the subtasks' project/epic optimistically, as the core does.
+- Tests in `hierarchy.test.ts`, `app.test.tsx` and `LineagePage.test.tsx`; not run in
+  the session (no permission to run commands): run `pnpm test` and `pnpm biome check`.
+
+### Lineage: side panel, dependents follow their prerequisite, popover closing (2026-11-09)
+
+- The side panel is always there (hide/show remembered in `task-master.lineage-panel`):
+  "Search tasks" finds any task; a result selects it and centers its card, or opens its
+  lineage when the filters hide it. With a task selected, each result has "+ Prereq" and
+  "+ Dependent" (disabled when already linked or circular), and the query can be created as
+  a new prerequisite or dependent, placed beside the card. Replaces the old "Connection
+  type" select and "Include other projects" box: search covers every project.
+- "Dependents follow this task": copies the selected task's project, epic and tags onto its
+  dependents (or the whole chain downstream) in one undoable batch (`copyBelonging` in
+  `store/actions.ts`). Tags are added, never removed. Tasks created from a card's plus
+  buttons now also take the card's tags (they already took its project and epic).
+- The plus button's popover closes on any pointer down elsewhere on the canvas, cards
+  included, even with text typed.
+- Tests in `LineagePage.test.tsx` and `graph.test.ts`; not run in the session (no
+  permission to run commands): run `pnpm test` and `pnpm biome check`.
+
+### Lineage: empty canvas when opening a task's lineage (2026-11-09)
+
+- The canvas restored the camera saved by whatever view was open last, so a task's
+  lineage could open on an empty area. It now frames the cards when opened on a task, and
+  refits on open whenever the saved camera shows none of the cards.
+- Saved filters (project, "Connected tasks only", ...) could hide the focused task itself
+  (e.g. an Inbox task with no links); the focused task now always shows.
+- Tests added in `graph.test.ts` and `LineagePage.test.tsx`; not run in the session (no
+  permission to run commands), run `pnpm test` and `pnpm biome check`.
+
 ### Asset pack and development asset lab (2026-11-09, ADR 019)
 
 - Painted PNG asset pack imported as WebP by `scripts/asset-pack/import.sh <zip>` into

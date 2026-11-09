@@ -6,6 +6,8 @@ import { compareRank } from "../../lib/views";
 import { createTask, moveSubtask, setParent, toggleDone } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
+import { subtaskCandidates } from "./hierarchy";
+import { TaskPicker } from "./TaskPicker";
 
 /** A subtask box: an empty square, replaced by a red wax seal once done. */
 function SquareCheck({
@@ -166,6 +168,16 @@ export function SubtaskList({
             : "mt-1"
         }
         onCommit={(title) => void createTask(store, { title, parent_id: parent.id })}
+      />
+      <TaskPicker
+        label="Add an existing task as a subtask"
+        trigger="Add an existing task…"
+        triggerClassName={cx(
+          "mt-1 block text-[13px] text-ink-3 hover:text-accent hover:underline",
+          page && "px-0.5",
+        )}
+        candidates={() => subtaskCandidates(parent.id, store.getState().tasks)}
+        onPick={(t) => void setParent(store, t.id, parent.id)}
       />
     </div>
   );

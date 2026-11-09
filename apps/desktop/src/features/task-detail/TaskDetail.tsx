@@ -32,9 +32,11 @@ import { ActivityFeed } from "./ActivityFeed";
 import { AttachmentList } from "./AttachmentList";
 import { DependencyList } from "./DependencyList";
 import { DescriptionEditor } from "./DescriptionEditor";
+import { parentCandidates } from "./hierarchy";
 import { PropertyPills } from "./PropertyPills";
 import { SubtaskList } from "./SubtaskList";
 import { TagPicker } from "./TagPicker";
+import { TaskPicker } from "./TaskPicker";
 import { TitleField } from "./TitleField";
 import { useTaskAttachments, useTaskFiles } from "./useTaskFiles";
 
@@ -304,15 +306,24 @@ export function TaskEditor({
         </p>
       )}
       {properties}
-      {parent && (
-        <button
-          type="button"
-          onClick={() => void setParent(store, task.id, null)}
-          className={cx("self-start text-[13px] text-accent hover:underline", page && "ml-10")}
-        >
-          Promote to a top-level task
-        </button>
-      )}
+      <div className={cx("flex items-center gap-4 self-start text-[13px]", page && "ml-10")}>
+        <TaskPicker
+          label={parent ? "Move under another task" : "Make it a subtask of"}
+          trigger={parent ? "Move under another task…" : "Make it a subtask of…"}
+          triggerClassName="text-accent hover:underline"
+          candidates={() => parentCandidates(task.id, store.getState().tasks)}
+          onPick={(p) => void setParent(store, task.id, p.id)}
+        />
+        {parent && (
+          <button
+            type="button"
+            onClick={() => void setParent(store, task.id, null)}
+            className="text-accent hover:underline"
+          >
+            Promote to a top-level task
+          </button>
+        )}
+      </div>
       <section aria-label="Description" className={page ? "pl-10" : undefined}>
         {!page && <SectionLabel className="mb-1.5 block">Description</SectionLabel>}
         <DescriptionEditor

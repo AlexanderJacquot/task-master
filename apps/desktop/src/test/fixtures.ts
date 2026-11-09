@@ -9,6 +9,11 @@ import type {
   TimeBlock,
 } from "../lib/types";
 
+/** Valid, increasing fractional keys ("a0" + fixed-width digits + "V"), unlike `a${n}` past 9. */
+function fixtureRank(): string {
+  return `a0${String(counter).padStart(5, "0")}V`;
+}
+
 export const STATUS = {
   backlog: "00000000-0000-7000-8000-000000000001",
   todo: "00000000-0000-7000-8000-000000000002",
@@ -105,7 +110,7 @@ export function task(overrides: Partial<Task> = {}): Task {
     due_date: null,
     today_on: null,
     estimate_min: null,
-    rank: `a${counter}`,
+    rank: fixtureRank(),
     tag_ids: [],
     dependency_ids: [],
     created_at: 1,
@@ -124,7 +129,7 @@ export function project(overrides: Partial<Project> = {}): Project {
     name: `Project ${counter}`,
     color: null,
     icon: null,
-    rank: `a${counter}`,
+    rank: fixtureRank(),
     archived_at: null,
     created_at: 1,
     updated_at: 1,

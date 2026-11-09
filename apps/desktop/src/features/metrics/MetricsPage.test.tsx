@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import type { Api } from "../../lib/api";
 import { isoDate } from "../../lib/dates";
@@ -83,4 +83,55 @@ it("opens from navigation, shows project/tag/AI statistics, and refreshes after 
       .getAllByRole("cell")
       .map((cell) => cell.textContent),
   ).toEqual(["1", "0", "1", "0", "—"]);
+});
+
+it("focuses a project from the URL or its row, and shows its burn-down", async () => {
+  const p = project({ name: "Keep" });
+  const other = project({ name: "Other keep" });
+  const created_at = Date.now() - 3 * 86_400_000;
+  const tasks = [
+    task({ project_id: p.id, created_at }),
+    task({ project_id: other.id, created_at }),
+    task({ project_id: other.id, created_at }),
+  ];
+  const api: Api = {
+    snapshot: async () => snapshot({ projects: [p, other], tasks }),
+    execute: async () => {
+      throw new Error("Metrics must be read only");
+    },
+    undo: async () => null,
+    redo: async () => null,
+    search: async () => [],
+    taskActivity: async () => [],
+    parseCapture: async (text) => fakeParse(text),
+    onChanged: async () => () => {},
+  };
+  const store = createTaskStore(api);
+  await store.getState().hydrate();
+  const router = createAppRouter(
+    createMemoryHistory({ initialEntries: [`/metrics?project=${p.id}`] }),
+  );
+  render(
+    <StoreProvider store={store} api={api}>
+      <RouterProvider router={router} />
+    </StoreProvider>,
+  );
+  const openNow = () => {
+    const burn = screen.getByRole("region", { name: "Burn-down" });
+    return within(burn).getByText("Open now").nextSibling?.textContent;
+  };
+  const focus = await screen.findByRole("region", { name: "Focused project" });
+  expect(within(focus).getByRole("heading", { name: "Keep" })).toBeTruthy();
+  expect(openNow()).toBe("1");
+
+  fireEvent.click(within(focus).getByRole("button", { name: /Show all projects/ }));
+  const focusPanel = () => screen.queryByRole("region", { name: "Focused project" });
+  await waitFor(() => expect(focusPanel()).toBeNull());
+  expect(openNow()).toBe("3");
+
+  const byProject = screen.getByRole("region", { name: "By project" });
+  fireEvent.click(within(byProject).getByRole("button", { name: "Other keep" }));
+  const refocused = await screen.findByRole("region", { name: "Focused project" });
+  expect(within(refocused).getByRole("heading", { name: "Other keep" })).toBeTruthy();
+  expect(openNow()).toBe("2");
 });

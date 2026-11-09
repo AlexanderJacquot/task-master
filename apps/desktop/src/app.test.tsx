@@ -178,6 +178,38 @@ describe("the app", () => {
     expect(await within(panel).findByText("Book photo booth")).toBeTruthy();
   });
 
+  it("makes an existing task a subtask from the detail panel", async () => {
+    const input = screen.getByRole("textbox", { name: "New task" });
+    fireEvent.change(input, { target: { value: "Book photo booth" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await screen.findByText("Book photo booth");
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    const tasks = Object.values(store.getState().tasks);
+    const child = tasks.find((t) => t.title === "Book photo booth");
+
+    fireEvent.click(screen.getByText("Renew passport"));
+    const panel = await screen.findByRole("complementary", { name: "Task details" });
+    // The panel is replaced once just after opening: look it up again and retry the click
+    // until the picker is open.
+    const picker = await waitFor(() => {
+      const current = screen.getByRole("complementary", { name: "Task details" });
+      const trigger = within(current).getByRole("button", { name: "Add an existing task…" });
+      if (trigger.getAttribute("aria-expanded") !== "true") fireEvent.click(trigger);
+      return screen.getByRole("dialog", { name: "Add an existing task as a subtask" });
+    });
+    // The task itself is not offered.
+    expect(within(picker).queryByRole("button", { name: /Renew passport/ })).toBeNull();
+    fireEvent.click(within(picker).getByRole("button", { name: /Book photo booth/ }));
+
+    await waitFor(() =>
+      expect(fake.executed.at(-1)).toEqual([
+        { type: "set_parent", id: child?.id, parent_id: existing.id },
+      ]),
+    );
+    expect(store.getState().tasks[child?.id ?? ""]?.parent_id).toBe(existing.id);
+    expect(await within(panel).findByText("Book photo booth")).toBeTruthy();
+  });
+
   it("undoes with Ctrl+Z outside text fields", async () => {
     await act(async () => {
       fireEvent.keyDown(window, { key: "z", ctrlKey: true });

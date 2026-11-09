@@ -49,6 +49,26 @@ export function fitCamera(points: Point[], width: number, height: number): Camer
   };
 }
 
+/** The camera that puts a card in the middle of the view, keeping the zoom. */
+export function centerOn(point: Point, camera: Camera, width: number, height: number): Camera {
+  return {
+    ...camera,
+    x: width / 2 - (point.x + NODE_WIDTH / 2) * camera.zoom,
+    y: height / 2 - (point.y + NODE_HEIGHT / 2) * camera.zoom,
+  };
+}
+
+/** Whether at least one card is (at least partly) on screen with this camera. */
+export function anyInView(points: Point[], camera: Camera, width: number, height: number) {
+  return points.some(
+    (p) =>
+      (p.x + NODE_WIDTH) * camera.zoom + camera.x > 0 &&
+      p.x * camera.zoom + camera.x < width &&
+      (p.y + NODE_HEIGHT) * camera.zoom + camera.y > 0 &&
+      p.y * camera.zoom + camera.y < height,
+  );
+}
+
 /**
  * Where a task created from a card's plus button goes: one column to the side
  * (right for a dependent, left for a prerequisite), in the first row no card covers.
