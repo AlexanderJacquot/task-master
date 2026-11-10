@@ -9,7 +9,8 @@ the Rust core through UniFFI (`crates/mobile`), the phone as one more sync repli
 and later. Built from Linux with macOS CI runners (simulator, screenshots, videos); no
 Apple developer account and no Mac yet, so nothing runs on a real iPhone until one of the
 two exists. Milestones P0 (core preparation) to P8 (App Store). **P0 is done** on
-`p0-phone-core` (desktop sync needs a hands-on check before merging); next is P1.
+`p0-phone-core` (desktop sync needs a hands-on check before merging). **P1** is under way on
+`p1-ios-walking-skeleton`: the Rust interface is done, the Swift side and CI are next.
 
 **Calendar tray filter and width** (2026-11-10, on `main`, released in 0.14.0): the plan's focus
 selects (project, epic, open status) moved from the Plan bar into the calendar's task tray
@@ -78,6 +79,27 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### P1 iOS walking skeleton, step 1: `crates/mobile` (2026-11-10, branch `p1-ios-walking-skeleton`, stacked on `p0-phone-core`)
+
+- `crates/mobile` (new workspace member, `uniffi` 0.32.2 pinned; ADR 022): one `App`
+  object for Swift. `open(dir, device_name)` (database, attachments and `account.json`
+  in `dir`), `list(scope, day)` returning rows ready to draw, `capture` (the desktop's
+  quick-capture syntax, new tags created in the same batch), `set_done`, `undo`, the sync
+  account flow (`sync_connect`, `sync_set_token`, `sync_join`, `sync_now`, `sync_kick`,
+  `sync_disconnect`, `sync_status`, `sync_refresh`), `start()` for the background loops,
+  and a `Listener` implemented in Swift (`data_changed`, `sync_changed`). Attachments are
+  fetched on demand. The crate does not use the workspace lints (generated FFI code is
+  `unsafe`).
+- UniFFI builds with the workspace toolchain (edition 2024, Rust 1.99.1) and
+  `scripts/ios/generate-bindings.sh` writes the Swift bindings on Linux.
+- Tests (`crates/mobile/tests/app.rs`): capture, list, done, undo and reopening from
+  disk; two phones syncing through a token server by their own loops, the account
+  surviving a restart. Checks pass: clippy, cargo test.
+- Not done in P1 yet: the Swift package (`TaskMasterKit`), the SwiftUI app, the Xcode
+  project spec and `.github/workflows/ios.yml`. None of it can be compiled here: there is
+  no Swift toolchain on this machine, and the macOS build only runs on the GitHub mirror
+  after a push. OIDC sign-in and the token in the Keychain are P4.
 
 ### P0 phone core, step 2: sync engine, OIDC flow, attachments on demand (2026-11-10, branch `p0-phone-core`)
 

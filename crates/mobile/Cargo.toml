@@ -1,0 +1,38 @@
+[package]
+name = "taskmaster-mobile"
+description = "The phone's interface to task-master (ADR 022): one App object over the core and the sync engine, exported to Swift with UniFFI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "taskmaster_mobile"
+# staticlib for the iOS XCFramework, cdylib for bindgen and Swift tests on Linux, lib for
+# Rust tests.
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+required-features = ["cli"]
+
+# Not the workspace lints: UniFFI's generated scaffolding is `unsafe` FFI code, which the
+# workspace forbids everywhere else. No hand-written `unsafe` belongs here either.
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[dependencies]
+taskmaster-core = { workspace = true }
+taskmaster-client = { path = "../client" }
+serde_json = "1"
+# The FFI generator; pinned exactly, the generated Swift must match the runtime.
+uniffi = "=0.32.2"
+
+[features]
+cli = ["uniffi/cli"]
+
+[dev-dependencies]
+taskmaster-server = { path = "../server" }
+axum = "0.8"
+tokio = { version = "1", features = ["rt-multi-thread", "net"] }
