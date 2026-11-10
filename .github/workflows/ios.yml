@@ -73,7 +73,8 @@ jobs:
       # A sync server on this machine, with tasks put there by another replica.
       - name: Start a test server
         run: |
-          cargo build -p taskmaster-server -p taskmaster-mobile --examples
+          cargo build -p taskmaster-server
+          cargo build -p taskmaster-mobile --example replica
           mkdir -p "$RUNNER_TEMP/server" artifacts
           TM_LISTEN=127.0.0.1:8787 TM_DATA_DIR="$RUNNER_TEMP/server" TM_AUTH=none \
             nohup target/debug/task-master-server > artifacts/server.log 2>&1 &
@@ -81,7 +82,7 @@ jobs:
             curl -fs "$SERVER_URL/info" > /dev/null && break
             sleep 0.5
           done
-          target/debug/examples/replica "$SERVER_URL" seed
+          target/debug/examples/replica "$SERVER_URL" seed || { cat artifacts/server.log; exit 1; }
 
       - name: Pick a simulator
         run: |
