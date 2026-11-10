@@ -4,7 +4,7 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**Calendar tray filter and width** (2026-11-10, on `main`, uncommitted): the plan's focus
+**Calendar tray filter and width** (2026-11-10, on `main`, released in 0.14.0): the plan's focus
 selects (project, epic, open status) moved from the Plan bar into the calendar's task tray
 as a collapsible "Filter" with a "Clear filter" button, and now narrow the tray in every
 mode, not only in Plan mode; the plan still draws from the same focus (one remembered
@@ -12,7 +12,7 @@ setting, `task-master.calendar-plan`). The tray's right edge drags to resize it 
 640 px, remembered in `task-master.calendar-tray-width`, double-click resets). Tests in
 `calendar.test.tsx` written but not run in that session (no permission to run pnpm).
 
-**Clean theme** (2026-11-10, on `main`, uncommitted; ADR 021): a fourth theme in Settings →
+**Clean theme** (2026-11-10, on `main`, released in 0.14.0; ADR 021): a fourth theme in Settings →
 Appearance, a plain Notion-like light look: white pages, grey sidebar, charcoal ink, blue
 accent, Inter (bundled, `@fontsource-variable/inter` 5.3.0), lucide line icons in place of
 the medieval glyphs (project engravings too), no textures, ornaments or drop caps, a plain
@@ -20,7 +20,7 @@ logo, plain Metrics wording.
 "Follow the system" can pair Dark with Clean or Parchment. Checked with headless screenshots
 of the showcase (`showcase.html?theme=clean`); not yet seen in the real app or on Windows.
 
-**Update pill fix** (2026-11-10, on `main`, uncommitted): the sidebar "Update to X" pill only
+**Update pill fix** (2026-11-10, on `main`, released in 0.14.0): the sidebar "Update to X" pill only
 linked to `/settings` (the General category), so clicking it seemed to do nothing. It now
 starts the download (or restarts when ready) and opens Settings → About, and stays visible
 with the progress while downloading. Test in `app.test.tsx`.
@@ -71,6 +71,13 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### Release 0.14.0 (2026-11-10)
+
+- Clean theme (ADR 021, Inter bundled), calendar tray filter in every mode and resizable
+  tray, the sidebar Update pill installs then restarts. Schema unchanged (12). Checks pass
+  locally (clippy, cargo test, biome, typecheck, 383 frontend tests). Notes in
+  `docs/releases/0.14.0.md`; tagged `v0.14.0`.
 
 ### Release 0.13.0 (2026-11-09)
 
