@@ -30,6 +30,7 @@ apps/desktop/src-tauri/binaries/
 apps/ios/TaskMasterKit/Sources/TaskMasterFFI/taskmaster_mobile.swift
 apps/ios/TaskMasterKit/Sources/taskmaster_mobileFFI/include/taskmaster_mobileFFI.h
 apps/ios/build/
+apps/ios/TaskMasterKit/Frameworks/
 apps/ios/*.xcodeproj
 .build/
 *.xcresult

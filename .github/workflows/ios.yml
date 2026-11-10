@@ -1,0 +1,137 @@
+# The iPhone app (ADR 022, docs/ios-plan.md). Runs on the public GitHub mirror like ci.yml.
+#
+# - kit: TaskMasterKit (the app's logic without its views) tested on Linux.
+# - app: the app built for the simulator on macOS, then driven by its UI tests against a
+#   sync server started in the job. Screenshots and a video of the run are kept as
+#   artifacts. Nothing is signed: device builds and TestFlight come with the Apple
+#   developer account.
+
+name: ios
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*"]
+    paths:
+      - "apps/ios/**"
+      - "crates/**"
+      - "scripts/ios/**"
+      - "Cargo.lock"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  kit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6.1.0
+
+      # rustup reads the pinned toolchain from rust-toolchain.toml.
+      - name: Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: swatinem/rust-cache@v2.9.2
+
+      # The runner image ships a Swift toolchain.
+      - name: Swift version
+        run: swift --version
+
+      - name: TaskMasterKit tests
+        run: scripts/ios/test-kit.sh
+
+  app:
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      SERVER_URL: http://127.0.0.1:8787
+    steps:
+      - uses: actions/checkout@v6.1.0
+
+      - name: Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: swatinem/rust-cache@v2.9.2
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Rust library for the simulator
+        run: scripts/ios/build-xcframework.sh sim
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec apps/ios/project.yml
+
+      # A sync server on this machine, with tasks put there by another replica.
+      - name: Start a test server
+        run: |
+          cargo build -p taskmaster-server -p taskmaster-mobile --examples
+          mkdir -p "$RUNNER_TEMP/server" artifacts
+          TM_LISTEN=127.0.0.1:8787 TM_DATA_DIR="$RUNNER_TEMP/server" TM_AUTH=none \
+            nohup target/debug/task-master-server > artifacts/server.log 2>&1 &
+          for _ in $(seq 1 40); do
+            curl -fs "$SERVER_URL/info" > /dev/null && break
+            sleep 0.5
+          done
+          target/debug/examples/replica "$SERVER_URL" seed
+
+      - name: Pick a simulator
+        run: |
+          xcrun simctl list devices available
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          phones = [d for name, devices in sorted(runtimes.items(), reverse=True)
+                    if "iOS" in name for d in devices if d["name"].startswith("iPhone")]
+          plain = [d for d in phones if d["name"].split()[-1].isdigit()]
+          print((plain or phones)[0]["udid"])')
+          echo "SIMULATOR=$udid" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+
+      - name: UI tests
+        run: |
+          xcrun simctl io "$SIMULATOR" recordVideo --codec=h264 --force artifacts/flow.mov &
+          recorder=$!
+          status=0
+          set -o pipefail
+          xcodebuild test \
+            -project apps/ios/TaskMaster.xcodeproj \
+            -scheme TaskMaster \
+            -destination "id=$SIMULATOR" \
+            -resultBundlePath artifacts/result.xcresult \
+            2>&1 | tee artifacts/xcodebuild.log | grep -E "error|warning: unre|Test Case|Test Suite|\*\* |Testing|BUILD" || status=$?
+          kill -INT "$recorder" || true
+          wait "$recorder" || true
+          exit "$status"
+
+      # What was typed on the phone reached the server.
+      - name: The phone's task is on the server
+        run: target/debug/examples/replica "$SERVER_URL" expect "Written on the phone"
+
+      - name: Export screenshots
+        if: always()
+        run: |
+          xcrun xcresulttool export attachments \
+            --path artifacts/result.xcresult --output-path artifacts/screenshots || true
+          ls -R artifacts | head -50
+
+      - name: Keep screenshots, video and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ui
+          path: |
+            artifacts/screenshots
+            artifacts/flow.mov
+            artifacts/xcodebuild.log
+            artifacts/server.log
+          if-no-files-found: warn

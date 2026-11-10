@@ -49,6 +49,9 @@ private func makeSession(_ label: String = "kit") throws -> Session {
     #expect(label == "To do")
     #expect(count == 2)
 
+    #expect(inbox.sections.map(\.label) == ["To do"])
+    #expect(inbox.sections[0].tasks == inbox.tasks)
+
     inbox.toggle(inbox.tasks[0])
     #expect(inbox.error == nil)
     #expect(inbox.tasks.map(\.title) == ["Call the plumber"])

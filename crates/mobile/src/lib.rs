@@ -1,6 +1,6 @@
 //! The phone's interface to task-master (ADR 022, docs/ios-plan.md).
 //!
-//! One [`App`] object owns the local database (a replica like any desktop, ADR 015) and
+//! One [`Core`] object owns the local database (a replica like any desktop, ADR 015) and
 //! the sync engine. Swift asks it for rows ready to draw and sends it edits; it never
 //! filters, sorts or merges. Types here are the phone's own, shaped for its screens, and
 //! are converted from the core's; this is the only crate that knows UniFFI.
@@ -271,7 +271,7 @@ struct Inner {
     device_name: String,
     store: Mutex<Store>,
     engine: Engine,
-    /// Taken by the first [`App::start`].
+    /// Taken by the first [`Core::start`].
     kicks: Mutex<Option<Receiver<()>>>,
     account: Mutex<Option<SyncAccount>>,
     listener: Mutex<Option<Arc<dyn Listener>>>,
@@ -373,12 +373,12 @@ fn task_row(
 
 /// The app's data and sync. Create one per process and keep it.
 #[derive(uniffi::Object)]
-pub struct App {
+pub struct Core {
     inner: Arc<Inner>,
 }
 
 #[uniffi::export]
-impl App {
+impl Core {
     /// Opens (or creates) the database in `dir`, a folder the app owns. `device_name`
     /// is how this phone appears in the server's token list.
     #[uniffi::constructor]

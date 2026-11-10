@@ -16,7 +16,7 @@ public final class SyncModel {
 
     public init(session: Session) {
         self.session = session
-        self.status = session.app.syncStatus()
+        self.status = session.core.syncStatus()
         observation = session.onSyncChanged { [weak self] status in self?.status = status }
     }
 
@@ -48,34 +48,34 @@ public final class SyncModel {
 
     /// Asks the server what it needs when that is not known yet (after a restart).
     public func refresh() async {
-        let app = session.app
-        status = await Task.detached { app.syncRefresh() }.value
+        let core = session.core
+        status = await Task.detached { core.syncRefresh() }.value
     }
 
     public func connect(_ address: String) async {
-        let app = session.app
-        await run { try app.syncConnect(url: address) }
+        let core = session.core
+        await run { try core.syncConnect(url: address) }
     }
 
     public func setToken(_ token: String) async {
-        let app = session.app
-        await run { try app.syncSetToken(token: token) }
+        let core = session.core
+        await run { try core.syncSetToken(token: token) }
     }
 
     public func join(_ mode: JoinMode) async {
-        let app = session.app
-        await run { try app.syncJoin(mode: mode) }
+        let core = session.core
+        await run { try core.syncJoin(mode: mode) }
     }
 
     /// Syncs and returns when done (pull to refresh).
     public func syncNow() async {
-        let app = session.app
-        await run { app.syncNow() }
+        let core = session.core
+        await run { core.syncNow() }
     }
 
     public func disconnect() async {
-        let app = session.app
-        await run { try app.syncDisconnect() }
+        let core = session.core
+        await run { try core.syncDisconnect() }
     }
 
     private func run(_ step: @escaping @Sendable () throws -> SyncStatus) async {

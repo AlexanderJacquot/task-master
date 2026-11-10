@@ -17,9 +17,14 @@ let rustLibrary: [LinkerSetting] = [
 ]
 #else
 let ffi: [Target] = [
-    .binaryTarget(name: "taskmaster_mobileFFI", path: "../build/TaskMasterMobile.xcframework")
+    .binaryTarget(name: "taskmaster_mobileFFI", path: "Frameworks/TaskMasterMobile.xcframework")
 ]
-let rustLibrary: [LinkerSetting] = []
+// What the Rust static library needs from the system (TLS trust, SQLite's and std's calls).
+let rustLibrary: [LinkerSetting] = [
+    .linkedFramework("Security"),
+    .linkedFramework("CoreFoundation"),
+    .linkedFramework("SystemConfiguration"),
+]
 #endif
 
 let package = Package(

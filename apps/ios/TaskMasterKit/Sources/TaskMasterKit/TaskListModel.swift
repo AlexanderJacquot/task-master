@@ -29,15 +29,42 @@ public final class TaskListModel {
         }
     }
 
+    /// A heading and the tasks under it.
+    public struct Section: Identifiable, Equatable, Sendable {
+        /// The group's key (a status id here).
+        public let id: String
+        public let label: String
+        public let color: String?
+        public var tasks: [TaskRow]
+    }
+
+    /// The rows as sections, for a sectioned list. Tasks before any heading (there are
+    /// none today) go under an unnamed one.
+    public var sections: [Section] {
+        var out: [Section] = []
+        for row in rows {
+            switch row {
+            case .group(let key, let label, let color, _):
+                out.append(Section(id: key, label: label, color: color, tasks: []))
+            case .task(let task):
+                if out.isEmpty {
+                    out.append(Section(id: "", label: "", color: nil, tasks: []))
+                }
+                out[out.count - 1].tasks.append(task)
+            }
+        }
+        return out
+    }
+
     public func reload() {
-        attempt { rows = try session.app.list(scope: scope, day: session.day) }
+        attempt { rows = try session.core.list(scope: scope, day: session.day) }
     }
 
     /// Adds a task from a quick-capture line. False when nothing was added.
     @discardableResult
     public func add(_ text: String) -> Bool {
         attempt {
-            _ = try session.app.capture(text: text, day: session.day)
+            _ = try session.core.capture(text: text, day: session.day)
             reload()
         }
     }
@@ -46,7 +73,7 @@ public final class TaskListModel {
     public func toggle(_ task: TaskRow) {
         let closed = task.stage == .done || task.stage == .cancelled
         attempt {
-            try session.app.setDone(taskId: task.id, done: !closed)
+            try session.core.setDone(taskId: task.id, done: !closed)
             reload()
         }
     }
@@ -54,7 +81,7 @@ public final class TaskListModel {
     /// Takes back the last edit made on this phone.
     public func undo() {
         attempt {
-            _ = try session.app.undo()
+            _ = try session.core.undo()
             reload()
         }
     }

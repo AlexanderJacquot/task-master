@@ -1,4 +1,4 @@
-//! The phone's `App` as Swift uses it: local edits and lists, then sync with a real
+//! The phone's `Core` as Swift uses it: local edits and lists, then sync with a real
 //! server on a local port.
 
 use std::path::PathBuf;
@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use taskmaster_core::Store;
 use taskmaster_mobile::{
-    App, AppError, AuthMode, Day, JoinMode, ListRow, Listener, Priority, Scope, Stage, SyncStatus,
+    AppError, AuthMode, Core, Day, JoinMode, ListRow, Listener, Priority, Scope, Stage, SyncStatus,
 };
 use taskmaster_server::auth::{Scope as TokenScope, Tokens};
 use taskmaster_server::config::Config;
@@ -27,8 +27,8 @@ fn day() -> Day {
     }
 }
 
-fn open(dir: &std::path::Path, name: &str) -> Arc<App> {
-    App::open(dir.to_string_lossy().into_owned(), name.into()).unwrap()
+fn open(dir: &std::path::Path, name: &str) -> Arc<Core> {
+    Core::open(dir.to_string_lossy().into_owned(), name.into()).unwrap()
 }
 
 fn server(config: Config) -> (String, Arc<AppState>) {
@@ -55,7 +55,7 @@ fn server(config: Config) -> (String, Arc<AppState>) {
     (format!("http://{}", rx.recv().unwrap()), state)
 }
 
-fn titles(app: &App, scope: Scope) -> Vec<String> {
+fn titles(app: &Core, scope: Scope) -> Vec<String> {
     app.list(scope, day())
         .unwrap()
         .into_iter()
@@ -148,7 +148,7 @@ fn capture_list_complete_and_undo() {
         listener.data.load(Ordering::SeqCst) >= 7
     });
 
-    // Everything is on disk: a fresh App over the same folder shows it.
+    // Everything is on disk: a fresh Core over the same folder shows it.
     drop(app);
     let again = open(&dir, "Phone");
     assert_eq!(titles(&again, Scope::Inbox).len(), 3);

@@ -5,7 +5,7 @@ import Foundation
 /// something changed. Screen models are built on it.
 @MainActor
 public final class Session {
-    public let app: App
+    public let core: Core
     private let clock: @Sendable () -> Date
     private let timeZone: @Sendable () -> TimeZone
     private var dataObservers: [UUID: @MainActor () -> Void] = [:]
@@ -19,17 +19,17 @@ public final class Session {
         clock: @escaping @Sendable () -> Date = { Date() },
         timeZone: @escaping @Sendable () -> TimeZone = { .current }
     ) throws {
-        self.app = try App.open(dir: directory.path, deviceName: deviceName)
+        self.core = try Core.open(dir: directory.path, deviceName: deviceName)
         self.clock = clock
         self.timeZone = timeZone
         let bridge = Bridge(session: self)
         self.bridge = bridge
-        app.setListener(listener: bridge)
+        core.setListener(listener: bridge)
     }
 
     /// Starts background sync. Call once the first screen is up.
     public func start() throws {
-        try app.start()
+        try core.start()
     }
 
     /// The user's calendar day, which "today" and "overdue" count from.
@@ -99,6 +99,8 @@ private final class Bridge: Listener, @unchecked Sendable {
         Task { @MainActor [weak self] in self?.session?.syncChanged(status) }
     }
 }
+
+extension TaskRow: Identifiable {}
 
 extension AppError {
     /// The sentence to show the user.

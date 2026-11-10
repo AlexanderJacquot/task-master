@@ -1,0 +1,58 @@
+# The Xcode project is generated from this file with XcodeGen and never edited or checked
+# in (ADR 022): `xcodegen generate --spec apps/ios/project.yml`.
+name: TaskMaster
+options:
+  bundleIdPrefix: space.solarnexus
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+packages:
+  TaskMasterKit:
+    path: TaskMasterKit
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.14.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  TaskMaster:
+    type: application
+    platform: iOS
+    sources: [App]
+    dependencies:
+      - package: TaskMasterKit
+    info:
+      path: build/App-Info.plist
+      properties:
+        CFBundleDisplayName: Task Master
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        # Plain http is allowed only to this machine and the local network (a server on
+        # the LAN, and the test server in CI); anything else needs https.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: space.solarnexus.taskmaster
+        PRODUCT_NAME: TaskMaster
+  TaskMasterUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: TaskMaster
+    info:
+      path: build/UITests-Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: space.solarnexus.taskmaster.uitests
+        TEST_TARGET_NAME: TaskMaster
+schemes:
+  TaskMaster:
+    build:
+      targets:
+        TaskMaster: all
+        TaskMasterUITests: [test]
+    test:
+      targets: [TaskMasterUITests]
