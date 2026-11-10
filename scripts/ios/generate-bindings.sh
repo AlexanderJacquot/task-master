@@ -14,6 +14,8 @@ case "$(uname -s)" in
 esac
 cargo run -q -p taskmaster-mobile --features cli --bin uniffi-bindgen -- \
   generate --library "$lib" --language swift --out-dir "$out" 2>/dev/null
+# Both folders hold generated files only, so git does not carry them.
+mkdir -p "$kit/Sources/TaskMasterFFI" "$kit/Sources/taskmaster_mobileFFI/include"
 cp "$out/taskmaster_mobile.swift" "$kit/Sources/TaskMasterFFI/taskmaster_mobile.swift"
 cp "$out/taskmaster_mobileFFI.h" "$kit/Sources/taskmaster_mobileFFI/include/taskmaster_mobileFFI.h"
 # For the XCFramework's Headers folder (scripts/ios/build-xcframework.sh).
