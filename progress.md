@@ -9,8 +9,9 @@ the Rust core through UniFFI (`crates/mobile`), the phone as one more sync repli
 and later. Built from Linux with macOS CI runners (simulator, screenshots, videos); no
 Apple developer account and no Mac yet, so nothing runs on a real iPhone until one of the
 two exists. Milestones P0 (core preparation) to P8 (App Store). **P0 is done** on
-`p0-phone-core` (desktop sync needs a hands-on check before merging). **P1** is under way on
-`p1-ios-walking-skeleton`: the Rust interface is done, the Swift side and CI are next.
+`p0-phone-core` (desktop sync needs a hands-on check before merging). **P1** is done on
+`p1-ios-walking-skeleton` and green on CI (the app runs in the simulator and syncs). Next: P2, starting
+with phone mockups of the read screens.
 
 **Calendar tray filter and width** (2026-11-10, on `main`, released in 0.14.0): the plan's focus
 selects (project, epic, open status) moved from the Plan bar into the calendar's task tray
@@ -113,8 +114,17 @@ the app daily for two weeks before Phase 2 (plan section 10).
   what the phone sent).
 - `.github/workflows/ios.yml`: `kit` (Linux) and `app` (macOS 26: simulator build, UI
   test against a server started in the job, screenshots and a video as artifacts).
-- **Never compiled or run**: the SwiftUI app, the UI test, the XCFramework script and
-  the workflow. They need the macOS runner; the first push will show what breaks.
+- **Green on CI** (run 42837497708 on the GitHub mirror, commit `327f58c`): `kit`
+  passes on Linux; `app` builds for the simulator with Xcode 26.6, and the UI test
+  connects to the job's server, sees the tasks another replica seeded, adds a task,
+  filters Today and reads "Up to date" on the sync screen; the job then finds the
+  phone's task on the server. Artifact `ios-ui` holds the four screenshots, a video of
+  the run and the logs. It took four pushes: missing folders for the generated bindings,
+  the server binary not built, and a UI test lookup were the three fixes; the SwiftUI
+  code compiled unchanged. The macOS job takes about 15 minutes.
+- P1's goal is met. Still open from the plan's P1 list: the screenshot gallery in light,
+  dark and two text sizes (today: four screenshots, light only), and the TestFlight job
+  (waits for the developer account). `actions/upload-artifact@v4` warns about Node 20.
   OIDC sign-in and the token in the Keychain are P4.
 
 ### P0 phone core, step 2: sync engine, OIDC flow, attachments on demand (2026-11-10, branch `p0-phone-core`)
