@@ -25,3 +25,11 @@ apps/desktop/src-tauri/binaries/
 
 # Playwright MCP screenshots and logs
 .playwright-mcp/
+
+# iOS (ADR 022): generated bindings, the Rust XCFramework, the generated Xcode project
+apps/ios/TaskMasterKit/Sources/TaskMasterFFI/taskmaster_mobile.swift
+apps/ios/TaskMasterKit/Sources/taskmaster_mobileFFI/include/taskmaster_mobileFFI.h
+apps/ios/build/
+apps/ios/*.xcodeproj
+.build/
+*.xcresult
