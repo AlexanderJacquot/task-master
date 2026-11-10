@@ -29,7 +29,10 @@ final class WalkingSkeletonTests: XCTestCase {
         shot("03-today")
 
         app.buttons["syncButton"].tap()
-        XCTAssertTrue(app.staticTexts["Up to date"].waitForExistence(timeout: 30))
+        // A labelled row reads as one element ("State, Up to date").
+        let upToDate = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS 'Up to date'")).firstMatch
+        XCTAssertTrue(upToDate.waitForExistence(timeout: 30))
         shot("04-sync")
     }
 
