@@ -96,10 +96,26 @@ the app daily for two weeks before Phase 2 (plan section 10).
 - Tests (`crates/mobile/tests/app.rs`): capture, list, done, undo and reopening from
   disk; two phones syncing through a token server by their own loops, the account
   surviving a restart. Checks pass: clippy, cargo test.
-- Not done in P1 yet: the Swift package (`TaskMasterKit`), the SwiftUI app, the Xcode
-  project spec and `.github/workflows/ios.yml`. None of it can be compiled here: there is
-  no Swift toolchain on this machine, and the macOS build only runs on the GitHub mirror
-  after a push. OIDC sign-in and the token in the Keychain are P4.
+- **Swift on this machine**: Swift 6.4.2 through swiftly in `~/.local/share/swiftly`
+  (`. ~/.local/share/swiftly/env.sh`; the shell profile was not changed). Arch lacks two
+  libraries its build tool wants: `~/.local/share/swiftly/compat-lib` holds a link
+  `libncurses.so.6` → the system's `libncursesw.so.6` and a copy of `libxml2.so.2` from
+  the official `libxml2-legacy` package, both linked into the toolchain's
+  `usr/lib/swift/linux`. `sudo pacman -S libxml2-legacy` would replace the copy.
+- `apps/ios/TaskMasterKit` (Swift package, no SwiftUI): `Session` (the core, the day,
+  change observers on the main actor), `TaskListModel`, `SyncModel`. Tests run on Linux
+  against `target/debug`: `scripts/ios/test-kit.sh` (4 pass).
+- The exported Rust object is `Core` (not `App`, which SwiftUI owns).
+- `apps/ios/App` (SwiftUI): one list with an Inbox/Today/All switch, a capture field,
+  done by tap or swipe, pull to sync, and a sync screen (address, token, merge or
+  replace, status). `apps/ios/project.yml` (XcodeGen), `scripts/ios/build-xcframework.sh`,
+  `apps/ios/UITests`, `crates/mobile/examples/replica.rs` (seeds a test server and checks
+  what the phone sent).
+- `.github/workflows/ios.yml`: `kit` (Linux) and `app` (macOS 26: simulator build, UI
+  test against a server started in the job, screenshots and a video as artifacts).
+- **Never compiled or run**: the SwiftUI app, the UI test, the XCFramework script and
+  the workflow. They need the macOS runner; the first push will show what breaks.
+  OIDC sign-in and the token in the Keychain are P4.
 
 ### P0 phone core, step 2: sync engine, OIDC flow, attachments on demand (2026-11-10, branch `p0-phone-core`)
 
