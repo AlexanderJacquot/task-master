@@ -32,23 +32,7 @@ pub struct GoogleAccount {
     pub runner: taskmaster_core::calendar::CalendarRunner,
 }
 
-/// The sync server this device syncs with (ADR 015, docs/server.md).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SyncAccount {
-    /// e.g. `https://tasks.example.org`.
-    pub url: String,
-    /// The server's token for this device (pasted, or from the OIDC sign-in). `None` for
-    /// a server that asks for none.
-    #[serde(default)]
-    pub token: Option<String>,
-    /// Shown in the server's `token list`.
-    #[serde(default)]
-    pub device_name: String,
-    /// The first sync chose how to combine this device's data with the server's; syncing
-    /// runs only once this is set.
-    #[serde(default)]
-    pub joined: bool,
-}
+pub use taskmaster_client::engine::SyncAccount;
 
 /// How this device runs Claude Code for agent sessions (ADR 017).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]

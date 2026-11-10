@@ -5,7 +5,9 @@
 //! what is new, push the repairs that produced, download missing attachment content.
 //! The store is locked only between network calls, so the app keeps writing meanwhile.
 
+pub mod engine;
 pub mod google;
+pub mod oidc;
 
 use std::fmt;
 use std::io::{BufRead, BufReader};
@@ -317,6 +319,21 @@ fn lock(store: &Mutex<Store>) -> MutexGuard<'_, Store> {
 
 /// One full sync round. Safe to repeat: everything is idempotent on the server.
 pub fn sync(client: &Client, store: &Mutex<Store>) -> Result<SyncReport> {
+    sync_with(client, store, Files::All)
+}
+
+/// Which attachment content a round downloads. Uploads always happen.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Files {
+    /// Everything this device lacks (the desktop).
+    #[default]
+    All,
+    /// Nothing: content is fetched when opened, with [`fetch_file`] (the phone, ADR 022).
+    OnDemand,
+}
+
+/// [`sync`], choosing what happens to attachment content.
+pub fn sync_with(client: &Client, store: &Mutex<Store>, files: Files) -> Result<SyncReport> {
     let mut report = SyncReport::default();
 
     let before = now_ms();
@@ -362,7 +379,9 @@ pub fn sync(client: &Client, store: &Mutex<Store>) -> Result<SyncReport> {
     if report.repairs > 0 {
         push_all(client, store, schema, &mut report)?;
     }
-    download_missing(client, store, &mut report)?;
+    if files == Files::All {
+        download_missing(client, store, &mut report)?;
+    }
     Ok(report)
 }
 
@@ -421,20 +440,38 @@ fn download_missing(client: &Client, store: &Mutex<Store>, report: &mut SyncRepo
         return Ok(());
     };
     for hash in missing {
-        let bytes = match client.get_blob(&hash) {
-            Ok(bytes) => bytes,
-            // The server never got it either (attached on a device that has not synced
-            // its files yet): try again next round.
-            Err(Error::Http(404, _)) => continue,
-            Err(e) => return Err(e),
-        };
-        let stored = lock(store).files()?.put_bytes(&bytes)?;
-        if stored.hash != hash {
-            return Err(Error::Protocol(format!(
-                "file {hash} arrived with different content"
-            )));
+        // Not on the server either (attached on a device that has not synced its files
+        // yet): try again next round.
+        if download(client, store, &hash)? {
+            report.files_down += 1;
         }
-        report.files_down += 1;
     }
     Ok(())
+}
+
+/// Downloads one file into the store. False when the server does not have it.
+fn download(client: &Client, store: &Mutex<Store>, hash: &str) -> Result<bool> {
+    let bytes = match client.get_blob(hash) {
+        Ok(bytes) => bytes,
+        Err(Error::Http(404, _)) => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    let stored = lock(store).files()?.put_bytes(&bytes)?;
+    if stored.hash != hash {
+        return Err(Error::Protocol(format!(
+            "file {hash} arrived with different content"
+        )));
+    }
+    Ok(true)
+}
+
+/// Makes sure the content of the attachment with this hash is on this device, fetching
+/// it from the server when it is not. False when the server does not have it yet (the
+/// device it was attached on has not synced its files).
+pub fn fetch_file(client: &Client, store: &Mutex<Store>, hash: &str) -> Result<bool> {
+    let path = lock(store).files()?.path(hash)?;
+    if path.exists() {
+        return Ok(true);
+    }
+    download(client, store, hash)
 }

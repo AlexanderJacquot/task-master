@@ -21,3 +21,8 @@ base64 = "0.23.1"
 sha2 = "0.11.1"
 getrandom = "0.3.4"
 url = "2.5"
+# Same pinned release candidate as the core; only for shells that export TypeScript types.
+specta = { version = "=2.0.0-rc.26", features = ["derive"], optional = true }
+
+[features]
+specta = ["dep:specta", "taskmaster-core/specta"]

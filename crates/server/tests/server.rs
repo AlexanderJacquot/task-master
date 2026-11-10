@@ -189,6 +189,24 @@ fn attachments_travel_by_hash() {
     assert_eq!(std::fs::read(path).unwrap(), b"hello attachments");
     drop(store);
 
+    // A device that fetches on demand (the phone) gets the row but not the content,
+    // until it asks for it.
+    let c = device();
+    let hash = attachment.hash.clone();
+    let down =
+        taskmaster_client::sync_with(&client, &c, taskmaster_client::Files::OnDemand).unwrap();
+    assert_eq!(down.files_down, 0);
+    assert_eq!(c.lock().unwrap().snapshot().unwrap().attachments.len(), 1);
+    assert!(!c.lock().unwrap().files().unwrap().contains(&hash));
+    assert!(taskmaster_client::fetch_file(&client, &c, &hash).unwrap());
+    assert!(c.lock().unwrap().files().unwrap().contains(&hash));
+    assert!(
+        taskmaster_client::fetch_file(&client, &c, &hash).unwrap(),
+        "already here"
+    );
+    let unknown = attachment_hash_of(b"never uploaded");
+    assert!(!taskmaster_client::fetch_file(&client, &c, &unknown).unwrap());
+
     // A wrong body for a hash is refused.
     let err = client
         .put_blob(&attachment_hash_of(b"something else"), b"not that")
@@ -766,4 +784,239 @@ fn calendar_handoff_waits_for_the_active_google_round() {
     assert!(done_rx.recv_timeout(Duration::from_secs(5)).unwrap());
     round.join().unwrap();
     transfer.join().unwrap();
+}
+
+// ---------------------------------------------------------------------------------------
+// The sync engine shared by the desktop and the phone (taskmaster_client::engine)
+
+use taskmaster_client::engine::{Engine, Host, JoinMode, SyncAccount, SyncStatus};
+
+/// A shell reduced to what the engine asks of it.
+struct TestHost {
+    store: Mutex<Store>,
+    account: Mutex<Option<SyncAccount>>,
+    statuses: Mutex<Vec<SyncStatus>>,
+    backups: Mutex<u32>,
+    name: &'static str,
+}
+
+impl TestHost {
+    fn new(name: &'static str) -> Self {
+        Self {
+            store: device(),
+            account: Mutex::new(None),
+            statuses: Mutex::new(Vec::new()),
+            backups: Mutex::new(0),
+            name,
+        }
+    }
+}
+
+impl Host for TestHost {
+    fn store(&self) -> &Mutex<Store> {
+        &self.store
+    }
+    fn account(&self) -> Option<SyncAccount> {
+        self.account.lock().unwrap().clone()
+    }
+    fn save_account(&self, account: Option<SyncAccount>) -> Result<(), String> {
+        *self.account.lock().unwrap() = account;
+        Ok(())
+    }
+    fn sync_minutes(&self) -> u32 {
+        0
+    }
+    fn status_changed(&self, status: &SyncStatus) {
+        self.statuses.lock().unwrap().push(status.clone());
+    }
+    fn backup_before_replace(&self, _store: &mut Store) -> taskmaster_core::Result<()> {
+        *self.backups.lock().unwrap() += 1;
+        Ok(())
+    }
+    fn device_name(&self) -> String {
+        self.name.into()
+    }
+}
+
+#[test]
+fn the_engine_connects_joins_and_syncs_two_devices() {
+    let (url, _) = server(Config::default());
+    let (a, b) = (TestHost::new("a"), TestHost::new("b"));
+    let (engine_a, _kicks_a) = Engine::new();
+    let (engine_b, _kicks_b) = Engine::new();
+
+    // Nothing happens before a device has joined.
+    assert!(!engine_a.sync_now(&a).configured);
+    assert!(engine_a.sync_blocking(&a).is_err());
+
+    // The address is typed without its scheme's default and with a trailing slash.
+    let status = engine_a.connect(&a, &format!("{url}/")).unwrap();
+    assert_eq!(status.url, url);
+    assert_eq!(status.auth, Some(AuthMode::None));
+    assert_eq!(status.server_empty, Some(true));
+    assert_eq!(status.device_name, "a");
+    assert!(!status.joined);
+
+    add_task(&a.store, "from a");
+    assert!(engine_a.join(&a, JoinMode::Merge).unwrap().joined);
+    let status = engine_a.sync_now(&a);
+    assert!(status.last_pushed > 0 && status.pending == 0);
+    assert!(status.last_error.is_none() && status.last_sync_at.is_some());
+    let seen = a.statuses.lock().unwrap();
+    assert!(
+        seen.iter().any(|s| s.syncing),
+        "a round announces its start"
+    );
+    assert!(!seen.last().unwrap().syncing);
+    drop(seen);
+
+    // The second device keeps its own task and merges.
+    let status = engine_b.connect(&b, &url).unwrap();
+    assert_eq!(status.server_empty, Some(false));
+    add_task(&b.store, "from b");
+    engine_b.join(&b, JoinMode::Merge).unwrap();
+    engine_b.sync_now(&b);
+    engine_a.sync_blocking(&a).unwrap();
+    assert_eq!(titles(&a.store), ["from a", "from b"]);
+    assert_eq!(titles(&b.store), ["from a", "from b"]);
+
+    // Disconnecting forgets the server; the data stays.
+    let status = engine_b.disconnect(&b).unwrap();
+    assert!(!status.configured && !status.joined);
+    assert!(b.account().is_none());
+    assert_eq!(titles(&b.store).len(), 2);
+}
+
+#[test]
+fn joining_with_replace_backs_up_then_takes_the_servers_data() {
+    let (url, _) = server(Config::default());
+    let (a, b) = (TestHost::new("a"), TestHost::new("b"));
+    let (engine_a, _ka) = Engine::new();
+    let (engine_b, _kb) = Engine::new();
+    engine_a.connect(&a, &url).unwrap();
+    add_task(&a.store, "kept");
+    engine_a.join(&a, JoinMode::Merge).unwrap();
+    engine_a.sync_now(&a);
+
+    add_task(&b.store, "dropped");
+    engine_b.connect(&b, &url).unwrap();
+    engine_b.join(&b, JoinMode::Replace).unwrap();
+    assert_eq!(*b.backups.lock().unwrap(), 1);
+    engine_b.sync_now(&b);
+    assert_eq!(titles(&b.store), ["kept"]);
+    engine_a.sync_now(&a);
+    assert_eq!(titles(&a.store), ["kept"]);
+}
+
+#[test]
+fn the_engine_asks_for_a_token_and_checks_it() {
+    let (url, state) = server(Config {
+        auth: AuthMode::Token,
+        ..Config::default()
+    });
+    let a = TestHost::new("a");
+    let (engine, _kicks) = Engine::new();
+    assert!(engine.set_token(&a, "tm_x").is_err(), "no server yet");
+    let status = engine.connect(&a, &url).unwrap();
+    assert_eq!(status.auth, Some(AuthMode::Token));
+    assert_eq!(status.server_empty, None, "not checked without a token");
+
+    let err = engine.join(&a, JoinMode::Merge).unwrap_err();
+    assert_eq!(err.kind, "invalid");
+    assert_eq!(engine.set_token(&a, "  ").unwrap_err().kind, "invalid");
+    let err = engine.set_token(&a, "tm_wrong").unwrap_err();
+    assert_eq!(err.kind, "invalid", "{err}");
+    assert!(!engine.status(&a).signed_in, "a refused token is not saved");
+
+    let token = state.tokens.add("phone", Scope::Sync).unwrap();
+    let status = engine.set_token(&a, &format!(" {token}\n")).unwrap();
+    assert!(status.signed_in);
+    assert_eq!(status.server_empty, Some(true));
+    add_task(&a.store, "with a token");
+    engine.join(&a, JoinMode::Merge).unwrap();
+    assert_eq!(engine.sync_now(&a).pending, 0);
+
+    // Connecting to the same server again keeps the token and the join choice.
+    let status = engine.connect(&a, &url).unwrap();
+    assert!(status.signed_in && status.joined);
+
+    // A revoked token shows as the round's error; the status keeps the account.
+    state.tokens.revoke("phone").unwrap();
+    add_task(&a.store, "after revocation");
+    let status = engine.sync_now(&a);
+    assert!(status.last_error.is_some());
+    assert!(status.pending > 0);
+}
+
+#[test]
+fn the_engine_finishes_an_oidc_sign_in() {
+    let issuer = fake_provider();
+    let (url, _) = server(Config {
+        auth: AuthMode::Oidc,
+        oidc_issuer: Some(issuer.clone()),
+        oidc_allowed_groups: vec!["family".into()],
+        ..Config::default()
+    });
+    let a = TestHost::new("Phone");
+    let (engine, _kicks) = Engine::new();
+    assert!(engine.sign_in_target(&a).is_err(), "no server yet");
+    engine.connect(&a, &url).unwrap();
+    let (server_url, found_issuer, client_id) = engine.sign_in_target(&a).unwrap();
+    assert_eq!(
+        (
+            server_url.as_str(),
+            found_issuer.as_str(),
+            client_id.as_str()
+        ),
+        (url.as_str(), issuer.as_str(), "task-master")
+    );
+
+    let stale = engine.finish_sign_in(&a, "https://elsewhere.example", "x");
+    assert_eq!(stale.unwrap_err().kind, "invalid");
+    let refused = engine.finish_sign_in(
+        &a,
+        &url,
+        &id_token(&issuer, "task-master", &["guests"], 300),
+    );
+    assert_eq!(refused.unwrap_err().kind, "invalid");
+
+    let status = engine
+        .finish_sign_in(
+            &a,
+            &url,
+            &id_token(&issuer, "task-master", &["family"], 300),
+        )
+        .unwrap();
+    assert!(status.signed_in);
+    add_task(&a.store, "signed in");
+    engine.join(&a, JoinMode::Merge).unwrap();
+    assert_eq!(engine.sync_now(&a).pending, 0);
+}
+
+#[test]
+fn the_engines_loops_carry_an_edit_to_another_device() {
+    let (url, _) = server(Config::default());
+    let hosts = [Arc::new(TestHost::new("a")), Arc::new(TestHost::new("b"))];
+    let mut engines = Vec::new();
+    for host in &hosts {
+        let (engine, kicks) = Engine::new();
+        let engine = Arc::new(engine);
+        engine.connect(&**host, &url).unwrap();
+        engine.join(&**host, JoinMode::Merge).unwrap();
+        let (e, h) = (engine.clone(), host.clone());
+        std::thread::spawn(move || e.run(&*h, &kicks));
+        let (e, h) = (engine.clone(), host.clone());
+        std::thread::spawn(move || e.watch(&*h));
+        engines.push(engine);
+    }
+    // Let both watchers connect, then edit on a: its loop pushes after the settle pause,
+    // the server announces it, and b's watcher wakes b's loop.
+    std::thread::sleep(Duration::from_secs(1));
+    add_task(&hosts[0].store, "travels alone");
+    engines[0].local_change();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while titles(&hosts[1].store) != ["travels alone"] {
+        assert!(Instant::now() < deadline, "the edit never reached b");
+        std::thread::sleep(Duration::from_millis(100));
+    }
 }

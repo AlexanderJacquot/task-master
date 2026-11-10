@@ -8,8 +8,8 @@ Running log for task-master. Read at the start of every session; update at the e
 the Rust core through UniFFI (`crates/mobile`), the phone as one more sync replica, iOS 26
 and later. Built from Linux with macOS CI runners (simulator, screenshots, videos); no
 Apple developer account and no Mac yet, so nothing runs on a real iPhone until one of the
-two exists. Milestones P0 (core preparation) to P8 (App Store). Now: **P0**, branch
-`p0-phone-core`.
+two exists. Milestones P0 (core preparation) to P8 (App Store). **P0 is done** on
+`p0-phone-core` (desktop sync needs a hands-on check before merging); next is P1.
 
 **Calendar tray filter and width** (2026-11-10, on `main`, released in 0.14.0): the plan's focus
 selects (project, epic, open status) moved from the Plan bar into the calendar's task tray
@@ -79,6 +79,29 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### P0 phone core, step 2: sync engine, OIDC flow, attachments on demand (2026-11-10, branch `p0-phone-core`)
+
+- `taskmaster_client::engine`: the sync schedule and account flow that lived in
+  `src-tauri/src/server_sync.rs` (`Engine`: run and watch loops, `sync_now`, status,
+  connect, token, join, disconnect, `finish_sign_in`), with a `Host` trait for what a
+  shell supplies (store, saved account, period, status events, the backup before a
+  replace, device name). `SyncAccount`, `SyncStatus` and `JoinMode` moved there (the
+  client crate has an optional `specta` feature, same pinned version as the core).
+- The desktop's `server_sync.rs` is now the `Host` implementation, the commands (same
+  names and types; `bindings.ts` changed in doc comments only), and the loopback redirect.
+- `taskmaster_client::oidc`: `begin(issuer, client_id, redirect)` → open `auth_url` →
+  `finish(code)`; `code_from_redirect` reads a custom-scheme callback URL (the phone).
+  The server needed no change: it only checks the ID token.
+- `sync_with(.., Files::OnDemand)` skips attachment downloads; `fetch_file` (and
+  `Engine::fetch_file`) gets one when it is opened. The desktop keeps downloading all.
+- Tests: engine against a real test server in `crates/server/tests/server.rs` (two
+  devices, replace, token, OIDC, the two loops carrying an edit), on-demand files, the
+  custom-scheme redirect. Checks pass: clippy, cargo test, biome, typecheck, 430 frontend tests.
+- **Not yet verified by hand**: desktop sync in the real app after the move (edit on one
+  desktop arrives on the other, Sync now, sign out and OIDC sign in, Settings → Sync
+  status while a round runs). The logic was moved, not rewritten, but only the tests ran.
+- P0 is complete. Next: P1 (`crates/mobile` with UniFFI, `TaskMasterKit`, `ios.yml`).
+
 ### P0 phone core, step 1: views in the core (2026-11-10, branch `p0-phone-core`, uncommitted)
 
 - `crates/core/src/views.rs`: `list_rows` and `board` as pure functions of a `Snapshot`, a
@@ -93,10 +116,8 @@ the app daily for two weeks before Phase 2 (plan section 10).
   instead of a map; "closed today" uses the UTC offset passed in, not the machine's zone;
   lanes with equal rank and name are ordered by key.
 - Checks pass: clippy, cargo test, biome, typecheck, 430 frontend tests.
-- Left in P0: sync engine out of `src-tauri/src/server_sync.rs` into `crates/client`
-  (desktop moved onto it), OIDC exchange with a redirect given by the shell, attachments
-  on demand. The core takes every path from its caller already (checked: no home or
-  environment lookups in `crates/core` or `crates/client`).
+- The core takes every path from its caller already (no home or environment lookups
+  in `crates/core` or `crates/client`).
 
 ### Release 0.14.0 (2026-11-10)
 
