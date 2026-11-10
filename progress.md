@@ -4,6 +4,13 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**iPhone app** (plan agreed 2026-11-10; `docs/ios-plan.md`, ADR 022): a SwiftUI app over
+the Rust core through UniFFI (`crates/mobile`), the phone as one more sync replica, iOS 26
+and later. Built from Linux with macOS CI runners (simulator, screenshots, videos); no
+Apple developer account and no Mac yet, so nothing runs on a real iPhone until one of the
+two exists. Milestones P0 (core preparation) to P8 (App Store). Now: **P0**, branch
+`p0-phone-core`.
+
 **Calendar tray filter and width** (2026-11-10, on `main`, released in 0.14.0): the plan's focus
 selects (project, epic, open status) moved from the Plan bar into the calendar's task tray
 as a collapsible "Filter" with a "Clear filter" button, and now narrow the tray in every
@@ -71,6 +78,25 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### P0 phone core, step 1: views in the core (2026-11-10, branch `p0-phone-core`, uncommitted)
+
+- `crates/core/src/views.rs`: `list_rows` and `board` as pure functions of a `Snapshot`, a
+  `ViewSpec` and `ViewOptions` (today, UTC offset, collapsed groups and tasks), ported from
+  `lib/views.ts` and `lib/board.ts`; `Store::list_rows` and `Store::board` on top. The
+  desktop still evaluates views in TypeScript.
+- Shared vectors `crates/core/test-vectors/views.json` (30 tasks, 35 list cases, 12 board
+  cases). The expected rows are written by the desktop
+  (`VITE_UPDATE_VECTORS=1 pnpm vitest run src/lib/views.vectors.test.ts`, then biome
+  format) and checked by both sides (`views.vectors.test.ts`, `views::tests`).
+- Differences from the desktop: a board lane has one cell per column (empty ones included)
+  instead of a map; "closed today" uses the UTC offset passed in, not the machine's zone;
+  lanes with equal rank and name are ordered by key.
+- Checks pass: clippy, cargo test, biome, typecheck, 430 frontend tests.
+- Left in P0: sync engine out of `src-tauri/src/server_sync.rs` into `crates/client`
+  (desktop moved onto it), OIDC exchange with a redirect given by the shell, attachments
+  on demand. The core takes every path from its caller already (checked: no home or
+  environment lookups in `crates/core` or `crates/client`).
 
 ### Release 0.14.0 (2026-11-10)
 

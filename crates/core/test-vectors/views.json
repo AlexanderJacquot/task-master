@@ -1,0 +1,2718 @@
+{
+  "description": "Shared vectors for list rows and boards. The Rust core (crates/core/src/views.rs) and the desktop (apps/desktop/src/lib/views.ts, board.ts) must both pass them. `expected` is written by the desktop: VITE_UPDATE_VECTORS=1 pnpm vitest run src/lib/views.vectors.test.ts, then biome format. Timestamps sit at noon UTC so the desktop's local date agrees in every time zone.",
+  "options": {
+    "today": "2026-11-10",
+    "utc_offset_min": 0
+  },
+  "snapshot": {
+    "tasks": [
+      {
+        "created_at": 1791720001000,
+        "updated_at": 1791720007000,
+        "deleted_at": null,
+        "id": "t-inbox-plain",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-inbox-plain",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a01",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720002000,
+        "updated_at": 1791720014000,
+        "deleted_at": null,
+        "id": "t-inbox-urgent",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-inbox-urgent",
+        "description": "",
+        "priority": "urgent",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a02",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720003000,
+        "updated_at": 1791720021000,
+        "deleted_at": null,
+        "id": "t-inbox-low-backlog",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-backlog",
+        "title": "t-inbox-low-backlog",
+        "description": "",
+        "priority": "low",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a03",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720004000,
+        "updated_at": 1791720005000,
+        "deleted_at": null,
+        "id": "t-inbox-done-today",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-done",
+        "title": "t-inbox-done-today",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a04",
+        "tag_ids": [],
+        "completed_at": 1794312000000
+      },
+      {
+        "created_at": 1791720005000,
+        "updated_at": 1791720012000,
+        "deleted_at": null,
+        "id": "t-inbox-done-old",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-done",
+        "title": "t-inbox-done-old",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a05",
+        "tag_ids": [],
+        "completed_at": 1794052800000
+      },
+      {
+        "created_at": 1791720006000,
+        "updated_at": 1794312000000,
+        "deleted_at": null,
+        "id": "t-inbox-cancelled-today",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-cancelled",
+        "title": "t-inbox-cancelled-today",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a06",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720007000,
+        "updated_at": 1791720003000,
+        "deleted_at": null,
+        "id": "t-inbox-agent",
+        "dependency_ids": [],
+        "owner": "agent",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-inbox-agent",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a07",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720008000,
+        "updated_at": 1791720010000,
+        "deleted_at": null,
+        "id": "t-inbox-picked",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-inbox-picked",
+        "description": "",
+        "priority": "low",
+        "due_date": null,
+        "today_on": "2026-11-10",
+        "estimate_min": null,
+        "rank": "a08",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720009000,
+        "updated_at": 1791720017000,
+        "deleted_at": null,
+        "id": "t-inbox-picked-done",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-done",
+        "title": "t-inbox-picked-done",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": "2026-11-10",
+        "estimate_min": null,
+        "rank": "a09",
+        "tag_ids": [],
+        "completed_at": 1794312000000
+      },
+      {
+        "created_at": 1791720010000,
+        "updated_at": 1791720001000,
+        "deleted_at": null,
+        "id": "t-inbox-picked-yesterday",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-inbox-picked-yesterday",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": "2026-11-09",
+        "estimate_min": null,
+        "rank": "a10",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720011000,
+        "updated_at": 1791720008000,
+        "deleted_at": null,
+        "id": "t-inbox-overdue",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-inbox-overdue",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-11-03",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a11",
+        "tag_ids": ["g-quick"],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720012000,
+        "updated_at": 1791720015000,
+        "deleted_at": null,
+        "id": "t-inbox-overdue-done",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-done",
+        "title": "t-inbox-overdue-done",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-11-03",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a12",
+        "tag_ids": [],
+        "completed_at": 1793880000000
+      },
+      {
+        "created_at": 1791720013000,
+        "updated_at": 1791720022000,
+        "deleted_at": null,
+        "id": "t-inbox-due-today",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-inbox-due-today",
+        "description": "",
+        "priority": "high",
+        "due_date": "2026-11-10",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a13",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720014000,
+        "updated_at": 1791720006000,
+        "deleted_at": null,
+        "id": "t-inbox-due-week",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-inbox-due-week",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-11-17",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a14",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720015000,
+        "updated_at": 1791720013000,
+        "deleted_at": null,
+        "id": "t-inbox-due-later",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": null,
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-inbox-due-later",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-11-18",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a15",
+        "tag_ids": ["g-deep", "g-quick"],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720016000,
+        "updated_at": 1791720020000,
+        "deleted_at": null,
+        "id": "t-web-parent",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-web",
+        "epic_id": "e-launch",
+        "parent_id": null,
+        "status_id": "s-doing",
+        "title": "t-web-parent",
+        "description": "",
+        "priority": "high",
+        "due_date": "2026-11-12",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a16",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720017000,
+        "updated_at": 1791720004000,
+        "deleted_at": null,
+        "id": "t-web-child-open",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-web",
+        "epic_id": "e-launch",
+        "parent_id": "t-web-parent",
+        "status_id": "s-todo",
+        "title": "t-web-child-open",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a02",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720018000,
+        "updated_at": 1791720011000,
+        "deleted_at": null,
+        "id": "t-web-child-done",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-web",
+        "epic_id": "e-launch",
+        "parent_id": "t-web-parent",
+        "status_id": "s-done",
+        "title": "t-web-child-done",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a01",
+        "tag_ids": [],
+        "completed_at": 1794225600000
+      },
+      {
+        "created_at": 1791720019000,
+        "updated_at": 1791720018000,
+        "deleted_at": null,
+        "id": "t-web-child-tagged",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-web",
+        "epic_id": null,
+        "parent_id": "t-web-parent",
+        "status_id": "s-todo",
+        "title": "t-web-child-tagged",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-11-01",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a03",
+        "tag_ids": ["g-deep"],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720020000,
+        "updated_at": 1791720002000,
+        "deleted_at": null,
+        "id": "t-web-grandchild",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-web",
+        "epic_id": null,
+        "parent_id": "t-web-child-open",
+        "status_id": "s-todo",
+        "title": "t-web-grandchild",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a20",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720021000,
+        "updated_at": 1791720009000,
+        "deleted_at": null,
+        "id": "t-web-doing-2",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-web",
+        "epic_id": "e-tidy",
+        "parent_id": null,
+        "status_id": "s-doing",
+        "title": "t-web-doing-2",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a01",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720022000,
+        "updated_at": 1791720016000,
+        "deleted_at": null,
+        "id": "t-web-same-rank-b",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-web",
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-web-same-rank-b",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a50",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720023000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "t-web-same-rank-a",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-web",
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-web-same-rank-a",
+        "description": "",
+        "priority": "urgent",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a50",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720024000,
+        "updated_at": 1791720007000,
+        "deleted_at": null,
+        "id": "t-home-plain",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-home",
+        "epic_id": "e-tidy",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-home-plain",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a24",
+        "tag_ids": ["g-quick"],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720025000,
+        "updated_at": 1791720014000,
+        "deleted_at": null,
+        "id": "t-home-backlog",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-home",
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-backlog",
+        "title": "t-home-backlog",
+        "description": "",
+        "priority": "high",
+        "due_date": "2026-12-24",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a25",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720026000,
+        "updated_at": 1791720021000,
+        "deleted_at": null,
+        "id": "t-home-cancelled",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-home",
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-cancelled",
+        "title": "t-home-cancelled",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a26",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720027000,
+        "updated_at": 1791720005000,
+        "deleted_at": null,
+        "id": "t-area-direct",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-area",
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-area-direct",
+        "description": "",
+        "priority": "low",
+        "due_date": null,
+        "today_on": "2026-11-10",
+        "estimate_min": null,
+        "rank": "a27",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720028000,
+        "updated_at": 1791720012000,
+        "deleted_at": null,
+        "id": "t-gone-project",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-deleted",
+        "epic_id": "e-deleted",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "t-gone-project",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a28",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720029000,
+        "updated_at": 1791720019000,
+        "deleted_at": null,
+        "id": "t-gone-status",
+        "dependency_ids": [],
+        "owner": "me",
+        "project_id": "p-home",
+        "epic_id": null,
+        "parent_id": null,
+        "status_id": "s-deleted",
+        "title": "t-gone-status",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a29",
+        "tag_ids": [],
+        "completed_at": null
+      },
+      {
+        "created_at": 1791720030000,
+        "updated_at": 1791720003000,
+        "deleted_at": null,
+        "id": "t-home-agent-child",
+        "dependency_ids": [],
+        "owner": "agent",
+        "project_id": "p-home",
+        "epic_id": null,
+        "parent_id": "t-home-plain",
+        "status_id": "s-todo",
+        "title": "t-home-agent-child",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a30",
+        "tag_ids": [],
+        "completed_at": null
+      }
+    ],
+    "projects": [
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "p-area",
+        "parent_id": null,
+        "name": "Work",
+        "color": null,
+        "icon": null,
+        "rank": "a0",
+        "archived_at": null
+      },
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "p-web",
+        "parent_id": "p-area",
+        "name": "Website",
+        "color": "#8b5cf6",
+        "icon": null,
+        "rank": "a1",
+        "archived_at": null
+      },
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "p-home",
+        "parent_id": null,
+        "name": "Home",
+        "color": "#f59e0b",
+        "icon": null,
+        "rank": "a2",
+        "archived_at": null
+      }
+    ],
+    "epics": [
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "e-launch",
+        "project_id": "p-web",
+        "name": "Launch",
+        "color": null,
+        "icon": null,
+        "description": null,
+        "target_date": null,
+        "state": "active",
+        "rank": "a0"
+      },
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "e-tidy",
+        "project_id": null,
+        "name": "Tidy up",
+        "color": null,
+        "icon": null,
+        "description": null,
+        "target_date": null,
+        "state": "active",
+        "rank": "a1"
+      }
+    ],
+    "statuses": [
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "s-backlog",
+        "name": "Backlog",
+        "category": "backlog",
+        "color": null,
+        "rank": "a0",
+        "wip_limit": null
+      },
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "s-todo",
+        "name": "To do",
+        "category": "todo",
+        "color": "#64748b",
+        "rank": "a1",
+        "wip_limit": null
+      },
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "s-doing",
+        "name": "In progress",
+        "category": "in_progress",
+        "color": "#3b82f6",
+        "rank": "a2",
+        "wip_limit": 1
+      },
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "s-done",
+        "name": "Done",
+        "category": "done",
+        "color": "#22c55e",
+        "rank": "a3",
+        "wip_limit": null
+      },
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "s-cancelled",
+        "name": "Cancelled",
+        "category": "cancelled",
+        "color": null,
+        "rank": "a4",
+        "wip_limit": null
+      }
+    ],
+    "tags": [
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "g-quick",
+        "name": "quick",
+        "color": null
+      },
+      {
+        "created_at": 1791720000000,
+        "updated_at": 1791720000000,
+        "deleted_at": null,
+        "id": "g-deep",
+        "name": "deep",
+        "color": null
+      }
+    ],
+    "views": [],
+    "attachments": [],
+    "time_blocks": [],
+    "agent_sessions": []
+  },
+  "list_cases": [
+    {
+      "name": "inbox",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "inbox"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|1|0",
+        "t|t-inbox-low-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|8|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0"
+      ]
+    },
+    {
+      "name": "today",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "today"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-todo|To do|#64748b|5|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-web-child-tagged|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "g|s-done|Done|#22c55e|1|0",
+        "t|t-inbox-picked-done|0|0|0|0"
+      ]
+    },
+    {
+      "name": "all",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|2|0",
+        "t|t-home-backlog|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|13|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "g|s-done|Done|#22c55e|4|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0"
+      ]
+    },
+    {
+      "name": "all with cancelled and agent tasks",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": true,
+        "show_agent_tasks": true
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|2|0",
+        "t|t-home-backlog|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|14|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-inbox-agent|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-home-plain|0|1|0|1",
+        "t|t-home-agent-child|1|0|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "g|s-done|Done|#22c55e|4|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0",
+        "g|s-cancelled|Cancelled|-|2|0",
+        "t|t-inbox-cancelled-today|0|0|0|0",
+        "t|t-home-cancelled|0|0|0|0"
+      ]
+    },
+    {
+      "name": "project",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "project",
+          "id": "p-web"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-todo|To do|#64748b|2|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-web-doing-2|0|0|0|0"
+      ]
+    },
+    {
+      "name": "area includes its projects",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "project",
+          "id": "p-area"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-todo|To do|#64748b|3|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-web-doing-2|0|0|0|0"
+      ]
+    },
+    {
+      "name": "home project",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "project",
+          "id": "p-home"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|1|0",
+        "t|t-home-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|1|0",
+        "t|t-home-plain|0|1|0|0"
+      ]
+    },
+    {
+      "name": "epic",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "epic",
+          "id": "e-launch"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-doing|In progress|#3b82f6|1|0",
+        "t|t-web-parent|0|3|1|2",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0"
+      ]
+    },
+    {
+      "name": "tag lifts a subtask to the top level",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "tag",
+          "id": "g-deep"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-todo|To do|#64748b|2|0",
+        "t|t-web-child-tagged|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0"
+      ]
+    },
+    {
+      "name": "tag quick",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "tag",
+          "id": "g-quick"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-todo|To do|#64748b|3|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-home-plain|0|1|0|0"
+      ]
+    },
+    {
+      "name": "all grouped by project",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "project",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": true,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|p-area|Work|-|1|0",
+        "t|t-area-direct|0|0|0|0",
+        "g|p-web|Website|#8b5cf6|4|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|p-home|Home|#f59e0b|4|0",
+        "t|t-home-backlog|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-home-cancelled|0|0|0|0",
+        "t|t-gone-status|0|0|0|0",
+        "g|none|No project|-|15|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0",
+        "t|t-inbox-cancelled-today|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0"
+      ]
+    },
+    {
+      "name": "all grouped by epic",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "epic",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": true,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|e-launch|Launch|-|1|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "g|e-tidy|Tidy up|-|2|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "g|none|No epic|-|21|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-home-backlog|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0",
+        "t|t-inbox-cancelled-today|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-home-cancelled|0|0|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-gone-status|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0"
+      ]
+    },
+    {
+      "name": "all grouped by priority",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "priority",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": true,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|urgent|Urgent|-|2|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "g|high|High|-|3|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-home-backlog|0|0|0|0",
+        "g|normal|Normal|-|16|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0",
+        "t|t-inbox-cancelled-today|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-home-cancelled|0|0|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-gone-status|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|low|Low|-|3|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0"
+      ]
+    },
+    {
+      "name": "all grouped by due",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "due",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": true,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|overdue|Overdue|#ef4444|1|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "g|today|Today|#f59e0b|2|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "g|week|Next 7 days|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "g|later|Later|-|2|0",
+        "t|t-home-backlog|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "g|none|No due date|-|17|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0",
+        "t|t-inbox-cancelled-today|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-home-cancelled|0|0|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-gone-status|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0"
+      ]
+    },
+    {
+      "name": "all sorted by manual",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "manual",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|2|0",
+        "t|t-inbox-low-backlog|0|0|0|0",
+        "t|t-home-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|13|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "g|s-done|Done|#22c55e|4|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0"
+      ]
+    },
+    {
+      "name": "all sorted by due",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "due",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|2|0",
+        "t|t-home-backlog|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|13|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "g|s-done|Done|#22c55e|4|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0",
+        "t|t-inbox-picked-done|0|0|0|0"
+      ]
+    },
+    {
+      "name": "all sorted by priority",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "priority",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|2|0",
+        "t|t-home-backlog|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|13|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "g|s-done|Done|#22c55e|4|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0"
+      ]
+    },
+    {
+      "name": "all sorted by created",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "created",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|2|0",
+        "t|t-home-backlog|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|13|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "g|s-done|Done|#22c55e|4|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0"
+      ]
+    },
+    {
+      "name": "all sorted by updated",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "updated",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|2|0",
+        "t|t-inbox-low-backlog|0|0|0|0",
+        "t|t-home-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|13|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "g|s-done|Done|#22c55e|4|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0"
+      ]
+    },
+    {
+      "name": "project sorted manually, equal ranks by id",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "project",
+          "id": "p-web"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "manual",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-todo|To do|#64748b|2|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0"
+      ]
+    },
+    {
+      "name": "filter statuses",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": ["s-doing", "s-done"],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|1",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "g|s-done|Done|#22c55e|4|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0"
+      ]
+    },
+    {
+      "name": "filter priorities",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": ["urgent", "high"],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|1|0",
+        "t|t-home-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|3|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|1|0",
+        "t|t-web-parent|0|3|1|0"
+      ]
+    },
+    {
+      "name": "filter projects",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": ["p-home"],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|1|0",
+        "t|t-home-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|1|0",
+        "t|t-home-plain|0|1|0|0"
+      ]
+    },
+    {
+      "name": "filter epics with none",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": ["none", "e-tidy"],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-backlog|Backlog|-|2|0",
+        "t|t-home-backlog|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0",
+        "g|s-todo|To do|#64748b|14|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-web-child-tagged|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-web-grandchild|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|1|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "g|s-done|Done|#22c55e|4|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0"
+      ]
+    },
+    {
+      "name": "filter tags with none",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "project",
+          "id": "p-area"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": ["none"],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-todo|To do|#64748b|3|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|2",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-doing-2|0|0|0|0"
+      ]
+    },
+    {
+      "name": "filter tags",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": ["g-deep"],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-todo|To do|#64748b|2|0",
+        "t|t-web-child-tagged|0|0|0|0",
+        "t|t-inbox-due-later|0|0|0|0"
+      ]
+    },
+    {
+      "name": "filter due overdue",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": "overdue"
+        },
+        "group_by": "due",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|overdue|Overdue|#ef4444|2|0",
+        "t|t-web-child-tagged|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0"
+      ]
+    },
+    {
+      "name": "filter due today",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": "today"
+        },
+        "group_by": "due",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|overdue|Overdue|#ef4444|2|0",
+        "t|t-web-child-tagged|0|0|0|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "g|today|Today|#f59e0b|2|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0"
+      ]
+    },
+    {
+      "name": "filter due week",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": "week"
+        },
+        "group_by": "due",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|overdue|Overdue|#ef4444|1|0",
+        "t|t-inbox-overdue|0|0|0|0",
+        "g|today|Today|#f59e0b|2|0",
+        "t|t-inbox-due-today|0|0|0|0",
+        "t|t-inbox-overdue-done|0|0|0|0",
+        "g|week|Next 7 days|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|1",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-inbox-due-week|0|0|0|0"
+      ]
+    },
+    {
+      "name": "filter due none",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": "none"
+        },
+        "group_by": "due",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|none|No due date|-|17|0",
+        "t|t-inbox-picked-done|0|0|0|0",
+        "t|t-inbox-picked|0|0|0|0",
+        "t|t-area-direct|0|0|0|0",
+        "t|t-inbox-urgent|0|0|0|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-inbox-plain|0|0|0|0",
+        "t|t-web-child-done|0|0|0|0",
+        "t|t-web-doing-2|0|0|0|0",
+        "t|t-web-child-open|0|1|0|1",
+        "t|t-web-grandchild|1|0|0|0",
+        "t|t-inbox-done-today|0|0|0|0",
+        "t|t-inbox-done-old|0|0|0|0",
+        "t|t-inbox-picked-yesterday|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-gone-project|0|0|0|0",
+        "t|t-gone-status|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "t|t-inbox-low-backlog|0|0|0|0"
+      ]
+    },
+    {
+      "name": "filters combine",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": ["high", "normal"],
+          "project_ids": ["p-web", "p-home"],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": "week"
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-doing|In progress|#3b82f6|1|0",
+        "t|t-web-parent|0|3|1|1",
+        "t|t-web-child-tagged|1|0|0|0"
+      ]
+    },
+    {
+      "name": "collapsed group",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "project",
+          "id": "p-web"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": ["s-todo"],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|s-todo|To do|#64748b|2|1",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-child-done|1|0|0|0",
+        "t|t-web-child-open|1|1|0|0",
+        "t|t-web-child-tagged|1|0|0|0",
+        "t|t-web-doing-2|0|0|0|0"
+      ]
+    },
+    {
+      "name": "collapsed task",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "project",
+          "id": "p-web"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": ["t-web-parent"],
+      "expected": [
+        "g|s-todo|To do|#64748b|2|0",
+        "t|t-web-same-rank-a|0|0|0|0",
+        "t|t-web-same-rank-b|0|0|0|0",
+        "g|s-doing|In progress|#3b82f6|2|0",
+        "t|t-web-parent|0|3|1|3",
+        "t|t-web-doing-2|0|0|0|0"
+      ]
+    },
+    {
+      "name": "collapsed project group",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "project",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": ["none", "p-web"],
+      "collapsed_tasks": [],
+      "expected": [
+        "g|p-area|Work|-|1|0",
+        "t|t-area-direct|0|0|0|0",
+        "g|p-web|Website|#8b5cf6|4|1",
+        "g|p-home|Home|#f59e0b|3|0",
+        "t|t-home-backlog|0|0|0|0",
+        "t|t-home-plain|0|1|0|0",
+        "t|t-gone-status|0|0|0|0",
+        "g|none|No project|-|14|1"
+      ]
+    },
+    {
+      "name": "nothing matches",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "epic",
+          "id": "e-nowhere"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "collapsed_groups": [],
+      "collapsed_tasks": [],
+      "expected": []
+    }
+  ],
+  "board_cases": [
+    {
+      "name": "inbox keeps tasks closed today",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "inbox"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-backlog|1|0",
+        "c|s-todo|8|0",
+        "c|s-doing|0|0",
+        "c|s-done|2|0",
+        "l|all||-|[]",
+        "s|s-backlog|t-inbox-low-backlog:0:0",
+        "s|s-todo|t-inbox-plain:0:0,t-inbox-urgent:0:0,t-inbox-picked:0:0,t-inbox-picked-yesterday:0:0,t-inbox-overdue:0:0,t-inbox-due-today:0:0,t-inbox-due-week:0:0,t-inbox-due-later:0:0",
+        "s|s-done|t-inbox-done-today:0:0,t-inbox-picked-done:0:0"
+      ]
+    },
+    {
+      "name": "today",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "today"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-backlog|0|0",
+        "c|s-todo|5|0",
+        "c|s-doing|0|0",
+        "c|s-done|1|0",
+        "l|all||-|[]",
+        "s|s-todo|t-web-child-tagged:0:0,t-inbox-picked:0:0,t-inbox-overdue:0:0,t-inbox-due-today:0:0,t-area-direct:0:0",
+        "s|s-done|t-inbox-picked-done:0:0"
+      ]
+    },
+    {
+      "name": "all",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-backlog|2|0",
+        "c|s-todo|13|0",
+        "c|s-doing|2|1",
+        "c|s-done|4|0",
+        "l|all||-|[]",
+        "s|s-backlog|t-inbox-low-backlog:0:0,t-home-backlog:0:0",
+        "s|s-todo|t-inbox-plain:0:0,t-inbox-urgent:0:0,t-inbox-picked:0:0,t-inbox-picked-yesterday:0:0,t-inbox-overdue:0:0,t-inbox-due-today:0:0,t-inbox-due-week:0:0,t-inbox-due-later:0:0,t-home-plain:1:0,t-area-direct:0:0,t-gone-project:0:0,t-web-same-rank-a:0:0,t-web-same-rank-b:0:0",
+        "s|s-doing|t-web-doing-2:0:0,t-web-parent:3:1",
+        "s|s-done|t-inbox-done-today:0:0,t-inbox-done-old:0:0,t-inbox-picked-done:0:0,t-inbox-overdue-done:0:0"
+      ]
+    },
+    {
+      "name": "all with cancelled column",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": true,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-backlog|2|0",
+        "c|s-todo|13|0",
+        "c|s-doing|2|1",
+        "c|s-done|4|0",
+        "c|s-cancelled|2|0",
+        "l|all||-|[]",
+        "s|s-backlog|t-inbox-low-backlog:0:0,t-home-backlog:0:0",
+        "s|s-todo|t-inbox-plain:0:0,t-inbox-urgent:0:0,t-inbox-picked:0:0,t-inbox-picked-yesterday:0:0,t-inbox-overdue:0:0,t-inbox-due-today:0:0,t-inbox-due-week:0:0,t-inbox-due-later:0:0,t-home-plain:1:0,t-area-direct:0:0,t-gone-project:0:0,t-web-same-rank-a:0:0,t-web-same-rank-b:0:0",
+        "s|s-doing|t-web-doing-2:0:0,t-web-parent:3:1",
+        "s|s-done|t-inbox-done-today:0:0,t-inbox-done-old:0:0,t-inbox-picked-done:0:0,t-inbox-overdue-done:0:0",
+        "s|s-cancelled|t-inbox-cancelled-today:0:0,t-home-cancelled:0:0"
+      ]
+    },
+    {
+      "name": "project over its limit",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "project",
+          "id": "p-web"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-backlog|0|0",
+        "c|s-todo|2|0",
+        "c|s-doing|2|1",
+        "c|s-done|0|0",
+        "l|all||-|[]",
+        "s|s-todo|t-web-same-rank-a:0:0,t-web-same-rank-b:0:0",
+        "s|s-doing|t-web-doing-2:0:0,t-web-parent:3:1"
+      ]
+    },
+    {
+      "name": "project with subtasks as cards",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "project",
+          "id": "p-web"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-backlog|0|0",
+        "c|s-todo|5|0",
+        "c|s-doing|2|1",
+        "c|s-done|1|0",
+        "l|all||-|[]",
+        "s|s-todo|t-web-child-open:1:0,t-web-child-tagged:0:0,t-web-grandchild:0:0,t-web-same-rank-a:0:0,t-web-same-rank-b:0:0",
+        "s|s-doing|t-web-doing-2:0:0,t-web-parent:3:1",
+        "s|s-done|t-web-child-done:0:0"
+      ]
+    },
+    {
+      "name": "lanes by project",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "project",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-backlog|2|0",
+        "c|s-todo|13|0",
+        "c|s-doing|2|1",
+        "c|s-done|4|0",
+        "l|project:p-area|Work|-|[{\"project_id\":\"p-area\"}]",
+        "s|s-todo|t-area-direct:0:0",
+        "l|project:p-web|Website|#8b5cf6|[{\"project_id\":\"p-web\"}]",
+        "s|s-todo|t-web-same-rank-a:0:0,t-web-same-rank-b:0:0",
+        "s|s-doing|t-web-doing-2:0:0,t-web-parent:3:1",
+        "l|project:p-home|Home|#f59e0b|[{\"project_id\":\"p-home\"}]",
+        "s|s-backlog|t-home-backlog:0:0",
+        "s|s-todo|t-home-plain:1:0",
+        "l|project:none|No project|-|[{\"project_id\":null}]",
+        "s|s-backlog|t-inbox-low-backlog:0:0",
+        "s|s-todo|t-inbox-plain:0:0,t-inbox-urgent:0:0,t-inbox-picked:0:0,t-inbox-picked-yesterday:0:0,t-inbox-overdue:0:0,t-inbox-due-today:0:0,t-inbox-due-week:0:0,t-inbox-due-later:0:0,t-gone-project:0:0",
+        "s|s-done|t-inbox-done-today:0:0,t-inbox-done-old:0:0,t-inbox-picked-done:0:0,t-inbox-overdue-done:0:0"
+      ]
+    },
+    {
+      "name": "lanes by epic",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "epic",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": true
+      },
+      "expected": [
+        "c|s-backlog|2|0",
+        "c|s-todo|14|0",
+        "c|s-doing|2|1",
+        "c|s-done|4|0",
+        "l|epic:e-launch|Launch|-|[{\"epic_id\":\"e-launch\"}]",
+        "s|s-doing|t-web-parent:3:1",
+        "l|epic:e-tidy|Tidy up|-|[{\"epic_id\":\"e-tidy\"}]",
+        "s|s-todo|t-home-plain:1:0",
+        "s|s-doing|t-web-doing-2:0:0",
+        "l|epic:none|No epic|-|[{\"epic_id\":null}]",
+        "s|s-backlog|t-inbox-low-backlog:0:0,t-home-backlog:0:0",
+        "s|s-todo|t-inbox-plain:0:0,t-inbox-urgent:0:0,t-inbox-agent:0:0,t-inbox-picked:0:0,t-inbox-picked-yesterday:0:0,t-inbox-overdue:0:0,t-inbox-due-today:0:0,t-inbox-due-week:0:0,t-inbox-due-later:0:0,t-area-direct:0:0,t-gone-project:0:0,t-web-same-rank-a:0:0,t-web-same-rank-b:0:0",
+        "s|s-done|t-inbox-done-today:0:0,t-inbox-done-old:0:0,t-inbox-picked-done:0:0,t-inbox-overdue-done:0:0"
+      ]
+    },
+    {
+      "name": "lanes by priority",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "priority",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-backlog|2|0",
+        "c|s-todo|13|0",
+        "c|s-doing|2|1",
+        "c|s-done|4|0",
+        "l|priority:urgent|Urgent|-|[{\"priority\":\"urgent\"}]",
+        "s|s-todo|t-inbox-urgent:0:0,t-web-same-rank-a:0:0",
+        "l|priority:high|High|-|[{\"priority\":\"high\"}]",
+        "s|s-backlog|t-home-backlog:0:0",
+        "s|s-todo|t-inbox-due-today:0:0",
+        "s|s-doing|t-web-parent:3:1",
+        "l|priority:normal|Normal|-|[{\"priority\":\"normal\"}]",
+        "s|s-todo|t-inbox-plain:0:0,t-inbox-picked-yesterday:0:0,t-inbox-overdue:0:0,t-inbox-due-week:0:0,t-inbox-due-later:0:0,t-home-plain:1:0,t-gone-project:0:0,t-web-same-rank-b:0:0",
+        "s|s-doing|t-web-doing-2:0:0",
+        "s|s-done|t-inbox-done-today:0:0,t-inbox-done-old:0:0,t-inbox-picked-done:0:0,t-inbox-overdue-done:0:0",
+        "l|priority:low|Low|-|[{\"priority\":\"low\"}]",
+        "s|s-backlog|t-inbox-low-backlog:0:0",
+        "s|s-todo|t-inbox-picked:0:0,t-area-direct:0:0"
+      ]
+    },
+    {
+      "name": "status filter limits the columns",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        },
+        "filter": {
+          "status_ids": ["s-todo", "s-cancelled"],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-todo|15|0",
+        "c|s-cancelled|2|0",
+        "l|all||-|[]",
+        "s|s-todo|t-inbox-plain:0:0,t-inbox-urgent:0:0,t-web-child-open:1:0,t-web-child-tagged:0:0,t-inbox-picked:0:0,t-inbox-picked-yesterday:0:0,t-inbox-overdue:0:0,t-inbox-due-today:0:0,t-inbox-due-week:0:0,t-inbox-due-later:0:0,t-home-plain:1:0,t-area-direct:0:0,t-gone-project:0:0,t-web-same-rank-a:0:0,t-web-same-rank-b:0:0",
+        "s|s-cancelled|t-inbox-cancelled-today:0:0,t-home-cancelled:0:0"
+      ]
+    },
+    {
+      "name": "empty board has one lane",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "epic",
+          "id": "e-nowhere"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-backlog|0|0",
+        "c|s-todo|0|0",
+        "c|s-doing|0|0",
+        "c|s-done|0|0",
+        "l|all||-|[]"
+      ]
+    },
+    {
+      "name": "tag with lanes",
+      "spec": {
+        "version": 1,
+        "scope": {
+          "kind": "tag",
+          "id": "g-quick"
+        },
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "board",
+        "swimlane": "project",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false
+      },
+      "expected": [
+        "c|s-backlog|0|0",
+        "c|s-todo|3|0",
+        "c|s-doing|0|0",
+        "c|s-done|0|0",
+        "l|project:p-home|Home|#f59e0b|[{\"project_id\":\"p-home\"}]",
+        "s|s-todo|t-home-plain:1:0",
+        "l|project:none|No project|-|[{\"project_id\":null}]",
+        "s|s-todo|t-inbox-overdue:0:0,t-inbox-due-later:0:0"
+      ]
+    }
+  ]
+}

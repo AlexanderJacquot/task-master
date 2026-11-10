@@ -282,6 +282,24 @@ impl Store {
         query::snapshot(&self.conn)
     }
 
+    /// The rows of a list view (grouped, sorted, subtasks under their parent).
+    pub fn list_rows(
+        &self,
+        spec: &crate::model::ViewSpec,
+        options: &crate::views::ViewOptions,
+    ) -> Result<Vec<crate::views::ViewRow>> {
+        Ok(crate::views::list_rows(&self.snapshot()?, spec, options))
+    }
+
+    /// The columns, lanes and cards of a board view.
+    pub fn board(
+        &self,
+        spec: &crate::model::ViewSpec,
+        options: &crate::views::ViewOptions,
+    ) -> Result<crate::views::Board> {
+        Ok(crate::views::board(&self.snapshot()?, spec, options))
+    }
+
     /// Live task ids matching all words of `text` (prefix match), best first.
     pub fn search(&self, text: &str, limit: u32) -> Result<Vec<Id>> {
         query::search(&self.conn, text, limit)
