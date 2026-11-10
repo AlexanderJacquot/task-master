@@ -296,7 +296,7 @@ function Collapsible({
         >
           {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           {icon}
-          <span className="flex-1 font-display tracking-wide">{title}</span>
+          <span className="flex-1 font-display tracking-wide clean:font-medium!">{title}</span>
           {count !== undefined && count > 0 && (
             <span className="text-[12.5px] text-ink-3 tabular-nums">{count}</span>
           )}
@@ -606,25 +606,28 @@ export function Sidebar({
           <Plus size={18} />
         </button>
         <RailLink to="/inbox" label="Inbox">
-          <Inbox size={18} className="text-sky-700 dark:text-sky-300" />
+          <Inbox size={18} className="text-sky-700 dark:text-sky-300 clean:text-ink-2" />
         </RailLink>
         <RailLink to="/today" label="Today">
-          <Sun size={18} className="text-amber-700 dark:text-amber-300" />
+          <Sun size={18} className="text-amber-700 dark:text-amber-300 clean:text-ink-2" />
         </RailLink>
         <RailLink to="/calendar" label="Calendar">
-          <CalendarDays size={18} className="text-rubric" />
+          <CalendarDays size={18} className="text-rubric clean:text-ink-2" />
         </RailLink>
         <RailLink to="/all" label="All tasks">
           <Layers size={18} />
         </RailLink>
         <RailLink to="/lineage" label="Lineage">
-          <GitBranch size={18} className="text-green-700 dark:text-green-300" />
+          <GitBranch size={18} className="text-green-700 dark:text-green-300 clean:text-ink-2" />
         </RailLink>
         <RailLink to="/agents" label="Agents">
           <Bot size={18} className={cx(runningAgents > 0 && "animate-pulse text-accent")} />
         </RailLink>
         <RailLink to="/metrics" label="Metrics">
-          <ChartNoAxesCombined size={18} className="text-purple-700 dark:text-purple-300" />
+          <ChartNoAxesCombined
+            size={18}
+            className="text-purple-700 dark:text-purple-300 clean:text-ink-2"
+          />
         </RailLink>
         <div className="my-2 h-px w-6 bg-line" />
         {order.map((id, i) => {
@@ -689,7 +692,11 @@ export function Sidebar({
               FOCUS,
             )}
           >
-            <NavIcon name="search" size={24} fallback={<Search size={26} />} />
+            <NavIcon
+              name="search"
+              size={24}
+              fallback={<Search size={26} className="clean:size-[18px]" />}
+            />
           </button>
         </div>
 
@@ -701,7 +708,12 @@ export function Sidebar({
               <NavIcon
                 name="inbox"
                 size={17}
-                fallback={<Inbox size={17} className="shrink-0 text-sky-700 dark:text-sky-300" />}
+                fallback={
+                  <Inbox
+                    size={17}
+                    className="shrink-0 text-sky-700 dark:text-sky-300 clean:text-ink-2"
+                  />
+                }
               />
             }
           >
@@ -715,7 +727,12 @@ export function Sidebar({
               <NavIcon
                 name="today"
                 size={17}
-                fallback={<Sun size={17} className="shrink-0 text-amber-700 dark:text-amber-300" />}
+                fallback={
+                  <Sun
+                    size={17}
+                    className="shrink-0 text-amber-700 dark:text-amber-300 clean:text-ink-2"
+                  />
+                }
               />
             }
           >
@@ -727,7 +744,9 @@ export function Sidebar({
               <NavIcon
                 name="due-date"
                 size={17}
-                fallback={<CalendarDays size={17} className="shrink-0 text-rubric" />}
+                fallback={
+                  <CalendarDays size={17} className="shrink-0 text-rubric clean:text-ink-2" />
+                }
               />
             }
           >
@@ -747,7 +766,12 @@ export function Sidebar({
           </NavItem>
           <NavItem
             to="/lineage"
-            icon={<GitBranch size={17} className="shrink-0 text-green-700 dark:text-green-300" />}
+            icon={
+              <GitBranch
+                size={17}
+                className="shrink-0 text-green-700 dark:text-green-300 clean:text-ink-2"
+              />
+            }
           >
             Lineage
           </NavItem>
@@ -764,7 +788,7 @@ export function Sidebar({
             icon={
               <ChartNoAxesCombined
                 size={17}
-                className="shrink-0 text-purple-700 dark:text-purple-300"
+                className="shrink-0 text-purple-700 dark:text-purple-300 clean:text-ink-2"
               />
             }
           >
@@ -774,7 +798,7 @@ export function Sidebar({
 
         <section className="mt-5">
           <div className="group/section flex items-center justify-between px-2.5 pb-1.5">
-            <span className="flex items-center gap-2 font-display text-[14px] tracking-wide text-rubric">
+            <span className="flex items-center gap-2 font-display text-[14px] tracking-wide text-rubric clean:text-[13px] clean:font-medium! clean:text-ink-3">
               <ProjectsIcon size={16} />
               Projects
             </span>
@@ -988,8 +1012,13 @@ function UpdatePill({ compact }: { compact?: boolean }) {
     <Link
       to="/settings"
       search={{}}
+      hash="about"
       aria-label={label}
       title={label}
+      onClick={() => {
+        if (status.kind === "available") void updates.install();
+        else if (status.kind === "ready") void updates.restart();
+      }}
       className={cx(
         "flex items-center gap-2 rounded-lg border border-accent/50 bg-accent/10 text-accent hover:bg-accent/15",
         compact ? "size-9 justify-center" : "px-2.5 py-1.5 text-[13.5px]",
@@ -1016,13 +1045,8 @@ function RailLink({
   params?: Record<string, string>;
   label: string;
   children: ReactNode;
-      hash="about"
 }) {
   return (
-      onClick={() => {
-        if (status.kind === "available") void updates.install();
-        else if (status.kind === "ready") void updates.restart();
-      }}
     <Link
       to={to}
       params={params as never}

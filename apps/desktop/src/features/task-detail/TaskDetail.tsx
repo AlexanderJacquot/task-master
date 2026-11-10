@@ -558,7 +558,7 @@ export function TaskPage({
         </IconButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
-        <article className="tex-sheet mx-auto max-w-[820px] rounded-xl border border-line bg-raised px-10 py-11 shadow-xl shadow-black/10 sm:px-14">
+        <article className="tex-sheet mx-auto max-w-[820px] rounded-xl border border-line bg-raised px-10 py-11 shadow-xl shadow-black/10 sm:px-14 clean:border-transparent clean:pt-4 clean:shadow-none">
           <TaskEditor
             key={task.id}
             task={task}

@@ -20,7 +20,16 @@ import {
 import { formatAgo, isoDate } from "../../lib/dates";
 import { useOrnaments } from "../../lib/ornaments";
 import { settingsApi } from "../../lib/settingsApi";
-import { loadTheme, saveTheme, THEME_LABELS, type Theme } from "../../lib/theme";
+import {
+  type LightTheme,
+  loadLightTheme,
+  loadTheme,
+  saveLightTheme,
+  saveTheme,
+  THEME_LABELS,
+  THEMES,
+  type Theme,
+} from "../../lib/theme";
 import type {
   BackupStatus,
   ConfigView,
@@ -196,10 +205,13 @@ function Workflow() {
 
 function Appearance() {
   const [theme, setTheme] = useState<Theme>(loadTheme);
+  const [light, setLight] = useState<LightTheme>(loadLightTheme);
+  // Weathering only shows on parchment, so it is hidden while the choice can only be clean.
+  const clean = theme === "clean" || (theme === "system" && light === "clean");
   return (
     <Section title="Appearance">
-      <div className="flex gap-3" role="radiogroup" aria-label="Theme">
-        {(["dark", "light", "system"] as const).map((t) => (
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5" role="radiogroup" aria-label="Theme">
+        {THEMES.map((t) => (
           <label key={t} className="flex items-center gap-1.5">
             <input
               type="radio"
@@ -215,7 +227,35 @@ function Appearance() {
           </label>
         ))}
       </div>
-      <WeatheringChoice dark={theme === "dark"} />
+      {theme === "system" && (
+        <div
+          className="flex flex-wrap items-center gap-x-4 gap-y-1.5"
+          role="radiogroup"
+          aria-label="Light theme"
+        >
+          <span className="text-sm text-ink-2">In light mode, use</span>
+          {(["light", "clean"] as const).map((t) => (
+            <label key={t} className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="theme-light"
+                checked={light === t}
+                onChange={() => {
+                  setLight(t);
+                  saveLightTheme(t);
+                }}
+                className="accent-accent"
+              />
+              {THEME_LABELS[t]}
+            </label>
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-ink-3">
+        Dark and Parchment use the illuminated look: display lettering, medieval icons and
+        ornaments. Clean is plain and quiet: sans-serif type, simple line icons, no textures.
+      </p>
+      {!clean && <WeatheringChoice dark={theme === "dark"} />}
       {import.meta.env.DEV && (
         <div className="flex items-center gap-3">
           <Button size="sm" onClick={() => useOrnaments.getState().setOpen(true)}>

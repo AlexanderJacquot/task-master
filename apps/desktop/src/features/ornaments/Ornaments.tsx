@@ -3,8 +3,16 @@
 
 import { type ReactNode, useEffect } from "react";
 import appIconSvg from "../../assets/brand/app-icon.svg";
+import cleanLogoSvg from "../../assets/brand/logo-clean.svg";
 import { cx } from "../../components/ui";
 import { PACK, useOrnament, useOrnamentUrl } from "../../lib/ornaments";
+import { useIsClean } from "../../lib/theme";
+
+/** The logo URL: the clean mark in the clean theme, else the chosen pack icon or vector one. */
+function useLogoUrl(): string {
+  const url = useOrnamentUrl("logo");
+  return useIsClean() ? cleanLogoSvg : (url ?? appIconSvg);
+}
 
 /** The app logo: the chosen pack icon, or the vector one. */
 export function AppLogo({
@@ -16,13 +24,13 @@ export function AppLogo({
   className?: string;
   alt?: string;
 }) {
-  const url = useOrnamentUrl("logo") ?? appIconSvg;
+  const url = useLogoUrl();
   return <img src={url} width={size} height={size} alt={alt} className={className} />;
 }
 
 /** Keeps the window favicon in step with the logo slot. Render once. */
 export function FaviconSync() {
-  const url = useOrnamentUrl("logo") ?? appIconSvg;
+  const url = useLogoUrl();
   useEffect(() => {
     const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (!link) return;

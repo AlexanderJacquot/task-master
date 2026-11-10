@@ -20,9 +20,9 @@ import { demoSnapshot } from "./demo";
 mockWindows("main");
 mockIPC(() => null);
 
-// ?theme=light|dark (default dark, as in the app).
+// ?theme=light|clean|dark (default dark, as in the app).
 const theme = new URLSearchParams(location.search).get("theme");
-applyTheme((theme === "light" ? "light" : "dark") as Theme);
+applyTheme((theme === "light" || theme === "clean" ? theme : "dark") as Theme);
 
 const snap = demoSnapshot();
 const empty: Changes = {

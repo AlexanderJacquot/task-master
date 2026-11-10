@@ -11,6 +11,7 @@
 
 import { create } from "zustand";
 import MANIFEST from "../assets/pack/manifest.json";
+import { useIsClean } from "./theme";
 
 /** Development: the whole pack, served as-is by Vite (never imported, so never bundled). */
 const ALL_FILES: Record<string, string> = import.meta.env.DEV
@@ -188,9 +189,12 @@ export const useOrnaments = create<LabState>((set, get) => ({
   },
 }));
 
-/** The slot's current choice, or null when it is "off" or "builtin". */
+/** The slot's current choice, or null when it is "off" or "builtin". The clean theme
+ *  (ADR 021) draws no ornaments, so every slot is null there. */
 export function useOrnament(slot: SlotName): string | null {
   const choice = useOrnaments((s) => s.choices[slot]);
+  const clean = useIsClean();
+  if (clean) return null;
   return choice === "off" || choice === "builtin" ? null : choice;
 }
 
