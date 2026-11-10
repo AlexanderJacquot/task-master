@@ -1,31 +1,74 @@
 import { CalendarPlusIcon as CalendarPlus } from "../../components/TaskIcons";
 // The calendar's side list: today's tasks, then other open tasks (searchable), to drag
-// onto the calendar or schedule with a button.
+// onto the calendar or schedule with a button. A filter (project, epic, status) narrows
+// both lists; it is also Plan mode's focus. The tray's width can be dragged.
 
 import { useDraggable } from "@dnd-kit/core";
-import { GripVertical } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
+import { type PointerEvent as ReactPointerEvent, useMemo, useState } from "react";
 import { cx, Dot, FOCUS, IconButton, INPUT, SectionLabel } from "../../components/ui";
 import { addDays, atMinute, blockMinutes, formatDuration } from "../../lib/calendar";
-import type { Task } from "../../lib/types";
+import { DEFAULT_FOCUS, type PlanFocus } from "../../lib/planner";
+import type { Epic, Project, Status, Task } from "../../lib/types";
 import { compareTasks, inView, isOpen, type ViewContext } from "../../lib/views";
 import { useStoreState } from "../../store/context";
+import { FocusFilter } from "./PlanBar";
 import { type DragData, projectColor, useCalendar } from "./shared";
 
 /** Rows shown in "Other tasks"; typing narrows them. Keeps the list short (no virtualizer). */
 const MAX_OTHERS = 50;
 
+const WIDTH_KEY = "task-master.calendar-tray-width";
+export const TRAY_DEFAULT = 256;
+export const TRAY_MIN = 200;
+export const TRAY_MAX = 640;
+
+function loadWidth(): number {
+  try {
+    const saved = Number(localStorage.getItem(WIDTH_KEY));
+    return saved >= TRAY_MIN && saved <= TRAY_MAX ? saved : TRAY_DEFAULT;
+  } catch {
+    return TRAY_DEFAULT;
+  }
+}
+
+function saveWidth(px: number | null) {
+  try {
+    if (px === null) localStorage.removeItem(WIDTH_KEY);
+    else localStorage.setItem(WIDTH_KEY, String(px));
+  } catch {
+    // Not remembered; fine.
+  }
+}
+
 export function TaskTray({
   onSchedule,
   filter,
+  planning = false,
+  focus = DEFAULT_FOCUS,
+  onFocus,
+  projects: projectList = [],
+  epics = [],
+  statuses: statusList = [],
 }: {
   onSchedule(task: Task): void;
-  /** Plan mode's focus: only these tasks are listed. */
+  /** The filter (the plan's focus): only these tasks are listed. */
   filter?: (task: Task) => boolean;
+  /** Plan mode is on: the plan draws from the listed tasks. */
+  planning?: boolean;
+  focus?: PlanFocus;
+  /** Without it, the filter's selects are not shown. */
+  onFocus?(focus: PlanFocus): void;
+  projects?: Project[];
+  epics?: Epic[];
+  statuses?: Status[];
 }) {
   const { tasks, projects, statuses, today } = useCalendar();
   const timeBlocks = useStoreState((s) => s.time_blocks);
   const [query, setQuery] = useState("");
+  const [width, setWidth] = useState(loadWidth);
+  const active = [focus.projectId, focus.epicId, focus.statusId].filter((v) => v !== null).length;
+  const [showFilter, setShowFilter] = useState(active > 0);
   const ctx: ViewContext = useMemo(
     () => ({
       today,
@@ -65,16 +108,78 @@ export function TaskTray({
     };
   }, [tasks, timeBlocks, today, ctx, query, filter]);
 
+  const onResizeStart = (e: ReactPointerEvent<HTMLHRElement>) => {
+    e.preventDefault();
+    const left = e.currentTarget.parentElement?.getBoundingClientRect().left ?? 0;
+    let last: number | null = null;
+    const move = (ev: PointerEvent) => {
+      last = Math.round(Math.min(TRAY_MAX, Math.max(TRAY_MIN, ev.clientX - left)));
+      setWidth(last);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+      if (last !== null) saveWidth(last);
+    };
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   return (
     <aside
       aria-label="Tasks to schedule"
-      className="flex w-64 shrink-0 flex-col border-r border-line"
+      style={{ width }}
+      className="relative flex shrink-0 flex-col border-r border-line"
     >
       <div className="px-4 pt-1 pb-2 text-[12.5px] text-ink-3">
-        {filter
-          ? "Tasks in the plan's focus. Suggest fills the free time with them."
+        {planning
+          ? "Suggest fills the free time with the tasks listed here. Filter them to focus the plan."
           : "Drag a task onto the calendar, or onto a day to plan it."}
       </div>
+      {onFocus && (
+        <div className="px-2 pb-2">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-expanded={showFilter}
+              onClick={() => setShowFilter((s) => !s)}
+              className={cx(
+                "flex flex-1 items-center gap-1 rounded-md px-2 py-0.5 text-left text-[12.5px] text-ink-2 hover:bg-hover",
+                FOCUS,
+              )}
+            >
+              {showFilter ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              Filter
+              {active > 0 && <span className="text-accent"> · {active}</span>}
+            </button>
+            {active > 0 && (
+              <button
+                type="button"
+                onClick={() => onFocus(DEFAULT_FOCUS)}
+                className={cx(
+                  "rounded-md px-2 py-0.5 text-[12px] text-ink-3 hover:bg-hover hover:text-ink",
+                  FOCUS,
+                )}
+              >
+                Clear filter
+              </button>
+            )}
+          </div>
+          {showFilter && (
+            <div className="px-1 pt-1.5">
+              <FocusFilter
+                focus={focus}
+                onFocus={onFocus}
+                projects={projectList}
+                epics={epics}
+                statuses={statusList}
+              />
+            </div>
+          )}
+        </div>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
         <SectionLabel className="block px-2 pb-1">Today</SectionLabel>
         {todayTasks.length === 0 ? (
@@ -102,13 +207,24 @@ export function TaskTray({
         </ul>
         {others.length === 0 && (
           <p className="px-2 text-[12.5px] text-ink-3">
-            {query ? "No open task matches." : "No other open tasks."}
+            {query || filter ? "No open task matches." : "No other open tasks."}
           </p>
         )}
         {more > 0 && (
           <p className="px-2 pt-1 text-[12px] text-ink-3">{more} more. Type to narrow the list.</p>
         )}
       </div>
+      <hr
+        aria-orientation="vertical"
+        aria-label="Resize task list"
+        title="Drag to resize; double-click to reset"
+        onPointerDown={onResizeStart}
+        onDoubleClick={() => {
+          setWidth(TRAY_DEFAULT);
+          saveWidth(null);
+        }}
+        className="absolute inset-y-0 -right-[3px] z-20 m-0 h-full w-1.5 cursor-col-resize border-0 hover:bg-accent/30"
+      />
     </aside>
   );
 }
