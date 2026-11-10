@@ -21,6 +21,7 @@ import {
   TagIcon as Hash,
   InboxIcon as Inbox,
   AllTasksIcon as Layers,
+  SpinnerIcon as Loader2,
   MoreIcon as MoreHorizontal,
   EditIcon as Pencil,
   AddIcon as Plus,
@@ -961,15 +962,28 @@ export function Sidebar({
   );
 }
 
-/** Shown above Settings when a newer release is waiting (or installed and needs a restart). */
+/**
+ * Shown above Settings when a newer release is waiting, downloading, or installed and needs a
+ * restart. Clicking it does the next step (install, or restart) and opens Settings → About,
+ * where the progress and any error show.
+ */
 function UpdatePill({ compact }: { compact?: boolean }) {
   const updates = useUpdates();
   const status = updates?.status;
-  if (!status || (status.kind !== "available" && status.kind !== "ready")) return null;
+  if (
+    !updates ||
+    !status ||
+    (status.kind !== "available" && status.kind !== "installing" && status.kind !== "ready")
+  )
+    return null;
   const label =
     status.kind === "ready"
       ? `Restart to use ${status.update.version}`
-      : `Update to ${status.update.version}`;
+      : status.kind === "installing"
+        ? `Downloading ${status.update.version}${
+            status.progress !== null ? ` · ${Math.round(status.progress * 100)}%` : "…"
+          }`
+        : `Update to ${status.update.version}`;
   return (
     <Link
       to="/settings"
@@ -982,7 +996,11 @@ function UpdatePill({ compact }: { compact?: boolean }) {
         FOCUS,
       )}
     >
-      <ArrowDownCircle size={compact ? 17 : 15} className="shrink-0" />
+      {status.kind === "installing" ? (
+        <Loader2 size={compact ? 17 : 15} className="shrink-0 animate-spin" />
+      ) : (
+        <ArrowDownCircle size={compact ? 17 : 15} className="shrink-0" />
+      )}
       {!compact && label}
     </Link>
   );
@@ -998,8 +1016,13 @@ function RailLink({
   params?: Record<string, string>;
   label: string;
   children: ReactNode;
+      hash="about"
 }) {
   return (
+      onClick={() => {
+        if (status.kind === "available") void updates.install();
+        else if (status.kind === "ready") void updates.restart();
+      }}
     <Link
       to={to}
       params={params as never}

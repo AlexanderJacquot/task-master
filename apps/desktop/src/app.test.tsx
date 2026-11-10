@@ -6,6 +6,7 @@ import { defaultsForPath } from "./features/shell/Layout";
 import type { Api } from "./lib/api";
 import { reloadKeymap } from "./lib/keymap";
 import type { Changes, Command, Task } from "./lib/types";
+import { createUpdateStore, UpdateProvider } from "./lib/updater";
 import { createAppRouter } from "./router";
 import { StoreProvider } from "./store/context";
 import { createTaskStore, type TaskStore } from "./store/store";
@@ -736,6 +737,47 @@ describe("redesign", () => {
 
     await router.navigate({ to: "/settings", search: {}, hash: "shortcuts" });
     expect(await screen.findByRole("heading", { name: "Keyboard shortcuts" })).toBeTruthy();
+  });
+
+  it("installs from the sidebar Update pill, then restarts from it", async () => {
+    cleanup();
+    fake = fakeApi(() => store, [existing]);
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    let finish: () => void = () => {};
+    let relaunched = 0;
+    const updates = createUpdateStore({
+      check: async () => ({
+        version: "9.9.9",
+        notes: null,
+        date: null,
+        install: (progress) =>
+          new Promise<void>((resolve) => {
+            progress(0.4);
+            finish = resolve;
+          }),
+      }),
+      relaunch: async () => {
+        relaunched += 1;
+      },
+    });
+    await updates.getState().check();
+    const router = createAppRouter(createMemoryHistory({ initialEntries: ["/inbox"] }));
+    render(
+      <UpdateProvider value={updates}>
+        <StoreProvider store={store} api={fake.api}>
+          <RouterProvider router={router} />
+        </StoreProvider>
+      </UpdateProvider>,
+    );
+    fireEvent.click(await screen.findByRole("link", { name: "Update to 9.9.9" }));
+    // It starts the download and shows it in Settings → About.
+    await waitFor(() => expect(router.state.location.hash).toBe("about"));
+    expect((await screen.findByRole("progressbar")).getAttribute("aria-valuenow")).toBe("40");
+    expect(screen.getByRole("link", { name: "Downloading 9.9.9 · 40%" })).toBeTruthy();
+    await act(async () => finish());
+    fireEvent.click(await screen.findByRole("link", { name: "Restart to use 9.9.9" }));
+    await waitFor(() => expect(relaunched).toBe(1));
   });
 
   it("does the same from the New task dialog", async () => {
