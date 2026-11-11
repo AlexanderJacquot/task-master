@@ -353,6 +353,19 @@ function grouping(
   }
 }
 
+/** Ids of the tasks a list view shows, folded groups and subtasks included. */
+export function listedIds(tasks: Iterable<Task>, query: ViewQuery, ctx: ViewContext): Set<string> {
+  const ids = new Set<string>();
+  for (const t of tasks) {
+    if (
+      matchesQuery(query, t, ctx, { showAgentTasks: query.show_agent_tasks }) &&
+      (query.show_cancelled || categoryOf(t, ctx) !== "cancelled")
+    )
+      ids.add(t.id);
+  }
+  return ids;
+}
+
 /**
  * Rows for the list view: grouped (status in workflow order by default), top-level tasks
  * sorted by the spec, each followed by its visible subtasks in manual order. A task whose
@@ -369,10 +382,7 @@ export function buildRows(
 ): Row[] {
   const all = Array.from(tasks);
   const children = childrenByParent(all);
-  const shown = (t: Task) =>
-    matchesQuery(query, t, ctx, { showAgentTasks: query.show_agent_tasks }) &&
-    (query.show_cancelled || categoryOf(t, ctx) !== "cancelled");
-  const visible = new Set(all.filter(shown).map((t) => t.id));
+  const visible = listedIds(all, query, ctx);
   const { keyOf, groups } = grouping(query.group_by, ctx, statuses);
 
   const roots = new Map<string, Task[]>();
