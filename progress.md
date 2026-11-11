@@ -151,6 +151,13 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### Task detail: property order (2026-11-11, branch `worktree-sidebar-field-order`, uncommitted)
+
+- Side panel and task page now list properties in one fixed order: status, project, epic,
+  priority, due, today, estimate, time, tags (the task page keeps the timer on its own
+  row). The task page no longer moves set pills ahead of unset ones, so pills stay put.
+  Checks not run yet: the background session could not install deps or run biome/vitest.
+
 ### Release 0.15.0 (2026-11-11)
 
 - Work timer, folding descriptions, nested subtasks at any depth, add from a swimlane,
