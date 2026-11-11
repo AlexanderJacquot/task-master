@@ -268,6 +268,28 @@ describe("the board", () => {
     expect(await screen.findByRole("region", { name: "Lane Normal" })).toBeTruthy();
   });
 
+  it("adds a task to a lane from the + by its name", async () => {
+    await openBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    await pickOption("Swimlanes", "Lanes by priority");
+    const lane = await screen.findByRole("region", { name: "Lane Normal" });
+    fireEvent.click(within(lane).getByRole("button", { name: "Add a task to Normal" }));
+    const input = within(lane).getByPlaceholderText("New task in Normal…");
+    fireEvent.change(input, { target: { value: "Book the photo booth" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(fake.executed.at(-1)?.[0]).toMatchObject({
+        type: "create_task",
+        task: { title: "Book the photo booth", priority: "normal", status_id: STATUS.todo },
+      }),
+    );
+    expect(await within(lane).findByRole("button", { name: "Book the photo booth" })).toBeTruthy();
+    // The field stays for the next task; Escape closes it.
+    expect((input as HTMLInputElement).value).toBe("");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(within(lane).queryByPlaceholderText("New task in Normal…")).toBeNull();
+  });
+
   it("collapses a lane to a strip of drop targets, remembers it, and opens it again", async () => {
     await openBoard();
     fireEvent.click(screen.getByRole("button", { name: "Display" }));
@@ -640,6 +662,28 @@ describe("redesign", () => {
         changes: [{ priority: "high" }],
       }),
     );
+  });
+
+  it("opens a subtask's full page when it is clicked on the full page", async () => {
+    cleanup();
+    const child = task({ title: "Book the photo", status_id: STATUS.todo, parent_id: existing.id });
+    fake = fakeApi(() => store, [existing, child]);
+    fake.api.snapshot = async () => snapshot({ tasks: [existing, child] });
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    const router = createAppRouter(
+      createMemoryHistory({ initialEntries: [`/task/${existing.id}`] }),
+    );
+    render(
+      <StoreProvider store={store} api={fake.api}>
+        <RouterProvider router={router} />
+      </StoreProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Book the photo" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/task/${child.id}`));
+    expect(router.state.location.search).toEqual({});
+    const title = (await screen.findByLabelText("Title")) as HTMLTextAreaElement;
+    await waitFor(() => expect(title.value).toBe("Book the photo"));
   });
 
   it("opens the full page with Shift+Enter on a list row", async () => {

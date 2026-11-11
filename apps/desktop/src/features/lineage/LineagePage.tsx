@@ -603,7 +603,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
         {panelOpen && (
           <aside
             aria-label="Lineage panel"
-            className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-line bg-raised p-5"
+            className="flex w-96 max-w-[45%] shrink-0 flex-col overflow-y-auto border-l border-line bg-raised p-5"
           >
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-sm font-medium text-ink">Find a task</h2>
@@ -631,7 +631,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
                 : "Click a result to find it on the canvas, or select a card to link tasks to it."}
             </p>
             {search && (
-              <div className="mt-2 flex max-h-80 flex-col overflow-y-auto">
+              <div className="mt-2 flex flex-col">
                 {current &&
                   (["in", "out"] as const).map((side) => (
                     <button
@@ -678,7 +678,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
                 <h3 className="text-xs font-medium tracking-wide text-ink-3 uppercase">
                   {browse.title}
                 </h3>
-                <ul aria-label={browse.title} className="mt-1 max-h-72 overflow-y-auto">
+                <ul aria-label={browse.title} className="mt-1">
                   {browse.tasks.slice(0, 40).map((task) => (
                     <SearchResult
                       key={task.id}
@@ -767,12 +767,14 @@ function SearchResult({
   onSetParent: (child: string, parent: string) => void;
 }) {
   return (
-    <li className="flex h-10 items-center gap-1 border-b border-line last:border-b-0">
+    // The title gets its own line and the link chips the next one: side by side in the
+    // panel's width, the four chips left the title a few pixels.
+    <li className="border-b border-line py-1 last:border-b-0">
       <button
         type="button"
-        title={visible ? "Show on the canvas" : "Open its lineage"}
+        title={`${task.title}: ${visible ? "show on the canvas" : "open its lineage"}`}
         className={cx(
-          "min-w-0 flex-1 truncate rounded-md px-2 py-1 text-left text-sm hover:bg-hover",
+          "line-clamp-2 w-full rounded-md px-2 py-1 text-left text-sm break-words hover:bg-hover",
           selected ? "font-medium text-accent" : "text-ink-2",
           done && "text-ink-3 line-through",
           FOCUS,
@@ -782,7 +784,7 @@ function SearchResult({
         {task.title}
       </button>
       {current && !selected && (
-        <>
+        <div className="flex flex-wrap gap-1 px-2 pt-0.5 pb-1">
           <LinkChip
             label={`Add ${task.title} as a prerequisite`}
             disabled={busy || !canLink(task.id, current.id)}
@@ -811,7 +813,7 @@ function SearchResult({
           >
             Subtask
           </LinkChip>
-        </>
+        </div>
       )}
     </li>
   );

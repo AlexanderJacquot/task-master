@@ -32,6 +32,7 @@ export function fakeAgents(
     model: null,
     started_status_id: null,
     done_status_id: null,
+    directive: null,
     ...opts.settings,
   };
   let folders = opts.folders ?? [];

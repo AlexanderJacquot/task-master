@@ -115,7 +115,62 @@ describe("buildRows", () => {
       `1:${childOpen.id}`,
     ]);
     const parentRow = rows[3];
-    expect(parentRow).toMatchObject({ childCount: 2, childDone: 1, visibleChildren: 2 });
+    expect(parentRow).toMatchObject({
+      childCount: 2,
+      childDone: 1,
+      visibleChildren: 2,
+      expanded: true,
+    });
+    // The grandchild is folded under its parent, which shows a chevron for it.
+    expect(rows[5]).toMatchObject({ visibleChildren: 1, expanded: false });
+  });
+
+  describe("subtasks all the way down", () => {
+    const root = task({ title: "Root" });
+    const child = task({ title: "Child", parent_id: root.id });
+    const grandchild = task({ title: "Grandchild", parent_id: child.id });
+    const great = task({ title: "Great", parent_id: grandchild.id });
+    const all = [great, grandchild, child, root];
+    const depths = (rows: ReturnType<typeof buildRows>) =>
+      rows.flatMap((r) => (r.type === "task" ? [`${r.depth}:${r.task.title}`] : []));
+
+    it("unrolls every level with show_subtasks", () => {
+      const rows = buildRows(
+        all,
+        q({ kind: "all" }, { show_subtasks: true }),
+        ctx(),
+        statuses,
+        noCollapse,
+      );
+      expect(depths(rows)).toEqual(["0:Root", "1:Child", "2:Grandchild", "3:Great"]);
+      expect(rows.at(-1)).toMatchObject({ visibleChildren: 0 });
+    });
+
+    it("unrolls a deeper row by hand, and folds one by hand under show_subtasks", () => {
+      const byHand = buildRows(all, q({ kind: "all" }), ctx(), statuses, {
+        ...noCollapse,
+        expandedTasks: new Set([child.id]),
+      });
+      expect(depths(byHand)).toEqual(["0:Root", "1:Child", "2:Grandchild"]);
+
+      const deep = q({ kind: "all" }, { show_subtasks: true });
+      const folded = buildRows(all, deep, ctx(), statuses, {
+        ...noCollapse,
+        collapsedTasks: new Set([grandchild.id]),
+      });
+      expect(depths(folded)).toEqual(["0:Root", "1:Child", "2:Grandchild"]);
+    });
+
+    it("skips a filtered-out level: its subtasks come up to the top", () => {
+      const hidden = buildRows(
+        [great, { ...grandchild, status_id: STATUS.cancelled }, child, root],
+        q({ kind: "all" }, { show_subtasks: true }),
+        ctx(),
+        statuses,
+        noCollapse,
+      );
+      expect(depths(hidden)).toEqual(["0:Root", "1:Child", "0:Great"]);
+    });
   });
 
   it("promotes a subtask whose parent is outside the view", () => {

@@ -55,6 +55,7 @@ import { TagMenu } from "../organize/TagMenu";
 import { AppLogo, NavIcon, Wordmark } from "../ornaments/Ornaments";
 import { useShell } from "../shell/shellContext";
 import { DROP_OVER_CLASS, type TaskDropTarget, useTaskDropTarget } from "../shell/taskDrop";
+import { TimerPill } from "../timer/Timer";
 import { ProjectTree } from "./ProjectTree";
 import { useProjectOrder } from "./useProjectOrder";
 
@@ -641,6 +642,7 @@ export function Sidebar({
           );
         })}
         <div className="flex-1" />
+        <TimerPill compact />
         <UpdatePill compact />
         <ShortcutsButton onClick={shell.showShortcuts} className="mb-1" />
         <RailLink to="/settings" label="Settings">
@@ -935,6 +937,7 @@ export function Sidebar({
         </Collapsible>
 
         <div className="mt-auto flex flex-col gap-1 pt-4">
+          <TimerPill />
           <UpdatePill />
           <div className="flex items-stretch gap-1">
             <div className="flex min-w-0 flex-1 flex-col [&>a]:flex-1">

@@ -4,6 +4,7 @@
 import { ranksForDrop } from "../lib/board";
 import type { RestorePlan } from "../lib/history";
 import { rankBetween } from "../lib/rank";
+import { getTimer, runToBlocks, setTimer } from "../lib/timer";
 import type {
   Attachment,
   BlockOutcome,
@@ -975,6 +976,72 @@ export async function scheduleBlocks(
     { upsert: { time_blocks: blocks, tasks: [...touched.values()] } },
   );
   return changes ? blocks.map((b) => b.id) : [];
+}
+
+/**
+ * Logs time worked on a task as `worked` blocks (one undoable batch): a run under a minute
+ * logs nothing, a run over 24 hours is split. Resolves to the new ids.
+ */
+export async function logWork(
+  store: TaskStore,
+  taskId: string,
+  start: number,
+  end: number,
+): Promise<string[]> {
+  const s = store.getState();
+  const task = s.tasks[taskId];
+  const pieces = runToBlocks(start, end);
+  if (!task || !pieces.length) return [];
+  const now = Date.now();
+  const blocks: TimeBlock[] = pieces.map((p) => ({
+    id: uuidv7(now),
+    task_id: taskId,
+    ...p,
+    outcome: "worked",
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  }));
+  const changes = await s.mutate(
+    blocks.map((b) => ({
+      type: "create_time_block" as const,
+      block: {
+        id: b.id,
+        task_id: taskId,
+        start_at: b.start_at,
+        end_at: b.end_at,
+        outcome: "worked" as const,
+      },
+    })),
+    { upsert: { time_blocks: blocks, tasks: [{ ...task, updated_at: now }] } },
+  );
+  return changes ? blocks.map((b) => b.id) : [];
+}
+
+/**
+ * Starts the work timer on a task. A timer running on another task is stopped (and its
+ * time logged) first. A task not started yet moves to the first in-progress status.
+ */
+export async function startTimer(store: TaskStore, taskId: string, now = Date.now()) {
+  const running = getTimer();
+  if (running?.task_id === taskId) return;
+  if (running) await stopTimer(store, now);
+  setTimer({ task_id: taskId, started_at: now });
+  const s = store.getState();
+  const task = s.tasks[taskId];
+  const category = task && s.statuses.find((st) => st.id === task.status_id)?.category;
+  const doing = firstStatus(s.statuses, "in_progress");
+  if (task && doing && (category === "todo" || category === "backlog")) {
+    await updateTask(store, taskId, [{ status_id: doing.id }]);
+  }
+}
+
+/** Stops the work timer and logs the run. Resolves to the new block ids. */
+export async function stopTimer(store: TaskStore, now = Date.now()): Promise<string[]> {
+  const running = getTimer();
+  if (!running) return [];
+  setTimer(null);
+  return logWork(store, running.task_id, running.started_at, now);
 }
 
 /** Moves or resizes a block. */

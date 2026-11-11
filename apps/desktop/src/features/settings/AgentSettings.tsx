@@ -196,6 +196,21 @@ export function AgentSettings() {
         The app moves the task itself: to the first status when it is sent to an agent, to the
         second when the agent reports it done (a task you closed stays closed).
       </p>
+      <div className="flex items-start gap-2 text-xs">
+        <span className="w-26 shrink-0 pt-1.5 text-ink-3">Directive</span>
+        <textarea
+          value={draft.directive ?? ""}
+          onChange={(e) => edit({ directive: e.target.value || null })}
+          placeholder="Standing instructions for every agent, e.g. “Commit on a new branch, never on main.”"
+          aria-label="Directive for every agent"
+          rows={4}
+          className={cx(INPUT, "w-[28rem] resize-y py-1 text-[13px]")}
+        />
+      </div>
+      <p className="pl-28 text-xs text-ink-3">
+        Added to the system prompt of every agent you start from now on, after the app's own
+        rules. A running session keeps the directive it started with.
+      </p>
       {isLinux && (
         <Row label="Terminal">
           <input

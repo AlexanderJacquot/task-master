@@ -4,6 +4,8 @@ import {
   adjacentStatus,
   type BoardLookups,
   buildBoard,
+  type Lane,
+  laneFields,
   ranksForDrop,
   type Swimlane,
 } from "./board";
@@ -227,5 +229,26 @@ describe("adjacentStatus", () => {
     expect(adjacentStatus(board.columns, STATUS.todo, 1)).toBe(STATUS.inProgress);
     expect(adjacentStatus(board.columns, STATUS.backlog, -1)).toBeNull();
     expect(adjacentStatus(board.columns, STATUS.done, 1)).toBeNull();
+  });
+});
+
+describe("laneFields", () => {
+  const lane = (changes: Lane["changes"]): Lane => ({
+    key: "k",
+    label: "L",
+    color: null,
+    changes,
+    cells: {},
+  });
+
+  it("gives a new task the lane's epic, project or priority", () => {
+    expect(laneFields(lane([{ epic_id: "e1" }]))).toEqual({ epic_id: "e1" });
+    expect(laneFields(lane([{ epic_id: null }]))).toEqual({ epic_id: null });
+    expect(laneFields(lane([{ project_id: "p1" }]))).toEqual({ project_id: "p1" });
+    expect(laneFields(lane([{ priority: "high" }]))).toEqual({ priority: "high" });
+  });
+
+  it("gives nothing for the single lane of a board without swimlanes", () => {
+    expect(laneFields(lane([]))).toEqual({});
   });
 });

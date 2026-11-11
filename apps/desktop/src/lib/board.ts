@@ -132,6 +132,23 @@ function laneOf(task: Task, swimlane: Swimlane, lookups: BoardLookups): LaneSpec
   }
 }
 
+export interface LaneFields {
+  project_id?: string | null;
+  epic_id?: string | null;
+  priority?: Priority;
+}
+
+/** What a new task added from a lane's header takes, so it lands in that lane. */
+export function laneFields(lane: Lane): LaneFields {
+  const fields: LaneFields = {};
+  for (const change of lane.changes) {
+    if ("project_id" in change) fields.project_id = change.project_id ?? null;
+    if ("epic_id" in change) fields.epic_id = change.epic_id ?? null;
+    if ("priority" in change && change.priority) fields.priority = change.priority;
+  }
+  return fields;
+}
+
 export function buildBoard(
   tasks: Iterable<Task>,
   query: BoardQuery,

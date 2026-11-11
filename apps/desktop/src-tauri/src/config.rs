@@ -78,6 +78,10 @@ pub struct AgentSettings {
     /// Where a task goes when the agent reports it done; Review when `None`.
     #[serde(default)]
     pub done_status_id: Option<taskmaster_core::Id>,
+    /// Standing instructions for every agent this device starts, appended to each new
+    /// session's system prompt after the app's own rules; none when `None`.
+    #[serde(default)]
+    pub directive: Option<String>,
 }
 
 fn default_claude() -> String {
@@ -99,6 +103,7 @@ impl Default for AgentSettings {
             model: None,
             started_status_id: None,
             done_status_id: None,
+            directive: None,
         }
     }
 }
@@ -121,6 +126,7 @@ impl AgentSettings {
         self.model = blank_to_none(self.model);
         self.started_status_id = blank_to_none(self.started_status_id);
         self.done_status_id = blank_to_none(self.done_status_id);
+        self.directive = blank_to_none(self.directive);
         self.claude_path = self.claude_path.trim().to_owned();
         if self.claude_path.is_empty() {
             self.claude_path = default_claude();
@@ -383,6 +389,7 @@ mod tests {
             agents: AgentSettings {
                 runtime: taskmaster_core::AgentRuntime::Wsl,
                 wsl_distro: Some("Ubuntu".into()),
+                directive: Some("Reply in French.\nRun the tests.".into()),
                 ..AgentSettings::default()
             },
             data_dir: Some(dir.join("data")),

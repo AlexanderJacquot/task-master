@@ -29,6 +29,7 @@ import { SessionsPanel } from "../agents/SessionsPanel";
 import { ProjectMark } from "../organize/ProjectMark";
 import { DROP_OVER_CLASS, useTaskDropTarget } from "../shell/taskDrop";
 import { useOpenTask } from "../shell/useOpenTask";
+import { TaskTimer } from "../timer/Timer";
 import { ActivityFeed } from "./ActivityFeed";
 import { AttachmentList } from "./AttachmentList";
 import { DependencyList } from "./DependencyList";
@@ -39,6 +40,7 @@ import { SubtaskList } from "./SubtaskList";
 import { TagPicker } from "./TagPicker";
 import { TaskPicker } from "./TaskPicker";
 import { TitleField } from "./TitleField";
+import { descriptionExcerpt, useDescriptionFolded } from "./useDescriptionFolded";
 import { useTaskAttachments, useTaskFiles } from "./useTaskFiles";
 
 type Variant = "panel" | "page";
@@ -108,6 +110,11 @@ export function TaskEditor({
   const status = statuses.find((s) => s.id === task.status_id);
   const done = status?.category === "done" || status?.category === "cancelled";
   const page = variant === "page";
+  const [descriptionFolded, setDescriptionFolded] = useDescriptionFolded(
+    variant,
+    focusDescription,
+  );
+  const excerpt = descriptionFolded ? descriptionExcerpt(task.description) : "";
   const epicOptions = Object.values(epics).filter(
     (e) => e.state === "active" || e.id === task.epic_id,
   );
@@ -164,7 +171,7 @@ export function TaskEditor({
   );
 
   const properties = page ? (
-    <div className="pl-10">
+    <div className="flex flex-col gap-3 pl-10">
       <PropertyPills
         task={task}
         today={today}
@@ -173,6 +180,7 @@ export function TaskEditor({
         epics={epicOptions}
         projects={projectOptions}
       />
+      <TaskTimer task={task} />
     </div>
   ) : (
     <div>
@@ -228,6 +236,9 @@ export function TaskEditor({
           }}
           className={fieldInput}
         />
+      </Field>
+      <Field label="Time">
+        <TaskTimer task={task} />
       </Field>
       <Field label="Project">
         <Select
@@ -326,16 +337,40 @@ export function TaskEditor({
         )}
       </div>
       <section aria-label="Description" className={page ? "pl-10" : undefined}>
-        {!page && <SectionLabel className="mb-1.5 block">Description</SectionLabel>}
-        <DescriptionEditor
-          value={task.description}
-          onSave={(description) => change([{ description }])}
-          size={variant}
-          attachments={attachmentsById}
-          actions={files.actions}
-          upload={files.uploader}
-          autoFocus={focusDescription}
-        />
+        <button
+          type="button"
+          aria-expanded={!descriptionFolded}
+          onClick={() => setDescriptionFolded(!descriptionFolded)}
+          title={descriptionFolded ? "Show the description" : "Fold the description"}
+          className={cx(
+            "group flex max-w-full items-center gap-1 text-left",
+            page ? "-ml-5 mb-1" : "-ml-1 mb-1.5",
+          )}
+        >
+          <ChevronRight
+            size={14}
+            aria-hidden
+            className={cx(
+              "shrink-0 text-ink-3 transition-transform group-hover:text-ink-2",
+              !descriptionFolded && "rotate-90",
+            )}
+          />
+          <SectionLabel>Description</SectionLabel>
+          {excerpt && (
+            <span className="ml-2 min-w-0 truncate text-[13px] text-ink-3">{excerpt}</span>
+          )}
+        </button>
+        {!descriptionFolded && (
+          <DescriptionEditor
+            value={task.description}
+            onSave={(description) => change([{ description }])}
+            size={variant}
+            attachments={attachmentsById}
+            actions={files.actions}
+            upload={files.uploader}
+            autoFocus={focusDescription}
+          />
+        )}
       </section>
       {/* The page follows the mockup: subtasks right under the text, files after. */}
       {page ? [subtasks, attachmentList] : [attachmentList, subtasks]}

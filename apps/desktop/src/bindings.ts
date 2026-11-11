@@ -336,6 +336,11 @@ export type AgentSettings_Deserialize = {
 	started_status_id?: string | null,
 	/**  Where a task goes when the agent reports it done; Review when `None`. */
 	done_status_id?: string | null,
+	/**
+	 *  Standing instructions for every agent this device starts, appended to each new
+	 *  session's system prompt after the app's own rules; none when `None`.
+	 */
+	directive?: string | null,
 };
 
 /**  How this device runs Claude Code for agent sessions (ADR 017). */
@@ -361,6 +366,11 @@ export type AgentSettings_Serialize = {
 	started_status_id: string | null,
 	/**  Where a task goes when the agent reports it done; Review when `None`. */
 	done_status_id: string | null,
+	/**
+	 *  Standing instructions for every agent this device starts, appended to each new
+	 *  session's system prompt after the app's own rules; none when `None`.
+	 */
+	directive: string | null,
 };
 
 /**  What "Send to agent" sends. */

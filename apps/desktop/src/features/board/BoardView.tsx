@@ -37,10 +37,11 @@ import {
   useState,
 } from "react";
 import {
+  AddIcon as Plus,
   SpearsLeftIcon as ChevronsLeft,
   SpearsRightIcon as ChevronsRight,
 } from "../../components/TaskIcons";
-import { cx, Dot } from "../../components/ui";
+import { cx, Dot, InlineInput } from "../../components/ui";
 import { adjacentStatus, type Board, type Card, type Column, type Lane } from "../../lib/board";
 import { moveCard } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
@@ -63,6 +64,8 @@ interface Props {
   lookups: CardLookups;
   selectedId: string | null;
   onOpen(id: string): void;
+  /** A "+" by each swimlane's name adds a task to that lane (its project, epic or priority). */
+  onAdd?(lane: Lane, title: string): void;
 }
 
 type Cells = Record<string, string[]>;
@@ -96,7 +99,7 @@ function sameOrder(a: string[] | undefined, b: string[] | undefined): boolean {
  * card moves to the previous or next column with `Alt+←/→`. Columns can be collapsed to a
  * strip (still a drop target) and resized; a wide column lays its cards out side by side.
  */
-export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
+export function BoardView({ board, selectedId, onOpen, onAdd, lookups }: Props) {
   const store = useTaskStore();
   const [available, setAvailable] = useState(0);
   const columns = useBoardColumns({
@@ -440,6 +443,14 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
                   collapsed={laneCollapsed(lane.key)}
                   count={laneCount(lane)}
                   onToggle={(collapsed) => collapsedLanes.setCollapsed(lane.key, collapsed)}
+                  onAdd={
+                    onAdd &&
+                    ((title: string) => {
+                      // Open a collapsed lane so the new card shows.
+                      if (laneCollapsed(lane.key)) collapsedLanes.setCollapsed(lane.key, false);
+                      onAdd(lane, title);
+                    })
+                  }
                 />
               )}
               {lanes && !laneOpen(lane.key) ? laneStrips(lane) : laneCells(lane)}
@@ -653,40 +664,73 @@ function CollapsedCell({
   );
 }
 
-/** A swimlane's title; a click collapses the lane to a strip (with its count) or opens it. */
+/**
+ * A swimlane's title; a click collapses the lane to a strip (with its count) or opens it.
+ * The "+" beside it opens a title field: Enter adds a task to the lane and keeps the field
+ * for the next one; Escape or leaving the field closes it.
+ */
 function LaneHeader({
   lane,
   collapsed,
   count,
   onToggle,
+  onAdd,
 }: {
   lane: Lane;
   collapsed: boolean;
   count: number;
   onToggle(collapsed: boolean): void;
+  onAdd?(title: string): void;
 }) {
+  const [adding, setAdding] = useState(false);
   return (
-    <h2 className="px-7 pt-4 pb-1.5">
-      <button
-        type="button"
-        aria-expanded={!collapsed}
-        title={collapsed ? `Expand ${lane.label}` : `Collapse ${lane.label}`}
-        onClick={() => onToggle(!collapsed)}
-        className="flex items-center gap-2 rounded-md px-2 py-0.5 font-display text-[15px] tracking-wide text-rubric hover:bg-hover"
-      >
-        <ChevronsRight
-          size={14}
-          className={cx("text-ink-3 transition-transform", !collapsed && "rotate-90")}
-        />
-        {lane.color !== null && <Dot color={lane.color} />}
-        {lane.label}
-        {collapsed && (
-          <span className="font-sans text-[12.5px] tracking-normal text-ink-3 tabular-nums">
-            {count}
-          </span>
+    <div className="px-7 pt-4 pb-1.5">
+      <h2 className="group flex items-center gap-1">
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          title={collapsed ? `Expand ${lane.label}` : `Collapse ${lane.label}`}
+          onClick={() => onToggle(!collapsed)}
+          className="flex items-center gap-2 rounded-md px-2 py-0.5 font-display text-[15px] tracking-wide text-rubric hover:bg-hover"
+        >
+          <ChevronsRight
+            size={14}
+            className={cx("text-ink-3 transition-transform", !collapsed && "rotate-90")}
+          />
+          {lane.color !== null && <Dot color={lane.color} />}
+          {lane.label}
+          {collapsed && (
+            <span className="font-sans text-[12.5px] tracking-normal text-ink-3 tabular-nums">
+              {count}
+            </span>
+          )}
+        </button>
+        {onAdd && (
+          <button
+            type="button"
+            aria-label={`Add a task to ${lane.label}`}
+            title={`Add a task to ${lane.label}`}
+            onClick={() => setAdding(true)}
+            className="rounded-md p-1 text-ink-3 opacity-60 hover:bg-hover hover:text-ink hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Plus size={13} />
+          </button>
         )}
-      </button>
-    </h2>
+      </h2>
+      {adding && onAdd && (
+        <InlineInput
+          initial=""
+          clearOnCommit
+          autoFocus
+          placeholder={`New task in ${lane.label}…`}
+          className="mt-1 w-80"
+          onCommit={(title) => {
+            if (title.trim()) onAdd(title);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+    </div>
   );
 }
 

@@ -25,7 +25,8 @@ export type ViewKey = ViewScope;
 export type ViewQuery = Pick<
   ViewSpec,
   "scope" | "filter" | "group_by" | "sort" | "show_cancelled" | "show_agent_tasks"
->;
+> &
+  Partial<Pick<ViewSpec, "show_subtasks">>;
 
 export interface ViewContext {
   today: string;
@@ -251,17 +252,38 @@ export type Row =
   | {
       type: "task";
       task: Task;
-      depth: 0 | 1;
+      /** 0 for a top-level row, 1 for its subtasks, and so on. */
+      depth: number;
       /** Subtask progress over all live children. */
       childCount: number;
       childDone: number;
-      /** Children shown under this row in the view. */
+      /** Children in the view under this row (shown or folded). */
       visibleChildren: number;
+      /** Its subtasks are unrolled under it. */
+      expanded: boolean;
     };
 
 export interface RowOptions {
   collapsedGroups: ReadonlySet<string>;
+  /** Tasks folded by hand (overrides the default). */
   collapsedTasks: ReadonlySet<string>;
+  /** Tasks unrolled by hand (overrides the default). */
+  expandedTasks?: ReadonlySet<string>;
+}
+
+/**
+ * Whether a row's subtasks are unrolled: a hand choice wins; otherwise top-level rows
+ * are, and deeper ones only with "Show subtasks".
+ */
+export function isRowExpanded(
+  id: string,
+  depth: number,
+  showSubtasks: boolean,
+  options: Pick<RowOptions, "collapsedTasks" | "expandedTasks">,
+): boolean {
+  if (options.collapsedTasks.has(id)) return false;
+  if (options.expandedTasks?.has(id)) return true;
+  return showSubtasks || depth === 0;
 }
 
 const DUE_BUCKETS: Group[] = [
@@ -334,8 +356,9 @@ function grouping(
 /**
  * Rows for the list view: grouped (status in workflow order by default), top-level tasks
  * sorted by the spec, each followed by its visible subtasks in manual order. A task whose
- * parent is not in the view is shown at the top level. Two levels are shown; deeper
- * subtasks live in the detail panel. Cancelled tasks only show when asked for.
+ * parent is not in the view is shown at the top level. Subtasks nest at any depth: a
+ * top-level row is unrolled by default, deeper ones when `show_subtasks` is on, and any
+ * row can be folded or unrolled by hand. Cancelled tasks only show when asked for.
  */
 export function buildRows(
   tasks: Iterable<Task>,
@@ -362,20 +385,29 @@ export function buildRows(
     else roots.set(key, [task]);
   }
 
-  const taskRow = (task: Task, depth: 0 | 1, shownChildren: Task[]): Row => {
+  const showSubtasks = query.show_subtasks ?? false;
+  const compare = comparator(query.sort, ctx);
+  const rows: Row[] = [];
+  // Depth first; `path` guards against a parent cycle in corrupt data.
+  const pushTree = (task: Task, depth: number, path: Set<string>) => {
     const kids = children.get(task.id) ?? [];
-    return {
+    const shownKids = kids.filter((c) => visible.has(c.id) && !path.has(c.id));
+    const expanded = isRowExpanded(task.id, depth, showSubtasks, options);
+    rows.push({
       type: "task",
       task,
       depth,
       childCount: kids.length,
       childDone: kids.filter((k) => !isOpen(k, ctx)).length,
-      visibleChildren: shownChildren.length,
-    };
+      visibleChildren: shownKids.length,
+      expanded,
+    });
+    if (!expanded) return;
+    path.add(task.id);
+    for (const child of shownKids) pushTree(child, depth + 1, path);
+    path.delete(task.id);
   };
 
-  const compare = comparator(query.sort, ctx);
-  const rows: Row[] = [];
   for (const group of groups(new Set(roots.keys()))) {
     const list = roots.get(group.key);
     if (!list?.length) continue;
@@ -383,14 +415,7 @@ export function buildRows(
     const collapsed = options.collapsedGroups.has(group.key);
     rows.push({ type: "group", group, count: list.length, collapsed });
     if (collapsed) continue;
-    for (const task of list) {
-      const kids = (children.get(task.id) ?? []).filter((c) => visible.has(c.id));
-      rows.push(taskRow(task, 0, kids));
-      if (options.collapsedTasks.has(task.id)) continue;
-      for (const child of kids) {
-        rows.push(taskRow(child, 1, []));
-      }
-    }
+    for (const task of list) pushTree(task, 0, new Set());
   }
   return rows;
 }

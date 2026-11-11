@@ -1,6 +1,6 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Popover } from "radix-ui";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookmarkIcon as Bookmark,
   ColumnsIcon as Columns3,
@@ -10,12 +10,13 @@ import {
   OptionsIcon as SlidersHorizontal,
 } from "../../components/TaskIcons";
 import { Button, cx, FOCUS, InlineInput, Select } from "../../components/ui";
-import { buildBoard } from "../../lib/board";
+import { buildBoard, type Lane, laneFields } from "../../lib/board";
 import { loadOpenInPanel, withDefaultProject } from "../../lib/capturePrefs";
 import { isoDate } from "../../lib/dates";
 import type { GroupBy, SortBy, Swimlane, TaskChange, View, ViewScope } from "../../lib/types";
 import { buildRows, filterIsEmpty, type ViewContext } from "../../lib/views";
 import {
+  createTask,
   createView,
   deleteView,
   type NewTaskInput,
@@ -39,6 +40,15 @@ function toggle(set: ReadonlySet<string>, id: string): Set<string> {
   const next = new Set(set);
   if (next.has(id)) next.delete(id);
   else next.add(id);
+  return next;
+}
+
+/** `set` with `id` in it or not; the same set when nothing changes. */
+function setMember(set: ReadonlySet<string>, id: string, member: boolean): ReadonlySet<string> {
+  if (set.has(id) === member) return set;
+  const next = new Set(set);
+  if (member) next.add(id);
+  else next.delete(id);
   return next;
 }
 
@@ -231,7 +241,9 @@ function ViewBody({
   const filtersShown = showFilters || !filterIsEmpty(display.filter);
 
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
+  // Subtasks folded or unrolled by hand in the list (over the default of the row's depth).
   const [collapsedTasks, setCollapsedTasks] = useState<ReadonlySet<string>>(new Set());
+  const [expandedTasks, setExpandedTasks] = useState<ReadonlySet<string>>(new Set());
   const today = isoDate();
   // Route components pass a fresh scope literal each render; key the memos on its content.
   const scopeKey = JSON.stringify(scope);
@@ -298,9 +310,16 @@ function ViewBody({
     () =>
       board
         ? []
-        : buildRows(visibleTasks, spec, ctx, statuses, { collapsedGroups, collapsedTasks }),
-    [board, visibleTasks, spec, ctx, statuses, collapsedGroups, collapsedTasks],
+        : buildRows(visibleTasks, spec, ctx, statuses, {
+            collapsedGroups,
+            collapsedTasks,
+            expandedTasks,
+          }),
+    [board, visibleTasks, spec, ctx, statuses, collapsedGroups, collapsedTasks, expandedTasks],
   );
+  // Read by the chevron's handler, which stays stable so memoized rows do not re-render.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
   const boardModel = useMemo(
     () => (board ? buildBoard(visibleTasks, spec, ctx, statuses, { projects, epics }) : null),
     [board, visibleTasks, spec, ctx, statuses, projects, epics],
@@ -308,6 +327,23 @@ function ViewBody({
   const lookups: CardLookups = useMemo(
     () => ({ statuses, projects, epics, tags, today, showProject }),
     [statuses, projects, epics, tags, today, showProject],
+  );
+  /** The "+" by a swimlane's name: the view's capture defaults, then the lane's field. */
+  const addToLane = useCallback(
+    (lane: Lane, title: string) => {
+      const input: Omit<NewTaskInput, "title"> = {
+        ...captureDefaults(stableScope, today),
+        ...laneFields(lane),
+      };
+      // An epic lane outside a project: the task goes to the epic's home project.
+      const home = input.epic_id ? epics[input.epic_id]?.project_id : null;
+      if (input.project_id === undefined && home) input.project_id = home;
+      void createTask(store, {
+        ...withDefaultProject(input, projects, stableScope.kind === "inbox"),
+        title,
+      });
+    },
+    [store, stableScope, today, epics, projects],
   );
   const taskCount = boardModel
     ? boardModel.columns.reduce((n, c) => n + c.count, 0)
@@ -322,7 +358,22 @@ function ViewBody({
     (id: string) => void navigate({ to: "/task/$taskId", params: { taskId: id }, search: {} }),
     [navigate],
   );
-  const onToggleCollapse = useCallback((id: string) => setCollapsedTasks((s) => toggle(s, id)), []);
+  const onToggleCollapse = useCallback((id: string) => {
+    const row = rowsRef.current.find((r) => r.type === "task" && r.task.id === id);
+    const expanded = row?.type === "task" && row.expanded;
+    // Folding an unrolled row, or unrolling a folded one.
+    setCollapsedTasks((s) => setMember(s, id, expanded));
+    setExpandedTasks((s) => setMember(s, id, !expanded));
+  }, []);
+  /** "Show subtasks" sets every row's default again, so hand choices are dropped. */
+  const setShowSubtasks = useCallback(
+    (show_subtasks: boolean) => {
+      setCollapsedTasks(new Set());
+      setExpandedTasks(new Set());
+      setDisplay({ show_subtasks });
+    },
+    [setDisplay],
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -383,15 +434,6 @@ function ViewBody({
                         options={SWIMLANES}
                       />
                     </DisplayRow>
-                    <label className="flex items-center justify-between gap-2 text-ink-2">
-                      Show subtasks
-                      <input
-                        type="checkbox"
-                        checked={display.show_subtasks}
-                        onChange={(e) => setDisplay({ show_subtasks: e.target.checked })}
-                        className="accent-accent"
-                      />
-                    </label>
                   </>
                 ) : (
                   <>
@@ -415,6 +457,22 @@ function ViewBody({
                     </DisplayRow>
                   </>
                 )}
+                <label
+                  className="flex items-center justify-between gap-2 text-ink-2"
+                  title={
+                    board
+                      ? "Subtasks at every level get their own cards"
+                      : "Unroll subtasks at every level"
+                  }
+                >
+                  Show subtasks
+                  <input
+                    type="checkbox"
+                    checked={display.show_subtasks}
+                    onChange={(e) => setShowSubtasks(e.target.checked)}
+                    className="accent-accent"
+                  />
+                </label>
                 <label className="flex items-center justify-between gap-2 text-ink-2">
                   Show cancelled
                   <input
@@ -551,6 +609,7 @@ function ViewBody({
           lookups={lookups}
           selectedId={selectedId ?? null}
           onOpen={openTask}
+          onAdd={addToLane}
         />
       ) : rows.length === 0 ? (
         <EmptyArt>
@@ -568,7 +627,6 @@ function ViewBody({
         <TaskList
           rows={rows}
           selectedId={selectedId ?? null}
-          collapsedTasks={collapsedTasks}
           onToggleGroup={(id) => setCollapsedGroups((s) => toggle(s, id))}
           onOpen={openTask}
           onOpenPage={onOpenPage}

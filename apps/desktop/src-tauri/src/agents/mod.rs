@@ -102,8 +102,26 @@ pub fn opening_prompt(brief: &str, instructions: &str) -> String {
     format!("{}\n\n## What to do\n\n{ask}\n", brief.trim_end())
 }
 
-/// Appended to Claude Code's system prompt for the whole session.
-pub fn session_rules(task_title: &str, task_id: &str, done_status: &str) -> String {
+/// Appended to Claude Code's system prompt for the whole session: the app's rules, then
+/// the user's standing directive for every agent (Settings → Agents), when any.
+pub fn session_rules(
+    task_title: &str,
+    task_id: &str,
+    done_status: &str,
+    directive: Option<&str>,
+) -> String {
+    let rules = app_rules(task_title, task_id, done_status);
+    match directive.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(directive) => format!(
+            "{rules}\n# The user's standing instructions\n\n\
+             The user set these for every agent session they start; follow them unless the \
+             task says otherwise.\n\n{directive}\n"
+        ),
+        None => rules,
+    }
+}
+
+fn app_rules(task_title: &str, task_id: &str, done_status: &str) -> String {
     format!(
         "You were started from task-master, the user's task manager, to work on the task \
          \"{task_title}\" (id `{task_id}`). Its context is in the first message; the \
@@ -723,7 +741,12 @@ pub fn agent_start(
     .agent_sessions
     .remove(0);
     let prompt = opening_prompt(&brief, &input.prompt);
-    let rules = session_rules(&title, &input.task_id, &done_status);
+    let rules = session_rules(
+        &title,
+        &input.task_id,
+        &done_status,
+        settings.directive.as_deref(),
+    );
     if let Err(message) = spawn_run(&app, &state, &session, false, prompt, Some(rules)) {
         fail(&state, &session.id, &message);
         return Err(invalid(message));
@@ -1806,7 +1829,7 @@ mod tests {
         )
         .unwrap();
         let rules = dir.join("rules.md");
-        std::fs::write(&rules, session_rules(&task.title, &task.id, "Review")).unwrap();
+        std::fs::write(&rules, session_rules(&task.title, &task.id, "Review", None)).unwrap();
         let settings = AgentSettings {
             model: Some("haiku".into()),
             ..AgentSettings::default()
@@ -1907,11 +1930,28 @@ mod tests {
         assert!(
             opening_prompt("# Task: X", "Only fix the tests").ends_with("Only fix the tests\n")
         );
-        let rules = session_rules("Fix sync", "0190-id", "To check");
+        let rules = session_rules("Fix sync", "0190-id", "To check", None);
         assert!(rules.contains("\"Fix sync\" (id `0190-id`)"));
         assert!(rules.contains("complete_session"));
         assert!(rules.contains("moves this task to To check"));
         assert!(rules.contains("mark each one done"), "{rules}");
+        assert!(!rules.contains("standing instructions"));
+        assert_eq!(
+            session_rules("Fix sync", "0190-id", "To check", Some("  \n ")),
+            rules
+        );
+        let directed = session_rules(
+            "Fix sync",
+            "0190-id",
+            "To check",
+            Some("\nAnswer in French.\nCommit on a branch.\n\n"),
+        );
+        let (head, tail) = directed.split_once("# The user's standing instructions").unwrap();
+        assert_eq!(head, format!("{rules}\n"));
+        assert!(
+            tail.ends_with("\n\nAnswer in French.\nCommit on a branch.\n"),
+            "{tail}"
+        );
         let picked: serde_json::Value =
             serde_json::from_str(&mcp_config("tm-mcp", "tm.sqlite", "s1", Some("st1"))).unwrap();
         assert_eq!(

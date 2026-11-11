@@ -282,26 +282,23 @@ function AddingTasks() {
         />
         Open a task added from a view's top row in the side panel, ready to describe
       </label>
-      <label className="flex items-center gap-2">
+      <div className="flex items-center gap-2">
         Default project
-        <select
+        <Select
           aria-label="Default project"
           value={projectId ?? ""}
-          onChange={(e) => {
-            const id = e.target.value || null;
+          onValueChange={(value) => {
+            const id = value || null;
             setProjectId(id);
             saveDefaultProject(id);
           }}
-          className="rounded border border-border bg-transparent px-2 py-1"
-        >
-          <option value="">Inbox (no project)</option>
-          {choices.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          className="w-56 border-line"
+          options={[
+            { value: "", label: "Inbox (no project)" },
+            ...choices.map((p) => ({ value: p.id, label: p.name, icon: <Dot color={p.color} /> })),
+          ]}
+        />
+      </div>
     </Section>
   );
 }

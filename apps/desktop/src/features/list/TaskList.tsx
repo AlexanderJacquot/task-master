@@ -8,7 +8,6 @@ import { type RowHandlers, type RowLookups, TaskRow } from "./TaskRow";
 interface Props extends RowHandlers, RowLookups {
   rows: Row[];
   selectedId: string | null;
-  collapsedTasks: ReadonlySet<string>;
   onToggleGroup(groupKey: string): void;
 }
 
@@ -16,7 +15,7 @@ const ROW_HEIGHT = 36;
 const GROUP_HEIGHT = 44;
 
 /** Virtualized rows: only what is on screen is rendered, however long the list. */
-export function TaskList({ rows, selectedId, collapsedTasks, onToggleGroup, ...rowProps }: Props) {
+export function TaskList({ rows, selectedId, onToggleGroup, ...rowProps }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -73,7 +72,7 @@ export function TaskList({ rows, selectedId, collapsedTasks, onToggleGroup, ...r
                   childCount={row.childCount}
                   childDone={row.childDone}
                   visibleChildren={row.visibleChildren}
-                  collapsed={collapsedTasks.has(row.task.id)}
+                  expanded={row.expanded}
                   selected={row.task.id === selectedId}
                 />
               )}

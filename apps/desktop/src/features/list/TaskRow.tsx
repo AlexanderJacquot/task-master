@@ -28,12 +28,21 @@ export interface RowLookups {
 
 interface Props extends RowHandlers, RowLookups {
   task: Task;
-  depth: 0 | 1;
+  depth: number;
   childCount: number;
   childDone: number;
   visibleChildren: number;
-  collapsed: boolean;
+  expanded: boolean;
   selected: boolean;
+}
+
+/** Levels of indentation drawn; deeper subtasks line up with the last one. */
+const MAX_INDENT = 8;
+
+/** Each level steps in by the chevron and the check: a subtask's chevron sits under its
+ * parent's title. */
+function indent(depth: number): string {
+  return `${0.5 + Math.min(depth, MAX_INDENT) * 2.4}rem`;
 }
 
 /** One task line. Memoized: re-renders only when its task (or the lookups) change. */
@@ -54,19 +63,20 @@ export const TaskRow = memo(function TaskRow(p: Props) {
         "group mx-6 flex h-[34px] items-center gap-3 rounded-[9px] pr-2 transition-colors",
         p.selected ? "bg-selected" : "hover:bg-hover",
       )}
-      style={{ paddingLeft: p.depth ? "2.9rem" : "0.5rem" }}
+      style={{ paddingLeft: indent(p.depth) }}
       data-testid="task-row"
     >
       <button
         type="button"
-        aria-label={p.collapsed ? "Expand subtasks" : "Collapse subtasks"}
+        aria-label={p.expanded ? "Collapse subtasks" : "Expand subtasks"}
+        aria-expanded={p.expanded}
         onClick={() => p.onToggleCollapse(task.id)}
         className={cx(
           "-mr-1.5 flex w-4 shrink-0 justify-center text-ink-3 hover:text-ink",
-          (p.depth || !p.visibleChildren) && "invisible",
+          !p.visibleChildren && "invisible",
         )}
       >
-        {p.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+        {p.expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
       </button>
       <TaskCheck
         checked={done}
