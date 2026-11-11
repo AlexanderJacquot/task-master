@@ -122,9 +122,10 @@ export const PERMISSION_MODES: Array<{ value: string; label: string; hint: strin
   },
 ];
 
-/** `$0.0045`, `$1.20`. */
-export function formatCost(micros: number | null): string | null {
-  if (micros === null) return null;
+/** `$0.0045`, `$1.20`, `$0.00`. */
+export function formatCost(micros: number | null | undefined): string | null {
+  if (micros === null || micros === undefined) return null;
+  if (micros === 0) return "$0.00";
   const dollars = micros / 1_000_000;
   return `$${dollars < 0.1 ? dollars.toFixed(4) : dollars.toFixed(2)}`;
 }

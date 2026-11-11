@@ -47,6 +47,7 @@ export type {
   SessionState,
   Snapshot_Serialize as Snapshot,
   SortBy,
+  SpendLimits_Serialize as SpendLimits,
   Status_Serialize as Status,
   StatusCategory,
   StatusChange_Deserialize as StatusChange,

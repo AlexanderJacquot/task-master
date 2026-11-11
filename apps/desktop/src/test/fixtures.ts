@@ -191,6 +191,7 @@ export function agentSession(overrides: Partial<AgentSession> = {}): AgentSessio
     summary: null,
     cost_usd_micros: null,
     turns: null,
+    duration_ms: null,
     error: null,
     created_at: counter,
     updated_at: counter,

@@ -40,6 +40,11 @@ in the same space without cluttering the user's views. Decided with the user:
   `DeleteAgentSession` and sync, so other devices see the history, but the commands refuse
   a session whose `device_id` is not this device's. Cost is stored in millionths of a
   dollar (an integer, so entities stay `Eq` and exact).
+- `duration_ms` (migration 0013): how long the agent worked, the sum of Claude Code's
+  `duration_ms` over a session's runs, added like cost and turns. Not `ended_at -
+  started_at`, which counts the idle time between follow-ups. A device on an older version
+  refuses synced ops that write this column (as with `model`, 0012), so update every
+  device together.
 - **Sessions stay out of the undo stack**: the shell writes start, progress and end with
   `Store::execute_without_undo`, so Ctrl+Z still reaches the user's last edit. Removing a
   finished session is the user's action and goes through `execute` (undoable).
@@ -244,6 +249,17 @@ in the same space without cluttering the user's views. Decided with the user:
   tasks" list grouped by the user's task they serve. Capped instead of virtualized (the
   latest 50 ended sessions, the 100 most recently updated agent tasks, with a note when
   more exist); each task's page keeps its full session history.
+- The Agents page filters by project and period (today, this week from Monday, this month,
+  all time; kept in localStorage) and shows spend, agent time, sessions and turns, a
+  by-project table, and a meter per spend limit. A session's cost and time are running
+  totals, so the whole session counts in the period it was last active (`updated_at`).
+- **Spend limits** (`AgentSettings.limits`: per day, week, month, in USD micros) live in
+  `config.json` like the other agent settings, so each device has its own, but they are
+  measured against every device's sessions. They are soft: Send to agent shows what was
+  spent and asks "Start anyway" once one is used up; nothing stops a running session, as
+  cost is only known when a run ends. Claude subscription usage (the 5-hour and weekly
+  windows) is not shown: Claude Code reports it only as `rate_limit_event` lines, which
+  the stream parser ignores for now.
 - Views get `owner` in `ViewSpec` (default `me`); a toggle "Show agent tasks" in the view
   options. Agent subtasks of the user's tasks are counted but collapsed, with an agent mark.
 - Settings → Agents: runtime (`wsl` + distro picked from `wsl.exe -l -q`, or `native`),

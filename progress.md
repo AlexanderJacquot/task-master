@@ -56,6 +56,18 @@ place. `features/lineage/saved.ts` (unit tests), `LineageCanvas` takes `layout`,
 in `LineagePage.test.tsx`. **Not compiled or tested yet** (the agent session could not run
 cargo or pnpm): regenerate `bindings.ts` (`cargo test -p taskmaster-desktop export_bindings`,
 or the full `cargo test`), then clippy, `pnpm biome check`, `pnpm test`.
+**Agents page: cost, time and spend limits** (2026-11-11, branch `worktree-agents-tab-revamp`,
+not merged): the Agents page filters by project and period (Today, This week, This month,
+All time; kept in localStorage) and shows tiles for spend, agent time, sessions and turns,
+a by-project table (click a project to focus it), and a meter per spend limit with what is
+left. Sessions record how long the agent worked (`agent_sessions.duration_ms`, migration
+0013, summed from Claude Code's per-run `duration_ms` like cost). Settings → Agents has
+spend limits per day/week/month (`AgentSettings.limits`, config.json); Send to agent asks
+"Start anyway" once one is spent. ADR 017 amended. Helpers in `features/agents/usage.ts`
+(unit tests), app tests in `agents.test.tsx` and `agentSettings.test.tsx`, Rust tests in
+core `tests/agents.rs`, `agents/mod.rs`, `agents/stream.rs`, `config.rs`.
+**Not run yet**: the session could not run cargo or pnpm, so `bindings.ts` is not
+regenerated (`cargo test` does it) and no check has run (clippy, cargo test, biome, pnpm test).
 
 **task-master in your own Claude** (2026-11-11, on `main`, released in 0.15.0): `task-master-mcp`
 needs no `--db` any more: it opens `$TASK_MASTER_DB`, else the app's database on this
@@ -1713,6 +1725,10 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 3. Then Phase 2 (folder workspaces and the `tk` CLI on the same core and parser).
 
 ## Later
+
+- Agents page: Claude subscription usage (5-hour and weekly windows) from Claude Code's
+  `rate_limit_event` stream lines (capture a real one first; the shape is not in the
+  fixture); a daily spend chart; split a long session's cost across the days it ran.
 
 - MCP for your own Claude (docs/mcp.md, Later): an opt-in flag so Claude creates tasks
   owned by the user (ADR 017 rule change, decide first); a remote MCP endpoint on the

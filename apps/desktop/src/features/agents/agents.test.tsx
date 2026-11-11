@@ -9,6 +9,7 @@ import { StoreProvider } from "../../store/context";
 import { createTaskStore } from "../../store/store";
 import { fakeAgents } from "../../test/fakeAgents";
 import { agentSession, fakeParse, project, snapshot, task } from "../../test/fixtures";
+import { pickOption } from "../../test/select";
 import { RESUME_MESSAGE } from "./sessions";
 
 const none = (): Changes => ({
@@ -194,7 +195,12 @@ it("lists sessions and the agents' tasks under the user's task they serve", asyn
   const step = task({ title: "Bump versions", parent_id: mine.id, owner: "agent" });
   const deeper = task({ title: "Check the changelog", parent_id: step.id, owner: "agent" });
   const running = agentSession({ task_id: mine.id, state: "running", ended_at: null });
-  const failed = agentSession({ task_id: mine.id, state: "failed", error: "claude not found" });
+  const failed = agentSession({
+    task_id: mine.id,
+    state: "failed",
+    error: "claude not found",
+    updated_at: Date.now(),
+  });
   const { executed } = await renderAt("/agents", {
     tasks: [mine, step, deeper],
     agent_sessions: [running, failed],
@@ -246,4 +252,82 @@ it("resumes an interrupted session and ends one left in a terminal", async () =>
   ]);
   expect(second.store.getState().agent_sessions[terminal.id]?.state).toBe("done");
   expect(executed).toEqual([]);
+});
+
+const NO_LIMITS = { day_usd_micros: null, week_usd_micros: null, month_usd_micros: null };
+
+it("totals cost and agent time by project and period, and shows what limits leave", async () => {
+  const app = project({ id: "p1", name: "App" });
+  const site = project({ id: "p2", name: "Site" });
+  const a = task({ title: "Fix the login", project_id: app.id });
+  const b = task({ title: "New landing page", project_id: site.id });
+  const now = Date.now();
+  const sessions = [
+    agentSession({
+      task_id: a.id,
+      updated_at: now,
+      cost_usd_micros: 3_000_000,
+      duration_ms: 10 * 60_000,
+      summary: "Login fixed",
+    }),
+    agentSession({
+      task_id: b.id,
+      updated_at: now,
+      cost_usd_micros: 1_000_000,
+      duration_ms: 5 * 60_000,
+      summary: "Page drafted",
+    }),
+    // Long ago: outside This month, inside All time.
+    agentSession({ task_id: a.id, updated_at: 1, cost_usd_micros: 6_000_000, summary: "Old run" }),
+  ];
+  await renderAt(
+    "/agents",
+    { tasks: [a, b], projects: [app, site], agent_sessions: sessions },
+    { settings: { limits: { ...NO_LIMITS, month_usd_micros: 10_000_000 } } },
+  );
+
+  const usage = await screen.findByRole("region", { name: "Usage" });
+  expect(usage.textContent).toContain("$4.00");
+  expect(usage.textContent).toContain("15 min");
+  const limits = screen.getByRole("region", { name: "Spend limits" });
+  await waitFor(() => expect(limits.textContent).toContain("$6.00 left"));
+  const byProject = screen.getByRole("region", { name: "By project" });
+  expect(within(byProject).getAllByRole("row")[1]?.textContent).toContain("App");
+
+  // Focusing a project from its row filters the totals and the sessions.
+  fireEvent.click(within(byProject).getByRole("button", { name: "App" }));
+  await waitFor(() => expect(usage.textContent).toContain("$3.00"));
+  expect(screen.queryByRole("region", { name: "By project" })).toBeNull();
+  const recent = screen.getByRole("region", { name: "Recent sessions" });
+  expect(within(recent).queryByText("Page drafted")).toBeNull();
+  expect(within(recent).queryByText("Old run")).toBeNull();
+
+  await pickOption("Period", "All time");
+  await waitFor(() => expect(usage.textContent).toContain("$9.00"));
+  expect(within(recent).getByText("Old run")).toBeTruthy();
+  // The limits count every project, whatever the filter.
+  expect(limits.textContent).toContain("$6.00 left");
+});
+
+it("asks before starting once a spend limit is used up", async () => {
+  const t = task();
+  const spent = agentSession({
+    task_id: t.id,
+    folder: "/work/repo",
+    updated_at: Date.now(),
+    cost_usd_micros: 2_500_000,
+  });
+  await renderAt(
+    `/task/${t.id}`,
+    { tasks: [t], agent_sessions: [spent] },
+    { settings: { limits: { ...NO_LIMITS, day_usd_micros: 2_000_000 } } },
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Send to agent" }));
+  const dialog = await screen.findByRole("dialog");
+  const warning = await within(dialog).findByText(/spent today, over/);
+  expect(warning.textContent).toBe("$2.50 spent today, over the $2.00 limit.");
+  const start = within(dialog).getByRole("button", { name: "Start" });
+  expect(start).toHaveProperty("disabled", true);
+  fireEvent.click(within(dialog).getByLabelText("Start anyway"));
+  expect(start).toHaveProperty("disabled", false);
 });

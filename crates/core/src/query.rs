@@ -30,7 +30,8 @@ const TIME_BLOCK_COLS: &str =
 
 const SESSION_COLS: &str = "s.id, s.task_id, s.device_id, s.claude_session_id, s.folder, \
     s.runtime, s.permission_mode, s.prompt, s.state, s.started_at, s.ended_at, s.summary, \
-    s.cost_usd_micros, s.turns, s.error, s.created_at, s.updated_at, s.deleted_at, s.model";
+    s.cost_usd_micros, s.turns, s.error, s.created_at, s.updated_at, s.deleted_at, s.model, \
+    s.duration_ms";
 
 const NOTE_COLS: &str =
     "n.id, n.session_id, n.task_id, n.body, n.created_at, n.updated_at, n.deleted_at";
@@ -183,6 +184,7 @@ fn session_row(r: &Row<'_>) -> rusqlite::Result<AgentSession> {
         updated_at: r.get(16)?,
         deleted_at: r.get(17)?,
         model: r.get(18)?,
+        duration_ms: r.get(19)?,
     })
 }
 

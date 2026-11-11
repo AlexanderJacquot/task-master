@@ -82,6 +82,34 @@ pub struct AgentSettings {
     /// session's system prompt after the app's own rules; none when `None`.
     #[serde(default)]
     pub directive: Option<String>,
+    /// Spending the user allows agents, shown against what they cost on the Agents page;
+    /// "Send to agent" asks before going over one.
+    #[serde(default)]
+    pub limits: SpendLimits,
+}
+
+/// Spend limits in millionths of a dollar, over all devices' sessions; none when `None`.
+/// A day, week (from Monday) and month are the user's local calendar periods.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct SpendLimits {
+    #[serde(default)]
+    pub day_usd_micros: Option<i64>,
+    #[serde(default)]
+    pub week_usd_micros: Option<i64>,
+    #[serde(default)]
+    pub month_usd_micros: Option<i64>,
+}
+
+impl SpendLimits {
+    /// A zero or negative limit means none.
+    fn normalized(self) -> Self {
+        let positive = |v: Option<i64>| v.filter(|m| *m > 0);
+        Self {
+            day_usd_micros: positive(self.day_usd_micros),
+            week_usd_micros: positive(self.week_usd_micros),
+            month_usd_micros: positive(self.month_usd_micros),
+        }
+    }
 }
 
 fn default_claude() -> String {
@@ -104,6 +132,7 @@ impl Default for AgentSettings {
             started_status_id: None,
             done_status_id: None,
             directive: None,
+            limits: SpendLimits::default(),
         }
     }
 }
@@ -127,6 +156,7 @@ impl AgentSettings {
         self.started_status_id = blank_to_none(self.started_status_id);
         self.done_status_id = blank_to_none(self.done_status_id);
         self.directive = blank_to_none(self.directive);
+        self.limits = self.limits.normalized();
         self.claude_path = self.claude_path.trim().to_owned();
         if self.claude_path.is_empty() {
             self.claude_path = default_claude();
@@ -377,6 +407,30 @@ mod tests {
     }
 
     #[test]
+    fn spend_limits_of_zero_or_less_mean_none() {
+        let settings = AgentSettings {
+            limits: SpendLimits {
+                day_usd_micros: Some(0),
+                week_usd_micros: Some(-5),
+                month_usd_micros: Some(20_000_000),
+            },
+            ..AgentSettings::default()
+        }
+        .normalized()
+        .unwrap();
+        assert_eq!(
+            settings.limits,
+            SpendLimits {
+                month_usd_micros: Some(20_000_000),
+                ..SpendLimits::default()
+            }
+        );
+        // Settings saved before limits existed still load.
+        let old: AgentSettings = serde_json::from_str(r#"{"runtime":"native"}"#).unwrap();
+        assert_eq!(old.limits, SpendLimits::default());
+    }
+
+    #[test]
     fn config_roundtrips_through_its_file() {
         let dir = std::env::temp_dir().join(format!("tm-config-{}", taskmaster_core::new_id()));
         let path = dir.join("config.json");
@@ -390,6 +444,10 @@ mod tests {
                 runtime: taskmaster_core::AgentRuntime::Wsl,
                 wsl_distro: Some("Ubuntu".into()),
                 directive: Some("Reply in French.\nRun the tests.".into()),
+                limits: SpendLimits {
+                    month_usd_micros: Some(50_000_000),
+                    ..SpendLimits::default()
+                },
                 ..AgentSettings::default()
             },
             data_dir: Some(dir.join("data")),

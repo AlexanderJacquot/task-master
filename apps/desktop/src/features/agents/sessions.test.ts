@@ -82,6 +82,7 @@ describe("where a new session starts", () => {
 describe("formatting", () => {
   it("formats cost, duration and folder names", () => {
     expect(formatCost(null)).toBeNull();
+    expect(formatCost(0)).toBe("$0.00");
     expect(formatCost(4_500)).toBe("$0.0045");
     expect(formatCost(1_200_000)).toBe("$1.20");
     expect(formatDuration(44_600)).toBe("45 s");
