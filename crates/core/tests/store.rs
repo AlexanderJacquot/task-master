@@ -1128,7 +1128,7 @@ fn view_commands_roundtrip_and_keep_the_spec_exactly() {
             id: view.id.clone(),
             changes: vec![
                 ViewChange::Name("Homelab list".into()),
-                ViewChange::Spec(list.clone()),
+                ViewChange::Spec(Box::new(list.clone())),
             ],
         },
     );
@@ -1292,7 +1292,7 @@ fn lineage_views_keep_their_layout_and_are_validated() {
         &mut s,
         Command::UpdateView {
             id: view.id.clone(),
-            changes: vec![ViewChange::Spec(moved.clone())],
+            changes: vec![ViewChange::Spec(Box::new(moved.clone()))],
         },
     );
     assert_eq!(s.snapshot().unwrap().views[0].spec, moved);

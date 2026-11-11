@@ -343,7 +343,7 @@ pub struct NewView {
 #[serde(rename_all = "snake_case")]
 pub enum ViewChange {
     Name(String),
-    Spec(ViewSpec),
+    Spec(Box<ViewSpec>),
     Rank(String),
 }
 

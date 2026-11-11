@@ -261,8 +261,8 @@ export function SendToAgentDialog({
             <div className="flex flex-col gap-1 rounded-lg bg-rubric/10 px-3 py-2 text-xs">
               {spent.map((l) => (
                 <p key={l.period} className="text-ink">
-                  {formatCost(l.spentMicros)} spent {PERIOD_LABEL[l.period].toLowerCase()}, over
-                  the {formatCost(l.limitMicros)} limit.
+                  {formatCost(l.spentMicros)} spent {PERIOD_LABEL[l.period].toLowerCase()}, over the{" "}
+                  {formatCost(l.limitMicros)} limit.
                 </p>
               ))}
               <label className="flex items-center gap-2 text-ink-2">

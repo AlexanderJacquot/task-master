@@ -433,11 +433,15 @@ describe("multi-select", () => {
     fireEvent.click(row("Alpha"), { ctrlKey: true });
     await screen.findByRole("toolbar", { name: "Selected tasks" });
     fireEvent.keyDown(document.body, { key: "Escape" });
-    await waitFor(() => expect(screen.queryByRole("toolbar", { name: "Selected tasks" })).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("toolbar", { name: "Selected tasks" })).toBeNull(),
+    );
 
     fireEvent.click(row("Alpha"), { ctrlKey: true });
     fireEvent.click(row("Bravo"));
-    await waitFor(() => expect(screen.queryByRole("toolbar", { name: "Selected tasks" })).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("toolbar", { name: "Selected tasks" })).toBeNull(),
+    );
     expect(await screen.findByRole("complementary", { name: "Task details" })).toBeTruthy();
   });
 

@@ -64,7 +64,7 @@ function setMember(set: ReadonlySet<string>, id: string, member: boolean): Reado
 /** Keys pressed inside these belong to them (Esc closes the menu, not the selection). */
 const MENUS_AND_DIALOGS = "[role=menu],[role=listbox],[role=dialog]";
 
-const SWIMLANES:Array<{ value: Swimlane; label: string }> = [
+const SWIMLANES: Array<{ value: Swimlane; label: string }> = [
   { value: "none", label: "No swimlanes" },
   { value: "project", label: "Lanes by project" },
   { value: "epic", label: "Lanes by epic" },

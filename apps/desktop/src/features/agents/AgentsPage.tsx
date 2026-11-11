@@ -318,6 +318,7 @@ function Limits({ meters }: { meters: LimitStatus[] }) {
                     {formatCost(m.spentMicros)} of {formatCost(m.limitMicros)}
                   </span>
                 </div>
+                {/* biome-ignore lint/a11y/useSemanticElements: a styled bar; a native meter cannot take the theme's fill colors in every WebView */}
                 <div
                   role="meter"
                   aria-label={`${LIMIT_NAME[m.period]} spend`}

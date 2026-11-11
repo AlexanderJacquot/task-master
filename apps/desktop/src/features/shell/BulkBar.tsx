@@ -37,7 +37,7 @@ interface Choice {
 /** The radio value when the picked tasks differ: matches no choice, so none is checked. */
 const MIXED = "\u0000mixed";
 
-const byRank =<T extends { rank: string }>(a: T, b: T) =>
+const byRank = <T extends { rank: string }>(a: T, b: T) =>
   a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : 0;
 
 /** A bar button opening a list of values; the one every picked task shares is checked. */

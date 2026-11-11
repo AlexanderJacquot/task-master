@@ -554,9 +554,7 @@ it("links a card dragged onto the side panel to the selected task", async () => 
     fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 900, clientY: 300 });
     await waitFor(() => expect(store.getState().tasks[notes.id]?.parent_id).toBe(release.id));
     await waitFor(() => expect(store.getState().pending).toBe(0));
-    expect(commands.at(-1)).toEqual([
-      { type: "set_parent", id: notes.id, parent_id: release.id },
-    ]);
+    expect(commands.at(-1)).toEqual([{ type: "set_parent", id: notes.id, parent_id: release.id }]);
     // The card went back where the drag started; the overlay is gone.
     expect(node.style.left).toBe("450px");
     expect(screen.queryByRole("region", { name: "Drop to link" })).toBeNull();

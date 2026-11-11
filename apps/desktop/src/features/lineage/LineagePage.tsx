@@ -636,11 +636,7 @@ export function LineagePage({
           {focus && (
             <span className="flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 py-1 pr-1 pl-3 text-sm text-ink">
               <span className="max-w-64 truncate">Lineage of “{focus.title}”</span>
-              <IconButton
-                label="Show all tasks"
-                className="size-6"
-                onClick={() => focusOn(null)}
-              >
+              <IconButton label="Show all tasks" className="size-6" onClick={() => focusOn(null)}>
                 <X size={13} />
               </IconButton>
             </span>
@@ -965,7 +961,9 @@ function DropOverlay({
         <p className="m-auto text-center text-sm text-ink-3">{message}</p>
       ) : (
         <>
-          <p className="text-sm text-ink-2">Link “{dragged?.title}” to “{current.title}” as:</p>
+          <p className="text-sm text-ink-2">
+            Link “{dragged?.title}” to “{current.title}” as:
+          </p>
           {DROP_ZONES.map(({ zone, label, hint }) => {
             const allowed = canDrop(zone);
             return (

@@ -242,9 +242,9 @@ export type AgentSession = AgentSession_Serialize | AgentSession_Deserialize;
 
 export type AgentSessionChange = AgentSessionChange_Serialize | AgentSessionChange_Deserialize;
 
-export type AgentSessionChange_Deserialize = ({ state: SessionState }) & { cost_usd_micros?: never; error?: never; summary?: never; turns?: never } | ({ summary?: string | null }) & { cost_usd_micros?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros?: number | null }) & { error?: never; state?: never; summary?: never; turns?: never } | ({ turns?: number | null }) & { cost_usd_micros?: never; error?: never; state?: never; summary?: never } | ({ error?: string | null }) & { cost_usd_micros?: never; state?: never; summary?: never; turns?: never };
+export type AgentSessionChange_Deserialize = ({ state: SessionState }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; summary?: never; turns?: never } | ({ summary?: string | null }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros?: number | null }) & { duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ turns?: number | null }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never } | ({ duration_ms?: number | null }) & { cost_usd_micros?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ error?: string | null }) & { cost_usd_micros?: never; duration_ms?: never; state?: never; summary?: never; turns?: never };
 
-export type AgentSessionChange_Serialize = ({ state: SessionState }) & { cost_usd_micros?: never; error?: never; summary?: never; turns?: never } | ({ summary: string | null }) & { cost_usd_micros?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros: number | null }) & { error?: never; state?: never; summary?: never; turns?: never } | ({ turns: number | null }) & { cost_usd_micros?: never; error?: never; state?: never; summary?: never } | ({ error: string | null }) & { cost_usd_micros?: never; state?: never; summary?: never; turns?: never };
+export type AgentSessionChange_Serialize = ({ state: SessionState }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; summary?: never; turns?: never } | ({ summary: string | null }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros: number | null }) & { duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ turns: number | null }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never } | ({ duration_ms: number | null }) & { cost_usd_micros?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ error: string | null }) & { cost_usd_micros?: never; duration_ms?: never; state?: never; summary?: never; turns?: never };
 
 /**  A Claude Code run started from a task (docs/adr/017). */
 export type AgentSession_Deserialize = {
@@ -272,6 +272,11 @@ export type AgentSession_Deserialize = {
 	/**  Total cost reported by Claude Code, in millionths of a dollar. */
 	cost_usd_micros?: number | null,
 	turns?: number | null,
+	/**
+	 *  How long the agent worked, summed over its runs, in ms. Not start to end: a session
+	 *  can sit idle between follow-ups.
+	 */
+	duration_ms?: number | null,
 	error?: string | null,
 	created_at: number,
 	updated_at: number,
@@ -304,6 +309,11 @@ export type AgentSession_Serialize = {
 	/**  Total cost reported by Claude Code, in millionths of a dollar. */
 	cost_usd_micros: number | null,
 	turns: number | null,
+	/**
+	 *  How long the agent worked, summed over its runs, in ms. Not start to end: a session
+	 *  can sit idle between follow-ups.
+	 */
+	duration_ms: number | null,
 	error: string | null,
 	created_at: number,
 	updated_at: number,
@@ -341,6 +351,11 @@ export type AgentSettings_Deserialize = {
 	 *  session's system prompt after the app's own rules; none when `None`.
 	 */
 	directive?: string | null,
+	/**
+	 *  Spending the user allows agents, shown against what they cost on the Agents page;
+	 *  "Send to agent" asks before going over one.
+	 */
+	limits?: SpendLimits_Deserialize,
 };
 
 /**  How this device runs Claude Code for agent sessions (ADR 017). */
@@ -371,6 +386,11 @@ export type AgentSettings_Serialize = {
 	 *  session's system prompt after the app's own rules; none when `None`.
 	 */
 	directive: string | null,
+	/**
+	 *  Spending the user allows agents, shown against what they cost on the Agents page;
+	 *  "Send to agent" asks before going over one.
+	 */
+	limits: SpendLimits_Serialize,
 };
 
 /**  What "Send to agent" sends. */
@@ -605,6 +625,12 @@ export type CalendarSynced_Deserialize = CalendarStatus_Deserialize;
 
 /**  Sent when a sync starts and ends, so views re-read events and status. */
 export type CalendarSynced_Serialize = CalendarStatus_Serialize;
+
+/**  A point on the Lineage canvas, in whole pixels. */
+export type CanvasPoint = {
+	x: number,
+	y: number,
+};
 
 /**
  *  A parsed line with its names resolved, ready for the UI to preview and turn into
@@ -943,7 +969,85 @@ export type JoinMode =
 /**  Back up this device's data, empty it, then take the server's. */
 "replace";
 
+export type LaneKeys = LaneKeys_Serialize | LaneKeys_Deserialize;
+
+export type LaneKeys_Deserialize = {
+	epic?: string[],
+	project?: string[],
+};
+
+export type LaneKeys_Serialize = {
+	epic: string[],
+	project: string[],
+};
+
+export type LanePositions = LanePositions_Serialize | LanePositions_Deserialize;
+
+export type LanePositions_Deserialize = {
+	epic?: { [key in string]: CanvasPoint },
+	project?: { [key in string]: CanvasPoint },
+};
+
+export type LanePositions_Serialize = {
+	epic: { [key in string]: CanvasPoint },
+	project: { [key in string]: CanvasPoint },
+};
+
 export type Layout = "list" | "board";
+
+export type LineageArrange = "free" | "epic" | "project";
+
+export type LineageCompletion = "all" | "open" | 
+/**  Open and not blocked by an open prerequisite. */
+"ready";
+
+/**
+ *  A saved Lineage canvas: the filters the page has beyond [`ViewFilter`], and where the
+ *  cards sit. The cards themselves are whatever the filters match when it opens.
+ */
+export type LineageSpec = LineageSpec_Serialize | LineageSpec_Deserialize;
+
+/**
+ *  A saved Lineage canvas: the filters the page has beyond [`ViewFilter`], and where the
+ *  cards sit. The cards themselves are whatever the filters match when it opens.
+ */
+export type LineageSpec_Deserialize = {
+	/**  Only this task's lineage (its prerequisites and dependents, all the way). */
+	around?: string | null,
+	completion?: LineageCompletion,
+	/**  Only tasks with at least one link. */
+	linked_only?: boolean,
+	arrange?: LineageArrange,
+	/**  Freeform card positions by task id, in canvas pixels. */
+	positions?: { [key in string]: CanvasPoint },
+	/**  Positions inside a lane (y from the lane's top), per arrangement. */
+	lanes?: LanePositions_Deserialize,
+	/**  Cards that stay put: no dragging, and "Arrange" leaves them alone. */
+	pinned?: string[],
+	/**  Folded lanes (epic or project ids, or [`FILTER_NONE`]), per arrangement. */
+	collapsed?: LaneKeys_Deserialize,
+};
+
+/**
+ *  A saved Lineage canvas: the filters the page has beyond [`ViewFilter`], and where the
+ *  cards sit. The cards themselves are whatever the filters match when it opens.
+ */
+export type LineageSpec_Serialize = {
+	/**  Only this task's lineage (its prerequisites and dependents, all the way). */
+	around: string | null,
+	completion: LineageCompletion,
+	/**  Only tasks with at least one link. */
+	linked_only: boolean,
+	arrange: LineageArrange,
+	/**  Freeform card positions by task id, in canvas pixels. */
+	positions: { [key in string]: CanvasPoint },
+	/**  Positions inside a lane (y from the lane's top), per arrangement. */
+	lanes: LanePositions_Serialize,
+	/**  Cards that stay put: no dragging, and "Arrange" leaves them alone. */
+	pinned: string[],
+	/**  Folded lanes (epic or project ids, or [`FILTER_NONE`]), per arrangement. */
+	collapsed: LaneKeys_Serialize,
+};
 
 /**  A name from the line and the live entity it matched, if any. */
 export type NameMatch = NameMatch_Serialize | NameMatch_Deserialize;
@@ -1358,6 +1462,32 @@ export type SortBy =
 /**  Today, overdue, priority, due date, then manual rank. */
 "default" | "manual" | "due" | "priority" | "created" | "updated";
 
+/**
+ *  Spend limits in millionths of a dollar, over all devices' sessions; none when `None`.
+ *  A day, week (from Monday) and month are the user's local calendar periods.
+ */
+export type SpendLimits = SpendLimits_Serialize | SpendLimits_Deserialize;
+
+/**
+ *  Spend limits in millionths of a dollar, over all devices' sessions; none when `None`.
+ *  A day, week (from Monday) and month are the user's local calendar periods.
+ */
+export type SpendLimits_Deserialize = {
+	day_usd_micros?: number | null,
+	week_usd_micros?: number | null,
+	month_usd_micros?: number | null,
+};
+
+/**
+ *  Spend limits in millionths of a dollar, over all devices' sessions; none when `None`.
+ *  A day, week (from Monday) and month are the user's local calendar periods.
+ */
+export type SpendLimits_Serialize = {
+	day_usd_micros: number | null,
+	week_usd_micros: number | null,
+	month_usd_micros: number | null,
+};
+
 /**  A workflow column. */
 export type Status = Status_Serialize | Status_Deserialize;
 
@@ -1706,6 +1836,12 @@ export type ViewSpec_Deserialize = {
 	show_cancelled?: boolean,
 	/**  Agents' own tasks (ADR 017) are hidden unless set. */
 	show_agent_tasks?: boolean,
+	/**
+	 *  Set for a saved Lineage canvas (ADR 022): it opens on the Lineage page instead of a
+	 *  list or board. Its project, epic and tag filters are `filter`'s (one project at
+	 *  most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
+	 */
+	lineage?: LineageSpec_Deserialize | null,
 };
 
 /**
@@ -1724,6 +1860,12 @@ export type ViewSpec_Serialize = {
 	show_cancelled: boolean,
 	/**  Agents' own tasks (ADR 017) are hidden unless set. */
 	show_agent_tasks: boolean,
+	/**
+	 *  Set for a saved Lineage canvas (ADR 022): it opens on the Lineage page instead of a
+	 *  list or board. Its project, epic and tag filters are `filter`'s (one project at
+	 *  most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
+	 */
+	lineage: LineageSpec_Serialize | null,
 };
 
 /**  A saved board or list: a name plus a [`ViewSpec`]. */

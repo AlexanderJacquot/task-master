@@ -104,15 +104,7 @@ function sameOrder(a: string[] | undefined, b: string[] | undefined): boolean {
  * card moves to the previous or next column with `Alt+←/→`. Columns can be collapsed to a
  * strip (still a drop target) and resized; a wide column lays its cards out side by side.
  */
-export function BoardView({
-  board,
-  selectedId,
-  picked,
-  onOpen,
-  onPick,
-  onAdd,
-  lookups,
-}: Props) {
+export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lookups }: Props) {
   const store = useTaskStore();
   const [available, setAvailable] = useState(0);
   const columns = useBoardColumns({

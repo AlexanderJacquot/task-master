@@ -573,7 +573,8 @@ export function LineageCanvas({
           // Taken outside the canvas (the side panel): the card goes back where it was.
           dragPoint.current = null;
           setDragOverride(null);
-          if (!lanesMode) updatePositions({ ...positionsRef.current, [active.id]: active.position });
+          if (!lanesMode)
+            updatePositions({ ...positionsRef.current, [active.id]: active.position });
         } else if (lanesMode) dropInLane(active.id);
       }
       persist();

@@ -251,7 +251,11 @@ it("resumes an interrupted session and ends one left in a terminal", async () =>
     { type: "update_agent_session", id: terminal.id, changes: [{ state: "done" }] },
   ]);
   expect(second.store.getState().agent_sessions[terminal.id]?.state).toBe("done");
-  expect(executed).toEqual([]);
+  // Resuming started the work timer, which moved the to-do task to in progress.
+  await waitFor(() => expect(executed.length).toBe(1));
+  expect(executed[0]).toMatchObject([
+    { type: "update_task", id: t.id, changes: [{ status_id: expect.any(String) }] },
+  ]);
 });
 
 const NO_LIMITS = { day_usd_micros: null, week_usd_micros: null, month_usd_micros: null };
