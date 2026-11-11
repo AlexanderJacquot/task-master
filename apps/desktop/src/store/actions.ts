@@ -4,6 +4,7 @@
 import { ranksForDrop } from "../lib/board";
 import type { RestorePlan } from "../lib/history";
 import { rankBetween } from "../lib/rank";
+import { playSound } from "../lib/sounds";
 import { getTimer, runToBlocks, setTimer } from "../lib/timer";
 import type {
   Attachment,
@@ -133,6 +134,7 @@ export async function createTask(
     : task.dependency_ids.length
       ? [{ type: "update_task", id, changes: [{ dependency_ids: task.dependency_ids }] }]
       : [];
+  playSound("scribble");
   const changes = await store.getState().mutate(
     [
       ...(extra.before ?? []),
@@ -287,6 +289,7 @@ export function deleteTask(store: TaskStore, id: string) {
   const s = store.getState();
   if (!s.tasks[id]) return Promise.resolve(null);
   const ids = [id, ...descendantIds(id, childrenByParent(Object.values(s.tasks)))];
+  playSound("burn");
   return s.mutate([{ type: "delete_task", id }], { remove: { tasks: ids } });
 }
 

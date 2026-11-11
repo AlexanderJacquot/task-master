@@ -20,6 +20,7 @@ import {
 import { formatAgo, isoDate } from "../../lib/dates";
 import { useOrnaments } from "../../lib/ornaments";
 import { settingsApi } from "../../lib/settingsApi";
+import { loadSoundsOn, playSound, saveSoundsOn } from "../../lib/sounds";
 import {
   type LightTheme,
   loadLightTheme,
@@ -256,6 +257,7 @@ function Appearance() {
         ornaments. Clean is plain and quiet: sans-serif type, simple line icons, no textures.
       </p>
       {!clean && <WeatheringChoice dark={theme === "dark"} />}
+      {!clean && <PaperSounds dark={theme === "dark"} />}
       {import.meta.env.DEV && (
         <div className="flex items-center gap-3">
           <Button size="sm" onClick={() => useOrnaments.getState().setOpen(true)}>
@@ -298,6 +300,28 @@ function WeatheringChoice({ dark }: { dark: boolean }) {
         ))}
       </div>
     </fieldset>
+  );
+}
+
+/** Crumple, scribble and burn sounds on the parchment theme. */
+function PaperSounds({ dark }: { dark: boolean }) {
+  const [on, setOn] = useState(loadSoundsOn);
+  return (
+    <label className="mt-1 flex items-center gap-1.5">
+      <input
+        type="checkbox"
+        checked={on}
+        onChange={(e) => {
+          setOn(e.target.checked);
+          saveSoundsOn(e.target.checked);
+          if (e.target.checked) playSound("scribble");
+        }}
+        className="accent-accent"
+      />
+      Paper sounds: a sheet crumples when a task opens, a quill scribbles when one is created, it
+      burns when one is deleted
+      {dark && <span className="text-neutral-500"> (with the Parchment theme)</span>}
+    </label>
   );
 }
 

@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { DatePicker } from "../../components/DatePicker";
 import {
   ArrowLeftIcon as ArrowLeft,
@@ -22,6 +22,7 @@ import {
   TaskCheck,
 } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
+import { playSound } from "../../lib/sounds";
 import type { Task, TaskChange } from "../../lib/types";
 import { adoptTask, deleteTask, setParent, toggleDone, updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
@@ -422,6 +423,23 @@ function DropZones({ taskId }: { taskId: string }) {
   );
 }
 
+let lastOpened = { id: "", at: 0 };
+
+/**
+ * Crumples a sheet when a task opens (paper sounds, parchment theme), but not for a task
+ * just created (it already scribbled). The same task opened again within half a second is
+ * one opening (React's dev double effects, the panel handing over to the full page).
+ */
+function useOpenSound(taskId: string, exists: boolean, justCreated: boolean) {
+  useEffect(() => {
+    if (!exists || justCreated) return;
+    const now = Date.now();
+    if (lastOpened.id === taskId && now - lastOpened.at < 500) return;
+    lastOpened = { id: taskId, at: now };
+    playSound("crumple");
+  }, [taskId, exists, justCreated]);
+}
+
 /** Right-hand panel for one task, opened with `?task=<id>`. Every field saves on change. */
 export function TaskDetail({
   taskId,
@@ -433,6 +451,7 @@ export function TaskDetail({
 }) {
   const store = useTaskStore();
   const task = useStoreState((s) => s.tasks[taskId]);
+  useOpenSound(taskId, !!task, focusDescription);
   const parent = useStoreState((s) => (task?.parent_id ? s.tasks[task.parent_id] : undefined));
   const openTask = useOpenTask();
   const navigate = useNavigate();
@@ -518,6 +537,7 @@ export function TaskPage({
   const store = useTaskStore();
   const navigate = useNavigate();
   const task = useStoreState((s) => s.tasks[taskId]);
+  useOpenSound(taskId, !!task, focusDescription);
   const project = useStoreState((s) =>
     task?.project_id ? s.projects[task.project_id] : undefined,
   );

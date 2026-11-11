@@ -4,6 +4,15 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Paper sounds** (2026-11-11, branch `worktree-paper-sounds`, not merged): on the parchment
+theme a sheet crumples when a task opens (side panel or full page; not for a task just
+created), a quill scribbles when a task is created (`createTask`, so capture too) and the
+sheet burns when one is deleted (`deleteTask`). Synthesized with the Web Audio API from
+filtered noise (`lib/sounds.ts`): no audio files, no dependency. Settings → Appearance
+"Paper sounds" toggle, on by default, per machine (`task-master.sounds`); silent on dark
+and clean. Unit tests `lib/sounds.test.ts`. Not listened to yet: needs a by-ear check
+in the app (`pnpm dev`, Parchment theme) and tuning of the sounds in `lib/sounds.ts`.
+
 **task-master in your own Claude** (2026-11-11, on `main`, released in 0.15.0): `task-master-mcp`
 needs no `--db` any more: it opens `$TASK_MASTER_DB`, else the app's database on this
 device (config.json `data_dir`, else the OS app-data folder; `crates/mcp/src/locate.rs`,
