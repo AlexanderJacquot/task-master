@@ -79,6 +79,29 @@ function savedIds(list: unknown, single: unknown): string[] {
 /** A task created from the side panel, to place beside the card it was linked to. */
 type Placement = { id: string; near: string; side: Connector["side"] };
 
+/** How a card dragged onto the side panel is linked to the selected task. */
+type DropZone = "parent" | "subtask" | "prereq" | "dependent";
+const DROP_ZONES: { zone: DropZone; label: string; hint: string }[] = [
+  { zone: "parent", label: "Its parent", hint: "the selected task becomes its subtask" },
+  { zone: "subtask", label: "A subtask", hint: "of the selected task" },
+  { zone: "prereq", label: "A prerequisite", hint: "the selected task waits on it" },
+  { zone: "dependent", label: "A dependent", hint: "it waits on the selected task" },
+];
+
+type DropTarget = { panel: boolean; zone: DropZone | null };
+/** A card being dragged on the canvas, and what is under the pointer. */
+type CardDrag = DropTarget & { id: string };
+
+/** What is under a page point: the side panel (with its drop overlay), and which zone. */
+function dropTargetAt(client: { x: number; y: number }): DropTarget {
+  const element = document.elementFromPoint?.(client.x, client.y);
+  const zone = element?.closest<HTMLElement>("[data-drop-zone]")?.dataset.dropZone;
+  return {
+    panel: !!element?.closest("[data-lineage-panel]"),
+    zone: zone ? (zone as DropZone) : null,
+  };
+}
+
 /** Whether the side panel is open survives leaving the page (open by default). */
 const PANEL_KEY = "task-master.lineage-panel";
 function loadPanelOpen(): boolean {
@@ -138,6 +161,8 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const [reveal, setReveal] = useState<{ id: string; seq: number } | null>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
   const [wholeChain, setWholeChain] = useState(false);
+  /** A card dragged on the canvas: over the side panel, the panel turns into drop zones. */
+  const [cardDrag, setCardDrag] = useState<CardDrag | null>(null);
   const all = useMemo(
     () =>
       Object.values(tasks).sort((a, b) => a.rank.localeCompare(b.rank) || a.id.localeCompare(b.id)),
@@ -433,6 +458,46 @@ export function LineagePage({ around }: { around?: string } = {}) {
     if (result) setError("");
     else setError(store.getState().lastError ?? "Could not change the parent.");
   }
+  /** Whether the dragged task can be linked to the selected one through this zone. */
+  function canDrop(zone: DropZone, id: string): boolean {
+    if (!current || id === current.id || pending > 0) return false;
+    switch (zone) {
+      case "parent":
+        return canParent.parents.has(id);
+      case "subtask":
+        return canParent.subtasks.has(id);
+      case "prereq":
+        return canLink(id, current.id);
+      case "dependent":
+        return canLink(current.id, id);
+    }
+  }
+  function dragCard(drag: { id: string; client: { x: number; y: number } } | null) {
+    if (!drag || !panelOpen) {
+      setCardDrag(null);
+      return;
+    }
+    const { panel, zone } = dropTargetAt(drag.client);
+    // Only a change re-renders the page: the pointer moves many times a second.
+    setCardDrag((prev) =>
+      prev?.id === drag.id && prev.panel === panel && prev.zone === zone
+        ? prev
+        : { id: drag.id, panel, zone },
+    );
+  }
+  /** A card let go over the side panel: link it to the selected task by the zone under it. */
+  function dropCard(id: string, client: { x: number; y: number }): boolean {
+    setCardDrag(null);
+    if (!panelOpen) return false;
+    const { panel, zone } = dropTargetAt(client);
+    if (!panel) return false;
+    if (!current || !zone || !canDrop(zone, id)) return true;
+    if (zone === "parent") void adopt(current.id, id);
+    else if (zone === "subtask") void adopt(id, current.id);
+    else if (zone === "prereq") void connect(id, current.id);
+    else void connect(current.id, id);
+    return true;
+  }
   function remove(from: string, to: string) {
     void updateTask(store, to, [
       { dependency_ids: (tasks[to]?.dependency_ids ?? []).filter((id) => id !== from) },
@@ -552,7 +617,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
           {error}
         </p>
       )}
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <LineageCanvas
           graph={graph}
           scope={`${project}:${filter.epics.join(",")}:${filter.tags.join(",")}:${completion}:${linkedOnly}:${subtasks}:${focus?.id ?? ""}:${arrange}`}
@@ -560,6 +625,8 @@ export function LineagePage({ around }: { around?: string } = {}) {
           laneSpecs={laneSpecs}
           epics={epics}
           onMoveToLane={moveToLane}
+          onCardDrag={dragCard}
+          onCardDrop={dropCard}
           fitOnOpen={!!focus}
           statuses={statuses}
           closed={closed}
@@ -603,6 +670,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
         {panelOpen && (
           <aside
             aria-label="Lineage panel"
+            data-lineage-panel
             className="flex w-96 max-w-[45%] shrink-0 flex-col overflow-y-auto border-l border-line bg-raised p-5"
           >
             <div className="flex items-center justify-between gap-2">
@@ -627,7 +695,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
             />
             <p className="mt-2 text-xs text-ink-3">
               {current
-                ? `Click a result to select it, or link it to “${current.title}”: as a prerequisite, a dependent, its parent or a subtask.`
+                ? `Click a result to select it, or link it to “${current.title}”: as a prerequisite, a dependent, its parent or a subtask. You can also drag a card from the canvas onto this panel.`
                 : "Click a result to find it on the canvas, or select a card to link tasks to it."}
             </p>
             {search && (
@@ -734,8 +802,73 @@ export function LineagePage({ around }: { around?: string } = {}) {
             )}
           </aside>
         )}
+        {panelOpen && cardDrag?.panel && (
+          <DropOverlay
+            dragged={tasks[cardDrag.id]}
+            current={current}
+            hovered={cardDrag.zone}
+            canDrop={(zone) => canDrop(zone, cardDrag.id)}
+          />
+        )}
       </div>
     </div>
+  );
+}
+
+/** Covers the side panel while a card is dragged: drop zones to link it to the selected task. */
+function DropOverlay({
+  dragged,
+  current,
+  hovered,
+  canDrop,
+}: {
+  dragged: Task | undefined;
+  current: Task | undefined;
+  hovered: DropZone | null;
+  canDrop: (zone: DropZone) => boolean;
+}) {
+  const message = !current
+    ? "Select a card first, then drag another card here to link it to the selected one."
+    : dragged?.id === current.id
+      ? `This is the selected task. Drag another card here to link it to “${current.title}”.`
+      : null;
+  return (
+    // Laid over the side panel (same width): it counts as the panel for the drop.
+    <section
+      aria-label="Drop to link"
+      data-lineage-panel
+      className="absolute inset-y-0 right-0 flex w-96 max-w-[45%] flex-col gap-3 border-l border-line bg-raised p-5"
+    >
+      {message || !current ? (
+        <p className="m-auto text-center text-sm text-ink-3">{message}</p>
+      ) : (
+        <>
+          <p className="text-sm text-ink-2">Link “{dragged?.title}” to “{current.title}” as:</p>
+          {DROP_ZONES.map(({ zone, label, hint }) => {
+            const allowed = canDrop(zone);
+            return (
+              <div
+                key={zone}
+                data-drop-zone={zone}
+                data-allowed={allowed}
+                title={allowed ? undefined : "Already linked, or the link would make a loop"}
+                className={cx(
+                  "flex min-h-16 flex-1 flex-col items-center justify-center rounded-xl border-2 border-dashed px-3 text-center",
+                  !allowed
+                    ? "border-line text-ink-3 opacity-40"
+                    : hovered === zone
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-line-strong text-ink-2",
+                )}
+              >
+                <span className="text-sm font-medium">{label}</span>
+                <span className="text-xs">{hint}</span>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </section>
   );
 }
 
