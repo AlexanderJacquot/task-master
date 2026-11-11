@@ -87,11 +87,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            A work timer on every task: start it from the task, see it running at the bottom of the sidebar, and stop it to log the time on the calendar. The description folds away to its first line. Lists nest subtasks at any depth, each with a chevron. Add tasks straight into a board swimlane with its +. Settings → Agents gets a Directive, standing instructions for every Claude session. task-master's MCP server now works in your own Claude without a database path and gains calendar and lineage tools (docs/mcp.md). Fixes: the quick-capture window follows the theme, subtasks open from the full task page, and the Lineage side panel is readable.
+            Agent runs time the task, and the Agents page shows cost, agent time and spend limits per day, week and month. Multi-select in list and board, with a bulk bar and one undo. Saved Lineage views, and cards dragged onto the side panel to link them. Properties in the side panel keep one order. On the parchment theme, paper sounds (switch them off in Settings → Appearance).
 
-            No database changes (schema 12): 0.8.0 to 0.15.0 desktops and servers sync with each other. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.15.0.
+            Database change (schema 13): 0.16.0 desktops and sync servers sync only with each other, so upgrade the server together with the desktops. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.16.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.15.0/docs/releases/0.15.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.16.0/docs/releases/0.16.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

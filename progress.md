@@ -4,7 +4,21 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**Paper sounds** (2026-11-11, branch `worktree-paper-sounds`, not merged): on the parchment
+**Release 0.16.0** (2026-11-12, on `release/0.16.0`, then `main`): integrates the seven feature
+branches that were not in main or had uncommitted work (agent timer, Agents page usage and
+spend limits, multi-select, saved Lineage views, drag a card onto the side panel, property
+order, paper sounds). Each uncommitted worktree was committed on its own `worktree-*` branch
+first; the agent sessions had not run cargo or pnpm, so this release ran the checks:
+clippy (`-D warnings`, all targets), `cargo test --workspace`, `pnpm biome check`,
+`pnpm test` and `tsc --noEmit`. Fixes made on the way: `ViewChange::Spec` boxed (clippy
+large variant after `ViewSpec` grew), biome formatting, and a Resume test that now expects
+the timer's move to in progress. Schema **13** (migration 0013, agent session duration):
+desktops and sync servers sync only with each other. Notes: `docs/releases/0.16.0.md`.
+Not in this release: the iPhone work on `p0-phone-core` and `p1-ios-walking-skeleton`
+(their ADR 022 would clash with the saved-views ADR 022 when merged; renumber it then).
+The "not run yet" notes in the entries below are superseded: the checks ran at 0.16.0.
+
+**Paper sounds** (2026-11-11, released in 0.16.0): on the parchment
 theme a sheet crumples when a task opens (side panel or full page; not for a task just
 created), a quill scribbles when a task is created (`createTask`, so capture too) and the
 sheet burns when one is deleted (`deleteTask`). Synthesized with the Web Audio API from
@@ -21,8 +35,7 @@ terminal keeps it running. Like a hand-started timer, it stops the timer on anot
 timer the user starts by hand afterwards is not stopped by the session. If the task's timer
 was already running, it keeps its start and now follows the session. Store tests in
 `store/timer.test.ts`. pnpm checks could not run in the agent session (approval needed).
-**Lineage: drag a card onto the side panel** (2026-11-11, branch `worktree-lineage-drag-sidebar`,
-not merged): with a card selected, dragging another card from the canvas over the side panel
+**Lineage: drag a card onto the side panel** (2026-11-11, released in 0.16.0): with a card selected, dragging another card from the canvas over the side panel
 turns the panel into four drop zones: its parent, a subtask, a prerequisite, a dependent
 (zones that would duplicate a link or make a loop are dimmed and ignore the drop). Dropping
 on the panel never moves the card: it goes back where the drag started. Nothing selected,
@@ -31,7 +44,7 @@ or the selected card itself dragged: the overlay says so. `LineageCanvas` gains
 `document.elementFromPoint` (`[data-lineage-panel]`, `[data-drop-zone]`). Test in
 `LineagePage.test.tsx`. **Not run yet**: the agent session could not run pnpm (approval), so
 `pnpm biome check` and `pnpm test` are still to do.
-**Multi-select in list and board** (2026-11-11, branch `worktree-multi-select`, not merged):
+**Multi-select in list and board** (2026-11-11, released in 0.16.0):
 Ctrl/Cmd+click on a list row's title or a board card adds it to a selection, Shift+click
 picks the range from the last one (list: row order; board: lane by lane, column by
 column), Ctrl+A selects every task in the view, Esc clears (the side panel stays open). The
@@ -45,7 +58,7 @@ goes with it). Tasks that leave the view leave the selection; folding a group do
 `lib/views.ts`; store tests `store/bulk.test.ts`, app tests "multi-select". **Not yet
 run**: the agent session could not install node_modules in the worktree (pnpm needed
 approval), so `pnpm biome check` and `pnpm test` still have to run; no Rust changes.
-**Saved Lineage views** (2026-11-11, branch `worktree-save-lineage-views`, not merged): the
+**Saved Lineage views** (2026-11-11, released in 0.16.0): the
 Lineage page header has "Save as view": it names and saves the page's filters, focus task
 and card layout (positions, lane positions, pinned cards, folded lanes; no camera) as a
 saved view (ADR 022, `ViewSpec.lineage`). It is listed under Saved views with the Lineage
@@ -56,8 +69,7 @@ place. `features/lineage/saved.ts` (unit tests), `LineageCanvas` takes `layout`,
 in `LineagePage.test.tsx`. **Not compiled or tested yet** (the agent session could not run
 cargo or pnpm): regenerate `bindings.ts` (`cargo test -p taskmaster-desktop export_bindings`,
 or the full `cargo test`), then clippy, `pnpm biome check`, `pnpm test`.
-**Agents page: cost, time and spend limits** (2026-11-11, branch `worktree-agents-tab-revamp`,
-not merged): the Agents page filters by project and period (Today, This week, This month,
+**Agents page: cost, time and spend limits** (2026-11-11, released in 0.16.0): the Agents page filters by project and period (Today, This week, This month,
 All time; kept in localStorage) and shows tiles for spend, agent time, sessions and turns,
 a by-project table (click a project to focus it), and a meter per spend limit with what is
 left. Sessions record how long the agent worked (`agent_sessions.duration_ms`, migration
@@ -216,7 +228,7 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
-### Task detail: property order (2026-11-11, branch `worktree-sidebar-field-order`, uncommitted)
+### Task detail: property order (2026-11-11, released in 0.16.0)
 
 - Side panel and task page now list properties in one fixed order: status, project, epic,
   priority, due, today, estimate, time, tags (the task page keeps the timer on its own
