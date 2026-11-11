@@ -1,5 +1,73 @@
+import {
+  Archive,
+  ArchiveRestore,
+  ArrowLeft,
+  ArrowRight,
+  Bookmark,
+  Bot,
+  Calendar,
+  CalendarClock,
+  CalendarPlus,
+  ChartNoAxesColumn,
+  Check,
+  ChevronsLeft,
+  ChevronsRight,
+  Circle,
+  CircleArrowUp,
+  CircleCheck,
+  Columns3,
+  CornerDownRight,
+  Crown,
+  Diamond,
+  Download,
+  Ellipsis,
+  ExternalLink,
+  File,
+  FileText,
+  Flag,
+  Folder,
+  FolderOpen,
+  FolderX,
+  GitBranch,
+  Hexagon,
+  Inbox,
+  LayoutGrid,
+  List,
+  ListChecks,
+  ListFilter,
+  ListTodo,
+  LoaderCircle,
+  type LucideIcon,
+  MapPin,
+  Maximize2,
+  Minus,
+  MousePointer2,
+  Network,
+  Paperclip,
+  Pencil,
+  PencilLine,
+  Play,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  Send,
+  Settings,
+  Shield,
+  SlidersHorizontal,
+  Square,
+  SquareTerminal,
+  Star,
+  Sun,
+  Tag,
+  Timer,
+  Trash2,
+  Triangle,
+  X,
+} from "lucide-react";
 import type { ComponentProps } from "react";
 import paths from "../assets/icons/paths.json";
+import { useIsClean } from "../lib/theme";
 
 type IconProps = ComponentProps<"svg"> & { size?: number | string };
 
@@ -10,7 +78,89 @@ type IconProps = ComponentProps<"svg"> & { size?: number | string };
 const VIEW_BOX = "0.75 0.75 22.5 22.5";
 const STROKE_WIDTH = 1.64;
 
-function TaskIcon({ name, size = 24, ...props }: IconProps & { name: keyof typeof paths }) {
+type IconName = keyof typeof paths;
+
+/** The clean theme's counterpart of each medieval glyph (ADR 021): plain lucide line icons. */
+const CLEAN: Record<IconName, LucideIcon> = {
+  add: Plus,
+  inbox: Inbox,
+  projects: Folder,
+  "due-date": CalendarClock,
+  settings: Settings,
+  search: Search,
+  delete: Trash2,
+  agents: Bot,
+  calendar: Calendar,
+  "all-tasks": ListTodo,
+  archive: Archive,
+  unarchive: ArchiveRestore,
+  priority: Flag,
+  bookmark: Bookmark,
+  edit: Pencil,
+  today: Sun,
+  metrics: ChartNoAxesColumn,
+  lineage: Network,
+  send: Send,
+  estimate: Timer,
+  done: CircleCheck,
+  crown: Crown,
+  shield: Shield,
+  stop: Square,
+  tag: Tag,
+  play: Play,
+  terminal: SquareTerminal,
+  more: Ellipsis,
+  list: List,
+  columns: Columns3,
+  filter: ListFilter,
+  options: SlidersHorizontal,
+  update: CircleArrowUp,
+  "folder-open": FolderOpen,
+  "folder-clear": FolderX,
+  attach: Paperclip,
+  download: Download,
+  file: File,
+  "file-text": FileText,
+  external: ExternalLink,
+  rename: PencilLine,
+  expand: Maximize2,
+  undo: RotateCcw,
+  refresh: RefreshCw,
+  spinner: LoaderCircle,
+  "calendar-plus": CalendarPlus,
+  "map-pin": MapPin,
+  "list-checks": ListChecks,
+  child: CornerDownRight,
+  branch: GitBranch,
+  grid: LayoutGrid,
+  pointer: MousePointer2,
+  minus: Minus,
+  "arrow-right": ArrowRight,
+  "arrow-left": ArrowLeft,
+  "spears-right": ChevronsRight,
+  "spears-left": ChevronsLeft,
+  roundel: Circle,
+  billet: Square,
+  pile: Triangle,
+  lozenge: Diamond,
+  bezant: Hexagon,
+  mullet: Star,
+  close: X,
+  check: Check,
+};
+
+// Lucide fills its 24-unit box edge to edge where the medieval glyphs are cropped larger,
+// so the clean icons are drawn a touch smaller with a lighter stroke, as Notion's are.
+const CLEAN_SCALE = 0.92;
+const CLEAN_STROKE = 1.75;
+
+function TaskIcon({ name, size = 24, ...props }: IconProps & { name: IconName }) {
+  const clean = useIsClean();
+  if (clean) {
+    const Clean = CLEAN[name];
+    const px = typeof size === "number" ? Math.round(size * CLEAN_SCALE * 2) / 2 : size;
+    return <Clean size={px} strokeWidth={CLEAN_STROKE} {...props} />;
+  }
   // Decorative unless the caller names it, matching lucide-react's behaviour.
   const label = props["aria-label"];
   const labelled = label !== undefined;
@@ -35,9 +185,7 @@ function TaskIcon({ name, size = 24, ...props }: IconProps & { name: keyof typeo
     </svg>
   );
 }
-const icon = (name: keyof typeof paths) => (props: IconProps) => (
-  <TaskIcon {...props} name={name} />
-);
+const icon = (name: IconName) => (props: IconProps) => <TaskIcon {...props} name={name} />;
 
 /** Cross with manuscript terminals. */
 export const AddIcon = icon("add");

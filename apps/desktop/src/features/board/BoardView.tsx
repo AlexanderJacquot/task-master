@@ -629,7 +629,7 @@ function CollapsedCell({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const className = cx(
-    "flex shrink-0 flex-col items-center gap-2 rounded-[14px] border border-line bg-hover/60 py-3",
+    "flex shrink-0 flex-col items-center gap-2 rounded-[14px] border border-line bg-hover/60 py-3 clean:border-transparent clean:bg-hover",
     inLane ? "min-h-16" : "min-h-0",
     isOver && "ring-2 ring-accent/60",
   );
@@ -811,7 +811,7 @@ function BoardCell(p: CellProps) {
       <div
         ref={setNodeRef}
         className={cx(
-          "flex shrink-0 flex-col overflow-hidden rounded-[14px] border border-line bg-hover/60 p-2",
+          "flex shrink-0 flex-col overflow-hidden rounded-[14px] border border-line bg-hover/60 p-2 clean:rounded-[10px] clean:border-transparent clean:bg-hover/80",
           p.bounded ? "max-h-[28rem] min-h-16" : "min-h-0",
           isOver && "ring-2 ring-accent/60",
         )}

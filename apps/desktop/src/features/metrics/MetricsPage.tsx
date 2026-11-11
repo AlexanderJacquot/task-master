@@ -1,3 +1,4 @@
+import { TrendingDown } from "lucide-react";
 import { type ComponentType, type ReactNode, useMemo, useState } from "react";
 import {
   AddIcon,
@@ -16,6 +17,7 @@ import {
 import { Button, FOCUS, Select } from "../../components/ui";
 import { addDays } from "../../lib/calendar";
 import { isoDate } from "../../lib/dates";
+import { useIsClean } from "../../lib/theme";
 import type { Task } from "../../lib/types";
 import { useStoreState } from "../../store/context";
 import { useNow } from "../calendar/TimeGrid";
@@ -152,6 +154,8 @@ export function MetricsPage({
     ],
   ];
   const focusedProject = focused && focused !== "inbox" ? projects[focused] : undefined;
+  // The clean theme (ADR 021) names each figure by its plain measure, without the chronicle.
+  const clean = useIsClean();
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-10 py-7">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -163,7 +167,9 @@ export function MetricsPage({
           </h1>
           <TitleFlourish />
           <p className="mt-1 text-sm text-ink-3">
-            The ledger of deeds: task flow, workload, and AI contribution.
+            {clean
+              ? "Task flow, workload, and AI contribution."
+              : "The ledger of deeds: task flow, workload, and AI contribution."}
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -215,7 +221,9 @@ export function MetricsPage({
               <InboxIcon size={24} className="text-ink-2" />
             )}
             <div className="min-w-0">
-              <p className="text-[11px] tracking-wider text-ink-3 uppercase">The holding of</p>
+              <p className="text-[11px] tracking-wider text-ink-3 uppercase">
+                {clean ? "Project" : "The holding of"}
+              </p>
               <h2 className="truncate font-display text-2xl">{focusedProject?.name ?? "Inbox"}</h2>
             </div>
           </div>
@@ -229,9 +237,17 @@ export function MetricsPage({
           <div key={plain} className={panel}>
             <div className="flex items-center gap-2">
               <CardIcon size={18} className="shrink-0 text-rubric" />
-              <p className="font-display text-lg leading-tight">{title}</p>
+              <p
+                className={
+                  clean ? "text-sm font-medium text-ink-2" : "font-display text-lg leading-tight"
+                }
+              >
+                {clean ? plain : title}
+              </p>
             </div>
-            <p className="mt-0.5 text-[11px] tracking-wider text-ink-3 uppercase">{plain}</p>
+            {!clean && (
+              <p className="mt-0.5 text-[11px] tracking-wider text-ink-3 uppercase">{plain}</p>
+            )}
             <p className="my-2 font-display text-4xl tabular-nums">{value}</p>
             <p className="text-xs text-ink-3">{detail}</p>
           </div>
@@ -361,30 +377,41 @@ export function MetricsPage({
   );
 }
 
+/** A section's chronicle title over its plain measure. The clean theme shows the measure
+ *  alone as the title, or `clean` = [title, subtitle] when the measure is long. */
 function SectionTitle({
   icon: SectionIcon,
   title,
   plain,
+  clean: cleanText,
 }: {
   icon: Icon;
   title: string;
   plain: string;
+  clean?: [string, string];
 }) {
+  const clean = useIsClean();
+  const sub = clean ? (cleanText?.[1] ?? null) : plain;
   return (
     <div>
-      <h2 className="flex items-center gap-2 font-display text-xl">
+      <h2 className="flex items-center gap-2 font-display text-xl clean:text-[17px]">
         <SectionIcon size={18} className="shrink-0 text-rubric" />
-        {title}
+        {clean ? (cleanText?.[0] ?? plain) : title}
       </h2>
-      <p className="text-[11px] tracking-wider text-ink-3 uppercase">{plain}</p>
+      {sub && (
+        <p className="text-[11px] tracking-wider text-ink-3 uppercase clean:text-xs clean:tracking-normal clean:normal-case">
+          {sub}
+        </p>
+      )}
     </div>
   );
 }
 
-function forecastText(burn: ReturnType<typeof burnDown>, today: string) {
+function forecastText(burn: ReturnType<typeof burnDown>, today: string, clean: boolean) {
   const left = burn.clearInDays;
-  if (left === 0) return "Nothing left open: the field is clear.";
+  if (left === 0) return clean ? "Nothing left open." : "Nothing left open: the field is clear.";
   if (left === null) {
+    if (clean && burn.netPerDay < 0) return "The backlog is growing at this pace.";
     return burn.netPerDay < 0
       ? "The backlog grows at this pace; no end in sight."
       : "The backlog holds steady at this pace.";
@@ -411,7 +438,7 @@ function BurnDown({
   const line = burn.points.map((p, i) => `${i ? "L" : "M"}${x(i)},${y(p.open)}`).join(" ");
   const area = `${line} L100,100 L0,100 Z`;
   const point = hover === null ? undefined : burn.points[hover];
-  const forecast = forecastText(burn, today);
+  const forecast = forecastText(burn, today, useIsClean());
   const stats: [string, string][] = [
     ["Open at the start", String(burn.before)],
     ["Open now", String(burn.now)],
@@ -421,9 +448,10 @@ function BurnDown({
     <section className={`${panel} mt-5`} aria-label="Burn-down">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <SectionTitle
-          icon={BrazierIcon}
+          icon={useIsClean() ? TrendingDown : BrazierIcon}
           title="The burning of the backlog"
           plain="Burn-down: open tasks at each day's end"
+          clean={["Burn-down", "Open tasks at each day's end"]}
         />
         <dl className="flex flex-wrap gap-6 text-right">
           {stats.map(([label, value]) => (

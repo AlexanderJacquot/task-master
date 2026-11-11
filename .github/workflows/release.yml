@@ -87,11 +87,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Plan a day or a week from the calendar: pick a project, epic or status and your working hours, press Suggest to fill the free time with tasks (around your blocks and Google events, urgent and due work first, spread over the week), then Reshuffle, leave single suggestions out, or Approve them all in one undoable step. Board cards drag onto sidebar projects, epics and Today, or onto the open task to become its subtask or parent. Swimlanes with nothing left to do start folded. Lineage can hide subtasks. Dropdowns jump to an option as you type, and epics have six more shapes.
+            A new Clean theme in Settings → Appearance: a plain, Notion-like light look with Inter type, simple line icons and no textures or ornaments, beside Dark and Parchment; "Follow the system" can use Clean in light mode. The calendar task list gets a Filter (project, epic, status) in every mode and can be resized from its edge. The sidebar Update pill now downloads the update, then restarts.
 
-            No database changes (schema 12): 0.8.0 to 0.13.0 desktops and servers sync with each other. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.13.0.
+            No database changes (schema 12): 0.8.0 to 0.14.0 desktops and servers sync with each other. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.14.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.13.0/docs/releases/0.13.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.14.0/docs/releases/0.14.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

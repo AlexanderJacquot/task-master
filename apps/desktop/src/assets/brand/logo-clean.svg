@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>Task Master</title>
+  <rect x="2" y="2" width="60" height="60" rx="15" fill="#2f2e2b"/>
+  <rect x="15" y="15" width="34" height="34" rx="9" stroke="#ffffff" stroke-opacity="0.28" stroke-width="3"/>
+  <path d="M22.5 32.5l6.5 6.5 13-14" stroke="#ffffff" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

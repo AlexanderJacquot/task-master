@@ -58,6 +58,9 @@ Every icon follows the medieval theme:
 | `roundel`, `billet`, `pile`, `lozenge`, `bezant`, `mullet` | heraldic charges                      | epic marks (circle, square, triangle, diamond, hexagon, star) |
 | `close` / `check`                                          | crossed swords / tick                 | close, remove / selected, done                                |
 
+In the clean theme (ADR 021) each glyph is swapped for a lucide icon (the `CLEAN` map in
+`TaskIcons.tsx`) and the logo for `brand/logo-clean.svg`.
+
 Chevrons, the sidebar panel toggle, the drag grip, the stop-button square and the broken-image placeholder stay as lucide icons for legibility at small sizes.
 
 The canonical path data is `icons/paths.json`. React components in `components/TaskIcons.tsx` consume it directly, and `scripts/generate-ui-icons.mjs` produces matching SVG files. Pass `size`, `className`, and standard SVG props to the components. They inherit text color and are decorative by default; name the surrounding button or link for assistive technology.

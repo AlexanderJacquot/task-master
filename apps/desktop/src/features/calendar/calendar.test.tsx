@@ -112,6 +112,48 @@ describe("the calendar", () => {
     expect(within(list).queryByText("Dentist")).toBeNull();
   });
 
+  it("filters the tray outside Plan mode, and clears the filter", async () => {
+    localStorage.setItem(
+      "task-master.calendar-plan",
+      JSON.stringify({ focus: { projectId: null, epicId: null, statusId: STATUS.inProgress } }),
+    );
+    await renderCalendar();
+    const tray = await screen.findByRole("complementary", { name: "Tasks to schedule" });
+    expect(within(tray).getByRole("button", { name: /^Filter\s*· 1$/ })).toBeTruthy();
+    expect(within(tray).getByRole("combobox", { name: "Filter status" })).toBeTruthy();
+    expect(within(tray).queryByText("Fix the gate")).toBeNull();
+    expect(within(tray).queryByText("Write the report")).toBeNull();
+
+    fireEvent.click(within(tray).getByRole("button", { name: "Clear filter" }));
+    expect(within(tray).getByText("Fix the gate")).toBeTruthy();
+    expect(within(tray).getByText("Write the report")).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem("task-master.calendar-plan") ?? "{}").focus).toEqual({
+      projectId: null,
+      epicId: null,
+      statusId: null,
+    });
+  });
+
+  it("resizes the tray by dragging its edge, and remembers the width", async () => {
+    await renderCalendar();
+    const tray = await screen.findByRole("complementary", { name: "Tasks to schedule" });
+    expect(tray.style.width).toBe("256px");
+    const handle = within(tray).getByRole("separator", { name: "Resize task list" });
+    fireEvent.pointerDown(handle, { clientX: 256 });
+    fireEvent.pointerMove(window, { clientX: 420 });
+    fireEvent.pointerUp(window);
+    expect(tray.style.width).toBe("420px");
+    expect(localStorage.getItem("task-master.calendar-tray-width")).toBe("420");
+    // Clamped to the maximum.
+    fireEvent.pointerDown(handle, { clientX: 420 });
+    fireEvent.pointerMove(window, { clientX: 5000 });
+    fireEvent.pointerUp(window);
+    expect(tray.style.width).toBe("640px");
+    fireEvent.doubleClick(handle);
+    expect(tray.style.width).toBe("256px");
+    expect(localStorage.getItem("task-master.calendar-tray-width")).toBeNull();
+  });
+
   it("schedules a task from the tray at the next free quarter hour", async () => {
     await renderCalendar();
     fireEvent.click(await screen.findByRole("button", { name: "Schedule Write the report" }));
@@ -463,6 +505,11 @@ describe("planning the calendar", () => {
     expect(screen.getByTestId("plan-summary").textContent).toMatch(/^0 tasks to plan/);
     expect(screen.getByRole("button", { name: "Suggest" })).toHaveProperty("disabled", true);
     expect(screen.queryByRole("button", { name: /^Fix the gate/ })).toBeNull();
+    // The focus is the tray's filter: its selects sit in the tray, not the plan bar.
+    const bar = screen.getByRole("region", { name: "Plan" });
+    expect(within(bar).queryByRole("combobox", { name: "Filter project" })).toBeNull();
+    const tray = screen.getByRole("complementary", { name: "Tasks to schedule" });
+    expect(within(tray).getByRole("combobox", { name: "Filter project" })).toBeTruthy();
     // Month view has no plan.
     fireEvent.click(screen.getByRole("button", { name: "month" }));
     expect(screen.queryByRole("region", { name: "Plan" })).toBeNull();

@@ -196,9 +196,26 @@ export function CalendarPage() {
     };
   }, [planOn, planDaysKey, now, planPrefs, tasks, statusMap, blocks, busyEvents]);
   const shownPlan = plan && plan.days === planDaysKey && planOn ? plan.plan : null;
+  // The tray's filter is the plan's focus: the plan draws from the tasks the tray lists.
+  const focus = planPrefs.focus;
   const focusFilter = useMemo(
-    () => (planOn ? (t: Task) => matchesFocus(t, planPrefs.focus) : undefined),
-    [planOn, planPrefs.focus],
+    () =>
+      focus.projectId === null && focus.epicId === null && focus.statusId === null
+        ? undefined
+        : (t: Task) => matchesFocus(t, focus),
+    [focus],
+  );
+  const focusChoices = useMemo(
+    () => ({
+      projects: Object.values(projects)
+        .filter((p) => !p.deleted_at && !p.archived_at)
+        .sort((a, b) => (a.rank < b.rank ? -1 : 1)),
+      epics: Object.values(epicMap)
+        .filter((e) => !e.deleted_at && (e.state === "active" || e.id === focus.epicId))
+        .sort((a, b) => (a.rank < b.rank ? -1 : 1)),
+      statuses: statuses.filter((s) => s.category !== "done" && s.category !== "cancelled"),
+    }),
+    [projects, epicMap, statuses, focus.epicId],
   );
   const suggest = () => {
     if (!planInfo) return;
@@ -423,20 +440,9 @@ export function CalendarPage() {
         </header>
         {planInfo && (
           <PlanBar
-            focus={planPrefs.focus}
-            onFocus={(focus) => setPlanPrefs({ ...planPrefs, focus })}
             hours={planPrefs.hours}
             onHours={(hours) => setPlanPrefs({ ...planPrefs, hours })}
             week={mode === "week"}
-            projects={Object.values(projects)
-              .filter((p) => !p.deleted_at && !p.archived_at)
-              .sort((a, b) => (a.rank < b.rank ? -1 : 1))}
-            epics={Object.values(epicMap)
-              .filter(
-                (e) => !e.deleted_at && (e.state === "active" || e.id === planPrefs.focus.epicId),
-              )
-              .sort((a, b) => (a.rank < b.rank ? -1 : 1))}
-            statuses={statuses.filter((s) => s.category !== "done" && s.category !== "cancelled")}
             matching={planInfo.matching}
             freeMin={planInfo.freeMin}
             plan={shownPlan}
@@ -455,7 +461,14 @@ export function CalendarPage() {
           onDragCancel={finish}
         >
           <div className="flex min-h-0 flex-1 border-t border-line">
-            <TaskTray onSchedule={schedule} filter={focusFilter} />
+            <TaskTray
+              onSchedule={schedule}
+              filter={focusFilter}
+              planning={planOn}
+              focus={focus}
+              onFocus={(next) => setPlanPrefs({ ...planPrefs, focus: next })}
+              {...focusChoices}
+            />
             {mode === "month" ? (
               <MonthGrid date={date} blocks={blocks} events={events} onPickDay={pickDay} />
             ) : (
