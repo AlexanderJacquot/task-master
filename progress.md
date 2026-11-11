@@ -4,6 +4,17 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Lineage: drag a card onto the side panel** (2026-11-11, branch `worktree-lineage-drag-sidebar`,
+not merged): with a card selected, dragging another card from the canvas over the side panel
+turns the panel into four drop zones: its parent, a subtask, a prerequisite, a dependent
+(zones that would duplicate a link or make a loop are dimmed and ignore the drop). Dropping
+on the panel never moves the card: it goes back where the drag started. Nothing selected,
+or the selected card itself dragged: the overlay says so. `LineageCanvas` gains
+`onCardDrag`/`onCardDrop` (client coordinates); `LineagePage` hit-tests with
+`document.elementFromPoint` (`[data-lineage-panel]`, `[data-drop-zone]`). Test in
+`LineagePage.test.tsx`. **Not run yet**: the agent session could not run pnpm (approval), so
+`pnpm biome check` and `pnpm test` are still to do.
+
 **task-master in your own Claude** (2026-11-11, on `main`, released in 0.15.0): `task-master-mcp`
 needs no `--db` any more: it opens `$TASK_MASTER_DB`, else the app's database on this
 device (config.json `data_dir`, else the OS app-data folder; `crates/mcp/src/locate.rs`,

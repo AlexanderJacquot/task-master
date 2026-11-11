@@ -88,6 +88,8 @@ export function LineageCanvas({
   laneSpecs = [],
   epics = {},
   onMoveToLane,
+  onCardDrag,
+  onCardDrop,
 }: {
   graph: Graph;
   statuses: Status[];
@@ -129,6 +131,16 @@ export function LineageCanvas({
   epics?: Record<string, Epic>;
   /** A card dropped into another lane: give it that lane's epic or project. */
   onMoveToLane?: (id: string, key: string) => void;
+  /**
+   * A card being dragged, with the pointer in page (client) coordinates, so a drop target
+   * outside the canvas (the side panel) can light up; `null` when the drag ends.
+   */
+  onCardDrag?: (drag: { id: string; client: Point } | null) => void;
+  /**
+   * A dragged card let go at a page point. Returns true when something outside the canvas
+   * took it: the card then goes back to where the drag started.
+   */
+  onCardDrop?: (id: string, client: Point) => boolean;
 }) {
   const [saved] = useState(loadCanvas);
   const [positions, setPositions] = useState<Positions>(() => ({
@@ -515,6 +527,7 @@ export function LineageCanvas({
         dragPoint.current = point;
         setDragOverride({ id: active.id, point });
       } else updatePositions({ ...positionsRef.current, [active.id]: point });
+      onCardDrag?.({ id: active.id, client: { x: event.clientX, y: event.clientY } });
     } else {
       const world = worldPoint(point, cameraRef.current);
       setDraft({ point: world, target: targetAt(world) });
@@ -540,7 +553,15 @@ export function LineageCanvas({
         } else onCancelConnection();
       }
     } else if (active.moved) {
-      if (active.kind === "move" && lanesMode) dropInLane(active.id);
+      if (active.kind === "move") {
+        onCardDrag?.(null);
+        if (onCardDrop?.(active.id, { x: event.clientX, y: event.clientY })) {
+          // Taken outside the canvas (the side panel): the card goes back where it was.
+          dragPoint.current = null;
+          setDragOverride(null);
+          if (!lanesMode) updatePositions({ ...positionsRef.current, [active.id]: active.position });
+        } else if (lanesMode) dropInLane(active.id);
+      }
       persist();
     } else if (active.kind === "pan") {
       onSelect(null);
@@ -571,6 +592,7 @@ export function LineageCanvas({
     gesture.current = null;
     dragPoint.current = null;
     setDragOverride(null);
+    if (active?.kind === "move") onCardDrag?.(null);
     if (active?.kind === "move" && !lanesMode)
       updatePositions({ ...positionsRef.current, [active.id]: active.position });
     if (active?.kind === "pan") updateCamera(active.camera);

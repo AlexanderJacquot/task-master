@@ -520,6 +520,72 @@ it("makes tasks parents or subtasks from the side panel", async () => {
   expect(commands).toHaveLength(3);
 });
 
+it("links a card dragged onto the side panel to the selected task", async () => {
+  const release = task({ title: "Release" });
+  const notes = task({ title: "Write notes" });
+  place([release, notes]);
+  const { store, commands } = await setup([release, notes]);
+  // jsdom has no layout: say what is under the pointer by hand.
+  let under: Element | null = null;
+  const original = document.elementFromPoint;
+  document.elementFromPoint = (() => under) as typeof document.elementFromPoint;
+  try {
+    const canvas = screen.getByRole("application", { name: "Task canvas" });
+    const panel = screen.getByRole("complementary", { name: "Lineage panel" });
+    const zone = (name: string) =>
+      document.querySelector(`[data-drop-zone="${name}"]`) as HTMLElement;
+    fireEvent.click(screen.getByRole("button", { name: "Select Release" }));
+    const card = screen.getByRole("button", { name: "Select Write notes" });
+    const node = card.parentElement as HTMLElement;
+
+    // Over the canvas the panel stays as it is.
+    under = canvas;
+    drag(card, { x: 500, y: 150 }, { x: 560, y: 200 }, false);
+    expect(screen.queryByRole("region", { name: "Drop to link" })).toBeNull();
+    // Over the panel it turns into drop zones; dropping on one links the card.
+    under = panel;
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 900, clientY: 200 });
+    expect(screen.getByRole("region", { name: "Drop to link" }).textContent).toContain(
+      "Write notes",
+    );
+    under = zone("subtask");
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 900, clientY: 300 });
+    expect(zone("subtask").className).toContain("border-accent");
+    fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 900, clientY: 300 });
+    await waitFor(() => expect(store.getState().tasks[notes.id]?.parent_id).toBe(release.id));
+    await waitFor(() => expect(store.getState().pending).toBe(0));
+    expect(commands.at(-1)).toEqual([
+      { type: "set_parent", id: notes.id, parent_id: release.id },
+    ]);
+    // The card went back where the drag started; the overlay is gone.
+    expect(node.style.left).toBe("450px");
+    expect(screen.queryByRole("region", { name: "Drop to link" })).toBeNull();
+
+    // Already its subtask, and it can't become the parent (a loop): dropping does nothing.
+    under = panel;
+    drag(card, { x: 500, y: 150 }, { x: 900, y: 200 }, false);
+    expect(zone("subtask").dataset.allowed).toBe("false");
+    expect(zone("parent").dataset.allowed).toBe("false");
+    expect(zone("dependent").dataset.allowed).toBe("true");
+    under = zone("parent");
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 900, clientY: 250 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 900, clientY: 250 });
+    // A dependent works.
+    under = panel;
+    drag(card, { x: 500, y: 150 }, { x: 900, y: 200 }, false);
+    under = zone("dependent");
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 900, clientY: 400 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 900, clientY: 400 });
+    await waitFor(() =>
+      expect(store.getState().tasks[notes.id]?.dependency_ids).toEqual([release.id]),
+    );
+    expect(commands).toHaveLength(2);
+    expect(node.style.left).toBe("450px");
+  } finally {
+    document.elementFromPoint = original;
+  }
+});
+
 it("hides and shows the side panel and remembers it", async () => {
   const a = task({ title: "Plan" });
   place([a]);
