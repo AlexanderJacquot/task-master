@@ -4,6 +4,7 @@ import { DatePicker } from "../../components/DatePicker";
 import { AgentsIcon as Bot, PriorityIcon as Flag } from "../../components/TaskIcons";
 import { Chip, cx, Dot, PRIORITIES, PRIORITY_STYLE, Select, TaskCheck } from "../../components/ui";
 import { formatDue } from "../../lib/dates";
+import { type ClickMods, isSelectClick, modsOf } from "../../lib/selection";
 import type { Project, Status, Tag, Task, TaskChange } from "../../lib/types";
 import { isAgentTask } from "../../lib/views";
 import { SessionChip } from "../agents/SessionChip";
@@ -15,6 +16,8 @@ export interface RowHandlers {
   onToggleDone(id: string): void;
   onToggleCollapse(id: string): void;
   onChange(id: string, changes: TaskChange[]): void;
+  /** Ctrl/Shift+click: adds the task to the multi-selection (or a range of tasks). */
+  onPick(id: string, mods: ClickMods): void;
 }
 
 export interface RowLookups {
@@ -34,6 +37,8 @@ interface Props extends RowHandlers, RowLookups {
   visibleChildren: number;
   expanded: boolean;
   selected: boolean;
+  /** In the multi-selection (Ctrl/Shift+click): marked more strongly than the open task. */
+  picked?: boolean;
 }
 
 /** Levels of indentation drawn; deeper subtasks line up with the last one. */
@@ -61,10 +66,15 @@ export const TaskRow = memo(function TaskRow(p: Props) {
     <div
       className={cx(
         "group mx-6 flex h-[34px] items-center gap-3 rounded-[9px] pr-2 transition-colors",
-        p.selected ? "bg-selected" : "hover:bg-hover",
+        p.picked
+          ? "bg-selected ring-1 ring-accent/50 ring-inset"
+          : p.selected
+            ? "bg-selected"
+            : "hover:bg-hover",
       )}
       style={{ paddingLeft: indent(p.depth) }}
       data-testid="task-row"
+      data-picked={p.picked || undefined}
     >
       <button
         type="button"
@@ -108,8 +118,14 @@ export const TaskRow = memo(function TaskRow(p: Props) {
       ) : (
         <button
           type="button"
-          onClick={() => p.onOpen(task.id)}
-          onDoubleClick={() => setEditingTitle(true)}
+          aria-pressed={p.picked ? true : undefined}
+          // Shift+click would also select the page's text.
+          onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+          onClick={(e) => {
+            if (isSelectClick(e)) p.onPick(task.id, modsOf(e));
+            else p.onOpen(task.id);
+          }}
+          onDoubleClick={(e) => !isSelectClick(e) && setEditingTitle(true)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && e.shiftKey) {
               e.preventDefault();
@@ -120,7 +136,7 @@ export const TaskRow = memo(function TaskRow(p: Props) {
             "min-w-0 flex-1 truncate rounded-sm text-left focus-visible:outline-2 focus-visible:outline-accent",
             done ? "text-ink-3 line-through" : "text-ink",
           )}
-          title="Click to open · Shift+Enter for the full page · double-click to rename"
+          title="Click to open · Ctrl/Shift+click to select · Shift+Enter for the full page · double-click to rename"
         >
           {isAgentTask(task) && (
             <Bot

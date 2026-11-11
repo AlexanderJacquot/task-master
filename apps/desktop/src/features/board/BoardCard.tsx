@@ -34,6 +34,8 @@ interface Props extends CardLookups {
   childCount: number;
   childDone: number;
   selected?: boolean;
+  /** In the multi-selection (Ctrl/Shift+click). */
+  picked?: boolean;
   /** The card left in place while its overlay is dragged. */
   placeholder?: boolean;
   /** The floating copy under the pointer. */
@@ -65,7 +67,11 @@ export const CardFace = memo(function CardFace(p: Props) {
     <div
       className={cx(
         "relative flex h-[88px] flex-col gap-1.5 overflow-hidden rounded-[11px] border bg-raised px-3 py-2.5 shadow-sm shadow-black/10 transition-colors clean:rounded-lg clean:shadow-black/5",
-        p.selected ? "border-accent ring-1 ring-accent" : "border-line hover:border-line-strong",
+        p.picked
+          ? "border-accent ring-2 ring-accent"
+          : p.selected
+            ? "border-accent ring-1 ring-accent"
+            : "border-line hover:border-line-strong",
         p.placeholder && "opacity-40",
         p.overlay && "rotate-1 shadow-xl shadow-black/30",
       )}

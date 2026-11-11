@@ -56,8 +56,8 @@ let store: TaskStore;
 let fake: ReturnType<typeof fakeApi>;
 const existing = task({ title: "Renew passport", status_id: STATUS.todo });
 
-async function renderApp(path = "/inbox") {
-  fake = fakeApi(() => store, [existing]);
+async function renderApp(path = "/inbox", tasks: Task[] = [existing]) {
+  fake = fakeApi(() => store, tasks);
   store = createTaskStore(fake.api);
   await store.getState().hydrate();
   const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
@@ -382,6 +382,109 @@ describe("the board", () => {
     fireEvent.doubleClick(handle);
     expect(handle.getAttribute("aria-valuenow")).toBe(String(initialWidth));
     expect(localStorage.getItem("task-master.board.columns")).toBe("{}");
+  });
+});
+
+describe("multi-select", () => {
+  const a = task({ title: "Alpha", status_id: STATUS.todo, rank: "a1" });
+  const b = task({ title: "Bravo", status_id: STATUS.todo, rank: "a2" });
+  const c = task({ title: "Charlie", status_id: STATUS.todo, rank: "a3" });
+
+  beforeEach(async () => {
+    cleanup();
+    await renderApp("/inbox", [a, b, c]);
+    await screen.findByText("Charlie");
+  });
+
+  /** The title button of a list row (the open panel may show the same title). */
+  const row = (title: string) => {
+    const rows = screen.getAllByTestId("task-row");
+    const el = rows.find((r) => within(r).queryByRole("button", { name: title }));
+    if (!el) throw new Error(`no row ${title}`);
+    return within(el).getByRole("button", { name: title });
+  };
+  const picked = () =>
+    screen
+      .getAllByTestId("task-row")
+      .filter((r) => r.dataset.picked)
+      .map((r) => [a, b, c].find((t) => r.textContent?.includes(t.title))?.title);
+
+  it("picks tasks with Ctrl and Shift+click and sets their status in one batch", async () => {
+    fireEvent.click(row("Alpha"), { ctrlKey: true });
+    fireEvent.click(row("Charlie"), { shiftKey: true });
+    const bar = await screen.findByRole("toolbar", { name: "Selected tasks" });
+    expect(within(bar).getByText("3 selected")).toBeTruthy();
+    // Ctrl+click takes one back out.
+    fireEvent.click(row("Bravo"), { ctrlKey: true });
+    expect(within(bar).getByText("2 selected")).toBeTruthy();
+    expect(screen.queryByRole("complementary", { name: "Task details" })).toBeNull();
+
+    fireEvent.keyDown(within(bar).getByRole("button", { name: "Status" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "In progress" }));
+    await waitFor(() =>
+      expect(fake.executed.at(-1)).toEqual([
+        { type: "update_task", id: a.id, changes: [{ status_id: STATUS.inProgress }] },
+        { type: "update_task", id: c.id, changes: [{ status_id: STATUS.inProgress }] },
+      ]),
+    );
+  });
+
+  it("clears with Esc, and a plain click opens the task instead", async () => {
+    fireEvent.click(row("Alpha"), { ctrlKey: true });
+    await screen.findByRole("toolbar", { name: "Selected tasks" });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("toolbar", { name: "Selected tasks" })).toBeNull());
+
+    fireEvent.click(row("Alpha"), { ctrlKey: true });
+    fireEvent.click(row("Bravo"));
+    await waitFor(() => expect(screen.queryByRole("toolbar", { name: "Selected tasks" })).toBeNull());
+    expect(await screen.findByRole("complementary", { name: "Task details" })).toBeTruthy();
+  });
+
+  it("starts from the open task, and keeps the panel open on Esc", async () => {
+    fireEvent.click(row("Alpha"));
+    await screen.findByRole("complementary", { name: "Task details" });
+    fireEvent.click(row("Bravo"), { shiftKey: true });
+    await waitFor(() => expect(picked()).toEqual(["Alpha", "Bravo"]));
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(picked()).toEqual([]));
+    expect(screen.getByRole("complementary", { name: "Task details" })).toBeTruthy();
+  });
+
+  it("selects every task with Ctrl+A and deletes them as one undoable batch", async () => {
+    fireEvent.keyDown(document.body, { key: "a", ctrlKey: true });
+    const bar = await screen.findByRole("toolbar", { name: "Selected tasks" });
+    expect(within(bar).getByText("3 selected")).toBeTruthy();
+    fireEvent.click(within(bar).getByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(fake.executed.at(-1)).toEqual([
+        { type: "delete_task", id: a.id },
+        { type: "delete_task", id: b.id },
+        { type: "delete_task", id: c.id },
+      ]),
+    );
+    await waitFor(() => expect(screen.queryByText("Alpha")).toBeNull());
+    expect(screen.queryByRole("toolbar", { name: "Selected tasks" })).toBeNull();
+  });
+
+  it("picks cards on the board too", async () => {
+    fireEvent.click(screen.getByRole("button", { name: "board" }));
+    const todo = await screen.findByRole("list", { name: "To do" });
+    fireEvent.click(within(todo).getByRole("button", { name: "Alpha" }), { ctrlKey: true });
+    fireEvent.click(within(todo).getByRole("button", { name: "Bravo" }), { metaKey: true });
+    const bar = await screen.findByRole("toolbar", { name: "Selected tasks" });
+    expect(within(bar).getByText("2 selected")).toBeTruthy();
+    expect(within(todo).getByRole("button", { name: "Alpha" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    fireEvent.keyDown(within(bar).getByRole("button", { name: "Priority" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "High" }));
+    await waitFor(() =>
+      expect(fake.executed.at(-1)).toEqual([
+        { type: "update_task", id: a.id, changes: [{ priority: "high" }] },
+        { type: "update_task", id: b.id, changes: [{ priority: "high" }] },
+      ]),
+    );
   });
 });
 

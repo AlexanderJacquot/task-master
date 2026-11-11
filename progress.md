@@ -4,6 +4,21 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Multi-select in list and board** (2026-11-11, branch `worktree-multi-select`, not merged):
+Ctrl/Cmd+click on a list row's title or a board card adds it to a selection, Shift+click
+picks the range from the last one (list: row order; board: lane by lane, column by
+column), Ctrl+A selects every task in the view, Esc clears (the side panel stays open). The
+task open in the panel is where the first Ctrl/Shift+click starts. A plain click still opens
+a task and drops the selection. While tasks are picked a bar at the bottom of the view sets
+status, priority, project, epic, due date or tags (add to all / take off all) on all of
+them, or deletes them; each is one `execute` batch, so one Ctrl+Z (`updateTasks`,
+`setTaggedMany`, `deleteTasks` in `store/actions.ts`; a picked subtask of a picked parent
+goes with it). Tasks that leave the view leave the selection; folding a group does not.
+`lib/selection.ts` (unit tests), `features/shell/BulkBar.tsx`, `listedIds` in
+`lib/views.ts`; store tests `store/bulk.test.ts`, app tests "multi-select". **Not yet
+run**: the agent session could not install node_modules in the worktree (pnpm needed
+approval), so `pnpm biome check` and `pnpm test` still have to run; no Rust changes.
+
 **task-master in your own Claude** (2026-11-11, on `main`, released in 0.15.0): `task-master-mcp`
 needs no `--db` any more: it opens `$TASK_MASTER_DB`, else the app's database on this
 device (config.json `data_dir`, else the OS app-data folder; `crates/mcp/src/locate.rs`,
@@ -1688,7 +1703,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Board: Shift+Enter on a card to open the full page.
 - Board: column widths and collapsed columns per saved view (today: per machine, all boards).
 
-- List view multi-select and bulk actions (plan section 6), via one `execute` batch.
+- Multi-select (done in list and board): drag several picked cards at once on the board;
+  pick with the keyboard (e.g. Shift+↑/↓ between rows); a bulk "Today" toggle and
+  "move under a parent".
 
 - Core: writer thread + reader pool if the M6 perf test needs it (ADR 002).
 - Core: status commands (M6), undo across restarts.

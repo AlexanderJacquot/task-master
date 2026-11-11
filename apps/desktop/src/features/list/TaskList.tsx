@@ -8,6 +8,8 @@ import { type RowHandlers, type RowLookups, TaskRow } from "./TaskRow";
 interface Props extends RowHandlers, RowLookups {
   rows: Row[];
   selectedId: string | null;
+  /** The multi-selection; while it has tasks, they are marked instead of the open one. */
+  picked: ReadonlySet<string>;
   onToggleGroup(groupKey: string): void;
 }
 
@@ -15,7 +17,8 @@ const ROW_HEIGHT = 36;
 const GROUP_HEIGHT = 44;
 
 /** Virtualized rows: only what is on screen is rendered, however long the list. */
-export function TaskList({ rows, selectedId, onToggleGroup, ...rowProps }: Props) {
+export function TaskList({ rows, selectedId, picked, onToggleGroup, ...rowProps }: Props) {
+  const picking = picked.size > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -73,7 +76,8 @@ export function TaskList({ rows, selectedId, onToggleGroup, ...rowProps }: Props
                   childDone={row.childDone}
                   visibleChildren={row.visibleChildren}
                   expanded={row.expanded}
-                  selected={row.task.id === selectedId}
+                  selected={!picking && row.task.id === selectedId}
+                  picked={picked.has(row.task.id)}
                 />
               )}
             </li>

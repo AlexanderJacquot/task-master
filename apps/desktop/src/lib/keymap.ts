@@ -45,7 +45,15 @@ export const FIXED_SHORTCUTS: Array<{ keys: string; what: string }> = [
   { keys: "Ctrl+Shift+Space", what: "Quick capture from any app (where the desktop allows it)" },
   { keys: "Ctrl+1 … Ctrl+9", what: "Jump to the first nine projects in the sidebar" },
   { keys: "Shift+Enter", what: "Open a task as a full page (in a list, or when adding one)" },
-  { keys: "Esc", what: "Leave a field, close the task panel, or leave the full task page" },
+  {
+    keys: "Esc",
+    what: "Leave a field, clear the selection, close the task panel, or leave the full task page",
+  },
+  {
+    keys: "Ctrl+click / Shift+click",
+    what: "List or board: select several tasks (one, or a range) to change them at once",
+  },
+  { keys: "Ctrl+A", what: "List or board: select every task in the view" },
   { keys: "Alt+← / Alt+→", what: "Board: move the focused card to the previous / next column" },
   { keys: "Space, arrows", what: "Board: pick up a card and move it with the keyboard" },
   { keys: "1–9", what: "Plan my day: add the numbered suggestion to Today" },

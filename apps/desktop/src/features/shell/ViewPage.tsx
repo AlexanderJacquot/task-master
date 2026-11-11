@@ -13,8 +13,16 @@ import { Button, cx, FOCUS, InlineInput, Select } from "../../components/ui";
 import { buildBoard, type Lane, laneFields } from "../../lib/board";
 import { loadOpenInPanel, withDefaultProject } from "../../lib/capturePrefs";
 import { isoDate } from "../../lib/dates";
+import {
+  type ClickMods,
+  clickSelect,
+  EMPTY_SELECTION,
+  pruneSelection,
+  type Selection,
+  selectAll,
+} from "../../lib/selection";
 import type { GroupBy, SortBy, Swimlane, TaskChange, View, ViewScope } from "../../lib/types";
-import { buildRows, filterIsEmpty, type ViewContext } from "../../lib/views";
+import { buildRows, filterIsEmpty, listedIds, type ViewContext } from "../../lib/views";
 import {
   createTask,
   createView,
@@ -30,10 +38,11 @@ import { BoardView } from "../board/BoardView";
 import { CAPTURE_HINT, CaptureBox } from "../capture/CaptureBox";
 import { TaskList } from "../list/TaskList";
 import { EmptyArt, TitleCrest, TitleFlourish } from "../ornaments/Ornaments";
+import { BulkBar } from "./BulkBar";
 import { EditableTitle } from "./EditableTitle";
 import { FilterBar } from "./FilterBar";
 import { useOpenTask } from "./useOpenTask";
-import { NEW_TASK_INPUT_ID } from "./useShortcuts";
+import { isEditable, NEW_TASK_INPUT_ID } from "./useShortcuts";
 import { displayOf, specOf, useViewPrefs, type ViewDisplay } from "./useViewPrefs";
 
 function toggle(set: ReadonlySet<string>, id: string): Set<string> {
@@ -52,7 +61,10 @@ function setMember(set: ReadonlySet<string>, id: string, member: boolean): Reado
   return next;
 }
 
-const SWIMLANES: Array<{ value: Swimlane; label: string }> = [
+/** Keys pressed inside these belong to them (Esc closes the menu, not the selection). */
+const MENUS_AND_DIALOGS = "[role=menu],[role=listbox],[role=dialog]";
+
+const SWIMLANES:Array<{ value: Swimlane; label: string }> = [
   { value: "none", label: "No swimlanes" },
   { value: "project", label: "Lanes by project" },
   { value: "epic", label: "Lanes by epic" },
@@ -358,6 +370,67 @@ function ViewBody({
     (id: string) => void navigate({ to: "/task/$taskId", params: { taskId: id }, search: {} }),
     [navigate],
   );
+  // Multi-select: Ctrl/Shift+click on rows or cards, Ctrl+A for all, Esc to clear.
+  const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new scope starts empty
+  useEffect(() => setSelection(EMPTY_SELECTION), [scopeKey]);
+  /** The tasks on screen, top to bottom (the board: lane by lane, column by column). */
+  const order = useMemo(
+    () =>
+      boardModel
+        ? boardModel.lanes.flatMap((lane) =>
+            boardModel.columns.flatMap((c) =>
+              (lane.cells[c.status.id] ?? []).map((card) => card.task.id),
+            ),
+          )
+        : rows.flatMap((r) => (r.type === "task" ? [r.task.id] : [])),
+    [boardModel, rows],
+  );
+  // Tasks that leave the view (another status, filtered out, deleted) leave the selection.
+  // Folding a group or a parent hides rows without taking them out of the view.
+  const picking = selection.ids.size > 0;
+  const inView = useMemo(() => {
+    if (!picking) return null;
+    return boardModel ? new Set(order) : listedIds(visibleTasks, spec, ctx);
+  }, [picking, boardModel, order, visibleTasks, spec, ctx]);
+  useEffect(() => {
+    if (inView) setSelection((s) => pruneSelection(s, inView));
+  }, [inView]);
+  // Read by the stable click and key handlers, so memoized rows and cards do not re-render.
+  const pickRef = useRef({ order, open: selectedId ?? null, picking });
+  pickRef.current = { order, open: selectedId ?? null, picking };
+  const onPick = useCallback((id: string, mods: ClickMods) => {
+    const now = pickRef.current;
+    setSelection((s) => clickSelect(s, id, mods, now.order, now.open));
+  }, []);
+  const clearSelection = useCallback(() => setSelection(EMPTY_SELECTION), []);
+  /** A plain click opens the task and drops the selection, as in a file manager. */
+  const onOpen = useCallback(
+    (id: string) => {
+      setSelection(EMPTY_SELECTION);
+      openTask(id);
+    },
+    [openTask],
+  );
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isEditable(e.target)) return;
+      if (e.target instanceof Element && e.target.closest(MENUS_AND_DIALOGS)) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        setSelection(selectAll(pickRef.current.order));
+      } else if (e.key === "Escape" && !e.defaultPrevented && pickRef.current.picking) {
+        // Clearing the selection is this Esc's whole job: the panel stays open.
+        e.preventDefault();
+        setSelection(EMPTY_SELECTION);
+      }
+    };
+    // Capture: runs before the app-wide Esc (close the panel) on the window.
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+
   const onToggleCollapse = useCallback((id: string) => {
     const row = rowsRef.current.find((r) => r.type === "task" && r.task.id === id);
     const expanded = row?.type === "task" && row.expanded;
@@ -376,7 +449,7 @@ function ViewBody({
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <header className="flex flex-wrap items-end gap-x-4 gap-y-3 px-10 pt-7 pb-4">
         <div className="min-w-0 flex-1">
           {eyebrow && <div className="mb-0.5 text-[13px] text-ink-3">{eyebrow}</div>}
@@ -608,7 +681,9 @@ function ViewBody({
           board={boardModel}
           lookups={lookups}
           selectedId={selectedId ?? null}
-          onOpen={openTask}
+          picked={selection.ids}
+          onOpen={onOpen}
+          onPick={onPick}
           onAdd={addToLane}
         />
       ) : rows.length === 0 ? (
@@ -627,8 +702,10 @@ function ViewBody({
         <TaskList
           rows={rows}
           selectedId={selectedId ?? null}
+          picked={selection.ids}
+          onPick={onPick}
           onToggleGroup={(id) => setCollapsedGroups((s) => toggle(s, id))}
-          onOpen={openTask}
+          onOpen={onOpen}
           onOpenPage={onOpenPage}
           onToggleDone={onToggleDone}
           onToggleCollapse={onToggleCollapse}
@@ -640,6 +717,7 @@ function ViewBody({
           showProject={showProject}
         />
       )}
+      {picking && <BulkBar ids={selection.ids} onClear={clearSelection} />}
     </div>
   );
 }

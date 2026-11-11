@@ -354,6 +354,86 @@ export function setTagged(store: TaskStore, taskId: string, tagId: string, tagge
   });
 }
 
+// ---------------------------------------------------------------------------------------
+// Bulk edits (multi-select in list and board views): one batch each, so one undo.
+
+/** True when `change` leaves the task as it is (bulk edits skip those tasks). */
+function changeIsNoop(task: Task, change: TaskChange): boolean {
+  if ("status_id" in change) return change.status_id === task.status_id;
+  if ("due_date" in change) return (change.due_date ?? null) === task.due_date;
+  if ("today_on" in change) return (change.today_on ?? null) === task.today_on;
+  return isNoop(task, change);
+}
+
+/**
+ * Applies the same changes to several tasks as one undoable batch. Tasks the changes
+ * would leave as they are get no command. Resolves to null when nothing changes.
+ */
+export function updateTasks(store: TaskStore, ids: Iterable<string>, changes: TaskChange[]) {
+  const s = store.getState();
+  const now = Date.now();
+  const commands: Command[] = [];
+  const updated: Task[] = [];
+  for (const id of new Set(ids)) {
+    const task = s.tasks[id];
+    if (!task) continue;
+    const effective = changes.filter((c) => !changeIsNoop(task, c));
+    if (!effective.length) continue;
+    commands.push({ type: "update_task", id, changes: effective });
+    updated.push(applyTaskChanges(task, effective, s.statuses, now));
+  }
+  if (!commands.length) return Promise.resolve(null);
+  return s.mutate(commands, { upsert: { tasks: updated } });
+}
+
+/** Adds a tag to (or takes it off) several tasks as one undoable batch. */
+export function setTaggedMany(
+  store: TaskStore,
+  ids: Iterable<string>,
+  tagId: string,
+  tagged: boolean,
+) {
+  const s = store.getState();
+  const now = Date.now();
+  const commands: Command[] = [];
+  const updated: Task[] = [];
+  for (const id of new Set(ids)) {
+    const task = s.tasks[id];
+    if (!task || task.tag_ids.includes(tagId) === tagged) continue;
+    const tag_ids = tagged
+      ? [...task.tag_ids, tagId].sort()
+      : task.tag_ids.filter((t) => t !== tagId);
+    commands.push({ type: tagged ? "tag_task" : "untag_task", task_id: id, tag_id: tagId });
+    updated.push({ ...task, tag_ids, updated_at: now });
+  }
+  if (!commands.length) return Promise.resolve(null);
+  return s.mutate(commands, { upsert: { tasks: updated } });
+}
+
+/**
+ * Soft-deletes several tasks and their subtasks as one undoable batch. A task whose
+ * parent (or any ancestor) is also picked goes with it: the core refuses to delete a
+ * task twice in one batch.
+ */
+export function deleteTasks(store: TaskStore, ids: Iterable<string>) {
+  const s = store.getState();
+  const picked = new Set([...ids].filter((id) => s.tasks[id]));
+  const underPicked = (id: string) => {
+    const seen = new Set([id]); // a parent cycle in corrupt data ends the walk
+    for (let p = s.tasks[id]?.parent_id; p && !seen.has(p); p = s.tasks[p]?.parent_id) {
+      if (picked.has(p)) return true;
+      seen.add(p);
+    }
+    return false;
+  };
+  const roots = [...picked].filter((id) => !underPicked(id));
+  if (!roots.length) return Promise.resolve(null);
+  const children = childrenByParent(Object.values(s.tasks));
+  const removed = roots.flatMap((id) => [id, ...descendantIds(id, children)]);
+  const commands: Command[] = roots.map((id) => ({ type: "delete_task", id }));
+  return s.mutate(commands, { remove: { tasks: removed } });
+}
+
 /** Deletes a tag; the core takes it off every task in the same undoable batch. */
 export function deleteTag(store: TaskStore, id: string) {
   const s = store.getState();

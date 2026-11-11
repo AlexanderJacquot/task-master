@@ -43,6 +43,7 @@ import {
 } from "../../components/TaskIcons";
 import { cx, Dot, InlineInput } from "../../components/ui";
 import { adjacentStatus, type Board, type Card, type Column, type Lane } from "../../lib/board";
+import { type ClickMods, isSelectClick, modsOf } from "../../lib/selection";
 import { moveCard } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
 import { applyTaskDrop, finishTaskDrag, startTaskDrag, taskDropOver } from "../shell/taskDrop";
@@ -63,7 +64,11 @@ interface Props {
   /** Memoized by the caller so cards only re-render when their task changes. */
   lookups: CardLookups;
   selectedId: string | null;
+  /** The multi-selection; while it has tasks, they are marked instead of the open one. */
+  picked: ReadonlySet<string>;
   onOpen(id: string): void;
+  /** Ctrl/Shift+click on a card: adds it (or a range) to the multi-selection. */
+  onPick(id: string, mods: ClickMods): void;
   /** A "+" by each swimlane's name adds a task to that lane (its project, epic or priority). */
   onAdd?(lane: Lane, title: string): void;
 }
@@ -99,7 +104,15 @@ function sameOrder(a: string[] | undefined, b: string[] | undefined): boolean {
  * card moves to the previous or next column with `Alt+←/→`. Columns can be collapsed to a
  * strip (still a drop target) and resized; a wide column lays its cards out side by side.
  */
-export function BoardView({ board, selectedId, onOpen, onAdd, lookups }: Props) {
+export function BoardView({
+  board,
+  selectedId,
+  picked,
+  onOpen,
+  onPick,
+  onAdd,
+  lookups,
+}: Props) {
   const store = useTaskStore();
   const [available, setAvailable] = useState(0);
   const columns = useBoardColumns({
@@ -397,7 +410,9 @@ export function BoardView({ board, selectedId, onOpen, onAdd, lookups }: Props) 
             bounded={lanes}
             activeId={activeId}
             selectedId={selectedId}
+            picked={picked}
             onOpen={onOpen}
+            onPick={onPick}
             onCardKey={onCardKey}
             lookups={lookups}
           />
@@ -781,7 +796,9 @@ interface CellProps {
   bounded: boolean;
   activeId: string | null;
   selectedId: string | null;
+  picked: ReadonlySet<string>;
   onOpen(id: string): void;
+  onPick(id: string, mods: ClickMods): void;
   onCardKey(e: KeyboardEvent, id: string): boolean;
   lookups: CardLookups;
 }
@@ -843,8 +860,10 @@ function BoardCell(p: CellProps) {
                     <SortableCard
                       card={card}
                       placeholder={card.task.id === p.activeId}
-                      selected={card.task.id === p.selectedId}
+                      selected={p.picked.size === 0 && card.task.id === p.selectedId}
+                      picked={p.picked.has(card.task.id)}
                       onOpen={p.onOpen}
+                      onPick={p.onPick}
                       onCardKey={p.onCardKey}
                       lookups={p.lookups}
                     />
@@ -863,14 +882,18 @@ const SortableCard = memo(function SortableCard({
   card,
   placeholder,
   selected,
+  picked,
   onOpen,
+  onPick,
   onCardKey,
   lookups,
 }: {
   card: Card;
   placeholder: boolean;
   selected: boolean;
+  picked: boolean;
   onOpen(id: string): void;
+  onPick(id: string, mods: ClickMods): void;
   onCardKey(e: KeyboardEvent, id: string): boolean;
   lookups: CardLookups;
 }) {
@@ -889,7 +912,13 @@ const SortableCard = memo(function SortableCard({
       aria-label={card.task.title}
       data-card-id={id}
       data-testid="board-card"
-      onClick={() => onOpen(id)}
+      aria-pressed={picked ? true : undefined}
+      // Shift+click would also select the page's text.
+      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+      onClick={(e) => {
+        if (isSelectClick(e)) onPick(id, modsOf(e));
+        else onOpen(id);
+      }}
       onKeyDown={(e) => {
         if (onCardKey(e, id)) return;
         if (e.key === "Enter" && !e.altKey) {
@@ -907,6 +936,7 @@ const SortableCard = memo(function SortableCard({
         childCount={card.childCount}
         childDone={card.childDone}
         selected={selected}
+        picked={picked}
         placeholder={placeholder}
       />
     </div>
