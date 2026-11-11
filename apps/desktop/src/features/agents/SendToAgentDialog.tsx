@@ -5,6 +5,7 @@ import { Dialog } from "radix-ui";
 import { useEffect, useState } from "react";
 import { Button, cx, INPUT, Select } from "../../components/ui";
 import type { AgentSession, AgentSettings, Changes, ProjectFolder, Task } from "../../lib/types";
+import { startTimer } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import {
   DEFAULT_MODEL,
@@ -105,6 +106,8 @@ export function SendToAgentDialog({
         prompt,
       });
       store.getState().record(sessionChanges(session));
+      // The work timer runs while the agent works; it stops when the session ends.
+      void startTimer(store, task.id, session.started_at, session.id);
       // Offer the folder as the project's when it has none on this device yet.
       if (task.project_id && !projectFolder) {
         void api.setFolder(task.project_id, folder.trim()).catch(() => undefined);

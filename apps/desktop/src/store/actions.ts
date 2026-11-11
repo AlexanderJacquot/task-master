@@ -5,8 +5,9 @@ import { ranksForDrop } from "../lib/board";
 import type { RestorePlan } from "../lib/history";
 import { rankBetween } from "../lib/rank";
 import { playSound } from "../lib/sounds";
-import { getTimer, runToBlocks, setTimer } from "../lib/timer";
+import { getTimer, type RunningTimer, runToBlocks, setTimer } from "../lib/timer";
 import type {
+  AgentSession,
   Attachment,
   BlockOutcome,
   Capture,
@@ -1024,12 +1025,26 @@ export async function logWork(
 /**
  * Starts the work timer on a task. A timer running on another task is stopped (and its
  * time logged) first. A task not started yet moves to the first in-progress status.
+ * With `sessionId` (a task sent to an agent) the timer follows that session and stops
+ * when it ends (`followAgentTimer`); a timer already running on the task keeps its start.
  */
-export async function startTimer(store: TaskStore, taskId: string, now = Date.now()) {
+export async function startTimer(
+  store: TaskStore,
+  taskId: string,
+  now = Date.now(),
+  sessionId?: string,
+) {
   const running = getTimer();
-  if (running?.task_id === taskId) return;
+  if (running?.task_id === taskId) {
+    if (sessionId) setTimer({ ...running, session_id: sessionId });
+    return;
+  }
   if (running) await stopTimer(store, now);
-  setTimer({ task_id: taskId, started_at: now });
+  setTimer(
+    sessionId
+      ? { task_id: taskId, started_at: now, session_id: sessionId }
+      : { task_id: taskId, started_at: now },
+  );
   const s = store.getState();
   const task = s.tasks[taskId];
   const category = task && s.statuses.find((st) => st.id === task.status_id)?.category;
@@ -1045,6 +1060,35 @@ export async function stopTimer(store: TaskStore, now = Date.now()): Promise<str
   if (!running) return [];
   setTimer(null);
   return logWork(store, running.task_id, running.started_at, now);
+}
+
+/**
+ * When a timer following an agent session should stop: the session's end, once it is done,
+ * failed, stopped or interrupted. Null while it runs (or goes on in a terminal), and for an
+ * end older than the timer (a follow-up just sent, the session not marked running yet).
+ */
+export function agentTimerEnd(
+  timer: RunningTimer | null,
+  sessions: Record<string, AgentSession>,
+): number | null {
+  if (!timer?.session_id) return null;
+  const session = sessions[timer.session_id];
+  if (!session || session.state === "running" || session.state === "terminal") return null;
+  const end = session.ended_at ?? session.updated_at;
+  return end >= timer.started_at ? end : null;
+}
+
+/**
+ * Stops the timer when the agent session it follows ends, logging the run up to the
+ * session's end. Run it in one window only. Returns the unsubscribe function.
+ */
+export function followAgentTimer(store: TaskStore): () => void {
+  const check = () => {
+    const end = agentTimerEnd(getTimer(), store.getState().agent_sessions);
+    if (end !== null) void stopTimer(store, end);
+  };
+  check();
+  return store.subscribe(check);
 }
 
 /** Moves or resizes a block. */
