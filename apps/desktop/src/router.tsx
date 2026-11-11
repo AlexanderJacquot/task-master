@@ -11,7 +11,7 @@ import { MoreIcon as MoreHorizontal } from "./components/TaskIcons";
 import { IconButton } from "./components/ui";
 import { AgentsPage } from "./features/agents/AgentsPage";
 import { CalendarPage } from "./features/calendar/CalendarPage";
-import { LineagePage } from "./features/lineage/LineagePage";
+import { LineagePage, SavedLineagePage } from "./features/lineage/LineagePage";
 import { MetricsPage } from "./features/metrics/MetricsPage";
 import { EpicPage } from "./features/organize/EpicPage";
 import { ProjectPage } from "./features/organize/ProjectPage";
@@ -168,7 +168,9 @@ const savedViewRoute = createRoute({
     const view = useStoreState((s) => s.views[viewId]);
     if (!view) return <Missing what="View" />;
     // Remount when the stored view changes (save, rename, undo) so the draft starts from it.
-    return <SavedViewPage key={`${view.id}:${view.updated_at}`} view={view} />;
+    const key = `${view.id}:${view.updated_at}`;
+    if (view.spec.lineage) return <SavedLineagePage key={key} view={view} />;
+    return <SavedViewPage key={key} view={view} />;
   },
 });
 

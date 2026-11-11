@@ -3,19 +3,29 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { type ReactNode, useMemo, useRef, useState } from "react";
 import {
   ArrowRightIcon as ArrowRight,
+  BookmarkIcon as Bookmark,
   LineageIcon as GitBranch,
   SearchIcon as Search,
   CloseIcon as X,
 } from "../../components/TaskIcons";
-import { cx, FOCUS, IconButton, Select } from "../../components/ui";
-import type { Task } from "../../lib/types";
+import { Button, cx, FOCUS, IconButton, InlineInput, Select } from "../../components/ui";
+import type { Task, View } from "../../lib/types";
 import { FILTER_NONE } from "../../lib/views";
-import { copyBelonging, createTask, setParent, updateTask } from "../../store/actions";
+import {
+  copyBelonging,
+  createTask,
+  createView,
+  deleteView,
+  setParent,
+  updateTask,
+  updateView,
+} from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { EditableTitle } from "../shell/EditableTitle";
 import { MultiPick } from "../shell/FilterBar";
 import { useOpenTask } from "../shell/useOpenTask";
 import { parentCandidates, subtaskCandidates } from "../task-detail/hierarchy";
-import type { Connector } from "./canvas";
+import { type Connector, loadCanvas, type SavedCanvas, saveCanvas } from "./canvas";
 import {
   type Completion,
   closedTaskIds,
@@ -27,23 +37,13 @@ import {
 } from "./graph";
 import { LineageCanvas } from "./LineageCanvas";
 import type { Arrange, LaneSpec } from "./lanes";
+import { canvasOf, filterOf, type LineageFilter, lineageSpec, sameFilter } from "./saved";
 
 const control = "rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink";
 
 /** Filters survive leaving the page, like the canvas layout (a local view preference). */
 const FILTER_KEY = "task-master.lineage-filter";
-type SavedFilter = {
-  project: string;
-  /** Epic ids, or `FILTER_NONE` for tasks without an epic; empty shows all. */
-  epics: string[];
-  /** Tag ids, or `FILTER_NONE` for tasks without tags; empty shows all. */
-  tags: string[];
-  completion: Completion;
-  linkedOnly: boolean;
-  /** Show subtasks (tasks with a parent) on the canvas. */
-  subtasks: boolean;
-  arrange: Arrange;
-};
+type SavedFilter = LineageFilter;
 function loadFilter(): SavedFilter {
   const fallback: SavedFilter = {
     project: "",
@@ -117,8 +117,28 @@ function LinkChip({
   );
 }
 
-/** `around`: open on one task's lineage (from a task's "Lineage" button). */
-export function LineagePage({ around }: { around?: string } = {}) {
+/**
+ * A saved Lineage view (ADR 022). Its filters and card layout are a draft until "Save
+ * view"; "Revert" remounts the page from the stored view.
+ */
+export function SavedLineagePage({ view }: { view: View }) {
+  const [revision, setRevision] = useState(0);
+  return <LineagePage key={revision} view={view} onRevert={() => setRevision((r) => r + 1)} />;
+}
+
+/**
+ * `around`: open on one task's lineage (from a task's "Lineage" button). `view`: a saved
+ * Lineage view, whose filters and layout replace the ones kept on this machine.
+ */
+export function LineagePage({
+  around: aroundParam,
+  view,
+  onRevert,
+}: {
+  around?: string;
+  view?: View;
+  onRevert?: () => void;
+} = {}) {
   const store = useTaskStore();
   const navigate = useNavigate();
   const tasks = useStoreState((s) => s.tasks);
@@ -128,9 +148,20 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const statuses = useStoreState((s) => s.statuses);
   const pending = useStoreState((s) => s.pending);
   const openTask = useOpenTask();
+  const savedFilter = useMemo(() => (view ? filterOf(view.spec) : null), [view]);
+  const savedAround = view?.spec.lineage?.around ?? null;
+  /** In a saved view the task it centers on is part of the draft. */
+  const [viewAround, setViewAround] = useState<string | null>(savedAround);
+  const around = view ? (viewAround ?? undefined) : aroundParam;
+  /** The canvas starts from the saved view's layout, or the one kept on this machine. */
+  const [initialLayout] = useState<SavedCanvas>(() => (view ? canvasOf(view.spec) : loadCanvas()));
+  /** The canvas layout as last reported, to save into a view. */
+  const layout = useRef(initialLayout);
+  const [layoutEdited, setLayoutEdited] = useState(false);
+  const [savingAs, setSavingAs] = useState(false);
   const [selected, setSelected] = useState<string | null>(around ?? null);
   const [connecting, setConnecting] = useState<Connector | null>(null);
-  const [filter, setFilter] = useState(loadFilter);
+  const [filter, setFilter] = useState(() => savedFilter ?? loadFilter());
   const { project, completion, linkedOnly, subtasks, arrange } = filter;
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
@@ -222,24 +253,25 @@ export function LineagePage({ around }: { around?: string } = {}) {
   /** Epics shown under a project filter: that project's, plus epics without a project. */
   const epicFits = (id: string, projectId: string) =>
     id === FILTER_NONE || !epics[id]?.project_id || epics[id]?.project_id === projectId;
-  /** Arranging keeps the selection: the same cards stay, only their places change. */
-  function changeArrange(value: Arrange) {
-    const next = { ...filter, arrange: value };
-    setFilter(next);
-    try {
-      localStorage.setItem(FILTER_KEY, JSON.stringify(next));
-    } catch {
-      /* Arranging still works without storage. */
-    }
-  }
-  function changeFilter(next: Partial<SavedFilter>) {
-    const value = { ...filter, ...next };
-    setFilter(value);
+  /** Keeps the filters on this machine; a saved view holds its own instead. */
+  function remember(value: SavedFilter) {
+    if (view) return;
     try {
       localStorage.setItem(FILTER_KEY, JSON.stringify(value));
     } catch {
       /* Filters still work without storage. */
     }
+  }
+  /** Arranging keeps the selection: the same cards stay, only their places change. */
+  function changeArrange(value: Arrange) {
+    const next = { ...filter, arrange: value };
+    setFilter(next);
+    remember(next);
+  }
+  function changeFilter(next: Partial<SavedFilter>) {
+    const value = { ...filter, ...next };
+    setFilter(value);
+    remember(value);
     setSelected(null);
     setConnecting(null);
     setError("");
@@ -325,14 +357,52 @@ export function LineagePage({ around }: { around?: string } = {}) {
       /* The panel still toggles without storage. */
     }
   }
+  /** Shows one task's lineage, or every task again (null). A saved view keeps it as a draft. */
+  function focusOn(id: string | null) {
+    if (!view) {
+      void navigate({ to: "/lineage", search: id ? { around: id } : {} });
+      return;
+    }
+    setViewAround(id);
+    setSelected(id);
+    setConnecting(null);
+    setError("");
+  }
   /** A search result: select it and bring its card into view, or open its lineage. */
   function show(id: string) {
     setSelected(id);
     setConnecting(null);
     setError("");
     if (onCanvas.has(id)) setReveal({ id, seq: Date.now() });
-    else void navigate({ to: "/lineage", search: { around: id } });
+    else focusOn(id);
   }
+  /** What a saved view of the page as it is now holds. */
+  function currentSpec() {
+    return lineageSpec(filter, focus?.id ?? null, layout.current, onCanvas);
+  }
+  async function saveAsView(name: string) {
+    setSavingAs(false);
+    if (!name.trim()) return;
+    const id = await createView(store, name, currentSpec());
+    if (id) void navigate({ to: "/view/$viewId", params: { viewId: id } });
+    else setError(store.getState().lastError ?? "Could not save the view.");
+  }
+  async function saveView() {
+    if (!view) return;
+    // The page remounts from the stored view once it has changed.
+    const result = await updateView(store, view.id, [{ spec: currentSpec() }]);
+    if (!result) setError(store.getState().lastError ?? "Could not save the view.");
+  }
+  async function removeView() {
+    if (!view) return;
+    if ((await deleteView(store, view.id)) !== null) void navigate({ to: "/lineage", search: {} });
+  }
+  const dirty =
+    !!view &&
+    (layoutEdited ||
+      viewAround !== savedAround ||
+      !savedFilter ||
+      !sameFilter(filter, savedFilter));
   async function createFromPanel(side: Connector["side"]) {
     if (!current || !query.trim()) return;
     const id = await addLinked(current.id, side, { title: query.trim() });
@@ -443,12 +513,59 @@ export function LineagePage({ around }: { around?: string } = {}) {
     <div className="flex h-full min-h-0 flex-col">
       <header className="border-b border-line px-6 py-5">
         <div className="flex items-center gap-3">
-          <GitBranch size={24} className="text-rubric" />
-          <h1 className="font-display text-3xl text-ink">Lineage</h1>
+          <GitBranch size={24} className="shrink-0 text-rubric" />
+          {view ? (
+            <h1 className="min-w-0 font-display text-3xl text-ink">
+              <EditableTitle
+                value={view.name}
+                placeholder="View name"
+                onRename={(name) => void updateView(store, view.id, [{ name }])}
+              />
+            </h1>
+          ) : (
+            <h1 className="font-display text-3xl text-ink">Lineage</h1>
+          )}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {view ? (
+              <>
+                {dirty && (
+                  <>
+                    <Button size="sm" onClick={onRevert}>
+                      Revert
+                    </Button>
+                    <Button size="sm" variant="primary" onClick={() => void saveView()}>
+                      Save view
+                    </Button>
+                  </>
+                )}
+                <Button size="sm" onClick={() => void removeView()}>
+                  Delete view
+                </Button>
+              </>
+            ) : savingAs ? (
+              <InlineInput
+                initial=""
+                autoFocus
+                placeholder="Name of the new view"
+                onCommit={(name) => void saveAsView(name)}
+                onCancel={() => setSavingAs(false)}
+              />
+            ) : (
+              <Button
+                size="sm"
+                title="Keep these filters and where the cards sit as a saved view"
+                onClick={() => setSavingAs(true)}
+              >
+                <Bookmark size={14} />
+                Save as view
+              </Button>
+            )}
+          </div>
         </div>
         <p className="mt-2 text-sm text-ink-3">
-          Arrange tasks on the canvas. Drag a connector between cards to link a prerequisite to its
-          dependent.
+          {view
+            ? "A saved lineage view: its filters and card layout. Changes stay a draft until you save the view."
+            : "Arrange tasks on the canvas. Drag a connector between cards to link a prerequisite to its dependent."}
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           {focus && (
@@ -457,7 +574,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
               <IconButton
                 label="Show all tasks"
                 className="size-6"
-                onClick={() => void navigate({ to: "/lineage", search: {} })}
+                onClick={() => focusOn(null)}
               >
                 <X size={13} />
               </IconButton>
@@ -560,7 +677,14 @@ export function LineagePage({ around }: { around?: string } = {}) {
           laneSpecs={laneSpecs}
           epics={epics}
           onMoveToLane={moveToLane}
-          fitOnOpen={!!focus}
+          // A saved view keeps no camera: it opens framed on its cards.
+          fitOnOpen={!!focus || !!view}
+          layout={initialLayout}
+          onPersist={(canvas) => {
+            layout.current = canvas;
+            if (!view) saveCanvas(canvas);
+          }}
+          onEdit={() => setLayoutEdited(true)}
           statuses={statuses}
           closed={closed}
           blocked={blocked}
@@ -720,9 +844,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
                   onCopy={() => void copyToFollowers()}
                   onClear={() => setSelected(null)}
                   onOpen={() => openTask(current.id)}
-                  onShowLineage={() =>
-                    void navigate({ to: "/lineage", search: { around: current.id } })
-                  }
+                  onShowLineage={() => focusOn(current.id)}
                   onRemove={remove}
                   onSetParent={(child, parent) => void adopt(child, parent)}
                   onConnectOnGraph={() => {

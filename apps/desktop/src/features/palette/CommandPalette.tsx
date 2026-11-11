@@ -142,7 +142,7 @@ export function CommandPalette({
         key: `view:${v.id}`,
         group: "Views",
         label: v.name,
-        hint: "saved view",
+        hint: v.spec.lineage ? "saved lineage view" : "saved view",
         run: () => go("/view/$viewId", { viewId: v.id }),
       });
     }

@@ -780,3 +780,79 @@ it("shows or hides subtasks on the canvas and remembers the choice", async () =>
   fireEvent.click(toggle);
   expect(await screen.findByRole("button", { name: "Select Small step" })).toBeTruthy();
 });
+
+it("saves the arranged canvas as a named view, reopens it as saved, and saves, reverts or deletes edits", async () => {
+  const a = task({ title: "Plan" });
+  const b = task({ title: "Build", dependency_ids: [a.id] });
+  const c = task({ title: "Unrelated" });
+  place([a, b, c]);
+  const { commands } = await setup([a, b, c]);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Connected tasks only" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Select Unrelated" })).toBeNull(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save as view" }));
+  const name = screen.getByPlaceholderText("Name of the new view");
+  fireEvent.change(name, { target: { value: "Release chain" } });
+  fireEvent.keyDown(name, { key: "Enter" });
+
+  await waitFor(() => expect(commands.at(-1)?.[0]).toMatchObject({ type: "create_view" }));
+  expect(commands.at(-1)?.[0]).toMatchObject({
+    view: {
+      name: "Release chain",
+      spec: {
+        scope: { kind: "all" },
+        lineage: {
+          around: null,
+          linked_only: true,
+          arrange: "free",
+          positions: { [a.id]: { x: 100, y: 100 }, [b.id]: { x: 450, y: 100 } },
+        },
+      },
+    },
+  });
+  // Only the cards on the canvas keep a place.
+  expect(JSON.stringify(commands.at(-1))).not.toContain(c.id);
+
+  // It opens as the saved view, listed under Saved views.
+  expect(await screen.findByRole("heading", { name: /Release chain/ })).toBeTruthy();
+  const nav = screen.getByRole("navigation");
+  fireEvent.click(within(nav).getByRole("button", { name: /Saved views/ }));
+  expect(within(nav).getByRole("link", { name: "Release chain" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Select Unrelated" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save view" })).toBeNull();
+  const left = () =>
+    (screen.getByRole("button", { name: "Select Plan" }).parentElement as HTMLElement).style.left;
+  const nudge = () =>
+    fireEvent.keyDown(screen.getByRole("button", { name: "Select Plan" }), {
+      key: "ArrowLeft",
+      altKey: true,
+    });
+
+  // Moving a card is a draft: Revert puts it back, and this machine's own canvas is untouched.
+  nudge();
+  expect(left()).toBe("84px");
+  expect(loadCanvas().positions[a.id]).toEqual({ x: 100, y: 100 });
+  fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
+  await waitFor(() => expect(left()).toBe("100px"));
+  expect(screen.queryByRole("button", { name: "Save view" })).toBeNull();
+
+  // A filter change is a draft too.
+  fireEvent.click(screen.getByRole("checkbox", { name: "Connected tasks only" }));
+  expect(await screen.findByRole("button", { name: "Save view" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Connected tasks only" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Save view" })).toBeNull());
+
+  nudge();
+  fireEvent.click(await screen.findByRole("button", { name: "Save view" }));
+  await waitFor(() => expect(commands.at(-1)?.[0]).toMatchObject({ type: "update_view" }));
+  expect(commands.at(-1)?.[0]).toMatchObject({
+    changes: [{ spec: { lineage: { positions: { [a.id]: { x: 84, y: 100 } } } } }],
+  });
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Save view" })).toBeNull());
+  expect(left()).toBe("84px");
+
+  fireEvent.click(screen.getByRole("button", { name: "Delete view" }));
+  await waitFor(() => expect(commands.at(-1)?.[0]).toMatchObject({ type: "delete_view" }));
+  expect(await screen.findByRole("heading", { name: "Lineage" })).toBeTruthy();
+});

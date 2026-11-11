@@ -935,14 +935,20 @@ export function Sidebar({
               key={view.id}
               to="/view/$viewId"
               params={{ viewId: view.id }}
-              icon={<Bookmark size={14} className="shrink-0" />}
+              icon={
+                view.spec.lineage ? (
+                  <GitBranch size={14} className="shrink-0" />
+                ) : (
+                  <Bookmark size={14} className="shrink-0" />
+                )
+              }
             >
               {view.name}
             </NavItem>
           ))}
           {viewList.length === 0 && (
             <p className="px-2.5 py-1 text-[12.5px] text-ink-3">
-              Use "Save as view" in any view's Display menu
+              Use "Save as view" in any view's Display menu, or on the Lineage page
             </p>
           )}
         </Collapsible>

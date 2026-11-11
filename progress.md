@@ -4,6 +4,18 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Saved Lineage views** (2026-11-11, branch `worktree-save-lineage-views`, not merged): the
+Lineage page header has "Save as view": it names and saves the page's filters, focus task
+and card layout (positions, lane positions, pinned cards, folded lanes; no camera) as a
+saved view (ADR 022, `ViewSpec.lineage`). It is listed under Saved views with the Lineage
+icon and opens on the Lineage page; edits are a draft (Revert / Save view), the title
+renames, "Delete view" removes it. Cards follow the filters; only visible cards keep a
+place. `features/lineage/saved.ts` (unit tests), `LineageCanvas` takes `layout`,
+`onPersist`, `onEdit`; core validation and tests in `crates/core/tests/store.rs`, page test
+in `LineagePage.test.tsx`. **Not compiled or tested yet** (the agent session could not run
+cargo or pnpm): regenerate `bindings.ts` (`cargo test -p taskmaster-desktop export_bindings`,
+or the full `cargo test`), then clippy, `pnpm biome check`, `pnpm test`.
+
 **task-master in your own Claude** (2026-11-11, on `main`, released in 0.15.0): `task-master-mcp`
 needs no `--db` any more: it opens `$TASK_MASTER_DB`, else the app's database on this
 device (config.json `data_dir`, else the OS app-data folder; `crates/mcp/src/locate.rs`,
