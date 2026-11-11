@@ -4,7 +4,7 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**task-master in your own Claude** (2026-11-11, on `main`, uncommitted): `task-master-mcp`
+**task-master in your own Claude** (2026-11-11, on `main`, released in 0.15.0): `task-master-mcp`
 needs no `--db` any more: it opens `$TASK_MASTER_DB`, else the app's database on this
 device (config.json `data_dir`, else the OS app-data folder; `crates/mcp/src/locate.rs`,
 unit tests). `--show-db` prints that path. Without a session the server's instructions
@@ -14,60 +14,54 @@ versions, other computers; ADR 017 amended. Live check: stdio handshake and
 `list_projects` against the WSL database. The Windows `.exe` with this change is not
 built yet (next release); under WSL interop it sees `%APPDATA%` (checked).
 
-**Fold the description** (2026-11-11, on `main`, uncommitted): the Description section of
+**Fold the description** (2026-11-11, on `main`, released in 0.15.0): the Description section of
 the side panel and the full task page has a chevron header that folds it; folded, the
 header shows the description's first line of text. The choice is kept apart for the panel
 and the page and remembered on this machine (`task-master.description.folded`); a task
 just created (cursor in its description) opens it without changing the choice. The page
 now shows a "Description" header too. `features/task-detail/useDescriptionFolded.ts`,
-unit tests beside it. Checks not run in the session (commands needed approval).
+unit tests beside it. Checks run at the 0.15.0 release.
 
-**Agent directive** (2026-11-11, on `main`, uncommitted): Settings → Agents has a
+**Agent directive** (2026-11-11, on `main`, released in 0.15.0): Settings → Agents has a
 "Directive" text box, standing instructions for every agent this device starts. It is
 kept in `config.json` (`AgentSettings.directive`, per device like the other agent
 settings, blank saved as none) and `session_rules` appends it to the app's rules under
 "# The user's standing instructions", so it goes into `--append-system-prompt-file` of
 each new session (resumed runs keep the system prompt they started with). Unit tests in
-`agents/mod.rs`, `config.rs` and `agentSettings.test.tsx`. Checks not run in the session
-(commands needed approval); `bindings.ts` must be regenerated (`cargo test` in
-src-tauri) before `pnpm test`, as `fakeAgents.ts` already sets `directive`.
+`agents/mod.rs`, `config.rs` and `agentSettings.test.tsx`. Checks run at the 0.15.0 release.
 
-**Lineage side panel readable** (2026-11-11, on `main`, uncommitted): with a card selected,
+**Lineage side panel readable** (2026-11-11, on `main`, released in 0.15.0): with a card selected,
 each search/browse row in the 320px panel put four link chips (Prereq, Dependent, Parent,
 Subtask) beside the title, squeezing the title to a few pixels. Rows now show the title on
 its own line (up to two lines, full title in the tooltip) and the chips wrapped below; the
 panel is 384px (at most 45% of the page); the result lists no longer scroll inside the
-scrolling panel. `SearchResult` in `features/lineage/LineagePage.tsx`. Checks not run in
-the session (commands needed approval).
+scrolling panel. `SearchResult` in `features/lineage/LineagePage.tsx`. Checks run at the 0.15.0 release.
 
-**Subtasks all the way down** (2026-11-11, on `main`, uncommitted): the list nests
+**Subtasks all the way down** (2026-11-11, on `main`, released in 0.15.0): the list nests
 subtasks at any depth (it used to stop at two levels and drop grandchildren). Every row
 with subtasks in the view has a chevron to unroll or fold it; top-level rows start
 unrolled, deeper ones folded. "Show subtasks" in Display (shared with the board, where it
 already showed every level as cards) now also shows in list mode and unrolls every level;
 toggling it drops the hand choices. Indentation is capped at 8 levels. `buildRows` and
-`isRowExpanded` in `lib/views.ts`, unit tests in `views.test.ts`. Checks not run in the
-session (commands needed approval).
+`isRowExpanded` in `lib/views.ts`, unit tests in `views.test.ts`. Checks run at the 0.15.0 release.
 
-**MCP: calendar and lineage tools** (2026-11-11, on `main`, uncommitted): the agent MCP
+**MCP: calendar and lineage tools** (2026-11-11, on `main`, released in 0.15.0): the agent MCP
 server gains `get_calendar`, `schedule_block`, `update_block` (`crates/mcp/src/calendar.rs`)
 and `get_lineage`, `link_tasks` (`crates/mcp/src/lineage.rs`); see ADR 017 "Calendar and
 Lineage tools". Writes keep the session scope rule. Unit tests in `calendar.rs`, end-to-end
-tests in `crates/mcp/tests/tools.rs`. Checks not run in the session (cargo needed
-approval): run `cargo fmt`, clippy and `cargo test -p taskmaster-mcp`.
+tests in `crates/mcp/tests/tools.rs`. Checks run at the 0.15.0 release.
 
-**Default project picker** (2026-11-11, on `main`, uncommitted): Settings → Adding tasks
+**Default project picker** (2026-11-11, on `main`, released in 0.15.0): Settings → Adding tasks
 used a native `<select>` (OS-styled dropdown); it now uses the app's `Select` with project
-color dots, like the other settings. Checks not run in the session (commands needed approval).
+color dots, like the other settings. Checks run at the 0.15.0 release.
 
-**Quick-capture window follows the theme** (2026-11-11, on `main`, uncommitted): the capture
+**Quick-capture window follows the theme** (2026-11-11, on `main`, released in 0.15.0): the capture
 window is created hidden at app start and read theme/weathering only then, so after
 switching away from parchment in Settings it kept the parchment look. `lib/appearance.ts`
 (`followAppearance`) re-applies on `storage` events, and `main.tsx` re-applies on each
-`captureOpened`. Unit test `appearance.test.ts`. Checks not run in the session (commands
-needed approval).
+`captureOpened`. Unit test `appearance.test.ts`. Checks run at the 0.15.0 release.
 
-**Work timer** (2026-11-11, on `main`, uncommitted): "Start timer" on the task page and
+**Work timer** (2026-11-11, on `main`, released in 0.15.0): "Start timer" on the task page and
 side panel (Time row) runs one timer per machine (localStorage, `lib/timer.ts`, synced to
 the capture window through `storage` events); a to-do or backlog task moves to the first
 in-progress status. Stop logs the run as `worked` time blocks (ADR 013; under a minute is
@@ -75,20 +69,19 @@ dropped, over 24 h is split; one undoable batch), so it shows on the calendar. T
 shows "N logged (of estimate)"; a pill at the bottom of the sidebar (and the rail) shows
 the running task and clock, opens the task and stops it. Starting on another task stops
 and logs the running one. Actions `startTimer`/`stopTimer`/`logWork` in `store/actions.ts`;
-unit, store and app tests. Checks not run in the session (commands needed approval).
+unit, store and app tests. Checks run at the 0.15.0 release.
 
-**Add a task from a swimlane** (2026-11-10, on `main`, uncommitted): a small "+" by each
+**Add a task from a swimlane** (2026-11-10, on `main`, released in 0.15.0): a small "+" by each
 swimlane's name on the board opens a title field; Enter adds a task to that lane (its
 epic, project or priority, on top of the view's capture defaults; an epic lane outside a
 project uses the epic's home project) and keeps the field for the next one. A collapsed
-lane opens. `laneFields` in `lib/board.ts`, unit and app tests. Checks not run in the
-session (commands needed approval).
+lane opens. `laneFields` in `lib/board.ts`, unit and app tests. Checks run at the 0.15.0 release.
 
-**Subtask click on the full task page** (2026-11-10, on `main`, uncommitted): clicking a
+**Subtask click on the full task page** (2026-11-10, on `main`, released in 0.15.0): clicking a
 subtask (or a dependency, or a palette result) on `/task/:id` only set `?task=`, and that
 page renders no side panel, so nothing happened. `useOpenTask` now navigates to the
-clicked task's full page when on `/task/`. Regression test in `app.test.tsx`. Checks not
-run in the session (commands needed approval).
+clicked task's full page when on `/task/`. Regression test in `app.test.tsx`. Checks run at the
+0.15.0 release.
 
 **Calendar tray filter and width** (2026-11-10, on `main`, released in 0.14.0): the plan's focus
 selects (project, epic, open status) moved from the Plan bar into the calendar's task tray
@@ -157,6 +150,17 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### Release 0.15.0 (2026-11-11)
+
+- Work timer, folding descriptions, nested subtasks at any depth, add from a swimlane,
+  agent directive, MCP for your own Claude plus calendar and lineage tools, and fixes
+  (capture window theme, subtask clicks on the task page, Lineage panel, project picker).
+  Merged with origin's 0.14.0. The iPhone branches (`p0-phone-core`,
+  `p1-ios-walking-skeleton`) stay unmerged: P0 replaces the desktop sync client and needs
+  a hands-on sync check first. Schema unchanged (12). Checks pass locally (fmt, clippy,
+  cargo test, biome, typecheck, 409 frontend tests). Notes in `docs/releases/0.15.0.md`;
+  tagged `v0.15.0`.
 
 ### Release 0.14.0 (2026-11-10)
 
