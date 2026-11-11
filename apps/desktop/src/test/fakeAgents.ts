@@ -33,6 +33,7 @@ export function fakeAgents(
     started_status_id: null,
     done_status_id: null,
     directive: null,
+    limits: { day_usd_micros: null, week_usd_micros: null, month_usd_micros: null },
     ...opts.settings,
   };
   let folders = opts.folders ?? [];

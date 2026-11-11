@@ -179,6 +179,7 @@ pub enum AgentSessionChange {
     Summary(Option<String>),
     CostUsdMicros(Option<i64>),
     Turns(Option<i64>),
+    DurationMs(Option<i64>),
     Error(Option<String>),
 }
 
@@ -1605,6 +1606,7 @@ fn create_agent_session(b: &mut Batch<'_, '_>, n: NewAgentSession) -> Result<()>
             "summary": null,
             "cost_usd_micros": null,
             "turns": null,
+            "duration_ms": null,
             "error": null,
             "created_at": b.now,
             "updated_at": b.now,
@@ -1665,6 +1667,12 @@ fn update_agent_session(
                     return Err(Error::invalid("turns cannot be negative"));
                 }
                 ("turns", json!(t))
+            }
+            AgentSessionChange::DurationMs(d) => {
+                if d.is_some_and(|d| d < 0) {
+                    return Err(Error::invalid("duration cannot be negative"));
+                }
+                ("duration_ms", json!(d))
             }
             AgentSessionChange::Error(e) => ("error", json!(trimmed(e))),
         };

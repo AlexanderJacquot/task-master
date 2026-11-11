@@ -235,6 +235,7 @@ impl Entity {
                 "summary",
                 "cost_usd_micros",
                 "turns",
+                "duration_ms",
                 "error",
                 "created_at",
                 "updated_at",

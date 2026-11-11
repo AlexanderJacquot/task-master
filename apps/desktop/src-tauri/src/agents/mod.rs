@@ -185,6 +185,10 @@ pub fn outcome(
             let total = session.turns.unwrap_or(0) + turns;
             changes.push(AgentSessionChange::Turns(Some(total)));
         }
+        if let Some(ms) = r.duration_ms {
+            let total = session.duration_ms.unwrap_or(0) + ms;
+            changes.push(AgentSessionChange::DurationMs(Some(total)));
+        }
     }
     // Tools refused for want of an approval: from the result and from the stream.
     let mut tools: Vec<&str> = result
@@ -1536,6 +1540,7 @@ mod tests {
             summary: None,
             cost_usd_micros: Some(1_000),
             turns: Some(2),
+            duration_ms: Some(4_000),
             error: None,
             created_at: 1,
             updated_at: 1,
@@ -1692,6 +1697,7 @@ mod tests {
             text: Some("All done.".into()),
             cost_usd_micros: Some(500),
             turns: Some(3),
+            duration_ms: Some(6_000),
             denials: vec!["Write".into()],
         }
     }
@@ -1712,6 +1718,7 @@ mod tests {
                 AgentSessionChange::Summary(Some("All done.".into())),
                 AgentSessionChange::CostUsdMicros(Some(1_500)),
                 AgentSessionChange::Turns(Some(5)),
+                AgentSessionChange::DurationMs(Some(10_000)),
                 AgentSessionChange::Error(Some(
                     "Needed approval, so not used: Bash, Write. Allow them with another \
                      permission mode, or continue in the terminal."

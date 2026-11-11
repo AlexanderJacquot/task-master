@@ -5,6 +5,7 @@ import { Button, cx, INPUT, Select } from "../../components/ui";
 import type { ClaudeCheck, AgentSettings as Settings } from "../../lib/types";
 import { useApi, useStoreState } from "../../store/context";
 import { PERMISSION_MODES } from "../agents/sessions";
+import { dollarsText, parseDollars } from "../agents/usage";
 import { Section } from "./SettingsPage";
 
 function message(err: unknown): string {
@@ -211,6 +212,22 @@ export function AgentSettings() {
         Added to the system prompt of every agent you start from now on, after the app's own rules.
         A running session keeps the directive it started with.
       </p>
+      <Row label="Spend limits">
+        {(["day", "week", "month"] as const).map((period) => (
+          <LimitInput
+            key={period}
+            label={`per ${period}`}
+            micros={draft.limits[LIMIT_KEY[period]]}
+            onChange={(micros) =>
+              edit({ limits: { ...draft.limits, [LIMIT_KEY[period]]: micros } })
+            }
+          />
+        ))}
+      </Row>
+      <p className="pl-28 text-xs text-ink-3">
+        In dollars, over every device's sessions; blank for no limit. The Agents page shows what is
+        left, and Send to agent asks before starting once one is spent.
+      </p>
       {isLinux && (
         <Row label="Terminal">
           <input
@@ -234,6 +251,46 @@ export function AgentSettings() {
         )}
       </div>
     </Section>
+  );
+}
+
+const LIMIT_KEY = {
+  day: "day_usd_micros",
+  week: "week_usd_micros",
+  month: "month_usd_micros",
+} as const;
+
+/** A dollar amount; keeps what is typed (e.g. `12.`) while the saved value is in micros. */
+function LimitInput({
+  label,
+  micros,
+  onChange,
+}: {
+  label: string;
+  micros: number | null;
+  onChange(micros: number | null): void;
+}) {
+  const [text, setText] = useState(() => dollarsText(micros));
+  // Follow outside changes (load, save) without fighting the field while typing.
+  useEffect(() => {
+    setText((t) => (parseDollars(t) === micros ? t : dollarsText(micros)));
+  }, [micros]);
+  return (
+    <span className="flex items-center gap-1 text-ink-3">
+      $
+      <input
+        value={text}
+        inputMode="decimal"
+        onChange={(e) => {
+          setText(e.target.value);
+          onChange(parseDollars(e.target.value));
+        }}
+        placeholder="none"
+        aria-label={`Spend limit ${label}`}
+        className={cx(INPUT, "w-20 py-1 text-[13px] tabular-nums")}
+      />
+      <span className="mr-2">{label}</span>
+    </span>
   );
 }
 

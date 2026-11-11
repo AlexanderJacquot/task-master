@@ -422,6 +422,10 @@ pub struct AgentSession {
     /// Total cost reported by Claude Code, in millionths of a dollar.
     pub cost_usd_micros: Option<i64>,
     pub turns: Option<i64>,
+    /// How long the agent worked, summed over its runs, in ms. Not start to end: a session
+    /// can sit idle between follow-ups.
+    #[serde(default)]
+    pub duration_ms: Option<i64>,
     pub error: Option<String>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,

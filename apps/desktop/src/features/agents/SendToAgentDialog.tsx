@@ -10,10 +10,12 @@ import {
   DEFAULT_MODEL,
   defaultFolder,
   folderName,
+  formatCost,
   MODELS,
   PERMISSION_MODES,
   recentFolders,
 } from "./sessions";
+import { limitStatuses, PERIOD_LABEL } from "./usage";
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -56,6 +58,7 @@ export function SendToAgentDialog({
   const [mode, setMode] = useState("acceptEdits");
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [confirmAll, setConfirmAll] = useState(false);
+  const [confirmOver, setConfirmOver] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [brief, setBrief] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,6 +73,7 @@ export function SendToAgentDialog({
     setBrief(null);
     setPrompt("");
     setConfirmAll(false);
+    setConfirmOver(false);
     Promise.all([api.settings(), api.folders()]).then(
       ([s, f]) => {
         if (!live) return;
@@ -89,7 +93,10 @@ export function SendToAgentDialog({
   if (!api) return null;
   const recents = settings ? recentFolders(sessions, settings.runtime) : [];
   const projectFolder = folders.find((f) => f.project_id === task.project_id)?.path;
-  const needsConfirm = mode === "bypassPermissions" && !confirmAll;
+  const limits = limitStatuses(Object.values(sessions), settings?.limits, Date.now());
+  const spent = limits.filter((l) => l.over);
+  const needsConfirm =
+    (mode === "bypassPermissions" && !confirmAll) || (spent.length > 0 && !confirmOver);
   const canStart = !!folder.trim() && !!settings && !busy && !needsConfirm;
 
   const start = async () => {
@@ -246,6 +253,26 @@ export function SendToAgentDialog({
               {brief ?? "Loading…"}
             </pre>
           </details>
+
+          {spent.length > 0 && (
+            <div className="flex flex-col gap-1 rounded-lg bg-rubric/10 px-3 py-2 text-xs">
+              {spent.map((l) => (
+                <p key={l.period} className="text-ink">
+                  {formatCost(l.spentMicros)} spent {PERIOD_LABEL[l.period].toLowerCase()}, over
+                  the {formatCost(l.limitMicros)} limit.
+                </p>
+              ))}
+              <label className="flex items-center gap-2 text-ink-2">
+                <input
+                  type="checkbox"
+                  checked={confirmOver}
+                  onChange={(e) => setConfirmOver(e.target.checked)}
+                  className="accent-accent"
+                />
+                Start anyway
+              </label>
+            </div>
+          )}
 
           {error && (
             <p role="alert" className="text-xs text-red-700 dark:text-red-300">

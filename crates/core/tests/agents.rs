@@ -140,6 +140,7 @@ fn a_session_runs_ends_and_resumes_outside_the_undo_history() {
             AgentSessionChange::Summary(Some(" Fixed it. \n".into())),
             AgentSessionChange::CostUsdMicros(Some(123_456)),
             AgentSessionChange::Turns(Some(7)),
+            AgentSessionChange::DurationMs(Some(95_000)),
         ],
     )
     .unwrap();
@@ -148,6 +149,17 @@ fn a_session_runs_ends_and_resumes_outside_the_undo_history() {
     assert_eq!(done.summary.as_deref(), Some("Fixed it."));
     assert_eq!(done.cost_usd_micros, Some(123_456));
     assert_eq!(done.turns, Some(7));
+    assert_eq!(done.duration_ms, Some(95_000));
+    assert_eq!(s.snapshot().unwrap().agent_sessions[0].duration_ms, Some(95_000));
+    assert!(
+        update(
+            &mut s,
+            &session.id,
+            vec![AgentSessionChange::DurationMs(Some(-1))]
+        )
+        .is_err(),
+        "a negative duration is refused"
+    );
     assert!(done.ended_at.is_some());
     // The task is touched so its views and activity refresh.
     assert_eq!(changes.tasks.len(), 1);

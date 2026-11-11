@@ -14,6 +14,8 @@ pub struct RunResult {
     pub text: Option<String>,
     pub cost_usd_micros: Option<i64>,
     pub turns: Option<i64>,
+    /// How long the run took, in ms.
+    pub duration_ms: Option<i64>,
     /// Tools refused because the permission mode needed an approval nobody could give.
     pub denials: Vec<String>,
 }
@@ -168,6 +170,7 @@ fn result(value: &Value) -> RunResult {
             .filter(|c| c.is_finite() && *c >= 0.0)
             .map(|c| (c * 1_000_000.0).round() as i64),
         turns: value["num_turns"].as_i64(),
+        duration_ms: value["duration_ms"].as_i64().filter(|ms| *ms >= 0),
         denials,
     }
 }
@@ -281,6 +284,7 @@ mod tests {
         assert_eq!(result.subtype, "success");
         assert_eq!(result.turns, Some(3));
         assert_eq!(result.cost_usd_micros, Some(3127));
+        assert_eq!(result.duration_ms, Some(4414));
         assert_eq!(result.denials, ["Write"]);
         assert!(
             result
@@ -340,6 +344,7 @@ mod tests {
                 text: None,
                 cost_usd_micros: Some(500_000),
                 turns: Some(6),
+                duration_ms: None,
                 denials: Vec::new(),
             })
         );
