@@ -1,5 +1,7 @@
 # Claude sessions from a task
 
+To use task-master's tools in your own Claude conversations instead, see docs/mcp.md.
+
 **Send to Claude** starts Claude Code in the background on a task: in a folder you pick,
 with the task's context, and with task-master's own tools so Claude can report what it is
 doing. You follow it on the task, answer it with a follow-up, or open it in a terminal.

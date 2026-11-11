@@ -155,6 +155,13 @@ in the same space without cluttering the user's views. Decided with the user:
   not forward by default); the task comes from the session row. A missing database file
   is an error, never a new empty database. Without `--session` it still reads, searches
   and creates agent tasks, but notes, summaries and edits of the user's tasks are refused.
+- Added to Claude by hand (2026-11-11, docs/mcp.md): `--db` is optional. Without it the
+  server opens `$TASK_MASTER_DB`, else the database the app on this device opens (the
+  `data_dir` of `<app config>/config.json`, else the OS app-data folder, both under the
+  app identifier; `locate.rs`), so `claude mcp add task-master -- <binary>` needs no
+  path. `--show-db` prints the path it would open. Without a session its instructions
+  drop the session workflow and say the user's tasks are read-only. Under WSL the
+  Windows `.exe` reads `%APPDATA%` from the Windows side, which interop provides.
 - Tools (tool errors come back as `is_error` results the model can read, not protocol
   errors): `get_task` (the brief; defaults to the session's task), `list_tasks` (project /
   epic / parent / owner filters, open tasks unless `include_closed`, at most 200 rows),
@@ -169,6 +176,17 @@ in the same space without cluttering the user's views. Decided with the user:
   agent's summary over Claude's last message; any other session, in a terminal or
   outliving an app that quit and marked it `interrupted`, is marked `done` here, since
   nothing else would end it).
+- Calendar and Lineage tools (2026-11-11): `get_calendar` (day by day over at most 62
+  days: time blocks with their ids, events of the shown Google calendars, open tasks due
+  or planned for the day; dates and times read and shown in a `utc_offset` the agent
+  passes, since the server has no time zone database), `schedule_block` and
+  `update_block` (create planned blocks; move, resize, set the outcome or remove), and
+  `get_lineage` (a task's prerequisite and dependent chains, nested, and whether it is
+  ready; or the linked open tasks of an epic or project, ready ones first) and
+  `link_tasks` (add or remove one prerequisite; the core refuses circles). Writes follow
+  the scope rule: blocks only of agent tasks and the session's task tree; links only on a
+  waiting task that is an agent task or in the session's task tree (the prerequisite can
+  be any task), so `update_task` still never changes a user task's prerequisites.
 - **Review.** Migration 0011 seeds a baseline status *Review* (fixed id
   `…000000000007`, category `in_progress`, rank `a3V` between Waiting and Done), unless the
   workflow already has a live status named Review; `core::review_status` finds the seeded

@@ -153,10 +153,15 @@ async fn lists_its_tools_and_names_the_session_task() {
             "add_note",
             "complete_session",
             "create_task",
+            "get_calendar",
+            "get_lineage",
             "get_task",
+            "link_tasks",
             "list_projects",
             "list_tasks",
+            "schedule_block",
             "search",
+            "update_block",
             "update_task"
         ]
     );
@@ -594,6 +599,10 @@ async fn without_a_session_it_reads_and_tracks_only_agent_tasks() {
     let f = fixture();
     let task = f.task.clone();
     let client = connect(TaskServer::new(f.store, None).unwrap()).await;
+    // Added to Claude by hand: no session to report on, the user's tasks read-only.
+    let instructions = client.peer_info().unwrap().instructions.clone().unwrap();
+    assert!(!instructions.contains("complete_session"), "{instructions}");
+    assert!(instructions.contains("read-only"), "{instructions}");
     refused(&client, "get_task", json!({})).await;
     refused(&client, "add_note", json!({ "body": "hi" })).await;
     refused(
@@ -611,6 +620,227 @@ async fn without_a_session_it_reads_and_tracks_only_agent_tasks() {
     assert_eq!(
         ok(&client, "search", json!({ "query": "zzz" })).await,
         "No tasks match."
+    );
+    client.cancel().await.unwrap();
+}
+
+/// `2026-11-12T09:00:00Z` as Unix ms.
+fn at(text: &str) -> Timestamp {
+    calendar::parse_rfc3339(text).unwrap()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_calendar_shows_blocks_and_days_and_plans_in_scope() {
+    let mut f = fixture();
+    let (task, other) = (f.task.clone(), f.other.clone());
+    f.store
+        .execute(Command::CreateTimeBlock {
+            block: NewTimeBlock {
+                id: None,
+                task_id: other.clone(),
+                start_at: at("2026-11-12T08:00:00Z"),
+                end_at: at("2026-11-12T09:00:00Z"),
+                outcome: None,
+            },
+        })
+        .unwrap();
+    f.store
+        .execute(Command::UpdateTask {
+            id: task.clone(),
+            changes: vec![TaskChange::DueDate(Some("2026-11-13".into()))],
+        })
+        .unwrap();
+    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    let client = connect(server.clone()).await;
+
+    let week = json!({ "from": "2026-11-12", "to": "2026-11-14", "utc_offset": "+01:00" });
+    let shown = ok(&client, "get_calendar", week.clone()).await;
+    assert!(shown.contains("times in +01:00"), "{shown}");
+    assert!(shown.contains("## 2026-11-12"), "{shown}");
+    assert!(
+        shown.contains("- 09:00–10:00 planned: Pay the rent"),
+        "local time: {shown}"
+    );
+    assert!(
+        shown.contains("## 2026-11-13\nDue:\n- [ ] Spawn Claude sessions"),
+        "{shown}"
+    );
+    refused(&client, "get_calendar", json!({ "utc_offset": "CET" })).await;
+    refused(
+        &client,
+        "get_calendar",
+        json!({ "from": "2026-01-01", "to": "2026-12-31" }),
+    )
+    .await;
+
+    // The session's task can be planned; the user's other tasks cannot.
+    let planned = ok(
+        &client,
+        "schedule_block",
+        json!({
+            "task_id": task,
+            "start": "2026-11-12T14:00",
+            "end": "2026-11-12T15:30",
+            "utc_offset": "+01:00",
+        }),
+    )
+    .await;
+    let block = id_in(&planned);
+    refused(
+        &client,
+        "schedule_block",
+        json!({ "task_id": other, "start": "2026-11-12T16:00Z", "end": "2026-11-12T17:00Z" }),
+    )
+    .await;
+    refused(
+        &client,
+        "schedule_block",
+        json!({ "task_id": task, "start": "2026-11-12T16:00Z", "end": "2026-11-12T15:00Z" }),
+    )
+    .await;
+    let shown = ok(&client, "get_calendar", week).await;
+    assert!(
+        shown.contains("- 14:00–15:30 planned: Spawn Claude sessions"),
+        "{shown}"
+    );
+
+    ok(
+        &client,
+        "update_block",
+        json!({ "block_id": block, "end": "2026-11-12T15:00:00Z", "outcome": "worked" }),
+    )
+    .await;
+    let theirs = server_snapshot(&server)
+        .time_blocks
+        .iter()
+        .find(|b| b.task_id == other)
+        .unwrap()
+        .id
+        .clone();
+    refused(
+        &client,
+        "update_block",
+        json!({ "block_id": theirs, "remove": true }),
+    )
+    .await;
+    let snapshot = server_snapshot(&server);
+    let mine = snapshot.time_blocks.iter().find(|b| b.id == block).unwrap();
+    assert_eq!(mine.start_at, at("2026-11-12T13:00:00Z"));
+    assert_eq!(mine.end_at, at("2026-11-12T15:00:00Z"));
+    assert_eq!(mine.outcome, BlockOutcome::Worked);
+
+    ok(
+        &client,
+        "update_block",
+        json!({ "block_id": block, "remove": true }),
+    )
+    .await;
+    let live = server_snapshot(&server)
+        .time_blocks
+        .iter()
+        .filter(|b| b.deleted_at.is_none())
+        .count();
+    assert_eq!(live, 1);
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_lineage_shows_chains_and_links_in_scope() {
+    let mut f = fixture();
+    let (task, other, project) = (f.task.clone(), f.other.clone(), f.project.clone());
+    let upstream = f
+        .store
+        .execute(Command::CreateTask {
+            task: NewTask {
+                title: "Design the schema".into(),
+                project_id: Some(project.clone()),
+                ..NewTask::default()
+            },
+        })
+        .unwrap()
+        .tasks
+        .remove(0)
+        .id;
+    // task waits on upstream; other waits on task.
+    for (id, dep) in [(&task, &upstream), (&other, &task)] {
+        f.store
+            .execute(Command::UpdateTask {
+                id: id.clone(),
+                changes: vec![TaskChange::DependencyIds(vec![dep.clone()])],
+            })
+            .unwrap();
+    }
+    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    let client = connect(server.clone()).await;
+
+    let lineage = ok(&client, "get_lineage", json!({})).await;
+    assert!(
+        lineage.starts_with("# Lineage: [ ] Spawn Claude sessions"),
+        "{lineage}"
+    );
+    assert!(
+        lineage.contains("Waiting: 1 of 1 prerequisites open."),
+        "{lineage}"
+    );
+    assert!(
+        lineage
+            .contains("## Prerequisites (finished first; nested: theirs)\n- [ ] Design the schema"),
+        "{lineage}"
+    );
+    assert!(
+        lineage.contains("## Dependents (waiting on it; nested: theirs)\n- [ ] Pay the rent"),
+        "{lineage}"
+    );
+    let scope = ok(&client, "get_lineage", json!({ "project_id": project })).await;
+    let ready = scope.find("## Ready").unwrap();
+    let waiting = scope.find("## Waiting").unwrap();
+    let design = scope.find("- [ ] Design the schema").unwrap();
+    assert!(ready < design && design < waiting, "{scope}");
+    assert!(scope.contains("unblocks: Spawn Claude sessions"), "{scope}");
+    refused(
+        &client,
+        "get_lineage",
+        json!({ "task_id": task, "project_id": project }),
+    )
+    .await;
+
+    // An agent step the session's task waits on.
+    let step = id_in(&ok(&client, "create_task", json!({ "title": "Spike" })).await);
+    let linked = ok(
+        &client,
+        "link_tasks",
+        json!({ "task_id": task, "prerequisite_id": step }),
+    )
+    .await;
+    assert!(linked.contains("now waits on Spike"), "{linked}");
+    // The user's task outside the session keeps its links.
+    refused(
+        &client,
+        "link_tasks",
+        json!({ "task_id": other, "prerequisite_id": step }),
+    )
+    .await;
+    // No circles: the session's task already waits on the step.
+    refused(
+        &client,
+        "link_tasks",
+        json!({ "task_id": step, "prerequisite_id": task }),
+    )
+    .await;
+    let find = |s: &Snapshot, id: &str| s.tasks.iter().find(|t| t.id == id).unwrap().clone();
+    assert_eq!(
+        find(&server_snapshot(&server), &task).dependency_ids,
+        vec![upstream.clone(), step.clone()]
+    );
+    ok(
+        &client,
+        "link_tasks",
+        json!({ "task_id": task, "prerequisite_id": upstream, "remove": true }),
+    )
+    .await;
+    assert_eq!(
+        find(&server_snapshot(&server), &task).dependency_ids,
+        vec![step]
     );
     client.cancel().await.unwrap();
 }

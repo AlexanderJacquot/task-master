@@ -9,6 +9,10 @@
 //! freely, but of the user's tasks only the status, and only of the session's task and its
 //! subtasks. Notes and the session summary need a session.
 
+mod calendar;
+mod lineage;
+pub mod locate;
+
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -18,9 +22,12 @@ use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use taskmaster_core::{
-    AgentSession, AgentSessionChange, AgentWorkflow, Command, Id, NewAgentNote, NewTask, Priority,
-    SessionState, Snapshot, Status, StatusCategory, Store, Task, TaskChange, TaskOwner,
+    AgentSession, AgentSessionChange, AgentWorkflow, BlockOutcome, Command, Id, NewAgentNote,
+    NewTask, NewTimeBlock, Priority, SessionState, Snapshot, Status, StatusCategory, Store, Task,
+    TaskChange, TaskOwner, TimeBlockChange,
 };
+
+use calendar::Offset;
 
 /// Most rows a listing returns.
 pub const MAX_LIST: u32 = 200;
@@ -210,6 +217,81 @@ pub struct CompleteSession {
     /// marked done first.
     #[serde(default)]
     pub left_open: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct GetCalendar {
+    /// Start: a date (`2026-11-12`, local midnight) or a time (`2026-11-12T09:00`).
+    /// Default: today.
+    #[serde(default)]
+    pub from: Option<String>,
+    /// End: a date (included) or a time (excluded). Default: a week after `from`. At most
+    /// 62 days.
+    #[serde(default)]
+    pub to: Option<String>,
+    /// The user's UTC offset, like `+01:00` (`date +%:z`). Times are read and shown in
+    /// it. Default: UTC.
+    #[serde(default)]
+    pub utc_offset: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct ScheduleBlock {
+    pub task_id: String,
+    /// Start time, like `2026-11-12T09:00` (in `utc_offset`) or with its own offset.
+    pub start: String,
+    /// End time, after `start`, at most 24 hours later.
+    pub end: String,
+    /// The offset of times given without one, like `+01:00`. Default: UTC.
+    #[serde(default)]
+    pub utc_offset: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct UpdateBlock {
+    /// A block id from get_calendar.
+    pub block_id: String,
+    #[serde(default)]
+    pub start: Option<String>,
+    #[serde(default)]
+    pub end: Option<String>,
+    /// planned, worked, done or cancelled.
+    #[serde(default)]
+    pub outcome: Option<String>,
+    /// Take the block off the calendar.
+    #[serde(default)]
+    pub remove: bool,
+    /// The offset of times given without one, like `+01:00`. Default: UTC.
+    #[serde(default)]
+    pub utc_offset: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct GetLineage {
+    /// The task whose chains to show. Default: the session's task, unless `epic_id` or
+    /// `project_id` is given.
+    #[serde(default)]
+    pub task_id: Option<String>,
+    /// Instead of one task: the linked open tasks of this epic, ready ones first.
+    #[serde(default)]
+    pub epic_id: Option<String>,
+    /// Instead of one task: the linked open tasks of this project, ready ones first.
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// Levels of prerequisites and dependents to follow (default 3, at most 10).
+    #[serde(default)]
+    pub depth: Option<u32>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct LinkTasks {
+    /// The task that waits.
+    pub task_id: String,
+    /// The task to finish first.
+    pub prerequisite_id: String,
+    /// Remove the link instead of adding it.
+    #[serde(default)]
+    pub remove: bool,
 }
 
 // ---------------------------------------------------------------------------------------
@@ -573,9 +655,213 @@ impl TaskServer {
             format!("Summary recorded and the session marked done.{to}")
         })
     }
+
+    #[tool(
+        description = "The calendar day by day: time blocks (task, outcome, block id), the \
+                       user's events from their shown Google calendars, and open tasks due \
+                       or planned on each day. Pass utc_offset to read it in local time."
+    )]
+    pub fn get_calendar(&self, Parameters(p): Parameters<GetCalendar>) -> ToolResult {
+        let offset = Offset::parse(p.utc_offset.as_deref().unwrap_or(""))?;
+        let (from, to) = calendar::range(
+            p.from.as_deref(),
+            p.to.as_deref(),
+            offset,
+            taskmaster_core::now_ms(),
+        )?;
+        let (snapshot, events) = self.with_store(|s| {
+            Ok((
+                s.snapshot()?,
+                s.calendar_events(&calendar::event_range(from, to))?,
+            ))
+        })?;
+        Ok(calendar::render(&snapshot, &events, from, to, offset))
+    }
+
+    #[tool(
+        description = "Plan time for a task: puts a planned block on the user's calendar \
+                       (and their synced Google calendar). For agent tasks and the session's \
+                       task and its subtasks. Check get_calendar for free time first."
+    )]
+    pub fn schedule_block(&self, Parameters(p): Parameters<ScheduleBlock>) -> ToolResult {
+        let offset = Offset::parse(p.utc_offset.as_deref().unwrap_or(""))?;
+        let start_at = calendar::parse_time("start", &p.start, offset)?;
+        let end_at = calendar::parse_time("end", &p.end, offset)?;
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let task = find_task(&snapshot, &p.task_id)?;
+        self.check_may_plan(&snapshot, task)?;
+        let id = taskmaster_core::new_id();
+        self.write(vec![Command::CreateTimeBlock {
+            block: NewTimeBlock {
+                id: Some(id.clone()),
+                task_id: task.id.clone(),
+                start_at,
+                end_at,
+                outcome: None,
+            },
+        }])?;
+        Ok(format!(
+            "Planned {} to {} for {} (block `{id}`)",
+            p.start.trim(),
+            p.end.trim(),
+            task.title
+        ))
+    }
+
+    #[tool(
+        description = "Move, resize, set the outcome of, or remove a time block. For blocks \
+                       of agent tasks and of the session's task and its subtasks."
+    )]
+    pub fn update_block(&self, Parameters(p): Parameters<UpdateBlock>) -> ToolResult {
+        let offset = Offset::parse(p.utc_offset.as_deref().unwrap_or(""))?;
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let block = snapshot
+            .time_blocks
+            .iter()
+            .find(|b| b.id == p.block_id && b.deleted_at.is_none())
+            .ok_or_else(|| format!("block {} not found", p.block_id))?;
+        let task = find_task(&snapshot, &block.task_id)?;
+        self.check_may_plan(&snapshot, task)?;
+        if p.remove {
+            if p.start.is_some() || p.end.is_some() || p.outcome.is_some() {
+                return Err("give remove alone, or the changes without it".into());
+            }
+            self.write(vec![Command::DeleteTimeBlock {
+                id: block.id.clone(),
+            }])?;
+            return Ok(format!("Removed block `{}` of {}", block.id, task.title));
+        }
+        let mut changes = Vec::new();
+        if let Some(start) = &p.start {
+            let at = calendar::parse_time("start", start, offset)?;
+            changes.push(TimeBlockChange::StartAt(at));
+        }
+        if let Some(end) = &p.end {
+            let at = calendar::parse_time("end", end, offset)?;
+            changes.push(TimeBlockChange::EndAt(at));
+        }
+        if let Some(outcome) = &p.outcome {
+            let outcome = BlockOutcome::parse(outcome.trim()).ok_or_else(|| {
+                format!("unknown outcome '{outcome}' (planned, worked, done, cancelled)")
+            })?;
+            changes.push(TimeBlockChange::Outcome(outcome));
+        }
+        if changes.is_empty() {
+            return Err("nothing to change".into());
+        }
+        self.write(vec![Command::UpdateTimeBlock {
+            id: block.id.clone(),
+            changes,
+        }])?;
+        Ok(format!("Updated block `{}` of {}", block.id, task.title))
+    }
+
+    #[tool(
+        description = "The lineage (dependency links, as the Lineage view draws them): a \
+                       task's prerequisites and dependents, nested, and whether it is ready; \
+                       or, with epic_id or project_id, its linked open tasks, ready ones \
+                       first. Defaults to the session's task."
+    )]
+    pub fn get_lineage(&self, Parameters(p): Parameters<GetLineage>) -> ToolResult {
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let depth = p.depth.unwrap_or(lineage::DEFAULT_DEPTH);
+        match (p.task_id, p.epic_id, p.project_id) {
+            (Some(id), None, None) => lineage::of_task(&snapshot, &id, depth),
+            (None, Some(epic), None) => {
+                let name = snapshot
+                    .epics
+                    .iter()
+                    .find(|e| e.id == epic)
+                    .map(|e| format!("epic {}", e.name))
+                    .ok_or_else(|| format!("epic {epic} not found"))?;
+                Ok(lineage::of_scope(
+                    &snapshot,
+                    |t| t.epic_id.as_deref() == Some(epic.as_str()),
+                    &name,
+                ))
+            }
+            (None, None, Some(project)) => {
+                let name = snapshot
+                    .projects
+                    .iter()
+                    .find(|e| e.id == project)
+                    .map(|e| format!("project {}", e.name))
+                    .ok_or_else(|| format!("project {project} not found"))?;
+                Ok(lineage::of_scope(
+                    &snapshot,
+                    |t| t.project_id.as_deref() == Some(project.as_str()),
+                    &name,
+                ))
+            }
+            (None, None, None) => {
+                let id = self.session()?.task_id.clone();
+                lineage::of_task(&snapshot, &id, depth)
+            }
+            _ => Err("give one of task_id, epic_id or project_id".into()),
+        }
+    }
+
+    #[tool(
+        description = "Add (or remove) a lineage link: task_id waits on prerequisite_id. \
+                       The waiting task must be an agent task or the session's task or one \
+                       of its subtasks; the prerequisite can be any task. Links cannot form \
+                       a circle."
+    )]
+    pub fn link_tasks(&self, Parameters(p): Parameters<LinkTasks>) -> ToolResult {
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let task = find_task(&snapshot, &p.task_id)?;
+        let prerequisite = find_task(&snapshot, &p.prerequisite_id)?;
+        if task.owner != TaskOwner::Agent && !self.in_session_scope(&snapshot, task) {
+            return Err(
+                "this is the user's task, outside this session: its links cannot be \
+                 changed; link an agent task instead, or add a note"
+                    .into(),
+            );
+        }
+        let linked = task.dependency_ids.contains(&prerequisite.id);
+        let mut deps = task.dependency_ids.clone();
+        match (p.remove, linked) {
+            (false, true) => {
+                return Ok(format!(
+                    "{} already waits on {}; nothing changed.",
+                    task.title, prerequisite.title
+                ));
+            }
+            (true, false) => {
+                return Ok(format!(
+                    "{} does not wait on {}; nothing changed.",
+                    task.title, prerequisite.title
+                ));
+            }
+            (false, false) => deps.push(prerequisite.id.clone()),
+            (true, true) => deps.retain(|d| d != &prerequisite.id),
+        }
+        self.write(vec![Command::UpdateTask {
+            id: task.id.clone(),
+            changes: vec![TaskChange::DependencyIds(deps)],
+        }])?;
+        Ok(if p.remove {
+            format!("{} no longer waits on {}.", task.title, prerequisite.title)
+        } else {
+            format!("{} now waits on {}.", task.title, prerequisite.title)
+        })
+    }
 }
 
 impl TaskServer {
+    /// Time blocks may be planned for agent tasks and the session's task tree.
+    fn check_may_plan(&self, snapshot: &Snapshot, task: &Task) -> Result<(), String> {
+        if task.owner == TaskOwner::Agent || self.in_session_scope(snapshot, task) {
+            Ok(())
+        } else {
+            Err(
+                "this is the user's task, outside this session: its calendar is the user's \
+                 to plan; suggest times in a note instead"
+                    .into(),
+            )
+        }
+    }
+
     /// The session's task or one of its subtasks (at any depth).
     fn in_session_scope(&self, snapshot: &Snapshot, task: &Task) -> bool {
         let Some(session) = &self.session else {
@@ -598,6 +884,21 @@ impl TaskServer {
     }
 
     fn instructions(&self) -> String {
+        const VIEWS: &str = " get_calendar shows the user's time blocks and events \
+                             (schedule_block plans time); get_lineage shows which tasks wait \
+                             on which (link_tasks adds a link).";
+        let Some(session) = &self.session else {
+            // Added to Claude by hand (docs/mcp.md): no task was sent, nothing to report.
+            return format!(
+                "task-master is the user's task manager, on this device. Use these tools \
+                 when the user talks about their tasks, projects, plans or schedule: \
+                 list_tasks, search and get_task read them (ids come from listings), \
+                 list_projects gives projects and epics. Tasks you create are agent tasks: \
+                 kept apart from the user's own (they find them on the Agents page and can \
+                 make them theirs), so say so when you create one. The user's own tasks \
+                 are read-only here; suggest changes instead of making them.{VIEWS}"
+            );
+        };
         let mut text = format!(
             "task-master is the user's task manager. Use these tools to read task context \
              and to track your own progress: create agent tasks for the steps you plan, move \
@@ -606,18 +907,16 @@ impl TaskServer {
              you finish a subtask of the task (yours or the user's), mark it done right \
              away; complete_session refuses while a subtask is open unless you list it in \
              left_open. The app then moves the task to {} for the user to check: never \
-             mark the user's task done yourself. Agent tasks are kept apart from the user's own; never try to \
-             change the user's other tasks.",
+             mark the user's task done yourself. Agent tasks are kept apart from the user's \
+             own; never try to change the user's other tasks.{VIEWS}",
             self.done_status_name()
         );
-        if let Some(session) = &self.session {
-            text.push_str(&format!(
-                " You are working on task `{}` (get_task without an id).",
-                session.task_id
-            ));
-            if session.state != SessionState::Running {
-                text.push_str(" This session has ended; it was resumed by hand.");
-            }
+        text.push_str(&format!(
+            " You are working on task `{}` (get_task without an id).",
+            session.task_id
+        ));
+        if session.state != SessionState::Running {
+            text.push_str(" This session has ended; it was resumed by hand.");
         }
         text
     }
@@ -634,6 +933,14 @@ impl ServerHandler for TaskServer {
 
 // ---------------------------------------------------------------------------------------
 // Helpers
+
+fn find_task<'a>(snapshot: &'a Snapshot, id: &str) -> Result<&'a Task, String> {
+    snapshot
+        .tasks
+        .iter()
+        .find(|t| t.id == id && t.deleted_at.is_none())
+        .ok_or_else(|| format!("task {id} not found"))
+}
 
 fn by_id(statuses: &[Status]) -> HashMap<&str, &Status> {
     statuses.iter().map(|s| (s.id.as_str(), s)).collect()
