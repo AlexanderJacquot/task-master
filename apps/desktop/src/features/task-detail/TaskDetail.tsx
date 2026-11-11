@@ -110,10 +110,7 @@ export function TaskEditor({
   const status = statuses.find((s) => s.id === task.status_id);
   const done = status?.category === "done" || status?.category === "cancelled";
   const page = variant === "page";
-  const [descriptionFolded, setDescriptionFolded] = useDescriptionFolded(
-    variant,
-    focusDescription,
-  );
+  const [descriptionFolded, setDescriptionFolded] = useDescriptionFolded(variant, focusDescription);
   const excerpt = descriptionFolded ? descriptionExcerpt(task.description) : "";
   const epicOptions = Object.values(epics).filter(
     (e) => e.state === "active" || e.id === task.epic_id,

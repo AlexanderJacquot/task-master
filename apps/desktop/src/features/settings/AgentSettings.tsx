@@ -208,8 +208,8 @@ export function AgentSettings() {
         />
       </div>
       <p className="pl-28 text-xs text-ink-3">
-        Added to the system prompt of every agent you start from now on, after the app's own
-        rules. A running session keeps the directive it started with.
+        Added to the system prompt of every agent you start from now on, after the app's own rules.
+        A running session keeps the directive it started with.
       </p>
       {isLinux && (
         <Row label="Terminal">

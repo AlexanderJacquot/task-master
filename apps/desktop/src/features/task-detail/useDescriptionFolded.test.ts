@@ -27,7 +27,8 @@ describe("useDescriptionFolded", () => {
   });
 
   it("opens for a task just created without forgetting the choice", () => {
-    act(() => renderHook(() => useDescriptionFolded("panel")).result.current[1](true));
+    const first = renderHook(() => useDescriptionFolded("panel"));
+    act(() => first.result.current[1](true));
     expect(renderHook(() => useDescriptionFolded("panel", true)).result.current[0]).toBe(false);
     expect(renderHook(() => useDescriptionFolded("panel")).result.current[0]).toBe(true);
   });

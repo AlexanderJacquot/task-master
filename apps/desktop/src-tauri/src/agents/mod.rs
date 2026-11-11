@@ -1946,7 +1946,9 @@ mod tests {
             "To check",
             Some("\nAnswer in French.\nCommit on a branch.\n\n"),
         );
-        let (head, tail) = directed.split_once("# The user's standing instructions").unwrap();
+        let (head, tail) = directed
+            .split_once("# The user's standing instructions")
+            .unwrap();
         assert_eq!(head, format!("{rules}\n"));
         assert!(
             tail.ends_with("\n\nAnswer in French.\nCommit on a branch.\n"),

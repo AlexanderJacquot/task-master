@@ -37,9 +37,9 @@ import {
   useState,
 } from "react";
 import {
-  AddIcon as Plus,
   SpearsLeftIcon as ChevronsLeft,
   SpearsRightIcon as ChevronsRight,
+  AddIcon as Plus,
 } from "../../components/TaskIcons";
 import { cx, Dot, InlineInput } from "../../components/ui";
 import { adjacentStatus, type Board, type Card, type Column, type Lane } from "../../lib/board";
