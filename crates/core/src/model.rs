@@ -1,6 +1,8 @@
 //! Domain types shared by every adapter. With the `specta` feature they are exported to
 //! TypeScript through the desktop shell's generated bindings.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// UUIDv7 string.
@@ -491,6 +493,87 @@ pub struct ViewSpec {
     /// Agents' own tasks (ADR 017) are hidden unless set.
     #[serde(default)]
     pub show_agent_tasks: bool,
+    /// Set for a saved Lineage canvas (ADR 022): it opens on the Lineage page instead of a
+    /// list or board. Its project, epic and tag filters are `filter`'s (one project at
+    /// most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
+    #[serde(default)]
+    pub lineage: Option<LineageSpec>,
+}
+
+/// A saved Lineage canvas: the filters the page has beyond [`ViewFilter`], and where the
+/// cards sit. The cards themselves are whatever the filters match when it opens.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct LineageSpec {
+    /// Only this task's lineage (its prerequisites and dependents, all the way).
+    #[serde(default)]
+    pub around: Option<Id>,
+    #[serde(default)]
+    pub completion: LineageCompletion,
+    /// Only tasks with at least one link.
+    #[serde(default)]
+    pub linked_only: bool,
+    #[serde(default)]
+    pub arrange: LineageArrange,
+    /// Freeform card positions by task id, in canvas pixels.
+    #[serde(default)]
+    pub positions: BTreeMap<Id, CanvasPoint>,
+    /// Positions inside a lane (y from the lane's top), per arrangement.
+    #[serde(default)]
+    pub lanes: LanePositions,
+    /// Cards that stay put: no dragging, and "Arrange" leaves them alone.
+    #[serde(default)]
+    pub pinned: Vec<Id>,
+    /// Folded lanes (epic or project ids, or [`FILTER_NONE`]), per arrangement.
+    #[serde(default)]
+    pub collapsed: LaneKeys,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum LineageCompletion {
+    #[default]
+    All,
+    Open,
+    /// Open and not blocked by an open prerequisite.
+    Ready,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum LineageArrange {
+    #[default]
+    Free,
+    Epic,
+    Project,
+}
+
+/// A point on the Lineage canvas, in whole pixels.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct CanvasPoint {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct LanePositions {
+    #[serde(default)]
+    pub epic: BTreeMap<Id, CanvasPoint>,
+    #[serde(default)]
+    pub project: BTreeMap<Id, CanvasPoint>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct LaneKeys {
+    #[serde(default)]
+    pub epic: Vec<String>,
+    #[serde(default)]
+    pub project: Vec<String>,
 }
 
 /// The base set of tasks, the same keys as the built-in routes.

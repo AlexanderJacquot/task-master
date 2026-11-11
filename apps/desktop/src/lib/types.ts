@@ -33,6 +33,7 @@ export type {
   ImportSummary,
   JoinMode,
   Layout,
+  LineageSpec_Serialize as LineageSpec,
   NameMatch_Serialize as NameMatch,
   NewAttachment_Deserialize as NewAttachment,
   NewTask_Deserialize as NewTask,

@@ -90,6 +90,9 @@ export function LineageCanvas({
   onMoveToLane,
   onCardDrag,
   onCardDrop,
+  layout,
+  onPersist = saveCanvas,
+  onEdit,
 }: {
   graph: Graph;
   statuses: Status[];
@@ -141,8 +144,14 @@ export function LineageCanvas({
    * took it: the card then goes back to where the drag started.
    */
   onCardDrop?: (id: string, client: Point) => boolean;
+  /** The layout to start from (a saved view's); otherwise the one kept on this machine. */
+  layout?: SavedCanvas;
+  /** Receives the layout after each change; by default it is kept on this machine. */
+  onPersist?: (canvas: SavedCanvas) => void;
+  /** The user moved, pinned, nudged or re-arranged cards, or folded a lane. */
+  onEdit?: () => void;
 }) {
-  const [saved] = useState(loadCanvas);
+  const [saved] = useState(() => layout ?? loadCanvas());
   const [positions, setPositions] = useState<Positions>(() => ({
     ...Object.fromEntries(graph.nodes.map((node) => [node.task.id, { x: node.x, y: node.y }])),
     ...saved.positions,
@@ -192,8 +201,10 @@ export function LineageCanvas({
       collapsed: collapsedRef.current,
     };
   }
+  const persistRef = useRef(onPersist);
+  persistRef.current = onPersist;
   function persist() {
-    saveCanvas(snapshot());
+    persistRef.current(snapshot());
   }
   function updateLanes(next: SavedCanvas["lanes"]) {
     laneRef.current = next;
@@ -251,6 +262,7 @@ export function LineageCanvas({
     pinnedRef.current = next;
     setPinned(next);
     persist();
+    onEdit?.();
   }
   function toggleLane(key: string) {
     if (!lanesMode) return;
@@ -262,6 +274,7 @@ export function LineageCanvas({
     collapsedRef.current = next;
     setCollapsed(next);
     persist();
+    onEdit?.();
   }
   /** Lays the cards out again; pinned cards stay where they are. */
   function arrangeAgain() {
@@ -284,6 +297,7 @@ export function LineageCanvas({
       updatePositions({ ...positionsRef.current, ...avoidPinned(fresh, fixed) });
     }
     fitNext.current = true;
+    onEdit?.();
   }
   function relativePoint(event: { clientX: number; clientY: number }): Point {
     const rect = canvas.current?.getBoundingClientRect();
@@ -563,6 +577,7 @@ export function LineageCanvas({
         } else if (lanesMode) dropInLane(active.id);
       }
       persist();
+      if (active.kind === "move") onEdit?.();
     } else if (active.kind === "pan") {
       onSelect(null);
       onCancelConnection();
@@ -612,6 +627,7 @@ export function LineageCanvas({
       .map(([, point]) => point);
     setWorld(id, freeSlot(origin, side, taken));
     persist();
+    onEdit?.();
   }
   async function addLinked(connector: Connector, pick: { title: string } | { existing: string }) {
     setAdding(null);
@@ -900,6 +916,7 @@ export function LineageCanvas({
                       const current = worldRef.current[task.id] ?? node;
                       setWorld(task.id, { x: current.x + offset.x, y: current.y + offset.y });
                       persist();
+                      onEdit?.();
                     }}
                     title={
                       isPinned

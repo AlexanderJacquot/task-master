@@ -37,8 +37,9 @@ pub use error::{Error, Result};
 pub use events::{Changed, EntityRef};
 pub use files::{FileStore, MAX_ATTACHMENT_BYTES, StoredFile, clean_file_name, is_hash, mime_for};
 pub use model::{
-    AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, DueFilter, Epic, EpicState,
-    FILTER_NONE, GroupBy, Id, IsoDate, Layout, Priority, Project, ProjectFolder, REVIEW_STATUS_ID,
+    AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, CanvasPoint, DueFilter, Epic,
+    EpicState, FILTER_NONE, GroupBy, Id, IsoDate, LaneKeys, LanePositions, Layout, LineageArrange,
+    LineageCompletion, LineageSpec, Priority, Project, ProjectFolder, REVIEW_STATUS_ID,
     SessionState, Snapshot, SortBy, Status, StatusCategory, Swimlane, Tag, Task, TaskOwner,
     TimeBlock, Timestamp, VIEW_SPEC_VERSION, View, ViewFilter, ViewScope, ViewSpec, review_status,
 };

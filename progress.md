@@ -4,8 +4,6 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 **Paper sounds** (2026-11-11, branch `worktree-paper-sounds`, not merged): on the parchment
 theme a sheet crumples when a task opens (side panel or full page; not for a task just
 created), a quill scribbles when a task is created (`createTask`, so capture too) and the
@@ -23,7 +21,6 @@ terminal keeps it running. Like a hand-started timer, it stops the timer on anot
 timer the user starts by hand afterwards is not stopped by the session. If the task's timer
 was already running, it keeps its start and now follows the session. Store tests in
 `store/timer.test.ts`. pnpm checks could not run in the agent session (approval needed).
-=======
 **Lineage: drag a card onto the side panel** (2026-11-11, branch `worktree-lineage-drag-sidebar`,
 not merged): with a card selected, dragging another card from the canvas over the side panel
 turns the panel into four drop zones: its parent, a subtask, a prerequisite, a dependent
@@ -34,8 +31,6 @@ or the selected card itself dragged: the overlay says so. `LineageCanvas` gains
 `document.elementFromPoint` (`[data-lineage-panel]`, `[data-drop-zone]`). Test in
 `LineagePage.test.tsx`. **Not run yet**: the agent session could not run pnpm (approval), so
 `pnpm biome check` and `pnpm test` are still to do.
->>>>>>> worktree-lineage-drag-sidebar
-=======
 **Multi-select in list and board** (2026-11-11, branch `worktree-multi-select`, not merged):
 Ctrl/Cmd+click on a list row's title or a board card adds it to a selection, Shift+click
 picks the range from the last one (list: row order; board: lane by lane, column by
@@ -50,7 +45,17 @@ goes with it). Tasks that leave the view leave the selection; folding a group do
 `lib/views.ts`; store tests `store/bulk.test.ts`, app tests "multi-select". **Not yet
 run**: the agent session could not install node_modules in the worktree (pnpm needed
 approval), so `pnpm biome check` and `pnpm test` still have to run; no Rust changes.
->>>>>>> worktree-multi-select
+**Saved Lineage views** (2026-11-11, branch `worktree-save-lineage-views`, not merged): the
+Lineage page header has "Save as view": it names and saves the page's filters, focus task
+and card layout (positions, lane positions, pinned cards, folded lanes; no camera) as a
+saved view (ADR 022, `ViewSpec.lineage`). It is listed under Saved views with the Lineage
+icon and opens on the Lineage page; edits are a draft (Revert / Save view), the title
+renames, "Delete view" removes it. Cards follow the filters; only visible cards keep a
+place. `features/lineage/saved.ts` (unit tests), `LineageCanvas` takes `layout`,
+`onPersist`, `onEdit`; core validation and tests in `crates/core/tests/store.rs`, page test
+in `LineagePage.test.tsx`. **Not compiled or tested yet** (the agent session could not run
+cargo or pnpm): regenerate `bindings.ts` (`cargo test -p taskmaster-desktop export_bindings`,
+or the full `cargo test`), then clippy, `pnpm biome check`, `pnpm test`.
 
 **task-master in your own Claude** (2026-11-11, on `main`, released in 0.15.0): `task-master-mcp`
 needs no `--db` any more: it opens `$TASK_MASTER_DB`, else the app's database on this
