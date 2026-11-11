@@ -9,6 +9,8 @@ export interface RunningTimer {
   task_id: string;
   /** Unix ms. */
   started_at: number;
+  /** The agent session this timer follows: it stops when that session ends. */
+  session_id?: string;
 }
 
 export interface LoggedSpan {
@@ -28,7 +30,9 @@ function load(): RunningTimer | null {
     if (!raw) return null;
     const v = JSON.parse(raw) as Partial<RunningTimer>;
     if (typeof v.task_id === "string" && typeof v.started_at === "number") {
-      return { task_id: v.task_id, started_at: v.started_at };
+      const timer: RunningTimer = { task_id: v.task_id, started_at: v.started_at };
+      if (typeof v.session_id === "string") timer.session_id = v.session_id;
+      return timer;
     }
   } catch {
     // Unreadable: no timer.

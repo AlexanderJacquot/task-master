@@ -13,7 +13,7 @@ import {
 import { Button, cx, IconButton, INPUT, SectionLabel } from "../../components/ui";
 import { formatAgo } from "../../lib/dates";
 import type { AgentNote, AgentSession, Task } from "../../lib/types";
-import { markSessionDone, removeAgentSession } from "../../store/actions";
+import { markSessionDone, removeAgentSession, startTimer } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { MarkdownView } from "../task-detail/MarkdownView";
 import { SendToAgentDialog } from "./SendToAgentDialog";
@@ -121,6 +121,14 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
     }
   };
 
+  // A follow-up runs the session again: the work timer runs until it ends. Timed from
+  // before the send, so an end the shell records right away still stops it.
+  const followUp = async (text: string) => {
+    const at = Date.now();
+    await api.send(session.id, text);
+    void startTimer(store, session.task_id, at, session.id);
+  };
+
   const duration = formatDuration((session.ended_at ?? now) - session.started_at);
   const cost = formatCost(session.cost_usd_micros);
   const mode = PERMISSION_MODES.find((m) => m.value === session.permission_mode)?.label;
@@ -155,7 +163,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           <Button
             size="sm"
             disabled={!!busy}
-            onClick={() => void act("resume", () => api.send(session.id, RESUME_MESSAGE))}
+            onClick={() => void act("resume", () => followUp(RESUME_MESSAGE))}
           >
             <Play size={13} />
             {busy === "resume" ? "Resuming…" : "Resume"}
@@ -247,7 +255,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
                 const text = reply.trim();
                 if (!text) return;
                 void act("send", async () => {
-                  await api.send(session.id, text);
+                  await followUp(text);
                   setReply("");
                 });
               }}

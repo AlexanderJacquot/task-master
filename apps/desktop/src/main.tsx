@@ -10,6 +10,7 @@ import { tauriApi } from "./lib/api";
 import { applyAppearance, followAppearance } from "./lib/appearance";
 import { createUpdateStore, tauriUpdates, UpdateProvider } from "./lib/updater";
 import { createAppRouter } from "./router";
+import { followAgentTimer } from "./store/actions";
 import { StoreProvider } from "./store/context";
 import { createTaskStore } from "./store/store";
 
@@ -28,6 +29,10 @@ const isCapture = getCurrentWindow().label === "capture";
 // The capture window lives hidden from the app's start: besides `storage` events, read the
 // appearance again each time the hotkey shows it, so a theme changed since then applies.
 if (isCapture) void events.captureOpened.listen(() => applyAppearance());
+
+// A timer started by sending a task to an agent stops when the session ends (main window
+// only, so the run is logged once).
+if (!isCapture) followAgentTimer(store);
 
 // Agent runs are children of the app (ADR 017): ask before quitting stops them.
 if (!isCapture) {

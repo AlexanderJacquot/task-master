@@ -4,6 +4,16 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Agent runs time the task** (2026-11-11, branch `worktree-agent-timer`): sending a task to an
+agent (Send to agent, a follow-up reply, Resume) starts the work timer on it, tied to the
+session (`RunningTimer.session_id`). When that session is done, failed, stopped or interrupted
+the timer stops and logs the run up to the session's `ended_at` (`agentTimerEnd`,
+`followAgentTimer` in `store/actions.ts`, run by the main window only). Continuing in a
+terminal keeps it running. Like a hand-started timer, it stops the timer on another task; a
+timer the user starts by hand afterwards is not stopped by the session. If the task's timer
+was already running, it keeps its start and now follows the session. Store tests in
+`store/timer.test.ts`. pnpm checks could not run in the agent session (approval needed).
+
 **task-master in your own Claude** (2026-11-11, on `main`, released in 0.15.0): `task-master-mcp`
 needs no `--db` any more: it opens `$TASK_MASTER_DB`, else the app's database on this
 device (config.json `data_dir`, else the OS app-data folder; `crates/mcp/src/locate.rs`,
