@@ -183,6 +183,34 @@ export function TaskEditor({
   ) : (
     <div>
       <Field label="Status">{statusSelect("w-full")}</Field>
+      <Field label="Project">
+        <Select
+          value={task.project_id ?? ""}
+          onValueChange={(id) => change([{ project_id: id || null }])}
+          aria-label="Project"
+          className="w-full"
+          options={[
+            { value: "", label: "Inbox (no project)" },
+            ...projectOptions.map((p) => ({
+              value: p.id,
+              label: p.label.trim(),
+              icon: <ProjectMark project={p} />,
+            })),
+          ]}
+        />
+      </Field>
+      <Field label="Epic">
+        <Select
+          value={task.epic_id ?? ""}
+          onValueChange={(id) => change([{ epic_id: id || null }])}
+          aria-label="Epic"
+          className="w-full"
+          options={[
+            { value: "", label: "None" },
+            ...epicOptions.map((e) => ({ value: e.id, label: e.name })),
+          ]}
+        />
+      </Field>
       <Field label="Priority">
         <Select
           value={task.priority}
@@ -237,34 +265,6 @@ export function TaskEditor({
       </Field>
       <Field label="Time">
         <TaskTimer task={task} />
-      </Field>
-      <Field label="Project">
-        <Select
-          value={task.project_id ?? ""}
-          onValueChange={(id) => change([{ project_id: id || null }])}
-          aria-label="Project"
-          className="w-full"
-          options={[
-            { value: "", label: "Inbox (no project)" },
-            ...projectOptions.map((p) => ({
-              value: p.id,
-              label: p.label.trim(),
-              icon: <ProjectMark project={p} />,
-            })),
-          ]}
-        />
-      </Field>
-      <Field label="Epic">
-        <Select
-          value={task.epic_id ?? ""}
-          onValueChange={(id) => change([{ epic_id: id || null }])}
-          aria-label="Epic"
-          className="w-full"
-          options={[
-            { value: "", label: "None" },
-            ...epicOptions.map((e) => ({ value: e.id, label: e.name })),
-          ]}
-        />
       </Field>
       <Field label="Tags">
         <TagPicker task={task} />

@@ -26,8 +26,9 @@ import { TagPicker } from "./TagPicker";
 
 /**
  * The full page's properties, as in the mockup: set values are compact tinted pills
- * ("In progress", "High", "Due Fri, Nov 6", "◆ Launch v2", "#copy"); unset ones follow
- * as quiet labels. Choice pills open the shared menu list; dates use the shared calendar.
+ * ("In progress", "High", "Due Fri, Nov 6", "◆ Launch v2", "#copy"); unset ones show
+ * as quiet labels in their fixed place. Choice pills open the shared menu list; dates
+ * use the shared calendar.
  */
 
 /** Background and text tinted with a status or project color. */
@@ -167,122 +168,83 @@ export function PropertyPills({
   const priority = PRIORITIES.find((p) => p.value === task.priority);
   const prioritySet = task.priority !== "normal";
 
-  const pills: { set: boolean; node: ReactNode }[] = [
-    {
-      set: true,
-      node: (
-        <SelectPill
-          key="status"
-          ariaLabel="Status"
-          label={status?.name ?? "Status"}
-          icon={<Dot color={status?.color ?? null} />}
-          value={task.status_id}
-          onChange={(status_id) => change([{ status_id }])}
-          options={statuses.map((s) => ({
-            value: s.id,
-            label: s.name,
-            icon: <Dot color={s.color ?? null} />,
-          }))}
-          className={status?.color ? "hover:brightness-95" : SET}
-          style={tint(status?.color ?? null)}
-        />
-      ),
-    },
-    {
-      set: prioritySet,
-      node: (
-        <SelectPill
-          key="priority"
-          ariaLabel="Priority"
-          label={prioritySet ? priority?.label : "Priority"}
-          icon={prioritySet ? undefined : <Flag size={13} />}
-          value={task.priority}
-          onChange={(priority) => change([{ priority }])}
-          options={PRIORITIES.map((p) => ({
-            value: p.value,
-            label: `${p.label} priority`,
-            className: PRIORITY_STYLE[p.value],
-          }))}
-          className={
-            task.priority === "low" ? SET : prioritySet ? PRIORITY_PILL[task.priority] : GHOST
-          }
-        />
-      ),
-    },
-    {
-      set: task.due_date !== null,
-      node: <DuePill key="due" task={task} today={today} change={change} />,
-    },
-    {
-      set: pickedToday,
-      node: (
-        <button
-          key="today"
-          type="button"
-          aria-pressed={pickedToday}
-          onClick={() => change([{ today_on: pickedToday ? null : today }])}
-          className={cx(PILL, pickedToday ? SET : GHOST)}
-        >
-          {!pickedToday && <Sun size={13} />}
-          {pickedToday ? "On Today" : "Add to Today"}
-        </button>
-      ),
-    },
-    {
-      set: true,
-      node: (
-        <SelectPill
-          key="project"
-          ariaLabel="Project"
-          label={project?.name ?? "Inbox"}
-          icon={project ? <ProjectMark project={project} /> : undefined}
-          value={task.project_id ?? ""}
-          onChange={(id) => change([{ project_id: id || null }])}
-          options={[
-            { value: "", label: "Inbox" },
-            ...projects.map((p) => ({
-              value: p.id,
-              label: p.label.trim(),
-              icon: <ProjectMark project={p} />,
-            })),
-          ]}
-          className={SET}
-        />
-      ),
-    },
-    {
-      set: epic !== undefined,
-      node: (
-        <SelectPill
-          key="epic"
-          ariaLabel="Epic"
-          label={epic?.name ?? "Epic"}
-          icon={epic ? <EpicMark epic={epic} size={11} /> : <Diamond size={11} />}
-          value={task.epic_id ?? ""}
-          onChange={(id) => change([{ epic_id: id || null }])}
-          options={[
-            { value: "", label: "No epic" },
-            ...epics.map((e) => ({ value: e.id, label: e.name, icon: <EpicMark epic={e} /> })),
-          ]}
-          className={
-            epic
-              ? "bg-violet-600/12 text-violet-800 hover:bg-violet-600/18 dark:bg-violet-400/15 dark:text-violet-200"
-              : GHOST
-          }
-        />
-      ),
-    },
-    {
-      set: task.estimate_min !== null,
-      node: <EstimatePill key="estimate" task={task} today={today} change={change} />,
-    },
-  ];
-
+  // Fixed order, the same as the side panel: status, project, epic, priority, due,
+  // today, estimate, then tags. Unset properties stay in place as quiet pills.
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {pills.filter((p) => p.set).map((p) => p.node)}
+      <SelectPill
+        ariaLabel="Status"
+        label={status?.name ?? "Status"}
+        icon={<Dot color={status?.color ?? null} />}
+        value={task.status_id}
+        onChange={(status_id) => change([{ status_id }])}
+        options={statuses.map((s) => ({
+          value: s.id,
+          label: s.name,
+          icon: <Dot color={s.color ?? null} />,
+        }))}
+        className={status?.color ? "hover:brightness-95" : SET}
+        style={tint(status?.color ?? null)}
+      />
+      <SelectPill
+        ariaLabel="Project"
+        label={project?.name ?? "Inbox"}
+        icon={project ? <ProjectMark project={project} /> : undefined}
+        value={task.project_id ?? ""}
+        onChange={(id) => change([{ project_id: id || null }])}
+        options={[
+          { value: "", label: "Inbox" },
+          ...projects.map((p) => ({
+            value: p.id,
+            label: p.label.trim(),
+            icon: <ProjectMark project={p} />,
+          })),
+        ]}
+        className={SET}
+      />
+      <SelectPill
+        ariaLabel="Epic"
+        label={epic?.name ?? "Epic"}
+        icon={epic ? <EpicMark epic={epic} size={11} /> : <Diamond size={11} />}
+        value={task.epic_id ?? ""}
+        onChange={(id) => change([{ epic_id: id || null }])}
+        options={[
+          { value: "", label: "No epic" },
+          ...epics.map((e) => ({ value: e.id, label: e.name, icon: <EpicMark epic={e} /> })),
+        ]}
+        className={
+          epic
+            ? "bg-violet-600/12 text-violet-800 hover:bg-violet-600/18 dark:bg-violet-400/15 dark:text-violet-200"
+            : GHOST
+        }
+      />
+      <SelectPill
+        ariaLabel="Priority"
+        label={prioritySet ? priority?.label : "Priority"}
+        icon={prioritySet ? undefined : <Flag size={13} />}
+        value={task.priority}
+        onChange={(priority) => change([{ priority }])}
+        options={PRIORITIES.map((p) => ({
+          value: p.value,
+          label: `${p.label} priority`,
+          className: PRIORITY_STYLE[p.value],
+        }))}
+        className={
+          task.priority === "low" ? SET : prioritySet ? PRIORITY_PILL[task.priority] : GHOST
+        }
+      />
+      <DuePill task={task} today={today} change={change} />
+      <button
+        type="button"
+        aria-pressed={pickedToday}
+        onClick={() => change([{ today_on: pickedToday ? null : today }])}
+        className={cx(PILL, pickedToday ? SET : GHOST)}
+      >
+        {!pickedToday && <Sun size={13} />}
+        {pickedToday ? "On Today" : "Add to Today"}
+      </button>
+      <EstimatePill task={task} today={today} change={change} />
       <TagPicker task={task} variant="pill" />
-      {pills.filter((p) => !p.set).map((p) => p.node)}
     </div>
   );
 }
