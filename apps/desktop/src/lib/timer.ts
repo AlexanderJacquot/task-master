@@ -1,5 +1,5 @@
-// The work timer: one running timer per machine, remembered in localStorage so it
-// survives a restart. Stopping it logs the time as `worked` time blocks (ADR 013), so
+// The work timers: one per task, several can run at once, remembered in localStorage so
+// they survive a restart. Stopping one logs the time as `worked` time blocks (ADR 013), so
 // logged time stays the sum of done and worked blocks and shows on the calendar.
 
 import { useSyncExternalStore } from "react";
@@ -18,40 +18,70 @@ export interface LoggedSpan {
   end_at: number;
 }
 
-export const TIMER_KEY = "task-master.timer";
+export const TIMER_KEY = "task-master.timers";
+/** The single-timer key of earlier versions, read once and migrated. */
+const LEGACY_KEY = "task-master.timer";
 /** Shorter runs are dropped on stop (a timer started by mistake). */
 export const MIN_LOGGED_MS = 60_000;
 /** A block lasts at most 24 hours (core rule), so longer runs are split. */
 export const MAX_BLOCK_MS = 24 * 60 * 60_000;
 
-function load(): RunningTimer | null {
-  try {
-    const raw = localStorage.getItem(TIMER_KEY);
-    if (!raw) return null;
-    const v = JSON.parse(raw) as Partial<RunningTimer>;
-    if (typeof v.task_id === "string" && typeof v.started_at === "number") {
-      const timer: RunningTimer = { task_id: v.task_id, started_at: v.started_at };
-      if (typeof v.session_id === "string") timer.session_id = v.session_id;
-      return timer;
-    }
-  } catch {
-    // Unreadable: no timer.
+function parseTimer(v: Partial<RunningTimer> | null): RunningTimer | null {
+  if (v && typeof v.task_id === "string" && typeof v.started_at === "number") {
+    const timer: RunningTimer = { task_id: v.task_id, started_at: v.started_at };
+    if (typeof v.session_id === "string") timer.session_id = v.session_id;
+    return timer;
   }
   return null;
 }
 
-let current: RunningTimer | null | undefined;
+function load(): RunningTimer[] {
+  try {
+    const raw = localStorage.getItem(TIMER_KEY);
+    if (raw) {
+      const list = JSON.parse(raw) as unknown;
+      if (!Array.isArray(list)) return [];
+      const seen = new Set<string>();
+      const timers: RunningTimer[] = [];
+      for (const v of list) {
+        const t = parseTimer(v);
+        if (t && !seen.has(t.task_id)) {
+          seen.add(t.task_id);
+          timers.push(t);
+        }
+      }
+      return timers;
+    }
+    const old = localStorage.getItem(LEGACY_KEY);
+    if (old) {
+      const t = parseTimer(JSON.parse(old));
+      return t ? [t] : [];
+    }
+  } catch {
+    // Unreadable: no timers.
+  }
+  return [];
+}
+
+let current: RunningTimer[] | undefined;
 const listeners = new Set<() => void>();
 
-export function getTimer(): RunningTimer | null {
+/** The running timers, one per task, oldest first. Same array until they change. */
+export function getTimers(): RunningTimer[] {
   if (current === undefined) current = load();
   return current;
 }
 
-export function setTimer(timer: RunningTimer | null) {
-  current = timer;
+/** The timer running on a task, if any. */
+export function timerOf(taskId: string): RunningTimer | null {
+  return getTimers().find((t) => t.task_id === taskId) ?? null;
+}
+
+export function setTimers(timers: RunningTimer[]) {
+  current = timers;
   try {
-    if (timer) localStorage.setItem(TIMER_KEY, JSON.stringify(timer));
+    localStorage.removeItem(LEGACY_KEY);
+    if (timers.length) localStorage.setItem(TIMER_KEY, JSON.stringify(timers));
     else localStorage.removeItem(TIMER_KEY);
   } catch {
     // Not remembered across restarts; fine.
@@ -59,17 +89,27 @@ export function setTimer(timer: RunningTimer | null) {
   for (const l of listeners) l();
 }
 
-/** Forgets the cached timer (tests reset localStorage between cases). */
-export function reloadTimer() {
+/** Adds or replaces the timer of its task. */
+export function putTimer(timer: RunningTimer) {
+  setTimers([...getTimers().filter((t) => t.task_id !== timer.task_id), timer]);
+}
+
+/** Removes the timer of a task. */
+export function dropTimer(taskId: string) {
+  setTimers(getTimers().filter((t) => t.task_id !== taskId));
+}
+
+/** Forgets the cached timers (tests reset localStorage between cases). */
+export function reloadTimers() {
   current = undefined;
   for (const l of listeners) l();
 }
 
 function subscribe(l: () => void) {
   listeners.add(l);
-  // Another window of the app (the quick-capture editor) started or stopped it.
+  // Another window of the app (the quick-capture editor) started or stopped one.
   const onStorage = (e: StorageEvent) => {
-    if (e.key === TIMER_KEY || e.key === null) {
+    if (e.key === TIMER_KEY || e.key === LEGACY_KEY || e.key === null) {
       current = undefined;
       l();
     }
@@ -81,8 +121,8 @@ function subscribe(l: () => void) {
   };
 }
 
-export function useTimer(): RunningTimer | null {
-  return useSyncExternalStore(subscribe, getTimer, getTimer);
+export function useTimers(): RunningTimer[] {
+  return useSyncExternalStore(subscribe, getTimers, getTimers);
 }
 
 /** The current time, ticking every `everyMs` while `active`. */

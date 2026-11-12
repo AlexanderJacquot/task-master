@@ -3,7 +3,7 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Api } from "../../lib/api";
-import { getTimer, setTimer } from "../../lib/timer";
+import { getTimers, type RunningTimer, setTimers } from "../../lib/timer";
 import type { Changes, Command, Task } from "../../lib/types";
 import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
@@ -50,6 +50,9 @@ async function renderTaskPage(t: Task) {
   return { executed, store };
 }
 
+const getTimer = () => getTimers()[0] ?? null;
+const setTimer = (t: RunningTimer | null) => setTimers(t ? [t] : []);
+
 afterEach(() => {
   cleanup();
   setTimer(null);
@@ -63,7 +66,7 @@ describe("work timer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start timer" }));
     await waitFor(() => expect(getTimer()?.task_id).toBe(t.id));
     expect(store.getState().tasks[t.id]?.status_id).toBe(STATUS.inProgress);
-    const pill = await screen.findByRole("region", { name: "Timer" });
+    const pill = await screen.findByRole("region", { name: "Timers" });
     expect(within(pill).getByRole("button", { name: /0:0\d/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^Stop\s*\d/ })).toBeTruthy();
   });
@@ -75,7 +78,7 @@ describe("work timer", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Stop\s*\d/ }));
     await screen.findByText(/25 min logged/);
     expect(getTimer()).toBeNull();
-    expect(screen.queryByRole("region", { name: "Timer" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Timers" })).toBeNull();
     expect(executed).toHaveLength(1);
     expect(executed[0]?.[0]).toMatchObject({
       type: "create_time_block",
