@@ -5,7 +5,14 @@ import { ranksForDrop } from "../lib/board";
 import type { RestorePlan } from "../lib/history";
 import { rankBetween } from "../lib/rank";
 import { playSound } from "../lib/sounds";
-import { getTimer, type RunningTimer, runToBlocks, setTimer } from "../lib/timer";
+import {
+  dropTimer,
+  getTimers,
+  putTimer,
+  type RunningTimer,
+  runToBlocks,
+  timerOf,
+} from "../lib/timer";
 import type {
   AgentSession,
   Attachment,
@@ -1163,8 +1170,8 @@ export async function logWork(
 }
 
 /**
- * Starts the work timer on a task. A timer running on another task is stopped (and its
- * time logged) first. A task not started yet moves to the first in-progress status.
+ * Starts a work timer on a task. Timers on other tasks keep running: several can run at
+ * once. A task not started yet moves to the first in-progress status.
  * With `sessionId` (a task sent to an agent) the timer follows that session and stops
  * when it ends (`followAgentTimer`); a timer already running on the task keeps its start.
  */
@@ -1174,13 +1181,12 @@ export async function startTimer(
   now = Date.now(),
   sessionId?: string,
 ) {
-  const running = getTimer();
-  if (running?.task_id === taskId) {
-    if (sessionId) setTimer({ ...running, session_id: sessionId });
+  const running = timerOf(taskId);
+  if (running) {
+    if (sessionId) putTimer({ ...running, session_id: sessionId });
     return;
   }
-  if (running) await stopTimer(store, now);
-  setTimer(
+  putTimer(
     sessionId
       ? { task_id: taskId, started_at: now, session_id: sessionId }
       : { task_id: taskId, started_at: now },
@@ -1194,11 +1200,15 @@ export async function startTimer(
   }
 }
 
-/** Stops the work timer and logs the run. Resolves to the new block ids. */
-export async function stopTimer(store: TaskStore, now = Date.now()): Promise<string[]> {
-  const running = getTimer();
+/** Stops a task's timer and logs the run. Resolves to the new block ids. */
+export async function stopTimer(
+  store: TaskStore,
+  taskId: string,
+  now = Date.now(),
+): Promise<string[]> {
+  const running = timerOf(taskId);
   if (!running) return [];
-  setTimer(null);
+  dropTimer(taskId);
   return logWork(store, running.task_id, running.started_at, now);
 }
 
@@ -1224,8 +1234,10 @@ export function agentTimerEnd(
  */
 export function followAgentTimer(store: TaskStore): () => void {
   const check = () => {
-    const end = agentTimerEnd(getTimer(), store.getState().agent_sessions);
-    if (end !== null) void stopTimer(store, end);
+    for (const timer of getTimers()) {
+      const end = agentTimerEnd(timer, store.getState().agent_sessions);
+      if (end !== null) void stopTimer(store, timer.task_id, end);
+    }
   };
   check();
   return store.subscribe(check);

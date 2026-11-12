@@ -5,8 +5,9 @@ import {
   formatLogged,
   loggedMs,
   MIN_LOGGED_MS,
+  type RunningTimer,
   useNow,
-  useTimer,
+  useTimers,
 } from "../../lib/timer";
 import type { Task } from "../../lib/types";
 import { startTimer, stopTimer } from "../../store/actions";
@@ -19,8 +20,9 @@ import { useOpenTask } from "../shell/useOpenTask";
  */
 export function TaskTimer({ task }: { task: Task }) {
   const store = useTaskStore();
-  const timer = useTimer();
-  const running = timer?.task_id === task.id;
+  const timers = useTimers();
+  const timer = timers.find((t) => t.task_id === task.id);
+  const running = timer !== undefined;
   const now = useNow(running);
   const blocks = useStoreState((s) => s.time_blocks);
   const logged = loggedMs(Object.values(blocks), task.id);
@@ -31,7 +33,7 @@ export function TaskTimer({ task }: { task: Task }) {
       {running ? (
         <button
           type="button"
-          onClick={() => void stopTimer(store)}
+          onClick={() => void stopTimer(store, task.id)}
           title={
             elapsed < MIN_LOGGED_MS
               ? "Stop the timer (under a minute: nothing is logged)"
@@ -50,11 +52,7 @@ export function TaskTimer({ task }: { task: Task }) {
         <button
           type="button"
           onClick={() => void startTimer(store, task.id)}
-          title={
-            timer
-              ? "Start a timer on this task (stops the one running on another task)"
-              : "Start a timer on this task"
-          }
+          title="Start a timer on this task"
           className={cx(
             "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-ink-2 hover:bg-hover hover:text-ink",
             FOCUS,
@@ -75,23 +73,34 @@ export function TaskTimer({ task }: { task: Task }) {
   );
 }
 
+
 /**
- * The running timer in the sidebar, on every page: its task (opens it) and Stop. Nothing
- * when no timer runs.
+ * The running timers in the sidebar, on every page: one row per timer (opens its task) with
+ * Stop. Nothing when no timer runs.
  */
 export function TimerPill({ compact = false }: { compact?: boolean }) {
+  const timers = useTimers();
+  if (timers.length === 0) return null;
+  return (
+    <section aria-label="Timers" className="flex flex-col gap-1">
+      {timers.map((timer) => (
+        <TimerRow key={timer.task_id} timer={timer} compact={compact} />
+      ))}
+    </section>
+  );
+}
+
+function TimerRow({ timer, compact }: { timer: RunningTimer; compact: boolean }) {
   const store = useTaskStore();
-  const timer = useTimer();
-  const task = useStoreState((s) => (timer ? s.tasks[timer.task_id] : undefined));
-  const now = useNow(timer !== null);
+  const task = useStoreState((s) => s.tasks[timer.task_id]);
+  const now = useNow(true);
   const openTask = useOpenTask();
-  if (!timer) return null;
   const clock = formatClock(now - timer.started_at);
   const title = task?.title ?? "A deleted task";
   const stop = (
     <IconButton
-      label="Stop the timer and log the time"
-      onClick={() => void stopTimer(store)}
+      label={`Stop the timer on ${title} and log the time`}
+      onClick={() => void stopTimer(store, timer.task_id)}
       className="text-accent"
     >
       <StopIcon size={compact ? 13 : 15} />
@@ -100,8 +109,8 @@ export function TimerPill({ compact = false }: { compact?: boolean }) {
 
   if (compact) {
     return (
-      <section
-        aria-label="Timer"
+      <div
+        data-testid="timer"
         className="flex flex-col items-center rounded-lg border border-accent/50 bg-accent/10 py-1"
       >
         <button
@@ -114,13 +123,13 @@ export function TimerPill({ compact = false }: { compact?: boolean }) {
           {clock}
         </button>
         {stop}
-      </section>
+      </div>
     );
   }
 
   return (
-    <section
-      aria-label="Timer"
+    <div
+      data-testid="timer"
       className="flex items-center gap-1 rounded-lg border border-accent/50 bg-accent/10 py-0.5 pr-1 pl-2.5 text-[13.5px]"
     >
       <button
@@ -135,6 +144,6 @@ export function TimerPill({ compact = false }: { compact?: boolean }) {
         <span className="font-mono text-accent tabular-nums">{clock}</span>
       </button>
       {stop}
-    </section>
+    </div>
   );
 }

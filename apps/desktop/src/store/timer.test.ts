@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { sessionChanges } from "../features/agents/SendToAgentDialog";
 import type { Api } from "../lib/api";
-import { getTimer, setTimer } from "../lib/timer";
+import { getTimers, type RunningTimer, setTimers } from "../lib/timer";
 import type { AgentSession, Changes, Command, Task } from "../lib/types";
 import { agentSession, fakeParse, STATUS, snapshot, task } from "../test/fixtures";
 import { agentTimerEnd, followAgentTimer, logWork, startTimer, stopTimer } from "./actions";
 import { createTaskStore } from "./store";
+
+/** The single running timer, for the tests that run one. */
+const getTimer = () => getTimers()[0] ?? null;
+const setTimer = (t: RunningTimer | null) => setTimers(t ? [t] : []);
 
 function setup(tasks: Task[]) {
   const executed: Command[][] = [];
@@ -73,7 +77,7 @@ describe("work timer", () => {
     const { store, executed, ready } = setup([t]);
     await ready;
     await startTimer(store, t.id, NINE);
-    const [id] = await stopTimer(store, NINE + 25 * MIN);
+    const [id] = await stopTimer(store, t.id, NINE + 25 * MIN);
     expect(getTimer()).toBeNull();
     expect(executed).toEqual([
       [
@@ -91,23 +95,29 @@ describe("work timer", () => {
     const { store, executed, ready } = setup([t]);
     await ready;
     await startTimer(store, t.id, NINE);
-    expect(await stopTimer(store, NINE + 30_000)).toEqual([]);
+    expect(await stopTimer(store, t.id, NINE + 30_000)).toEqual([]);
     expect(getTimer()).toBeNull();
     expect(executed).toEqual([]);
   });
 
-  it("stops the running timer when another task's starts", async () => {
+  it("runs several timers at once, each stopped on its own", async () => {
     const a = task({ status_id: STATUS.inProgress });
     const b = task({ status_id: STATUS.inProgress });
     const { store, executed, ready } = setup([a, b]);
     await ready;
     await startTimer(store, a.id, NINE);
     await startTimer(store, b.id, NINE + 10 * MIN);
-    expect(getTimer()).toEqual({ task_id: b.id, started_at: NINE + 10 * MIN });
+    expect(getTimers()).toEqual([
+      { task_id: a.id, started_at: NINE },
+      { task_id: b.id, started_at: NINE + 10 * MIN },
+    ]);
+    expect(executed).toEqual([]);
+    await stopTimer(store, a.id, NINE + 20 * MIN);
+    expect(getTimers()).toEqual([{ task_id: b.id, started_at: NINE + 10 * MIN }]);
     expect(executed).toHaveLength(1);
     expect(executed[0]?.[0]).toMatchObject({
       type: "create_time_block",
-      block: { task_id: a.id, start_at: NINE, end_at: NINE + 10 * MIN },
+      block: { task_id: a.id, start_at: NINE, end_at: NINE + 20 * MIN },
     });
   });
 
