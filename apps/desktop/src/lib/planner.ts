@@ -14,14 +14,19 @@ import {
   type Span,
 } from "./calendar";
 import type { Priority, Status, Task, TimeBlock } from "./types";
+import { FILTER_NONE } from "./views";
 
-/** Which tasks a plan draws from; `null` means any. */
+/** In a focus's `projectIds`: tasks without a project. */
+export const INBOX = "inbox";
+
+/** Which tasks a plan draws from: a task matches every non-empty list (any value within one). */
 export interface PlanFocus {
-  /** A project id, or `"inbox"` for tasks without a project. */
-  projectId: string | null;
-  epicId: string | null;
-  /** An open status; `null` is any open status. */
-  statusId: string | null;
+  /** Project ids; `"inbox"` stands for tasks without a project. */
+  projectIds: string[];
+  /** Epic ids; `FILTER_NONE` stands for tasks without an epic. */
+  epicIds: string[];
+  /** Open statuses; empty is any open status. */
+  statusIds: string[];
 }
 
 /** The part of each day a plan may fill, in minutes since midnight. */
@@ -32,7 +37,29 @@ export interface PlanHours {
   weekends: boolean;
 }
 
-export const DEFAULT_FOCUS: PlanFocus = { projectId: null, epicId: null, statusId: null };
+export const DEFAULT_FOCUS: PlanFocus = { projectIds: [], epicIds: [], statusIds: [] };
+
+export function focusIsEmpty(focus: PlanFocus): boolean {
+  return !focus.projectIds.length && !focus.epicIds.length && !focus.statusIds.length;
+}
+
+/**
+ * A remembered focus, read leniently: lists of ids, or the single `projectId`, `epicId`,
+ * `statusId` values saved before the focus took several of each.
+ */
+export function readFocus(saved: unknown): PlanFocus {
+  const o = (saved && typeof saved === "object" ? saved : {}) as Record<string, unknown>;
+  const list = (many: string, one: string): string[] => {
+    const v = o[many];
+    if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string");
+    return typeof o[one] === "string" ? [o[one] as string] : [];
+  };
+  return {
+    projectIds: list("projectIds", "projectId"),
+    epicIds: list("epicIds", "epicId"),
+    statusIds: list("statusIds", "statusId"),
+  };
+}
 export const DEFAULT_HOURS: PlanHours = { startMin: 9 * 60, endMin: 17 * 60, weekends: false };
 
 /** A suggested block, not yet written. `id` is a local key. */
@@ -71,14 +98,9 @@ function isOpenTask(task: Task, statuses: Record<string, Status>): boolean {
 }
 
 export function matchesFocus(task: Task, focus: PlanFocus): boolean {
-  if (
-    focus.projectId === "inbox"
-      ? task.project_id !== null
-      : focus.projectId !== null && task.project_id !== focus.projectId
-  )
-    return false;
-  if (focus.epicId !== null && task.epic_id !== focus.epicId) return false;
-  if (focus.statusId !== null && task.status_id !== focus.statusId) return false;
+  if (focus.projectIds.length && !focus.projectIds.includes(task.project_id ?? INBOX)) return false;
+  if (focus.epicIds.length && !focus.epicIds.includes(task.epic_id ?? FILTER_NONE)) return false;
+  if (focus.statusIds.length && !focus.statusIds.includes(task.status_id)) return false;
   return true;
 }
 

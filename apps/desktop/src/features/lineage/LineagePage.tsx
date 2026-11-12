@@ -227,24 +227,26 @@ export function LineagePage({
       focus?.id,
     ],
   );
-  /** Lanes in order: epics (or projects) by rank, the "none" lane last. */
+  /**
+   * Lanes in order: epics (or projects) by rank, the "none" lane last. A lane shows when it
+   * holds cards in view; an empty one only when picked in the filter (the epics picked, the
+   * project chosen), so a card can be dropped into it.
+   */
   const laneSpecs = useMemo((): LaneSpec[] => {
     if (arrange === "free") return [];
     const present = new Set(
       graph.nodes.map((node) => (arrange === "epic" ? node.task.epic_id : node.task.project_id)),
     );
     const byRank = <T extends { rank: string }>(a: T, b: T) => (a.rank < b.rank ? -1 : 1);
-    const picked = filter.epics.filter((id) => id !== FILTER_NONE);
     const specs: LaneSpec[] =
       arrange === "epic"
         ? Object.values(epics)
             .filter(
               (e) =>
                 present.has(e.id) ||
-                // Empty lanes for active epics in view, to drop cards into.
                 (e.state === "active" &&
                   !focus &&
-                  (picked.length ? picked.includes(e.id) : !filter.epics.length) &&
+                  filter.epics.includes(e.id) &&
                   (!project || !e.project_id || e.project_id === project)),
             )
             .sort(byRank)
@@ -254,11 +256,7 @@ export function LineagePage({
             .sort(byRank)
             .map((p) => ({ key: p.id, label: p.name, color: p.color }));
     const showNone =
-      present.has(null) ||
-      (!focus &&
-        (arrange === "epic"
-          ? !filter.epics.length || filter.epics.includes(FILTER_NONE)
-          : !project));
+      present.has(null) || (!focus && arrange === "epic" && filter.epics.includes(FILTER_NONE));
     if (showNone)
       specs.push({
         key: FILTER_NONE,

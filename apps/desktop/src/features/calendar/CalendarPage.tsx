@@ -40,6 +40,7 @@ import { formatAgo, isoDate } from "../../lib/dates";
 import {
   DEFAULT_FOCUS,
   DEFAULT_HOURS,
+  focusIsEmpty,
   freeMinutes,
   freeSlots,
   matchesFocus,
@@ -47,6 +48,7 @@ import {
   type PlanFocus,
   type PlanHours,
   planCandidates,
+  readFocus,
   suggestPlan,
 } from "../../lib/planner";
 import { blocksToReview } from "../../lib/replan";
@@ -97,7 +99,7 @@ function loadPlanPrefs(): PlanPrefs {
   try {
     const saved = JSON.parse(localStorage.getItem(PLAN_KEY) ?? "null") as Partial<PlanPrefs> | null;
     return {
-      focus: { ...DEFAULT_FOCUS, ...saved?.focus },
+      focus: readFocus(saved?.focus),
       hours: { ...DEFAULT_HOURS, ...saved?.hours },
     };
   } catch {
@@ -212,10 +214,7 @@ export function CalendarPage() {
   // The tray's filter is the plan's focus: the plan draws from the tasks the tray lists.
   const focus = planPrefs.focus;
   const focusFilter = useMemo(
-    () =>
-      focus.projectId === null && focus.epicId === null && focus.statusId === null
-        ? undefined
-        : (t: Task) => matchesFocus(t, focus),
+    () => (focusIsEmpty(focus) ? undefined : (t: Task) => matchesFocus(t, focus)),
     [focus],
   );
   const focusChoices = useMemo(
@@ -224,11 +223,11 @@ export function CalendarPage() {
         .filter((p) => !p.deleted_at && !p.archived_at)
         .sort((a, b) => (a.rank < b.rank ? -1 : 1)),
       epics: Object.values(epicMap)
-        .filter((e) => !e.deleted_at && (e.state === "active" || e.id === focus.epicId))
+        .filter((e) => !e.deleted_at && (e.state === "active" || focus.epicIds.includes(e.id)))
         .sort((a, b) => (a.rank < b.rank ? -1 : 1)),
       statuses: statuses.filter((s) => s.category !== "done" && s.category !== "cancelled"),
     }),
-    [projects, epicMap, statuses, focus.epicId],
+    [projects, epicMap, statuses, focus.epicIds],
   );
   const suggest = () => {
     if (!planInfo) return;

@@ -680,11 +680,15 @@ it("shows what blocks a task on its page and opens Lineage on it", async () => {
 it("arranges cards in lanes by epic and moves a card to another epic by dropping it there", async () => {
   const alpha = epic({ id: "e-alpha", name: "Alpha", rank: "a" });
   const beta = epic({ id: "e-beta", name: "Beta", rank: "b" });
+  const empty = epic({ id: "e-empty", name: "Empty", rank: "c" });
   const a = task({ title: "Plan", epic_id: alpha.id });
   const b = task({ title: "Build", epic_id: alpha.id, dependency_ids: [a.id] });
   const c = task({ title: "Loose" });
-  place([a, b, c]);
-  const { store, commands } = await setup([a, b, c], false, "/lineage", { epics: [alpha, beta] });
+  const d = task({ title: "Ship", epic_id: beta.id });
+  place([a, b, c, d]);
+  const { store, commands } = await setup([a, b, c, d], false, "/lineage", {
+    epics: [alpha, beta, empty],
+  });
   const node = (title: string) =>
     screen.queryByRole("button", { name: `Select ${title}` })?.parentElement ?? null;
   // Freeform cards show their epic.
@@ -694,6 +698,8 @@ it("arranges cards in lanes by epic and moves a card to another epic by dropping
   expect(lane("Alpha")).toBeTruthy();
   expect(lane("Beta")).toBeTruthy();
   expect(lane("No epic")).toBeTruthy();
+  // An epic without cards in view gets no lane.
+  expect(screen.queryByRole("region", { name: "Lane Empty" })).toBeNull();
   // The lane names the epic, so the cards don't.
   expect(node("Plan")?.querySelector("[data-card-epic]")).toBeNull();
   const top = (element: HTMLElement | null) => Number.parseFloat(element?.style.top ?? "NaN");
@@ -725,6 +731,23 @@ it("arranges cards in lanes by epic and moves a card to another epic by dropping
   expect(JSON.parse(localStorage.getItem("task-master.lineage-filter") ?? "{}").arrange).toBe(
     "epic",
   );
+});
+
+it("shows an empty epic lane only when the epic is picked in the filter", async () => {
+  const alpha = epic({ id: "e-alpha", name: "Alpha", rank: "a" });
+  const empty = epic({ id: "e-empty", name: "Empty", rank: "b" });
+  const a = task({ title: "Plan", epic_id: alpha.id });
+  place([a]);
+  await setup([a], false, "/lineage", { epics: [alpha, empty] });
+  await pickOption("Arrange lineage", "Lanes by epic");
+  expect(screen.getByRole("region", { name: "Lane Alpha" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Lane Empty" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Lane No epic" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Filter lineage by epic" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Alpha" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Empty" }));
+  expect(await screen.findByRole("region", { name: "Lane Empty" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Lane Alpha" })).toBeTruthy();
 });
 
 it("arranges lanes by project and moves a card to another project", async () => {

@@ -11,6 +11,20 @@ board selection/drag and reset work below were checked together before committin
 (492 frontend tests passed, 2 skipped). Earlier "not run yet" notes below describe
 the individual work sessions and are superseded by this integration check.
 
+**Agent runs stopped by the plan limit, finished** (2026-11-12, uncommitted on `main`): three
+agent sessions failed at 15:03–15:07 on Claude's 5-hour limit. The 3-day view was already
+done (below). The other two:
+- Calendar tray filter (the plan focus) takes several projects, epics and statuses: `MultiPick`
+  checklists like the list/board filter bar, with "Inbox" and "No epic". `PlanFocus` is now
+  `projectIds`/`epicIds`/`statusIds`; `readFocus` reads the single values saved before.
+  Tests: `planner.test.ts` (lists, `readFocus`), `calendar.test.tsx` ("picks several statuses").
+- Lineage lanes by epic: a lane shows only when it holds cards in view; an empty epic (or
+  "No epic") lane only when picked in the Epic filter, to drop cards into. Before, every
+  active epic of the scope had a lane. Same for "No project" in lanes by project.
+  Test: `LineagePage.test.tsx` ("shows an empty epic lane only when…").
+`pnpm biome check .`, `pnpm typecheck` and `pnpm test` (495 passed, 2 skipped) pass; no Rust
+changed, so cargo was not run. Not tried in the app.
+
 **Three-day calendar view** (2026-11-12): the calendar range selector now
 has **3 days**, initially today plus two days. Previous/next moves by three days;
 Today returns to the current range. The view shares the timed grid, day lanes,

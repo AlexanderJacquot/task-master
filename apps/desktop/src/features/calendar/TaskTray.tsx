@@ -67,7 +67,7 @@ export function TaskTray({
   const timeBlocks = useStoreState((s) => s.time_blocks);
   const [query, setQuery] = useState("");
   const [width, setWidth] = useState(loadWidth);
-  const active = [focus.projectId, focus.epicId, focus.statusId].filter((v) => v !== null).length;
+  const active = [focus.projectIds, focus.epicIds, focus.statusIds].filter((v) => v.length).length;
   const [showFilter, setShowFilter] = useState(active > 0);
   const ctx: ViewContext = useMemo(
     () => ({

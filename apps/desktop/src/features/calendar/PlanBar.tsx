@@ -6,12 +6,12 @@ import { Dices } from "lucide-react";
 import { CheckIcon as Check, CloseIcon as X } from "../../components/TaskIcons";
 import { Button, Select, type SelectOption } from "../../components/ui";
 import { atMinute, formatDuration, formatHour } from "../../lib/calendar";
-import type { Plan, PlanFocus, PlanHours } from "../../lib/planner";
+import { INBOX, type Plan, type PlanFocus, type PlanHours } from "../../lib/planner";
 import type { Epic, Project, Status } from "../../lib/types";
+import { FILTER_NONE } from "../../lib/views";
+import { MultiPick } from "../shell/FilterBar";
 
-const ANY = "any";
-
-/** The focus selects (project, epic, open status), stacked. Shown in the calendar's tray. */
+/** The focus picklists (project, epic, open status); each takes several values. Shown in the calendar's tray. */
 export function FocusFilter({
   focus,
   onFocus,
@@ -25,49 +25,39 @@ export function FocusFilter({
   epics: Epic[];
   statuses: Status[];
 }) {
-  const projectOptions: SelectOption[] = [
-    { value: ANY, label: "Any project" },
-    { value: "inbox", label: "Inbox" },
-    ...projects.map((p) => ({ value: p.id, label: p.name })),
-  ];
-  const epicOptions: SelectOption[] = [
-    { value: ANY, label: "Any epic" },
-    ...epics
-      .filter(
-        (e) =>
-          e.id === focus.epicId ||
-          focus.projectId === null ||
-          e.project_id === null ||
-          e.project_id === focus.projectId,
-      )
-      .map((e) => ({ value: e.id, label: e.name })),
-  ];
-  const statusOptions: SelectOption[] = [
-    { value: ANY, label: "Any open status" },
-    ...statuses.map((s) => ({ value: s.id, label: s.name })),
-  ];
+  // With projects picked, offer their epics and the epics without a project (and any picked).
+  const picked = focus.projectIds.filter((id) => id !== INBOX);
+  const epicOptions = epics
+    .filter(
+      (e) =>
+        focus.epicIds.includes(e.id) ||
+        picked.length === 0 ||
+        e.project_id === null ||
+        picked.includes(e.project_id),
+    )
+    .map((e) => ({ value: e.id, label: e.name, color: e.color }));
   return (
-    <div className="flex flex-col gap-1.5">
-      <Select
-        aria-label="Filter project"
-        value={focus.projectId ?? ANY}
-        options={projectOptions}
-        onValueChange={(v) => onFocus({ ...focus, projectId: v === ANY ? null : v })}
-        className="w-full"
+    <div className="flex flex-wrap gap-1.5">
+      <MultiPick
+        label="Project"
+        options={[
+          { value: INBOX, label: "Inbox" },
+          ...projects.map((p) => ({ value: p.id, label: p.name, color: p.color })),
+        ]}
+        selected={focus.projectIds}
+        onChange={(projectIds) => onFocus({ ...focus, projectIds })}
       />
-      <Select
-        aria-label="Filter epic"
-        value={focus.epicId ?? ANY}
-        options={epicOptions}
-        onValueChange={(v) => onFocus({ ...focus, epicId: v === ANY ? null : v })}
-        className="w-full"
+      <MultiPick
+        label="Epic"
+        options={[{ value: FILTER_NONE, label: "No epic" }, ...epicOptions]}
+        selected={focus.epicIds}
+        onChange={(epicIds) => onFocus({ ...focus, epicIds })}
       />
-      <Select
-        aria-label="Filter status"
-        value={focus.statusId ?? ANY}
-        options={statusOptions}
-        onValueChange={(v) => onFocus({ ...focus, statusId: v === ANY ? null : v })}
-        className="w-full"
+      <MultiPick
+        label="Status"
+        options={statuses.map((s) => ({ value: s.id, label: s.name, color: s.color }))}
+        selected={focus.statusIds}
+        onChange={(statusIds) => onFocus({ ...focus, statusIds })}
       />
     </div>
   );
