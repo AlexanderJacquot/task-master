@@ -87,11 +87,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Agent runs time the task, and the Agents page shows cost, agent time and spend limits per day, week and month. Multi-select in list and board, with a bulk bar and one undo. Saved Lineage views, and cards dragged onto the side panel to link them. Properties in the side panel keep one order. On the parchment theme, paper sounds (switch them off in Settings → Appearance).
+            Calendar: mark a block "Worked, replan" or "Not done, replan" and pick where the rest goes (later today, the next working day, or a time), and a daily Review goes through the blocks that ended without an outcome. The quick-capture window has rounded corners. 0.16.0 was never published, so this release also brings its changes: agent runs time the task, and the Agents page shows cost, agent time and spend limits per day, week and month. Multi-select in list and board, with a bulk bar and one undo. Saved Lineage views, and cards dragged onto the side panel to link them. Properties in the side panel keep one order. On the parchment theme, paper sounds (switch them off in Settings → Appearance).
 
-            Database change (schema 13): 0.16.0 desktops and sync servers sync only with each other, so upgrade the server together with the desktops. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.16.0.
+            Database change (schema 14): 0.16.1 desktops and sync servers sync only with each other, so upgrade the server together with the desktops. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.16.1.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.16.0/docs/releases/0.16.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.16.1/docs/releases/0.16.1.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

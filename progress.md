@@ -4,7 +4,7 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**Release 0.16.1** (2026-11-12, on `release/0.16.1`): the 0.16.0 release build never ran
+**Release 0.16.1** (2026-11-12, on `release/0.16.1`, then `main`; notes `docs/releases/0.16.1.md`): the 0.16.0 release build never ran
 (its `release` workflow failed at the Rust format check, which the integration had not run),
 so 0.16.0 has no installers or update. 0.16.1 formats the 0.16.0 merges and adds:
 - Quick capture: the panel has rounded corners (`rounded-xl`). The capture window is
