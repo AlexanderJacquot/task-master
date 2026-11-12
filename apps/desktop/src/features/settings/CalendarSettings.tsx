@@ -22,6 +22,7 @@ export function CalendarSettings() {
   const [clientId, setClientId] = useState("");
   const [secret, setSecret] = useState("");
   const [waiting, setWaiting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -138,8 +139,15 @@ export function CalendarSettings() {
             )}
           </fieldset>
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => void run(() => api.syncNow())}>
-              Sync now
+            <Button
+              size="sm"
+              busy={syncing}
+              onClick={() => {
+                setSyncing(true);
+                void run(() => api.syncNow()).finally(() => setSyncing(false));
+              }}
+            >
+              {syncing ? "Syncing…" : "Sync now"}
             </Button>
             <Button
               size="sm"

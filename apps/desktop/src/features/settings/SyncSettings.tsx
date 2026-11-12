@@ -300,8 +300,12 @@ export function SyncSettings() {
 
             <div className="flex gap-2">
               {status.joined && (
-                <Button size="sm" onClick={() => void run("sync", () => api.syncNow())}>
-                  Sync now
+                <Button
+                  size="sm"
+                  busy={busy === "sync" || status.syncing}
+                  onClick={() => void run("sync", () => api.syncNow())}
+                >
+                  {busy === "sync" || status.syncing ? "Syncing…" : "Sync now"}
                 </Button>
               )}
               <Button

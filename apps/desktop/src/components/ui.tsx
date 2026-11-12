@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, LoaderCircle } from "lucide-react";
 import { Select as RadixSelect } from "radix-ui";
 import {
   type ComponentProps,
@@ -212,12 +212,21 @@ export function Button({
   variant = "secondary",
   size = "md",
   className,
+  busy,
+  children,
   ...props
-}: ComponentProps<"button"> & { variant?: ButtonVariant; size?: "sm" | "md" }) {
+}: ComponentProps<"button"> & {
+  variant?: ButtonVariant;
+  size?: "sm" | "md";
+  /** Shows a spinner before the label and disables the button. */
+  busy?: boolean;
+}) {
   return (
     <button
       type="button"
       {...props}
+      disabled={props.disabled || busy}
+      aria-busy={busy || undefined}
       className={cx(
         "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg transition-colors disabled:cursor-default",
         size === "sm" ? "h-7 px-2.5 text-[13px]" : "h-8 px-3 text-sm",
@@ -225,7 +234,10 @@ export function Button({
         FOCUS,
         className,
       )}
-    />
+    >
+      {busy && <LoaderCircle aria-hidden className="size-3.5 animate-spin" />}
+      {children}
+    </button>
   );
 }
 

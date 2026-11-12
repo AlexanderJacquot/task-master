@@ -498,7 +498,9 @@ function Data() {
           )}
         </dl>
         <div className="flex gap-2">
-          <HeaderButton
+          <Button
+            size="sm"
+            busy={busy}
             onClick={() =>
               void run(async () => {
                 setStatus(await settingsApi.backupNow());
@@ -506,8 +508,8 @@ function Data() {
               })
             }
           >
-            {busy ? "Working…" : "Back up now"}
-          </HeaderButton>
+            {busy ? "Backing up…" : "Back up now"}
+          </Button>
         </div>
       </Section>
 
