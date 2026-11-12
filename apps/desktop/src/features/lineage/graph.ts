@@ -79,7 +79,10 @@ function orderRows(tasks: Task[], levels: Map<string, number>, byId: Map<string,
   const keys = [...columns.keys()].sort((a, b) => a - b);
   const rows = new Map<string, number>();
   const assign = () => {
-    for (const column of columns.values()) column.forEach((id, row) => rows.set(id, row));
+    for (const column of columns.values())
+      column.forEach((id, row) => {
+        rows.set(id, row);
+      });
   };
   const crossings = () => {
     const lines = edges.map(
@@ -108,7 +111,9 @@ function orderRows(tasks: Task[], levels: Map<string, number>, byId: Map<string,
       );
     });
     column.sort((a, b) => (centre.get(a) ?? 0) - (centre.get(b) ?? 0));
-    column.forEach((id, row) => rows.set(id, row));
+    column.forEach((id, row) => {
+      rows.set(id, row);
+    });
   };
   assign();
   let best = crossings();

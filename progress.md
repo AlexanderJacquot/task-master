@@ -1978,3 +1978,5 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 - Send to agent: a Model selector (Default/Opus/Sonnet/Haiku). Stored per session
   (`agent_sessions.model`, migration 0012) so follow-ups reuse it. Not yet run: cargo/pnpm checks.
+
+- Release 0.19.0: merged the files-side-preview, lineage-arrange-crossings and sync-mode-toggle worktrees (phone branches left out).
