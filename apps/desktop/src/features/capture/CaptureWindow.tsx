@@ -53,7 +53,8 @@ export const tauriCaptureControls = (): CaptureControls => {
  * The quick-capture window (global hotkey, plan section 6): one input, then out of the way.
  * Hides on Escape, after a capture, or when it loses focus; each opening starts fresh.
  * Shift+Enter saves and grows the window into the full task editor (description,
- * subtasks, files...); it then stays open until Esc or Done, so file pickers can open.
+ * subtasks, files...); it then stays open until Esc, Ctrl+Enter or Done, so file
+ * pickers can open.
  */
 export function CaptureWindow({ controls }: { controls: CaptureControls }) {
   const store = useTaskStore();
@@ -108,6 +109,22 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [editing]);
 
+  // Ctrl+Enter saves and closes from anywhere in the editor. Fields save on blur, so
+  // leaving the focused one first commits what is being typed. Capture phase, so the
+  // description editor does not insert a line for it first.
+  useEffect(() => {
+    if (!editing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey) || e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      hideRef.current();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editing]);
+
   if (editing) {
     return (
       <OpenTaskContext.Provider value={(id) => (id ? setEditing(id) : hide())}>
@@ -122,7 +139,9 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
             >
               Quick capture
             </p>
-            <span className="text-[12.5px] text-ink-3">Saves as you edit · Esc closes</span>
+            <span className="text-[12.5px] text-ink-3">
+              Saves as you edit · Ctrl+Enter or Esc closes
+            </span>
             <Button
               size="sm"
               className="text-danger hover:text-danger"
