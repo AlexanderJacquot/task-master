@@ -111,7 +111,7 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
   if (editing) {
     return (
       <OpenTaskContext.Provider value={(id) => (id ? setEditing(id) : hide())}>
-        <div className="tex-sheet flex h-full flex-col overflow-hidden border border-line-strong bg-overlay">
+        <div className="tex-sheet flex h-full flex-col overflow-hidden rounded-xl border border-line-strong bg-overlay">
           <div
             data-tauri-drag-region
             className="flex items-center gap-2 border-b border-line px-5 py-2.5"
@@ -168,7 +168,7 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
   }
 
   return (
-    <div className="tex-sheet flex h-full flex-col overflow-hidden border border-line-strong bg-overlay">
+    <div className="tex-sheet flex h-full flex-col overflow-hidden rounded-xl border border-line-strong bg-overlay">
       <p className="px-5 pt-3 font-display text-[15px] tracking-wide text-accent">Quick capture</p>
       {ready ? (
         <CaptureBox

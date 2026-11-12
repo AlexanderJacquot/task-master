@@ -25,6 +25,8 @@ if (!root) throw new Error("#root element missing from index.html");
 
 // Both windows load this page; the quick-capture one renders only the capture box.
 const isCapture = getCurrentWindow().label === "capture";
+// Its window is transparent so the panel can have rounded corners: clear the page background.
+if (isCapture) document.documentElement.classList.add("capture-window");
 
 // The capture window lives hidden from the app's start: besides `storage` events, read the
 // appearance again each time the hotkey shows it, so a theme changed since then applies.

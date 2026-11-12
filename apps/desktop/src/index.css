@@ -236,6 +236,12 @@ body {
   font-optical-sizing: auto;
 }
 
+/* The quick-capture window is transparent; its rounded panel paints the background. */
+html.capture-window,
+html.capture-window body {
+  background: transparent;
+}
+
 ::selection {
   background: color-mix(in srgb, var(--tm-accent) 30%, transparent);
 }

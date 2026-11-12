@@ -4,6 +4,15 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.16.1** (2026-11-12, on `release/0.16.1`): the 0.16.0 release build never ran
+(its `release` workflow failed at the Rust format check, which the integration had not run),
+so 0.16.0 has no installers or update. 0.16.1 formats the 0.16.0 merges and adds:
+- Quick capture: the panel has rounded corners (`rounded-xl`). The capture window is
+  `transparent` in `tauri.conf.json` and both platform configs (they replace the window
+  list, see the `*_config_only_drops_the_main_frame` tests); `main.tsx` puts
+  `capture-window` on `<html>` so `index.css` clears the page background there. macOS
+  needs `macOSPrivateApi` for transparent windows (not enabled), so its corners stay square.
+
 **Release 0.16.0** (2026-11-12, on `release/0.16.0`, then `main`): integrates the seven feature
 branches that were not in main or had uncommitted work (agent timer, Agents page usage and
 spend limits, multi-select, saved Lineage views, drag a card onto the side panel, property
