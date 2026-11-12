@@ -44,7 +44,7 @@ import {
 import { cx, Dot, InlineInput } from "../../components/ui";
 import { adjacentStatus, type Board, type Card, type Column, type Lane } from "../../lib/board";
 import { type ClickMods, isSelectClick, modsOf } from "../../lib/selection";
-import { moveCard } from "../../store/actions";
+import { moveCards } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
 import { applyTaskDrop, finishTaskDrag, startTaskDrag, taskDropOver } from "../shell/taskDrop";
 import { CARD_SLOT, CardFace, type CardLookups } from "./BoardCard";
@@ -99,6 +99,24 @@ function sameOrder(a: string[] | undefined, b: string[] | undefined): boolean {
 }
 
 /**
+ * The cards a drag of `id` takes along: when `id` is part of a multi-selection, every
+ * picked card on the board in board order (lane by lane, column by column); else null.
+ */
+export function dragGroup(cells: Cells, picked: ReadonlySet<string>, id: string): string[] | null {
+  if (picked.size < 2 || !picked.has(id)) return null;
+  const ids = Object.values(cells).flatMap((cell) => cell.filter((c) => picked.has(c)));
+  return ids.length > 1 ? ids : null;
+}
+
+/** The cells without the cards dragged along with `id` (they show again at the drop). */
+export function withoutOthers(cells: Cells, group: readonly string[], id: string): Cells {
+  const along = new Set(group.filter((other) => other !== id));
+  return Object.fromEntries(
+    Object.entries(cells).map(([key, ids]) => [key, ids.filter((other) => !along.has(other))]),
+  );
+}
+
+/**
  * Columns per status, optionally split into swimlanes. Cards drag within and between cells
  * (dnd-kit); a drop is one `move_task` with a rank between the new neighbours. A focused
  * card moves to the previous or next column with `Alt+←/→`. Columns can be collapsed to a
@@ -128,6 +146,10 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
   // While dragging, cells are local so the card can visit other cells before the drop.
   const [dragCells, setDragCells] = useState<Cells | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Dragging a card of a multi-selection drags all of it: the picked cards in board order
+  // (lane by lane, column by column). The others leave their cells until the drop, where
+  // they land together around the dragged card. Null for a single card.
+  const [group, setGroup] = useState<string[] | null>(null);
   const cells = dragCells ?? boardCells;
 
   // Collapsed swimlanes show a strip of drop targets. Holding a dragged card over one for
@@ -166,6 +188,7 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
   const endDrag = () => {
     setDragCells(null);
     setActiveId(null);
+    setGroup(null);
     setHoverLane(null);
     setSpringOpen(new Set());
   };
@@ -231,10 +254,10 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
   );
 
   const drop = useCallback(
-    (id: string, cell: string, order: string[]) => {
+    (ids: string[], cell: string, order: string[]) => {
       const [laneKey, statusId] = cell.split(SEP) as [string, string];
-      void moveCard(store, {
-        id,
+      void moveCards(store, {
+        ids,
         statusId,
         order,
         laneChanges: lanesByKey.get(laneKey)?.changes ?? [],
@@ -244,12 +267,15 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
   );
 
   const onDragStart = ({ active }: DragStartEvent) => {
+    const id = String(active.id);
+    const together = dragGroup(boardCells, picked, id);
     lastOverId.current = null;
     setOverlayWidth(active.rect.current.initial?.width ?? null);
-    setActiveId(String(active.id));
-    setDragCells(boardCells);
+    setActiveId(id);
+    setGroup(together);
+    setDragCells(together ? withoutOthers(boardCells, together, id) : boardCells);
     setDroppedOutside(false);
-    startTaskDrag(String(active.id));
+    startTaskDrag(id, together ?? []);
   };
 
   const onDragOver = ({ active, over }: DragOverEvent) => {
@@ -281,12 +307,14 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     const current = dragCells ?? boardCells;
     const opened = springOpen;
+    const together = group;
     const outside = finishTaskDrag();
     endDrag();
     const id = String(active.id);
+    const ids = together ?? [id];
     if (outside) {
       setDroppedOutside(true);
-      void applyTaskDrop(store, id, outside);
+      void applyTaskDrop(store, ids, outside);
       return;
     }
     if (!over) return;
@@ -298,15 +326,17 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
     if (oldIndex >= 0 && newIndex >= 0 && oldIndex !== newIndex) {
       order = arrayMove(order, oldIndex, newIndex);
     }
+    // The cards dragged along land around the dragged one, in board order.
+    if (together) order = order.flatMap((other) => (other === id ? together : [other]));
     // Dropped on a collapsed column or lane: on top, where it shows once it is expanded.
     const [toLane, toStatus] = to.split(SEP) as [string, string];
     const laneShut = laneCollapsed(toLane) && !opened.has(toLane);
     if (columns.isCollapsed(toStatus) || laneShut) {
-      order = [id, ...order.filter((other) => other !== id)];
+      order = [...ids, ...order.filter((other) => !ids.includes(other))];
     }
-    const origin = findCell(id, boardCells);
-    if (origin === to && sameOrder(order, boardCells[to])) return;
-    drop(id, to, order);
+    const unmoved = ids.every((other) => findCell(other, boardCells) === to);
+    if (unmoved && sameOrder(order, boardCells[to])) return;
+    drop(ids, to, order);
   };
 
   // Unmounted mid-drag (route change): stop tracking the pointer.
@@ -328,7 +358,7 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
       const target = adjacentStatus(board.columns, statusId, e.key === "ArrowLeft" ? -1 : 1);
       if (!target) return true;
       const to = `${laneKey}${SEP}${target}`;
-      drop(id, to, [id, ...(boardCells[to] ?? [])]);
+      drop([id], to, [id, ...(boardCells[to] ?? [])]);
       requestAnimationFrame(() => {
         document.querySelector<HTMLElement>(`[data-card-id="${id}"]`)?.focus();
       });
@@ -465,9 +495,22 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
           ))}
         </div>
       </div>
-      <DragOverlay dropAnimation={droppedOutside ? null : undefined}>
+      <DragOverlay dropAnimation={droppedOutside || group ? null : undefined}>
         {active && (
-          <div style={{ width: overlayWidth ?? undefined }}>
+          <div className="relative" style={{ width: overlayWidth ?? undefined }}>
+            {/* Several cards: a stack behind the dragged one, and how many there are. */}
+            {group && (
+              <>
+                <div
+                  aria-hidden
+                  className="absolute inset-0 translate-x-2 translate-y-2 rotate-2 rounded-[11px] border border-line bg-raised shadow-md shadow-black/20 clean:rounded-lg"
+                />
+                <div
+                  aria-hidden
+                  className="absolute inset-0 translate-x-1 translate-y-1 rotate-[1.5deg] rounded-[11px] border border-line bg-raised shadow-md shadow-black/20 clean:rounded-lg"
+                />
+              </>
+            )}
             <CardFace
               {...lookups}
               task={active.task}
@@ -475,6 +518,14 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
               childDone={active.childDone}
               overlay
             />
+            {group && (
+              <span
+                data-testid="drag-count"
+                className="absolute -top-2 -right-2 z-10 min-w-6 rounded-full bg-accent px-1.5 py-0.5 text-center font-semibold text-[12px] text-accent-ink tabular-nums shadow-md"
+              >
+                {group.length}
+              </span>
+            )}
           </div>
         )}
       </DragOverlay>

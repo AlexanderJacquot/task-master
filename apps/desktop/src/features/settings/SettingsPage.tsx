@@ -1,7 +1,7 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
 // Database, Info and Keyboard have no glyph in the app's icon set yet.
-import { Database, Info, Keyboard } from "lucide-react";
+import { Database, HardDrive, Info, Keyboard } from "lucide-react";
 import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import {
   AgentsIcon,
@@ -52,6 +52,7 @@ import { HeaderButton } from "../shell/ViewPage";
 import { About } from "./About";
 import { AgentSettings } from "./AgentSettings";
 import { CalendarSettings } from "./CalendarSettings";
+import { FilesSettings } from "./FilesSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SyncSettings } from "./SyncSettings";
 
@@ -719,6 +720,7 @@ const SETTINGS_CATEGORIES: SettingsCategory[] = [
   { id: "calendar", label: "Calendar", icon: CalendarIcon, render: () => <CalendarSettings /> },
   { id: "agents", label: "Agents", icon: AgentsIcon, render: () => <AgentSettings /> },
   { id: "data", label: "Data and backups", icon: Database, render: () => <Data /> },
+  { id: "files", label: "Files", icon: HardDrive, render: () => <FilesSettings /> },
   { id: "about", label: "About", icon: Info, render: () => <About /> },
 ];
 

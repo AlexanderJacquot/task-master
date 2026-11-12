@@ -5,8 +5,10 @@ import {
   defaultFolder,
   folderName,
   formatCost,
+  formatDayHeading,
   formatDuration,
   recentFolders,
+  sessionsByDay,
   shownSession,
   sortedSessions,
 } from "./sessions";
@@ -76,6 +78,28 @@ describe("where a new session starts", () => {
     ];
     expect(recentFolders(byId(list), "native")).toEqual(["/a", "/b"]);
     expect(recentFolders(byId(list), "native", 1)).toEqual(["/a"]);
+  });
+});
+
+describe("days", () => {
+  it("splits sessions by the local day they started on, keeping the order", () => {
+    const at = (d: number, h: number) => new Date(2026, 10, d, h).getTime();
+    const late = agentSession({ started_at: at(12, 23) });
+    const early = agentSession({ started_at: at(12, 0) });
+    const before = agentSession({ started_at: at(10, 9) });
+    expect(sessionsByDay([late, early, before])).toEqual([
+      { day: "2026-11-12", sessions: [late, early] },
+      { day: "2026-11-10", sessions: [before] },
+    ]);
+    expect(sessionsByDay([])).toEqual([]);
+  });
+
+  it("names today and yesterday, then the date, with the year when not this one", () => {
+    expect(formatDayHeading("2026-11-12", "2026-11-12")).toBe("Today");
+    expect(formatDayHeading("2026-11-11", "2026-11-12")).toBe("Yesterday");
+    expect(formatDayHeading("2026-11-09", "2026-11-12")).toContain("9");
+    expect(formatDayHeading("2026-11-09", "2026-11-12")).not.toContain("2026");
+    expect(formatDayHeading("2025-12-30", "2026-01-02")).toContain("2025");
   });
 });
 

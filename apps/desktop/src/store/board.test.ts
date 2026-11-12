@@ -5,7 +5,7 @@ import { rankBetween } from "../lib/rank";
 import type { Changes, Command, Task } from "../lib/types";
 import { EMPTY_FILTER, type ViewContext } from "../lib/views";
 import { fakeParse, STATUS, snapshot, statuses, task } from "../test/fixtures";
-import { moveCard } from "./actions";
+import { moveCard, moveCards } from "./actions";
 import { createTaskStore, type TaskStore } from "./store";
 
 /** A core that confirms every write with the entities the store showed optimistically. */
@@ -150,5 +150,64 @@ describe("moveCard", () => {
       expect(boardColumns(store), `after drag ${drag}`).toEqual(model);
     }
     expect(fake.executed).toHaveLength(50);
+  });
+});
+
+describe("moveCards", () => {
+  async function setup(tasks: Task[]) {
+    let store: TaskStore = createTaskStore({} as Api);
+    const fake = confirmingApi(() => store, tasks);
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    return { store, executed: fake.executed };
+  }
+
+  it("moves several cards from different columns together, in one batch", async () => {
+    const a = task({ rank: "a0", status_id: STATUS.todo });
+    const b = task({ rank: "a1", status_id: STATUS.todo });
+    const x = task({ rank: "a0", status_id: STATUS.backlog });
+    const y = task({ rank: "a5", status_id: STATUS.inProgress });
+    const { store, executed } = await setup([a, b, x, y]);
+
+    await moveCards(store, {
+      ids: [x.id, y.id],
+      statusId: STATUS.todo,
+      order: [a.id, x.id, y.id, b.id],
+    });
+    expect(executed).toHaveLength(1);
+    expect(executed[0]?.map((c) => c.type)).toEqual(["move_task", "move_task"]);
+    expect(boardColumns(store)).toEqual([[], [a.id, x.id, y.id, b.id], [], []]);
+  });
+
+  it("applies the lane's changes to each card that needs them", async () => {
+    const x = task({ priority: "urgent" });
+    const y = task({ priority: "low" });
+    const { store, executed } = await setup([x, y]);
+
+    await moveCards(store, {
+      ids: [x.id, y.id],
+      statusId: STATUS.inProgress,
+      order: [x.id, y.id],
+      laneChanges: [{ priority: "urgent" }],
+    });
+    expect(executed[0]?.map((c) => c.type)).toEqual(["move_task", "update_task"]);
+    expect(store.getState().tasks[y.id]?.priority).toBe("urgent");
+    expect(boardColumns(store)[2]).toEqual([x.id, y.id]);
+  });
+
+  it("lands between neighbours that share a rank", async () => {
+    const a = task({ rank: "a1", status_id: STATUS.todo });
+    const b = task({ rank: "a1", status_id: STATUS.todo });
+    const x = task({ rank: "a0", status_id: STATUS.backlog });
+    const y = task({ rank: "a1", status_id: STATUS.backlog });
+    const { store } = await setup([a, b, x, y]);
+    const [first, second] = boardColumns(store)[1] as [string, string];
+
+    await moveCards(store, {
+      ids: [x.id, y.id],
+      statusId: STATUS.todo,
+      order: [first, x.id, y.id, second],
+    });
+    expect(boardColumns(store)[1]).toEqual([first, x.id, y.id, second]);
   });
 });

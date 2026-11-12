@@ -99,6 +99,12 @@ export const commands = {
 	 */
 	syncJoin: (mode: JoinMode) => typedError<SyncStatus_Serialize, CommandError>(__TAURI_INVOKE("sync_join", { mode })),
 	syncNow: () => __TAURI_INVOKE<SyncStatus_Serialize>("sync_now"),
+	filesOverview: () => typedError<FilesOverview_Serialize, CommandError>(__TAURI_INVOKE("files_overview")),
+	/**
+	 *  Permanently deletes the content of `hashes` here (the UI deletes their attachments
+	 *  first), then syncs so the server and the other devices drop it too.
+	 */
+	purgeFiles: (hashes: string[]) => typedError<PurgeReport, CommandError>(__TAURI_INVOKE("purge_files", { hashes })),
 	/**
 	 *  Stops syncing and forgets the server and its token. Local data stays; joining again
 	 *  later sends everything again (the server ignores what it has).
@@ -133,6 +139,11 @@ export const commands = {
 	 *  gets, looks it up through the user's login shell.
 	 */
 	detectClaude: (settings: AgentSettings_Deserialize) => typedError<ClaudeCheck, CommandError>(__TAURI_INVOKE("detect_claude", { settings })),
+	/**
+	 *  The Claude plan's usage limits (5-hour and weekly windows), read with Claude Code's
+	 *  sign-in where agents run; an `invalid` error carries a message to show as is.
+	 */
+	claudePlanUsage: () => typedError<PlanUsage_Serialize, CommandError>(__TAURI_INVOKE("claude_plan_usage")),
 	/**  Installed WSL distributions (Windows only; empty elsewhere or without WSL). */
 	listWslDistros: () => __TAURI_INVOKE<string[]>("list_wsl_distros"),
 	projectFolders: () => typedError<ProjectFolder[], CommandError>(__TAURI_INVOKE("project_folders")),
@@ -506,6 +517,19 @@ export type BackupStatus_Serialize = {
 	last_remote_at: number | null,
 	/**  Why the last upload attempt failed (cleared on success). */
 	remote_error: string | null,
+};
+
+/**
+ *  `POST /auth/oidc`: trade an ID token from the provider for a device token.
+ *  `GET /blobs`: the attachment content the server holds, and what was purged (ADR 023).
+ */
+export type BlobList = {
+	files: FileEntry[],
+	/**
+	 *  Hashes purged from Settings → Files on some device: every device drops its copy
+	 *  unless a live attachment there still uses it.
+	 */
+	purged: string[],
 };
 
 /**  What became of a [`TimeBlock`]. Logged time is the sum of `done` and `worked` blocks. */
@@ -948,6 +972,42 @@ export type FieldChange = {
 	after: string,
 };
 
+/**  One file in the store, for Settings → Files. */
+export type FileEntry = {
+	hash: string,
+	size: number,
+	/**  When it was written here (Unix ms; 0 when the system does not say). */
+	stored_at: number,
+};
+
+/**
+ *  What Settings → Files shows (ADR 023): the files on this device and, when this device
+ *  syncs, the ones on the server.
+ */
+export type FilesOverview = FilesOverview_Serialize | FilesOverview_Deserialize;
+
+/**
+ *  What Settings → Files shows (ADR 023): the files on this device and, when this device
+ *  syncs, the ones on the server.
+ */
+export type FilesOverview_Deserialize = {
+	local: StoredFileInfo[],
+	/**  `None` without a sync server, or when it could not be read (see `server_error`). */
+	server?: BlobList | null,
+	server_error?: string | null,
+};
+
+/**
+ *  What Settings → Files shows (ADR 023): the files on this device and, when this device
+ *  syncs, the ones on the server.
+ */
+export type FilesOverview_Serialize = {
+	local: StoredFileInfo[],
+	/**  `None` without a sync server, or when it could not be read (see `server_error`). */
+	server: BlobList | null,
+	server_error: string | null,
+};
+
 /**  List grouping (the board always has status columns). */
 export type GroupBy = "status" | "project" | "epic" | "priority" | "due";
 
@@ -1317,6 +1377,47 @@ export type NewView_Serialize = {
 	rank: string | null,
 };
 
+export type PlanUsage = PlanUsage_Serialize | PlanUsage_Deserialize;
+
+export type PlanUsage_Deserialize = {
+	/**  `pro`, `max`, … as Claude Code recorded it at sign-in. */
+	plan?: string | null,
+	windows: PlanWindow_Deserialize[],
+	fetched_at: number,
+};
+
+export type PlanUsage_Serialize = {
+	/**  `pro`, `max`, … as Claude Code recorded it at sign-in. */
+	plan: string | null,
+	windows: PlanWindow_Serialize[],
+	fetched_at: number,
+};
+
+/**  One usage window of the plan. */
+export type PlanWindow = PlanWindow_Serialize | PlanWindow_Deserialize;
+
+/**  One usage window of the plan. */
+export type PlanWindow_Deserialize = {
+	/**  The endpoint's key: `five_hour`, `seven_day`, `seven_day_opus`, … */
+	kind: string,
+	label: string,
+	/**  Share used, 0–100 (may pass 100 when over). */
+	percent: number | null,
+	/**  When the window resets (Unix ms); `None` when it has not started. */
+	resets_at?: number | null,
+};
+
+/**  One usage window of the plan. */
+export type PlanWindow_Serialize = {
+	/**  The endpoint's key: `five_hour`, `seven_day`, `seven_day_opus`, … */
+	kind: string,
+	label: string,
+	/**  Share used, 0–100 (may pass 100 when over). */
+	percent: number | null,
+	/**  When the window resets (Unix ms); `None` when it has not started. */
+	resets_at: number | null,
+};
+
 /**  Four levels; stored as 0 (urgent) to 3 (low). */
 export type Priority = "urgent" | "high" | "normal" | "low";
 
@@ -1363,6 +1464,15 @@ export type Project_Serialize = {
 	created_at: number,
 	updated_at: number,
 	deleted_at: number | null,
+};
+
+/**  What [`Store::purge_files`] did. */
+export type PurgeReport = {
+	/**  Files deleted from this folder. */
+	removed: number,
+	freed_bytes: number,
+	/**  Files left because a live attachment still uses them. */
+	in_use: number,
 };
 
 /**  What the settings screen sends. An empty `secret_key` keeps the stored one. */
@@ -1538,6 +1648,15 @@ export type Status_Serialize = {
 
 /**  Emitted after every committed batch, whoever wrote it. */
 export type StoreChanged = Changed;
+
+/**  A file in this replica's attachment folder (Settings → Files, ADR 023). */
+export type StoredFileInfo = {
+	hash: string,
+	size: number,
+	stored_at: number,
+	/**  A live attachment of a live task uses it. */
+	in_use: boolean,
+};
 
 /**  A file stored in the attachment folder, ready to be attached with `create_attachment`. */
 export type StoredUpload = {

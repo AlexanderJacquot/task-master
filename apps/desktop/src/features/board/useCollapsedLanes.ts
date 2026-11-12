@@ -27,6 +27,21 @@ export function loadCollapsedLanes(): Map<string, boolean> {
   }
 }
 
+/**
+ * Forgets the hand choices for these lanes (Reset view): they follow their default again.
+ * A mounted board reads it when it is remounted.
+ */
+export function clearLaneChoices(laneKeys: readonly string[]): void {
+  const choices = loadCollapsedLanes();
+  for (const key of laneKeys) choices.delete(key);
+  try {
+    if (choices.size === 0) localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(choices)));
+  } catch {
+    // Storage unavailable: nothing was remembered either.
+  }
+}
+
 export interface CollapsedLanes {
   /** The user's choice for this lane, else `byDefault`. */
   isCollapsed(laneKey: string, byDefault?: boolean): boolean;

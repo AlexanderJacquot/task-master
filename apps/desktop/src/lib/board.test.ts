@@ -221,6 +221,30 @@ describe("ranksForDrop", () => {
     );
     expect(sorted).toEqual(order);
   });
+
+  it("gives several cards dropped together keys in order between the neighbours", () => {
+    const ranks = { a: "a0", b: "a1", x: "a5", y: "a6" };
+    const out = ranksForDrop(["a", "x", "y", "b"], ["x", "y"], ranks);
+    expect(Object.keys(out).sort()).toEqual(["x", "y"]);
+    expect("a0" < (out.x as string) && (out.x as string) < (out.y as string)).toBe(true);
+    expect((out.y as string) < "a1").toBe(true);
+  });
+
+  it("renumbers around several cards when the neighbours share a rank", () => {
+    const ranks = { a: "a1", b: "a1", x: "a0", y: "a9" };
+    const order = ["a", "x", "y", "b"];
+    const out = ranksForDrop(order, ["x", "y"], ranks);
+    const merged: Record<string, string> = { ...ranks, ...out };
+    const sorted = [...order].sort((p, q) =>
+      (merged[p] as string) < (merged[q] as string) ? -1 : 1,
+    );
+    expect(sorted).toEqual(order);
+  });
+
+  it("refuses cards that are not next to each other", () => {
+    const ranks = { a: "a0", x: "a1", y: "a2" };
+    expect(() => ranksForDrop(["x", "a", "y"], ["x", "y"], ranks)).toThrow();
+  });
 });
 
 describe("adjacentStatus", () => {

@@ -613,6 +613,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             server_sync::sync_sign_in,
             server_sync::sync_join,
             server_sync::sync_now,
+            server_sync::files_overview,
+            server_sync::purge_files,
             server_sync::sync_disconnect,
             agents::agent_start,
             agents::agent_send,
@@ -624,6 +626,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             agents::agent_settings,
             agents::set_agent_settings,
             agents::detect_claude,
+            agents::claude_plan_usage,
             agents::list_wsl_distros,
             agents::project_folders,
             agents::set_project_folder

@@ -767,3 +767,127 @@ fn calendar_handoff_waits_for_the_active_google_round() {
     round.join().unwrap();
     transfer.join().unwrap();
 }
+
+fn attach(device: &Mutex<Store>, task_id: &str, bytes: &[u8]) -> Attachment {
+    let mut store = device.lock().unwrap();
+    let stored = store.files().unwrap().put_bytes(bytes).unwrap();
+    store
+        .execute(Command::CreateAttachment {
+            attachment: NewAttachment {
+                id: None,
+                task_id: task_id.into(),
+                hash: stored.hash,
+                name: "file.bin".into(),
+                mime: None,
+                size: stored.size,
+            },
+        })
+        .unwrap()
+        .attachments
+        .remove(0)
+}
+
+fn holds(device: &Mutex<Store>, hash: &str) -> bool {
+    device.lock().unwrap().files().unwrap().contains(hash)
+}
+
+#[test]
+fn a_purge_removes_content_from_the_server_and_every_device() {
+    let (url, state) = server(Config::default());
+    let client = Client::new(&url, None);
+    let (a, b) = (device(), device());
+    let task_id = add_task(&a, "with files");
+    let old = attach(&a, &task_id, b"an old large file");
+    let kept = attach(&a, &task_id, b"a file still used");
+    sync(&client, &a).unwrap();
+    sync(&client, &b).unwrap();
+    assert!(holds(&b, &old.hash) && holds(&b, &kept.hash));
+
+    let list = client.list_blobs().unwrap().unwrap();
+    assert_eq!(list.files.len(), 2);
+    assert!(list.purged.is_empty());
+
+    // The server refuses to purge content a live attachment uses.
+    assert!(!client.delete_blob(&old.hash).unwrap());
+    assert!(state.store().files().unwrap().contains(&old.hash));
+
+    // Device A deletes the attachment and purges its file: gone here at once, from the
+    // server at the next round, from B at its next round.
+    a.lock()
+        .unwrap()
+        .execute(Command::DeleteAttachment { id: old.id.clone() })
+        .unwrap();
+    let report = a
+        .lock()
+        .unwrap()
+        .purge_files(std::slice::from_ref(&old.hash))
+        .unwrap();
+    assert_eq!(report.removed, 1);
+    assert!(!holds(&a, &old.hash));
+    let round = sync(&client, &a).unwrap();
+    assert_eq!(round.files_purged, 1);
+    assert!(
+        a.lock()
+            .unwrap()
+            .files()
+            .unwrap()
+            .purged()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(!state.store().files().unwrap().contains(&old.hash));
+    let list = client.list_blobs().unwrap().unwrap();
+    assert_eq!(list.purged, vec![old.hash.clone()]);
+    assert_eq!(list.files.len(), 1);
+
+    let round = sync(&client, &b).unwrap();
+    assert_eq!(round.files_dropped, 1);
+    assert!(!holds(&b, &old.hash));
+    assert!(holds(&b, &kept.hash), "content in use stays everywhere");
+
+    // Attaching the same content again brings it back on the server.
+    attach(&b, &task_id, b"an old large file");
+    sync(&client, &b).unwrap();
+    assert!(state.store().files().unwrap().contains(&old.hash));
+    assert!(client.list_blobs().unwrap().unwrap().purged.is_empty());
+    sync(&client, &a).unwrap();
+    assert!(
+        holds(&a, &old.hash),
+        "A downloads it again for the new attachment"
+    );
+}
+
+#[test]
+fn a_purge_made_while_another_device_still_uses_the_file_keeps_it() {
+    let (url, state) = server(Config::default());
+    let client = Client::new(&url, None);
+    let (a, b) = (device(), device());
+    let task_id = add_task(&a, "shared");
+    let first = attach(&a, &task_id, b"same content");
+    sync(&client, &a).unwrap();
+    sync(&client, &b).unwrap();
+    // B attaches the same content to the task too, and syncs.
+    attach(&b, &task_id, b"same content");
+    sync(&client, &b).unwrap();
+
+    // A has not pulled B's attachment: locally nothing uses the file, so it purges.
+    a.lock()
+        .unwrap()
+        .execute(Command::DeleteAttachment { id: first.id })
+        .unwrap();
+    a.lock()
+        .unwrap()
+        .purge_files(std::slice::from_ref(&first.hash))
+        .unwrap();
+    let round = sync(&client, &a).unwrap();
+    assert_eq!(
+        round.files_purged, 0,
+        "the server kept it for B's attachment"
+    );
+    assert!(state.store().files().unwrap().contains(&first.hash));
+    assert!(
+        holds(&a, &first.hash),
+        "A pulled B's attachment and downloaded it again"
+    );
+    assert!(holds(&b, &first.hash));
+}

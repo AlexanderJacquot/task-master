@@ -35,7 +35,9 @@ pub use commands::{
 pub use dump::{EXPORT_FORMAT, ExportFile, ImportSummary};
 pub use error::{Error, Result};
 pub use events::{Changed, EntityRef};
-pub use files::{FileStore, MAX_ATTACHMENT_BYTES, StoredFile, clean_file_name, is_hash, mime_for};
+pub use files::{
+    FileEntry, FileStore, MAX_ATTACHMENT_BYTES, StoredFile, clean_file_name, is_hash, mime_for,
+};
 pub use model::{
     AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, CanvasPoint, DueFilter, Epic,
     EpicState, FILTER_NONE, GroupBy, Id, IsoDate, LaneKeys, LanePositions, Layout, LineageArrange,
@@ -46,10 +48,10 @@ pub use model::{
 pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};
 pub use query::{Activity, FieldChange};
-pub use store::{ATTACHMENTS_DIR, Changes, Store};
+pub use store::{ATTACHMENTS_DIR, Changes, PurgeReport, Store, StoredFileInfo};
 pub use sync::{
-    AuthMode, IssuedToken, Merged, OidcExchange, OpsPage, PullPage, PushRequest, PushResult,
-    ServerInfo, SyncOp,
+    AuthMode, BlobList, IssuedToken, Merged, OidcExchange, OpsPage, PullPage, PushRequest,
+    PushResult, ServerInfo, SyncOp,
 };
 
 /// Crate version, reported to adapters for diagnostics.

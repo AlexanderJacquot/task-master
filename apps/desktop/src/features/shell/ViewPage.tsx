@@ -6,6 +6,7 @@ import {
   ColumnsIcon as Columns3,
   FilterIcon as Filter,
   ListIcon as List,
+  UndoIcon as Reset,
   SearchIcon as Search,
   OptionsIcon as SlidersHorizontal,
 } from "../../components/TaskIcons";
@@ -35,6 +36,8 @@ import {
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import type { CardLookups } from "../board/BoardCard";
 import { BoardView } from "../board/BoardView";
+import { clearColumnPrefs } from "../board/useBoardColumns";
+import { clearLaneChoices } from "../board/useCollapsedLanes";
 import { CAPTURE_HINT, CaptureBox } from "../capture/CaptureBox";
 import { TaskList } from "../list/TaskList";
 import { EmptyArt, TitleCrest, TitleFlourish } from "../ornaments/Ornaments";
@@ -43,7 +46,7 @@ import { EditableTitle } from "./EditableTitle";
 import { FilterBar } from "./FilterBar";
 import { useOpenTask } from "./useOpenTask";
 import { isEditable, NEW_TASK_INPUT_ID } from "./useShortcuts";
-import { displayOf, specOf, useViewPrefs, type ViewDisplay } from "./useViewPrefs";
+import { DEFAULT_DISPLAY, displayOf, specOf, useViewPrefs, type ViewDisplay } from "./useViewPrefs";
 
 function toggle(set: ReadonlySet<string>, id: string): Set<string> {
   const next = new Set(set);
@@ -431,6 +434,29 @@ function ViewBody({
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
+  // Bumped by Reset view: remounts the board so it reads its cleared column and lane layout.
+  const [boardEpoch, setBoardEpoch] = useState(0);
+  /**
+   * Reset view: the default display (filters, grouping, sort, swimlanes, toggles) in the
+   * same layout, no search, groups and subtasks folded as by default, and on the board every
+   * column open and sharing the width equally, with lanes collapsed as by default.
+   */
+  const resetView = () => {
+    if (boardModel) {
+      clearColumnPrefs(boardModel.columns.map((c) => c.status.id));
+      clearLaneChoices(boardModel.lanes.map((l) => l.key));
+      setBoardEpoch((n) => n + 1);
+    }
+    setDisplay({ ...DEFAULT_DISPLAY, layout: display.layout, lineage: display.lineage });
+    setSearchText("");
+    setQuery("");
+    setShowFilters(false);
+    setCollapsedGroups(new Set());
+    setCollapsedTasks(new Set());
+    setExpandedTasks(new Set());
+    setSelection(EMPTY_SELECTION);
+  };
+
   const onToggleCollapse = useCallback((id: string) => {
     const row = rowsRef.current.find((r) => r.type === "task" && r.task.id === id);
     const expanded = row?.type === "task" && row.expanded;
@@ -497,17 +523,15 @@ function ViewBody({
                 className="z-40 flex w-64 flex-col gap-3 rounded-xl border border-line-strong bg-overlay p-3 text-sm shadow-xl"
               >
                 {board ? (
-                  <>
-                    <DisplayRow label="Swimlanes">
-                      <Select
-                        aria-label="Swimlanes"
-                        value={display.swimlane}
-                        onValueChange={(swimlane) => setDisplay({ swimlane })}
-                        className="w-36 border-line-strong"
-                        options={SWIMLANES}
-                      />
-                    </DisplayRow>
-                  </>
+                  <DisplayRow label="Swimlanes">
+                    <Select
+                      aria-label="Swimlanes"
+                      value={display.swimlane}
+                      onValueChange={(swimlane) => setDisplay({ swimlane })}
+                      className="w-36 border-line-strong"
+                      options={SWIMLANES}
+                    />
+                  </DisplayRow>
                 ) : (
                   <>
                     <DisplayRow label="Group">
@@ -565,6 +589,19 @@ function ViewBody({
                   />
                 </label>
                 <div className="h-px bg-line" />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={resetView}
+                  title={
+                    board
+                      ? "Clear filters and search; default display; every column open and sized to fit"
+                      : "Clear filters and search; default grouping, sort and display"
+                  }
+                >
+                  <Reset size={14} />
+                  Reset view
+                </Button>
                 {savingAs ? (
                   <InlineInput
                     initial=""
@@ -678,6 +715,7 @@ function ViewBody({
       </div>
       {boardModel ? (
         <BoardView
+          key={boardEpoch}
           board={boardModel}
           lookups={lookups}
           selectedId={selectedId ?? null}

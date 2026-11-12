@@ -4,6 +4,13 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Pending-work integration** (2026-11-12): the Files page, Agents page updates,
+board selection/drag and reset work below were checked together before committing.
+`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`,
+`cargo fmt --check`, `pnpm biome check .`, `pnpm typecheck` and `pnpm test` pass
+(492 frontend tests passed, 2 skipped). Earlier "not run yet" notes below describe
+the individual work sessions and are superseded by this integration check.
+
 **Three-day calendar view** (2026-11-12): the calendar range selector now
 has **3 days**, initially today plus two days. Previous/next moves by three days;
 Today returns to the current range. The view shares the timed grid, day lanes,
@@ -21,6 +28,69 @@ the filters and both cursors; `docs/mcp.md` explains usage. `cargo test --worksp
 --locked`, `cargo clippy -p taskmaster-mcp --all-targets -- -D warnings`,
 `cargo fmt --check`, `pnpm biome check .`, `pnpm typecheck` and `pnpm test` pass.
 A live stdio MCP call returned paginated failed sessions.
+
+**Settings → Files** (2026-11-12, on `files-page`; ADR 023): lists content
+on this device and the sync server, with storage totals, unused cleanup, age and size
+filters, sorting, task links, description warnings, multiselect and a permanent-delete
+confirmation. Deleting removes the file's attachments in one undoable batch, purges its
+local content and propagates a tombstone through the server on sync; other devices drop
+unused copies after pulling. Live attachments protect content; backups retain copies.
+The page stays usable with an older server, but its server files are unavailable until
+that server updates. Tests cover core, server, sync, pure frontend logic and page deletion.
+Integrated-tree checks pass: `cargo clippy -- -D warnings`, `cargo test`, `cargo fmt --check`,
+`pnpm biome check .`, `pnpm typecheck` and `pnpm test` (490 passed, 2 skipped). Tauri dev compiled
+and opened the app; a temporary development navigation requested the Files route without
+logged runtime errors, then was removed. The shared desktop capture did not show the Files
+window, so visual and pointer interaction remain unverified.
+
+
+**Agents page: recent sessions by day** (2026-11-12, uncommitted on `main`): Recent
+sessions are split under day dividers ("Today", "Yesterday", "Monday, Nov 9", with the
+year when not this one), each with the day's session count and cost; rows under a divider
+show the start time instead of "3 h ago". Every session row (Active too) shows its task's
+project (mark + name, "Inbox" without one) and epic (shape + name, in its color); the
+project is left out when the page is focused on one project. Days are the local day a
+session started (`sessionsByDay`, `formatDayHeading` in `features/agents/sessions.ts`).
+Tests: `sessions.test.ts` ("days"), `agents.test.tsx` ("groups recent sessions by day…").
+**Not run yet**: the agent session could not run pnpm or vitest (approval needed).
+
+**Agents page: Claude plan usage** (2026-11-12, uncommitted on `main`): a "Claude plan"
+section shows the 5-hour window and the weekly windows (all models; Opus/Sonnet once used)
+as meters with "% left" and when each resets, like Claude Code's `/usage`. The shell command
+`claude_plan_usage` (`agents/plan.rs`) reads Claude Code's OAuth sign-in where agents run
+and asks `api.anthropic.com/api/oauth/usage` (undocumented; read leniently); it never
+refreshes or writes the token. Read on open, every 5 minutes, and with Refresh. ADR 017
+amended. Rust tests (credentials, answer parsing, RFC 3339) and an ignored live test
+(`cargo test -p taskmaster-desktop live_plan -- --ignored --nocapture`, which worked against
+a real Pro sign-in); `cargo test`, clippy and fmt pass. **Not run yet**: pnpm (tsc, biome,
+vitest) needed approval; new tests in `usage.test.ts` and `agents.test.tsx`.
+
+**Reset view** (2026-11-12, uncommitted on `main`): Display popover → "Reset view" in list
+and board (built-in and saved views). It brings back the default display (filters, group,
+sort, swimlanes, show toggles) but keeps the layout and a saved view's lineage. It also
+clears the search, folded groups and subtasks, and the selection. On the board it forgets
+the widths and collapsed state of the board's columns (`clearColumnPrefs`), so they open
+and share the width equally again, and the hand-made lane choices (`clearLaneChoices`),
+then remounts `BoardView` (`key`) so it reads them. Column prefs are per status and shared
+by every board, so resetting one board resets the columns everywhere. For a saved view the
+reset is a draft (Revert/Save view). Tests: app tests "resets the view…" (board) and
+"reset view" (list), unit tests in `useBoardColumns.test.ts` and `useCollapsedLanes.test.ts`.
+**Not run yet**: the agent session could not run pnpm or vitest (approval needed).
+
+**Drag a multi-selection on the board** (2026-11-12, uncommitted on `main`): dragging a
+card that is part of the multi-selection drags every picked card. The others leave their
+cells during the drag; the overlay shows a stack and the count. On a drop they land
+together around the dropped card, in board order (lane by lane, column by column), each
+taking the column and lane: `moveCards` in `store/actions.ts`, one batch (`moveCard` now
+calls it), ranks from `ranksForDrop`, which takes several adjacent cards. Dropped on the
+sidebar (project, epic, Today) or the side panel's "subtask" zone, it applies to every
+dragged task that can take it, in one batch (`applyTaskDrop` with ids, `updateTasks`, new
+`setParents`; a picked subtask of a picked task stays under it). "Parent of" takes one
+task only, so that zone is off for a group (`droppable`). `startTaskDrag(id, along)`
+carries the group. Tests: `lib/board.test.ts`, `store/board.test.ts` ("moveCards"),
+`features/shell/taskDrop.test.ts`, `features/board/BoardView.test.ts`. The list view has no
+drag at all, so this is board only. **Not run yet**: no pnpm/tsc/vitest/biome in the agent
+session (approval needed); not tried in the app.
 
 **Release 0.16.1** (2026-11-12, on `release/0.16.1`, then `main`; notes `docs/releases/0.16.1.md`): the 0.16.0 release build never ran
 (its `release` workflow failed at the Rust format check, which the integration had not run),
@@ -1814,9 +1884,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Board: Shift+Enter on a card to open the full page.
 - Board: column widths and collapsed columns per saved view (today: per machine, all boards).
 
-- Multi-select (done in list and board): drag several picked cards at once on the board;
-  pick with the keyboard (e.g. Shift+↑/↓ between rows); a bulk "Today" toggle and
-  "move under a parent".
+- Multi-select (done in list and board, group drag on the board): pick with the keyboard
+  (e.g. Shift+↑/↓ between rows); a bulk "Today" toggle and "move under a parent"; drag
+  in the list view (it has none yet: no reorder, no drag to the sidebar or side panel).
 
 - Core: writer thread + reader pool if the M6 perf test needs it (ADR 002).
 - Core: status commands (M6), undo across restarts.

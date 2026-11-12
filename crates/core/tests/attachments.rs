@@ -336,3 +336,124 @@ fn attachment_commands_parse_from_the_ui_json_shape() {
     let commands: Vec<Command> = serde_json::from_str(json).unwrap();
     assert_eq!(commands.len(), 3);
 }
+
+// Settings → Files (ADR 023): listing, purging and dropping content purged elsewhere.
+
+#[test]
+fn stored_files_list_size_and_use() {
+    let dir = TempDir::new();
+    let mut s = store(&dir);
+    let task = add_task(&mut s, "Report");
+    let used = attach(&mut s, &task.id, "used.txt", b"used content");
+    let gone = attach(&mut s, &task.id, "gone.txt", b"gone");
+    s.execute(Command::DeleteAttachment {
+        id: gone.id.clone(),
+    })
+    .unwrap();
+
+    let mut files = s.stored_files().unwrap();
+    files.sort_by_key(|f| f.size);
+    assert_eq!(files.len(), 2);
+    assert_eq!(
+        (files[0].hash.as_str(), files[0].size),
+        (gone.hash.as_str(), 4)
+    );
+    assert!(!files[0].in_use, "only a deleted attachment uses it");
+    assert_eq!(
+        (files[1].hash.as_str(), files[1].size),
+        (used.hash.as_str(), 12)
+    );
+    assert!(files[1].in_use);
+    assert!(files[1].stored_at > 0);
+}
+
+#[test]
+fn purging_removes_unused_content_and_marks_it() {
+    let dir = TempDir::new();
+    let mut s = store(&dir);
+    let task = add_task(&mut s, "Report");
+    let used = attach(&mut s, &task.id, "used.txt", b"used content");
+    let gone = attach(&mut s, &task.id, "gone.txt", b"gone");
+    s.execute(Command::DeleteAttachment {
+        id: gone.id.clone(),
+    })
+    .unwrap();
+
+    let report = s
+        .purge_files(&[gone.hash.clone(), used.hash.clone()])
+        .unwrap();
+    assert_eq!(
+        report,
+        PurgeReport {
+            removed: 1,
+            freed_bytes: 4,
+            in_use: 1
+        }
+    );
+    let files = s.files().unwrap();
+    assert!(!files.contains(&gone.hash));
+    assert!(
+        files.contains(&used.hash),
+        "a live attachment keeps its file"
+    );
+    assert_eq!(files.purged().unwrap(), vec![gone.hash.clone()]);
+    assert_eq!(
+        files.hashes().unwrap(),
+        vec![used.hash.clone()],
+        "markers are not files"
+    );
+
+    // Undo brings the attachment back without its content.
+    s.undo().unwrap();
+    assert_eq!(s.snapshot().unwrap().attachments.len(), 2);
+    assert_eq!(s.missing_files().unwrap(), vec![gone.hash.clone()]);
+
+    // Storing the same content again clears the purge.
+    s.files().unwrap().put_bytes(b"gone").unwrap();
+    assert!(s.files().unwrap().purged().unwrap().is_empty());
+    assert!(invalid(s.purge_files(&["nope".into()])).contains("not a file hash"));
+}
+
+#[test]
+fn files_of_deleted_tasks_can_be_purged() {
+    let dir = TempDir::new();
+    let mut s = store(&dir);
+    let task = add_task(&mut s, "Old");
+    let file = attach(&mut s, &task.id, "big.bin", b"big");
+    assert!(s.file_in_use(&file.hash).unwrap());
+    s.execute(Command::DeleteTask {
+        id: task.id.clone(),
+    })
+    .unwrap();
+    assert!(!s.file_in_use(&file.hash).unwrap());
+    assert_eq!(
+        s.purge_files(std::slice::from_ref(&file.hash))
+            .unwrap()
+            .removed,
+        1
+    );
+}
+
+#[test]
+fn content_purged_elsewhere_is_dropped_unless_used_here() {
+    let dir = TempDir::new();
+    let mut s = store(&dir);
+    let task = add_task(&mut s, "Report");
+    let used = attach(&mut s, &task.id, "used.txt", b"used content");
+    let gone = attach(&mut s, &task.id, "gone.txt", b"gone");
+    s.execute(Command::DeleteAttachment {
+        id: gone.id.clone(),
+    })
+    .unwrap();
+
+    let removed = s
+        .drop_purged(&[gone.hash.clone(), used.hash.clone(), "x".into()])
+        .unwrap();
+    assert_eq!(removed, 1);
+    assert!(!s.files().unwrap().contains(&gone.hash));
+    assert!(s.files().unwrap().contains(&used.hash));
+    assert!(
+        s.files().unwrap().purged().unwrap().is_empty(),
+        "dropping a copy is not a new purge to send"
+    );
+}

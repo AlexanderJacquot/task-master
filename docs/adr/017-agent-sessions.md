@@ -257,9 +257,18 @@ in the same space without cluttering the user's views. Decided with the user:
   `config.json` like the other agent settings, so each device has its own, but they are
   measured against every device's sessions. They are soft: Send to agent shows what was
   spent and asks "Start anyway" once one is used up; nothing stops a running session, as
-  cost is only known when a run ends. Claude subscription usage (the 5-hour and weekly
-  windows) is not shown: Claude Code reports it only as `rate_limit_event` lines, which
-  the stream parser ignores for now.
+  cost is only known when a run ends.
+- **Claude plan usage** (the 5-hour window and the weekly ones, as Claude Code's `/usage`
+  shows them) is on the Agents page: `claude_plan_usage` reads Claude Code's OAuth sign-in
+  where agents run (`$CLAUDE_CONFIG_DIR` or `~/.claude/.credentials.json`; through
+  `wsl.exe` for WSL; the `Claude Code-credentials` keychain item on macOS;
+  `CLAUDE_CODE_OAUTH_TOKEN` when set) and asks `api.anthropic.com/api/oauth/usage`, the
+  endpoint `/usage` uses. Read-only: the app never refreshes or writes the token (an expired
+  one says so; Claude Code renews it on its next run). The endpoint is undocumented, so the
+  answer is read leniently (unknown windows get a label from their key; a changed shape
+  shows no windows). API-key users have no plan limits and see why. The page reads it on
+  open and every 5 minutes while open. `rate_limit_event` stream lines stay ignored: they
+  only carry the state at warning thresholds.
 - Views get `owner` in `ViewSpec` (default `me`); a toggle "Show agent tasks" in the view
   options. Agent subtasks of the user's tasks are counted but collapsed, with an agent mark.
 - Settings → Agents: runtime (`wsl` + distro picked from `wsl.exe -l -q`, or `native`),

@@ -11,10 +11,11 @@ The full plan is in docs/plan.md. Architecture decisions are in docs/adr/.
 - Timestamps: Unix ms UTC. Calendar dates: ISO YYYY-MM-DD strings.
 - IPC surface stays small: data edits only through execute; reads (snapshot, search,
   task_activity, parse_capture), settings/backup/export/import commands (ADR 007), and
-  attachment content in/out (store_file, store_data, open/save_attachment, open_url; the
-  `tm:` protocol serves files by attachment id; ADR 011), and agent sessions, which run a
+  attachment content in/out (store_file, store_data, open/save_attachment, open_url,
+  files_overview, purge_files; the `tm:` protocol serves files by attachment id; ADR 011,
+  ADR 023), and agent sessions, which run a
   process the core cannot own (agent_start/send/cancel/open_terminal/live, agent_brief,
-  agent_notes, agent settings, project folders; ADR 017).
+  agent_notes, agent settings, Claude plan usage, project folders; ADR 017).
 - apps/desktop/src/bindings.ts is generated. Never edit it by hand.
 
 ## Frontend

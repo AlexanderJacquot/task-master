@@ -296,11 +296,48 @@ export function deleteTask(store: TaskStore, id: string) {
 
 /** Makes `id` a subtask of `parentId`, or a top-level task when null. */
 export function setParent(store: TaskStore, id: string, parentId: string | null) {
+  return setParents(store, [id], parentId);
+}
+
+/**
+ * Makes several tasks subtasks of `parentId` (or top-level when null) as one undoable
+ * batch. A task whose ancestor is also given keeps its place under that ancestor.
+ */
+export function setParents(store: TaskStore, ids: Iterable<string>, parentId: string | null) {
   const s = store.getState();
-  const task = s.tasks[id];
-  if (!task) return Promise.resolve(null);
-  const parent = parentId ? s.tasks[parentId] : undefined;
+  const picked = new Set([...ids].filter((id) => s.tasks[id]));
+  const roots = [...picked].filter((id) => !hasPickedAncestor(s.tasks, id, picked));
+  if (!roots.length) return Promise.resolve(null);
   const now = Date.now();
+  const children = childrenByParent(Object.values(s.tasks));
+  const commands: Command[] = [];
+  const updated: Task[] = [];
+  for (const id of roots) {
+    commands.push({ type: "set_parent", id, parent_id: parentId });
+    updated.push(...reparented(s.tasks, children, id, parentId, now));
+  }
+  return s.mutate(commands, { upsert: { tasks: updated } });
+}
+
+function hasPickedAncestor(tasks: Record<string, Task>, id: string, picked: ReadonlySet<string>) {
+  const seen = new Set([id]); // a parent cycle in corrupt data ends the walk
+  for (let p = tasks[id]?.parent_id; p && !seen.has(p); p = tasks[p]?.parent_id) {
+    if (picked.has(p)) return true;
+    seen.add(p);
+  }
+  return false;
+}
+
+/** The optimistic rows after `set_parent`: the task, and subtasks that follow its project. */
+function reparented(
+  tasks: Record<string, Task>,
+  children: ReturnType<typeof childrenByParent>,
+  id: string,
+  parentId: string | null,
+  now: number,
+): Task[] {
+  const task = tasks[id] as Task;
+  const parent = parentId ? tasks[parentId] : undefined;
   const updated: Task[] = [
     {
       ...task,
@@ -312,9 +349,8 @@ export function setParent(store: TaskStore, id: string, parentId: string | null)
   ];
   // As the core does: subtasks that shared the task's project or epic follow it.
   if (parent) {
-    const children = childrenByParent(Object.values(s.tasks));
     for (const subId of descendantIds(id, children)) {
-      const sub = s.tasks[subId];
+      const sub = tasks[subId];
       if (!sub) continue;
       const project = sub.project_id === task.project_id ? parent.project_id : sub.project_id;
       const epic = sub.epic_id === task.epic_id ? parent.epic_id : sub.epic_id;
@@ -323,9 +359,7 @@ export function setParent(store: TaskStore, id: string, parentId: string | null)
       }
     }
   }
-  return s.mutate([{ type: "set_parent", id, parent_id: parentId }], {
-    upsert: { tasks: updated },
-  });
+  return updated;
 }
 
 /** Moves a subtask one step up or down its parent's checklist. */
@@ -422,15 +456,7 @@ export function setTaggedMany(
 export function deleteTasks(store: TaskStore, ids: Iterable<string>) {
   const s = store.getState();
   const picked = new Set([...ids].filter((id) => s.tasks[id]));
-  const underPicked = (id: string) => {
-    const seen = new Set([id]); // a parent cycle in corrupt data ends the walk
-    for (let p = s.tasks[id]?.parent_id; p && !seen.has(p); p = s.tasks[p]?.parent_id) {
-      if (picked.has(p)) return true;
-      seen.add(p);
-    }
-    return false;
-  };
-  const roots = [...picked].filter((id) => !underPicked(id));
+  const roots = [...picked].filter((id) => !hasPickedAncestor(s.tasks, id, picked));
   if (!roots.length) return Promise.resolve(null);
   const children = childrenByParent(Object.values(s.tasks));
   const removed = roots.flatMap((id) => [id, ...descendantIds(id, children)]);
@@ -568,33 +594,50 @@ function isNoop(task: Task, change: TaskChange): boolean {
  * The rank comes from the new neighbours; the core rebalances the column if it grows long.
  */
 export function moveCard(store: TaskStore, drop: CardDrop) {
+  const { id, ...rest } = drop;
+  return moveCards(store, { ...rest, ids: [id] });
+}
+
+export interface CardsDrop extends Omit<CardDrop, "id"> {
+  /** The cards dragged together, top to bottom; they sit next to each other in `order`. */
+  ids: string[];
+}
+
+/**
+ * Several selected cards dragged together onto one cell: each takes the column (and lane),
+ * and they keep their order at the drop point. One undoable batch.
+ */
+export function moveCards(store: TaskStore, drop: CardsDrop) {
   const s = store.getState();
-  const task = s.tasks[drop.id];
-  if (!task) return Promise.resolve(null);
+  const moved = drop.ids.filter((id) => s.tasks[id]);
+  if (!moved.length) return Promise.resolve(null);
   const ranks: Record<string, string> = {};
   for (const id of drop.order) {
     const rank = s.tasks[id]?.rank;
     if (rank !== undefined) ranks[id] = rank;
   }
   const order = drop.order.filter((id) => id in ranks);
-  const newRanks = ranksForDrop(order, drop.id, ranks);
-  const laneChanges = (drop.laneChanges ?? []).filter((c) => !isNoop(task, c));
+  const newRanks = ranksForDrop(order, moved, ranks);
 
   const now = Date.now();
   const commands: Command[] = [];
   const upserts: Task[] = [];
-  const rank = newRanks[drop.id] as string;
-  if (laneChanges.length) {
+  for (const id of moved) {
+    const task = s.tasks[id] as Task;
+    const rank = newRanks[id] as string;
+    const laneChanges = (drop.laneChanges ?? []).filter((c) => !isNoop(task, c));
     const changes: TaskChange[] = [{ status_id: drop.statusId }, { rank }, ...laneChanges];
-    commands.push({ type: "update_task", id: drop.id, changes });
+    commands.push(
+      laneChanges.length
+        ? { type: "update_task", id, changes }
+        : { type: "move_task", id, status_id: drop.statusId, rank },
+    );
     upserts.push(applyTaskChanges(task, changes, s.statuses, now));
-  } else {
-    commands.push({ type: "move_task", id: drop.id, status_id: drop.statusId, rank });
-    upserts.push(applyTaskChanges(task, [{ status_id: drop.statusId }, { rank }], s.statuses, now));
   }
+  const movedSet = new Set(moved);
   for (const [id, key] of Object.entries(newRanks)) {
     const other = s.tasks[id];
-    if (id === drop.id || !other) continue;
+    if (movedSet.has(id) || !other) continue;
     commands.push({ type: "update_task", id, changes: [{ rank: key }] });
     upserts.push(applyTaskChanges(other, [{ rank: key }], s.statuses, now));
   }
@@ -980,6 +1023,23 @@ export function deleteAttachment(store: TaskStore, id: string) {
   const s = store.getState();
   if (!s.attachments[id]) return Promise.resolve(null);
   return s.mutate([{ type: "delete_attachment", id }], { remove: { attachments: [id] } });
+}
+
+/**
+ * Removes every attachment using one of these files, in one undoable batch: the first
+ * step of deleting files from Settings → Files (ADR 023; the shell then purges the content).
+ */
+export function deleteAttachmentsOfFiles(store: TaskStore, hashes: string[]) {
+  const s = store.getState();
+  const wanted = new Set(hashes);
+  const ids = Object.values(s.attachments)
+    .filter((a) => wanted.has(a.hash))
+    .map((a) => a.id);
+  if (!ids.length) return Promise.resolve(null);
+  return s.mutate(
+    ids.map((id) => ({ type: "delete_attachment" as const, id })),
+    { remove: { attachments: ids } },
+  );
 }
 
 // ---------------------------------------------------------------------------------------

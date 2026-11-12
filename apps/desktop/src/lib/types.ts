@@ -38,6 +38,8 @@ export type {
   NewAttachment_Deserialize as NewAttachment,
   NewTask_Deserialize as NewTask,
   NewTimeBlock_Deserialize as NewTimeBlock,
+  PlanUsage_Serialize as PlanUsage,
+  PlanWindow_Serialize as PlanWindow,
   Priority,
   Project_Serialize as Project,
   ProjectChange_Deserialize as ProjectChange,

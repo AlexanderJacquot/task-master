@@ -383,6 +383,34 @@ describe("the board", () => {
     expect(handle.getAttribute("aria-valuenow")).toBe(String(initialWidth));
     expect(localStorage.getItem("task-master.board.columns")).toBe("{}");
   });
+
+  it("resets the view: filters, swimlanes, column widths, collapsed columns and lanes", async () => {
+    await openBoard();
+    const handle = () => screen.getByRole("separator", { name: "Resize To do" });
+    const fitted = handle().getAttribute("aria-valuenow");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Waiting" }));
+    fireEvent.keyDown(handle(), { key: "End" });
+    expect(localStorage.getItem("task-master.board.columns")).toContain('"width":960');
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    await pickOption("Swimlanes", "Lanes by priority");
+    const lane = await screen.findByRole("region", { name: "Lane Normal" });
+    fireEvent.click(within(lane).getByRole("button", { name: /Normal/, expanded: true }));
+    expect(localStorage.getItem("task-master.board.lanes")).toBe('{"priority:normal":true}');
+
+    if (!screen.queryByRole("button", { name: "Reset view" }))
+      fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reset view" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Lane Normal" })).toBeNull());
+    // Still a board, every column open again and sharing the width.
+    expect(await screen.findByRole("list", { name: "Waiting" })).toBeTruthy();
+    expect(handle().getAttribute("aria-valuenow")).toBe(fitted);
+    expect(localStorage.getItem("task-master.board.columns")).toBeNull();
+    expect(localStorage.getItem("task-master.board.lanes")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("task-master.view.inbox") ?? "{}")).toMatchObject({
+      layout: "board",
+      swimlane: "none",
+    });
+  });
 });
 
 describe("multi-select", () => {
@@ -489,6 +517,28 @@ describe("multi-select", () => {
         { type: "update_task", id: b.id, changes: [{ priority: "high" }] },
       ]),
     );
+  });
+});
+
+describe("reset view", () => {
+  it("clears filters, search and display choices in the list, keeping the layout", async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    await pickOption("Filter by due date", "Overdue");
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Group by" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "Group by priority" }));
+    const search = screen.getByRole("searchbox", { name: "Search tasks" }) as HTMLInputElement;
+    fireEvent.change(search, { target: { value: "passport" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Reset view" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Filter by due date")).toBeNull());
+    expect(search.value).toBe("");
+    expect(JSON.parse(localStorage.getItem("task-master.view.inbox") ?? "{}")).toMatchObject({
+      layout: "list",
+      group_by: "status",
+      filter: { due: null },
+    });
+    expect(await screen.findByText("Renew passport")).toBeTruthy();
   });
 });
 

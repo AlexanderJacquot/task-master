@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { loadCollapsedLanes } from "./useCollapsedLanes";
+import { clearLaneChoices, loadCollapsedLanes } from "./useCollapsedLanes";
 
 afterEach(() => localStorage.clear());
 
@@ -26,5 +26,15 @@ describe("loadCollapsedLanes", () => {
     expect(loadCollapsedLanes().size).toBe(0);
     localStorage.setItem("task-master.board.lanes", "7");
     expect(loadCollapsedLanes().size).toBe(0);
+  });
+});
+
+describe("clearLaneChoices", () => {
+  it("forgets the choices for the given lanes only (Reset view)", () => {
+    localStorage.setItem("task-master.board.lanes", '{"epic:a":true,"epic:b":false}');
+    clearLaneChoices(["epic:a"]);
+    expect([...loadCollapsedLanes()]).toEqual([["epic:b", false]]);
+    clearLaneChoices(["epic:b"]);
+    expect(localStorage.getItem("task-master.board.lanes")).toBeNull();
   });
 });

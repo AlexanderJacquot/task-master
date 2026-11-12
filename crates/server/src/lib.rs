@@ -25,8 +25,8 @@ use axum::routing::{get, post};
 use futures_util::Stream;
 use serde::Deserialize;
 use taskmaster_core::{
-    AuthMode, IssuedToken, MAX_ATTACHMENT_BYTES, OidcExchange, PullPage, PushRequest, PushResult,
-    ServerInfo, Store, is_hash, now_ms,
+    AuthMode, BlobList, IssuedToken, MAX_ATTACHMENT_BYTES, OidcExchange, PullPage, PushRequest,
+    PushResult, ServerInfo, Store, is_hash, now_ms,
 };
 use tokio::sync::broadcast;
 
@@ -164,11 +164,13 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/sync/pull", get(pull))
         .route("/events", get(events))
+        .route("/blobs", get(list_blobs))
         .route(
             "/blobs/{hash}",
             get(get_blob)
                 .head(head_blob)
                 .put(put_blob)
+                .delete(delete_blob)
                 .layer(DefaultBodyLimit::max(blob_limit)),
         )
         .route("/calendar/status", get(calendar::get_status))
@@ -348,6 +350,45 @@ async fn put_blob(
             return Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
                 format!("the content's hash is {}, not {hash}", stored.hash),
+            ));
+        }
+        Ok(StatusCode::NO_CONTENT)
+    })
+    .await
+}
+
+/// `GET /blobs`: the content held here and the purged hashes (Settings → Files, ADR 023).
+async fn list_blobs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<BlobList>> {
+    authorize(&state, &headers, Scope::Sync)?;
+    blocking(move || {
+        let store = state.store();
+        let files = store.files()?;
+        Ok(Json(BlobList {
+            files: files.entries()?,
+            purged: files.purged()?,
+        }))
+    })
+    .await
+}
+
+/// `DELETE /blobs/{hash}`: purges content no live attachment uses and keeps a tombstone,
+/// so the other devices drop their copy. 409 while an attachment still uses it.
+async fn delete_blob(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(hash): Path<String>,
+) -> ApiResult<StatusCode> {
+    authorize(&state, &headers, Scope::Sync)?;
+    blob_path(&state, &hash)?;
+    blocking(move || {
+        let report = state.store().purge_files(std::slice::from_ref(&hash))?;
+        if report.in_use > 0 {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "a live attachment still uses this file",
             ));
         }
         Ok(StatusCode::NO_CONTENT)

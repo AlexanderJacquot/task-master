@@ -5,6 +5,7 @@ import type {
   AgentSession,
   AgentSettings,
   AgentStart,
+  PlanUsage,
   ProjectFolder,
 } from "../lib/types";
 import { agentSession } from "./fixtures";
@@ -19,6 +20,7 @@ export function fakeAgents(
     folders?: ProjectFolder[];
     notes?: AgentNote[];
     live?: AgentActivity[];
+    planUsage?: PlanUsage | Error;
   } = {},
 ) {
   const calls: string[] = [];
@@ -73,6 +75,11 @@ export function fakeAgents(
       return settings;
     },
     detect: async (s) => ({ path: `/usr/bin/${s.claude_path}`, version: "2.1.318" }),
+    planUsage: async () => {
+      calls.push("plan usage");
+      if (opts.planUsage instanceof Error) throw opts.planUsage;
+      return opts.planUsage ?? { plan: null, windows: [], fetched_at: 1 };
+    },
     distros: async () => [],
     folders: async () => folders,
     setFolder: async (project_id, path) => {

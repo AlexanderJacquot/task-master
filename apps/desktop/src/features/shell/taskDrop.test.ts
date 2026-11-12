@@ -4,7 +4,14 @@ import { isoDate } from "../../lib/dates";
 import type { Changes, Command, Task } from "../../lib/types";
 import { createTaskStore } from "../../store/store";
 import { fakeParse, snapshot, task } from "../../test/fixtures";
-import { applyTaskDrop, canDrop, dropKey, parseDropKey, type TaskDropTarget } from "./taskDrop";
+import {
+  applyTaskDrop,
+  canDrop,
+  dropKey,
+  droppable,
+  parseDropKey,
+  type TaskDropTarget,
+} from "./taskDrop";
 
 async function setup(tasks: Task[]) {
   const executed: Command[][] = [];
@@ -122,5 +129,48 @@ describe("applyTaskDrop", () => {
     await applyTaskDrop(store, dragged.id, { kind: "parent-of", id: open.id });
     expect(executed).toEqual([[{ type: "set_parent", id: open.id, parent_id: dragged.id }]]);
     expect(store.getState().tasks[open.id]?.parent_id).toBe(dragged.id);
+  });
+});
+
+describe("dropping several dragged tasks", () => {
+  it("moves the ones that change to a project, in one batch", async () => {
+    const a = task({ project_id: "p1" });
+    const b = task({ project_id: "p9" });
+    const c = task();
+    const { store, executed } = await setup([a, b, c]);
+    await applyTaskDrop(store, [a.id, b.id, c.id], { kind: "project", id: "p9" });
+    expect(executed).toEqual([
+      [
+        { type: "update_task", id: a.id, changes: [{ project_id: "p9" }] },
+        { type: "update_task", id: c.id, changes: [{ project_id: "p9" }] },
+      ],
+    ]);
+  });
+
+  it("makes them subtasks in one batch; a picked subtask keeps its parent", async () => {
+    const open = task();
+    const a = task();
+    const sub = task({ parent_id: a.id });
+    const b = task();
+    const { store, executed } = await setup([open, a, sub, b]);
+    const target: TaskDropTarget = { kind: "subtask-of", id: open.id };
+    await applyTaskDrop(store, [a.id, sub.id, b.id, open.id], target);
+    expect(executed).toEqual([
+      [
+        { type: "set_parent", id: a.id, parent_id: open.id },
+        { type: "set_parent", id: b.id, parent_id: open.id },
+      ],
+    ]);
+    expect(store.getState().tasks[sub.id]?.parent_id).toBe(a.id);
+  });
+
+  it("does not offer 'parent of' for several tasks", () => {
+    const open = task();
+    const a = task();
+    const b = task();
+    const tasks = byId(open, a, b);
+    const target: TaskDropTarget = { kind: "parent-of", id: open.id };
+    expect(droppable(target, [a.id, b.id], tasks)).toEqual([]);
+    expect(droppable(target, [a.id], tasks)).toEqual([a.id]);
   });
 });

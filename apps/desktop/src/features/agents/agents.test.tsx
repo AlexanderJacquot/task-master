@@ -3,7 +3,7 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import type { Api } from "../../lib/api";
-import type { Changes, Command, Snapshot } from "../../lib/types";
+import type { Changes, Command, Epic, Snapshot } from "../../lib/types";
 import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore } from "../../store/store";
@@ -223,6 +223,61 @@ it("lists sessions and the agents' tasks under the user's task they serve", asyn
   expect(executed[0]?.[0]).toMatchObject({ type: "update_task", changes: [{ owner: "me" }] });
 });
 
+it("groups recent sessions by day and marks each with its task's project and epic", async () => {
+  const app = project({ id: "p1", name: "App" });
+  const epic: Epic = {
+    id: "e1",
+    name: "Login",
+    project_id: app.id,
+    description: null,
+    target_date: null,
+    state: "active",
+    rank: "a0",
+    color: null,
+    icon: null,
+    created_at: 1,
+    updated_at: 1,
+    deleted_at: null,
+  };
+  const a = task({ title: "Fix the login", project_id: app.id, epic_id: epic.id });
+  const b = task({ title: "Tidy the inbox" });
+  const now = Date.now();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  yesterday.setHours(12, 0, 0, 0);
+  const sessions = [
+    agentSession({ task_id: a.id, started_at: now, updated_at: now, summary: "Login fixed" }),
+    agentSession({
+      task_id: b.id,
+      started_at: yesterday.getTime(),
+      updated_at: now,
+      summary: "Inbox tidied",
+    }),
+  ];
+  await renderAt("/agents", {
+    tasks: [a, b],
+    projects: [app],
+    epics: [epic],
+    agent_sessions: sessions,
+  });
+
+  const recent = await screen.findByRole("region", { name: "Recent sessions" });
+  expect(within(recent).getByRole("heading", { name: /Today/ })).toBeTruthy();
+  const today = within(recent).getByRole("list", { name: "Today" });
+  expect(within(today).getByText("Login fixed")).toBeTruthy();
+  expect(within(today).getByTitle("Project: App")).toBeTruthy();
+  expect(within(today).getByTitle("Epic: Login")).toBeTruthy();
+  const before = within(recent).getByRole("list", { name: "Yesterday" });
+  expect(within(before).getByText("Inbox tidied")).toBeTruthy();
+  expect(within(before).getByText("Inbox")).toBeTruthy();
+
+  // Focused on one project, the rows stop repeating it but keep the epic.
+  await pickOption("Project", "App");
+  await waitFor(() => expect(within(recent).queryByText("Inbox tidied")).toBeNull());
+  expect(within(recent).queryByTitle("Project: App")).toBeNull();
+  expect(within(recent).getByTitle("Epic: Login")).toBeTruthy();
+});
+
 it("resumes an interrupted session and ends one left in a terminal", async () => {
   const t = task();
   const interrupted = agentSession({ task_id: t.id, state: "interrupted", started_at: 1 });
@@ -311,6 +366,41 @@ it("totals cost and agent time by project and period, and shows what limits leav
   expect(within(recent).getByText("Old run")).toBeTruthy();
   // The limits count every project, whatever the filter.
   expect(limits.textContent).toContain("$6.00 left");
+});
+
+it("shows the Claude plan's 5-hour and weekly usage, and why it cannot", async () => {
+  const now = Date.now();
+  const { agents } = await renderAt(
+    "/agents",
+    {},
+    {
+      planUsage: {
+        plan: "max",
+        fetched_at: now,
+        windows: [
+          {
+            kind: "five_hour",
+            label: "5-hour window",
+            percent: 61,
+            resets_at: now + 90 * 60_000,
+          },
+          { kind: "seven_day", label: "Week, all models", percent: 97, resets_at: null },
+        ],
+      },
+    },
+  );
+  const plan = await screen.findByRole("region", { name: "Claude plan" });
+  await waitFor(() => expect(plan.textContent).toContain("39% left"));
+  expect(plan.textContent).toContain("Max plan");
+  expect(plan.textContent).toContain("Resets in 1 h 30");
+  expect(within(plan).getByRole("meter", { name: "Week, all models usage" })).toBeTruthy();
+  expect(plan.textContent).toContain("3% left");
+  expect(agents.calls).toContain("plan usage");
+  cleanup();
+
+  await renderAt("/agents", {}, { planUsage: new Error("Claude Code is not signed in") });
+  const failed = await screen.findByRole("region", { name: "Claude plan" });
+  await waitFor(() => expect(failed.textContent).toContain("not signed in"));
 });
 
 it("asks before starting once a spend limit is used up", async () => {

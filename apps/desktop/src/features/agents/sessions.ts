@@ -1,6 +1,7 @@
 // Pure helpers for agent sessions (ADR 017): which session a task shows, where a new one
 // starts, and how numbers read.
 
+import { daysFrom, isoDate } from "../../lib/dates";
 import type {
   AgentRuntime,
   AgentSession,
@@ -41,6 +42,38 @@ export function sortedSessions(sessions: Record<string, AgentSession>): AgentSes
   return Object.values(sessions).sort(
     (a, b) => Number(isActive(b)) - Number(isActive(a)) || b.started_at - a.started_at,
   );
+}
+
+export interface SessionDay {
+  /** Local calendar date the sessions started on, `YYYY-MM-DD`. */
+  day: string;
+  sessions: AgentSession[];
+}
+
+/** Sessions (sorted newest first) split by the local day they started on. */
+export function sessionsByDay(sessions: AgentSession[]): SessionDay[] {
+  const days: SessionDay[] = [];
+  for (const s of sessions) {
+    const day = isoDate(new Date(s.started_at));
+    const last = days[days.length - 1];
+    if (last?.day === day) last.sessions.push(s);
+    else days.push({ day, sessions: [s] });
+  }
+  return days;
+}
+
+/** A day divider's label: "Today", "Yesterday", "Monday, Nov 9", with the year if not this one. */
+export function formatDayHeading(day: string, today: string): string {
+  const days = daysFrom(today, day);
+  if (days === 0) return "Today";
+  if (days === -1) return "Yesterday";
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    ...(day.slice(0, 4) === today.slice(0, 4) ? {} : { year: "numeric" }),
+  });
 }
 
 /** Folders of earlier sessions for this runtime, newest first, without repeats. */

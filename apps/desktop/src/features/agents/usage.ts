@@ -140,3 +140,26 @@ export function parseDollars(text: string): number | null {
 export function dollarsText(micros: number | null | undefined): string {
   return micros ? String(Math.round(micros / 10_000) / 100) : "";
 }
+
+/** When a plan window resets: "Resets in 2 h 05" within a day, else "Resets Mon 09:00". */
+export function formatReset(resetsAt: number | null, now: number): string {
+  if (resetsAt === null) return "Starts with your next message";
+  const left = resetsAt - now;
+  if (left <= 0) return "Resetting now";
+  const minutes = Math.ceil(left / 60_000);
+  if (minutes < 60) return `Resets in ${minutes} min`;
+  if (minutes < 24 * 60) {
+    return `Resets in ${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`;
+  }
+  const when = new Date(resetsAt).toLocaleString(undefined, {
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `Resets ${when}`;
+}
+
+/** How full a plan window is: calm, close (75%+), or at the limit (95%+). */
+export function planTone(percent: number): "ok" | "close" | "full" {
+  return percent >= 95 ? "full" : percent >= 75 ? "close" : "ok";
+}

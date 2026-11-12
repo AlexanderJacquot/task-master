@@ -794,3 +794,48 @@ mod tests {
         );
     }
 }
+
+/// What Settings → Files shows (ADR 023): the files on this device and, when this device
+/// syncs, the ones on the server.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct FilesOverview {
+    pub local: Vec<taskmaster_core::StoredFileInfo>,
+    /// `None` without a sync server, or when it could not be read (see `server_error`).
+    pub server: Option<taskmaster_core::BlobList>,
+    pub server_error: Option<String>,
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn files_overview(state: State<'_, AppState>) -> CommandResult<FilesOverview> {
+    let local = with_store(&state, |s| s.stored_files())?;
+    let (server, server_error) = match account(&state).filter(|a| a.joined) {
+        None => (None, None),
+        Some(account) => match client_for(&account).list_blobs() {
+            Ok(Some(list)) => (Some(list), None),
+            Ok(None) => (
+                None,
+                Some("the server is older than this app: update it to see its files".into()),
+            ),
+            Err(e) => (None, Some(e.to_string())),
+        },
+    };
+    Ok(FilesOverview {
+        local,
+        server,
+        server_error,
+    })
+}
+
+/// Permanently deletes the content of `hashes` here (the UI deletes their attachments
+/// first), then syncs so the server and the other devices drop it too.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn purge_files(
+    state: State<'_, AppState>,
+    hashes: Vec<String>,
+) -> CommandResult<taskmaster_core::PurgeReport> {
+    let report = with_store(&state, |s| s.purge_files(&hashes))?;
+    state.sync.kick();
+    Ok(report)
+}

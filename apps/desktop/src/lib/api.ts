@@ -18,6 +18,7 @@ import type {
   CommandError,
   EventRange,
   JoinMode,
+  PlanUsage,
   ProjectFolder,
   Snapshot,
   StoredUpload,
@@ -84,6 +85,8 @@ export interface AgentsApi {
   saveSettings(settings: AgentSettings): Promise<AgentSettings>;
   /** Checks Claude Code runs with these settings (not saved). */
   detect(settings: AgentSettings): Promise<ClaudeCheck>;
+  /** The Claude plan's 5-hour and weekly usage, read with Claude Code's sign-in. */
+  planUsage(): Promise<PlanUsage>;
   /** Installed WSL distributions (empty outside Windows). */
   distros(): Promise<string[]>;
   folders(): Promise<ProjectFolder[]>;
@@ -111,6 +114,7 @@ export const tauriAgents: AgentsApi = {
   settings: () => unwrap(commands.agentSettings()),
   saveSettings: (settings) => unwrap(commands.setAgentSettings(settings)),
   detect: (settings) => unwrap(commands.detectClaude(settings)),
+  planUsage: () => unwrap(commands.claudePlanUsage()),
   distros: () => commands.listWslDistros(),
   folders: () => unwrap(commands.projectFolders()),
   setFolder: (projectId, path) => unwrap(commands.setProjectFolder(projectId, path)),

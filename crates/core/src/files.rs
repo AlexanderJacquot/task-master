@@ -3,7 +3,9 @@
 //! Each file is stored once as `<dir>/<sha256 hex>`, whatever its name or how many tasks
 //! use it. Files never change once written, so copying the folder to a backup only needs
 //! the names it lacks. Rows in `attachments` (written through commands) name the files;
-//! deleting a row leaves the file, so undo always finds it again.
+//! deleting a row leaves the file, so undo always finds it again. Only a purge (Settings →
+//! Files, ADR 023) removes content: it leaves a marker in `.purged/` (on a device: "tell
+//! the server"; on the server: a tombstone telling the other devices to drop their copy).
 
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -25,6 +27,19 @@ pub struct StoredFile {
     pub hash: String,
     pub size: i64,
 }
+
+/// One file in the store, for Settings → Files.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct FileEntry {
+    pub hash: String,
+    pub size: i64,
+    /// When it was written here (Unix ms; 0 when the system does not say).
+    pub stored_at: i64,
+}
+
+/// Marker folder of purged content, inside the store folder.
+const PURGED_DIR: &str = ".purged";
 
 /// The folder holding attachment content.
 #[derive(Debug, Clone)]
@@ -127,6 +142,8 @@ impl FileStore {
             } else {
                 std::fs::rename(&tmp, &target)?;
             }
+            // The content is back (attached again): it is no longer purged.
+            self.unmark_purged(&hash)?;
             Ok(StoredFile {
                 hash,
                 size: size as i64,
@@ -153,6 +170,65 @@ impl FileStore {
             .collect();
         out.sort();
         Ok(out)
+    }
+
+    /// Every stored file with its size and age.
+    pub fn entries(&self) -> Result<Vec<FileEntry>> {
+        let mut out = Vec::new();
+        for hash in self.hashes()? {
+            let Ok(meta) = std::fs::metadata(self.dir.join(&hash)) else {
+                continue;
+            };
+            let stored_at = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| i64::try_from(d.as_millis()).unwrap_or(i64::MAX));
+            out.push(FileEntry {
+                hash,
+                size: i64::try_from(meta.len()).unwrap_or(i64::MAX),
+                stored_at,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Deletes the content with `hash`. Returns its size, or `None` when it was not here.
+    pub fn remove(&self, hash: &str) -> Result<Option<i64>> {
+        let path = self.path(hash)?;
+        let size = match std::fs::metadata(&path) {
+            Ok(meta) => i64::try_from(meta.len()).unwrap_or(i64::MAX),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        match std::fs::remove_file(&path) {
+            Ok(()) => Ok(Some(size)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Records that the content with `hash` was purged.
+    pub fn mark_purged(&self, hash: &str) -> Result<()> {
+        self.path(hash)?;
+        let dir = self.dir.join(PURGED_DIR);
+        std::fs::create_dir_all(&dir)?;
+        File::create(dir.join(hash))?;
+        Ok(())
+    }
+
+    /// Forgets the purge of `hash` (sent to the server, or the content came back).
+    pub fn unmark_purged(&self, hash: &str) -> Result<()> {
+        self.path(hash)?;
+        match std::fs::remove_file(self.dir.join(PURGED_DIR).join(hash)) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e.into()),
+            _ => Ok(()),
+        }
+    }
+
+    /// Hashes marked purged.
+    pub fn purged(&self) -> Result<Vec<String>> {
+        FileStore::new(self.dir.join(PURGED_DIR)).hashes()
     }
 
     /// Copies the files `target` lacks into it (a backup or export folder). Returns how

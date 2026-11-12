@@ -1,35 +1,42 @@
-// /agents (ADR 017): what agents cost and how long they worked, against the spend limits;
+// /agents (ADR 017): the Claude plan's 5-hour and weekly usage (read with Claude Code's
+// sign-in, refreshed every 5 minutes while open); what agents cost and how long they
+// worked, against the spend limits;
 // what they are doing and did; and the agents' own tasks, kept apart from the user's views.
 // Filtered by project and period. Lists are capped (50 sessions, 100 tasks), so none is
 // virtualized.
 
 import { Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AgentsIcon as Bot, StopIcon } from "../../components/TaskIcons";
 import { cx, FOCUS, IconButton, SectionLabel, Select, TaskCheck } from "../../components/ui";
-import { formatAgo } from "../../lib/dates";
-import type { AgentSession, Project, SpendLimits, Task } from "../../lib/types";
+import { formatAgo, isoDate } from "../../lib/dates";
+import type { AgentSession, PlanUsage, Project, SpendLimits, Task } from "../../lib/types";
 import { isOpen } from "../../lib/views";
 import { adoptTask, toggleDone } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { useNow } from "../calendar/TimeGrid";
+import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import { useOpenTask } from "../shell/useOpenTask";
 import { STATE_TONE } from "./SessionChip";
 import {
   folderName,
   formatCost,
+  formatDayHeading,
   formatDuration,
   isActive,
   STATE_LABEL,
+  sessionsByDay,
   sortedSessions,
 } from "./sessions";
 import {
+  formatReset,
   inFilter,
   type LimitStatus,
   limitStatuses,
   PERIOD_LABEL,
   type PeriodFilter,
+  planTone,
   sessionProject,
   type UsageFilter,
   usageByProject,
@@ -210,6 +217,8 @@ export function AgentsPage() {
         </p>
       </section>
 
+      <PlanLimits now={now} />
+
       <Limits meters={meters} />
 
       {byProject.length > 1 && (
@@ -227,7 +236,7 @@ export function AgentsPage() {
         ) : (
           <ul className="flex flex-col gap-1">
             {active.map((s) => (
-              <SessionRow key={s.id} session={s} task={tasks[s.task_id]} />
+              <SessionRow key={s.id} session={s} task={tasks[s.task_id]} showProject={!project} />
             ))}
           </ul>
         )}
@@ -238,11 +247,33 @@ export function AgentsPage() {
         {recent.length === 0 ? (
           <p className="text-xs text-ink-3">No finished sessions {periodName}.</p>
         ) : (
-          <ul className="flex flex-col gap-1">
-            {recent.map((s) => (
-              <SessionRow key={s.id} session={s} task={tasks[s.task_id]} />
-            ))}
-          </ul>
+          sessionsByDay(recent).map(({ day, sessions: list }) => {
+            const label = formatDayHeading(day, isoDate(new Date(now)));
+            const spent = formatCost(usageOf(list).costMicros);
+            return (
+              <div key={day} className="flex flex-col gap-1">
+                <h3 className="mt-1 flex items-center gap-3 px-2 text-xs text-ink-3">
+                  <span className="shrink-0 font-medium text-ink-2">{label}</span>
+                  <span aria-hidden className="h-px flex-1 bg-line" />
+                  <span className="shrink-0 tabular-nums">
+                    {list.length} {list.length === 1 ? "session" : "sessions"}
+                    {spent && ` · ${spent}`}
+                  </span>
+                </h3>
+                <ul aria-label={label} className="flex flex-col gap-1">
+                  {list.map((s) => (
+                    <SessionRow
+                      key={s.id}
+                      session={s}
+                      task={tasks[s.task_id]}
+                      showProject={!project}
+                      timeOfDay
+                    />
+                  ))}
+                </ul>
+              </div>
+            );
+          })
         )}
         {ended.length > MAX_SESSIONS && (
           <p className="text-xs text-ink-3">
@@ -288,6 +319,109 @@ function Tile({ label, value, detail }: { label: string; value: string; detail: 
       <p className="my-1 font-display text-3xl tabular-nums">{value}</p>
       <p className="text-xs text-ink-3">{detail}</p>
     </div>
+  );
+}
+
+/** How often the plan usage is read again while the page is open. */
+const PLAN_REFRESH_MS = 5 * 60_000;
+const PLAN_FILL = { ok: "bg-accent", close: "bg-high", full: "bg-rubric" } as const;
+
+type PlanState =
+  | { kind: "loading" }
+  | { kind: "ok"; usage: PlanUsage }
+  | { kind: "error"; message: string; usage: PlanUsage | null };
+
+/** The Claude plan's 5-hour and weekly windows, as Claude Code's /usage shows them. */
+function PlanLimits({ now }: { now: number }) {
+  const api = useApi().agents;
+  const [state, setState] = useState<PlanState>({ kind: "loading" });
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(async () => {
+    if (!api) return;
+    setBusy(true);
+    try {
+      const usage = await api.planUsage();
+      setState({ kind: "ok", usage });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      // Keep the last reading on screen under the error.
+      setState((prev) => ({
+        kind: "error",
+        message,
+        usage: prev.kind === "loading" ? null : prev.usage,
+      }));
+    } finally {
+      setBusy(false);
+    }
+  }, [api]);
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), PLAN_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+  if (!api) return null;
+
+  const usage = state.kind === "loading" ? null : state.usage;
+  const plan = usage?.plan ? `${usage.plan[0]?.toUpperCase()}${usage.plan.slice(1)} plan` : null;
+  return (
+    <section aria-label="Claude plan" className="mb-7 flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <SectionLabel>Claude plan{plan && ` · ${plan}`}</SectionLabel>
+        <span className="flex items-center gap-2 text-xs text-ink-3">
+          {usage && `Updated ${formatAgo(usage.fetched_at, now)}`}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void refresh()}
+            className={`rounded text-accent enabled:hover:underline disabled:opacity-60 ${FOCUS}`}
+          >
+            {busy ? "Reading…" : "Refresh"}
+          </button>
+        </span>
+      </div>
+      {state.kind === "error" && <p className="text-xs text-rubric">{state.message}</p>}
+      {state.kind === "loading" && <p className="text-xs text-ink-3">Reading usage…</p>}
+      {usage && usage.windows.length === 0 && (
+        <p className="text-xs text-ink-3">Anthropic reported no usage windows for this plan.</p>
+      )}
+      {usage && usage.windows.length > 0 && (
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {usage.windows.map((w) => {
+            const used = w.percent ?? 0;
+            const percent = Math.round(used);
+            const tone = planTone(used);
+            return (
+              <li key={w.kind} className={panel}>
+                <div className="flex items-baseline justify-between gap-2 text-xs">
+                  <span className="font-medium text-ink-2">{w.label}</span>
+                  <span className="text-ink-3 tabular-nums">{percent}% used</span>
+                </div>
+                {/* biome-ignore lint/a11y/useSemanticElements: a styled bar, as for spend limits */}
+                <div
+                  role="meter"
+                  aria-label={`${w.label} usage`}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.min(100, percent)}
+                  className="my-2 h-2 overflow-hidden rounded-full bg-hover"
+                >
+                  <div
+                    className={cx("h-full rounded-full", PLAN_FILL[tone])}
+                    style={{ width: `${Math.min(100, used)}%` }}
+                  />
+                </div>
+                <p className="flex items-baseline justify-between gap-2 text-sm tabular-nums">
+                  <span className={tone === "full" ? "text-rubric" : "text-ink"}>
+                    {percent >= 100 ? "Limit reached" : `${100 - percent}% left`}
+                  </span>
+                  <span className="text-xs text-ink-3">{formatReset(w.resets_at, now)}</span>
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -420,10 +554,32 @@ function ProjectBreakdown({
   );
 }
 
-function SessionRow({ session, task }: { session: AgentSession; task: Task | undefined }) {
+function SessionRow({
+  session,
+  task,
+  showProject,
+  timeOfDay = false,
+}: {
+  session: AgentSession;
+  task: Task | undefined;
+  /** Off when the page is focused on one project, where it would repeat on every row. */
+  showProject: boolean;
+  /** The start time instead of "3 h ago", under a day divider that gives the date. */
+  timeOfDay?: boolean;
+}) {
   const api = useApi().agents;
   const openTask = useOpenTask();
   const activity = useStoreState((s) => s.agentActivity[session.id]);
+  const projects = useStoreState((s) => s.projects);
+  const epics = useStoreState((s) => s.epics);
+  const project = task?.project_id ? projects[task.project_id] : undefined;
+  const epic = task?.epic_id ? epics[task.epic_id] : undefined;
+  const started = timeOfDay
+    ? new Date(session.started_at).toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : formatAgo(session.started_at);
   const running = session.state === "running";
   const cost = formatCost(session.cost_usd_micros);
   const worked = session.duration_ms ? formatDuration(session.duration_ms) : null;
@@ -450,11 +606,37 @@ function SessionRow({ session, task }: { session: AgentSession; task: Task | und
       >
         {task?.title ?? "A deleted task"}
       </button>
+      {(showProject || epic) && (
+        <span className="flex w-52 shrink-0 items-center gap-2 text-xs text-ink-2">
+          {showProject &&
+            (project && !project.deleted_at ? (
+              <span
+                className="flex min-w-0 max-w-[60%] items-center gap-1"
+                title={`Project: ${project.name}`}
+              >
+                <ProjectMark project={project} dotClass="size-2" className="text-[13px]" />
+                <span className="truncate">{project.name}</span>
+              </span>
+            ) : (
+              task && <span className="shrink-0 text-ink-3">Inbox</span>
+            ))}
+          {epic && !epic.deleted_at && (
+            <span
+              className="flex min-w-0 items-center gap-1 text-violet-800 dark:text-violet-300"
+              style={epic.color ? { color: epic.color } : undefined}
+              title={`Epic: ${epic.name}`}
+            >
+              <EpicMark epic={epic} size={11} />
+              <span className="truncate">{epic.name}</span>
+            </span>
+          )}
+        </span>
+      )}
       <span className="min-w-0 flex-1 truncate text-ink-3" title={detail}>
         {detail.split("\n")[0]}
       </span>
       <span className="shrink-0 text-xs text-ink-3 tabular-nums" title={session.folder}>
-        {folderName(session.folder)} · {formatAgo(session.started_at)}
+        {folderName(session.folder)} · {started}
         {worked && ` · ${worked}`}
         {cost && ` · ${cost}`}
       </span>

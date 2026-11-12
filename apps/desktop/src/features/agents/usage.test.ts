@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { agentSession, task } from "../../test/fixtures";
 import {
   dollarsText,
+  formatReset,
   inFilter,
   limitStatuses,
   parseDollars,
   periodStart,
+  planTone,
   sessionProject,
   usageByProject,
   usageOf,
@@ -127,5 +129,21 @@ describe("dollar amounts", () => {
   it("shows micros as dollars, to the cent", () => {
     expect(dollarsText(12_500_000)).toBe("12.5");
     expect(dollarsText(null)).toBe("");
+  });
+});
+
+describe("plan windows", () => {
+  it("say when they reset", () => {
+    expect(formatReset(null, NOW)).toBe("Starts with your next message");
+    expect(formatReset(NOW - 1, NOW)).toBe("Resetting now");
+    expect(formatReset(NOW + 90_000, NOW)).toBe("Resets in 2 min");
+    expect(formatReset(NOW + (2 * 60 + 5) * 60_000, NOW)).toBe("Resets in 2 h 05");
+    expect(formatReset(at(2026, 11, 16, 9), NOW)).toMatch(/^Resets \S+/);
+  });
+
+  it("warn as they fill", () => {
+    expect(planTone(10)).toBe("ok");
+    expect(planTone(80)).toBe("close");
+    expect(planTone(100)).toBe("full");
   });
 });

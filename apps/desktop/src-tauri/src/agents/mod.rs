@@ -8,6 +8,7 @@
 //! app: quitting stops them and marks them interrupted.
 
 pub mod launch;
+pub mod plan;
 pub mod stream;
 
 use std::collections::{HashMap, HashSet};
@@ -1428,6 +1429,15 @@ pub fn set_agent_settings(
         .save(&state.config_path)
         .map_err(|e| internal(format!("cannot save settings: {e}")))?;
     Ok(settings)
+}
+
+/// The Claude plan's usage limits (5-hour and weekly windows), read with Claude Code's
+/// sign-in where agents run; an `invalid` error carries a message to show as is.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn claude_plan_usage(state: State<'_, AppState>) -> CommandResult<plan::PlanUsage> {
+    let settings = settings(&state)?;
+    plan::fetch(&settings).map_err(invalid)
 }
 
 /// Claude Code as found with these settings (not saved).

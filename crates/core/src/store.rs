@@ -47,6 +47,28 @@ impl Changes {
     }
 }
 
+/// A file in this replica's attachment folder (Settings → Files, ADR 023).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct StoredFileInfo {
+    pub hash: String,
+    pub size: i64,
+    pub stored_at: i64,
+    /// A live attachment of a live task uses it.
+    pub in_use: bool,
+}
+
+/// What [`Store::purge_files`] did.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct PurgeReport {
+    /// Files deleted from this folder.
+    pub removed: u32,
+    pub freed_bytes: i64,
+    /// Files left because a live attachment still uses them.
+    pub in_use: u32,
+}
+
 /// Owns the database connection. Not thread-safe by itself: adapters wrap it in a mutex.
 pub struct Store {
     conn: Connection,
@@ -318,6 +340,71 @@ impl Store {
             }
         }
         Ok(missing)
+    }
+
+    /// Whether a live attachment of a live task uses the content with `hash`. A file only
+    /// used by deleted attachments, or by attachments of deleted tasks, can be purged.
+    pub fn file_in_use(&self, hash: &str) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM attachments a JOIN tasks t ON t.id = a.task_id \
+             WHERE a.hash = ?1 AND a.deleted_at IS NULL AND t.deleted_at IS NULL)",
+            [hash],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// The files stored here, with whether a live attachment uses each (Settings → Files).
+    pub fn stored_files(&self) -> Result<Vec<StoredFileInfo>> {
+        let entries = self.files()?.entries()?;
+        let mut out = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let in_use = self.file_in_use(&entry.hash)?;
+            out.push(StoredFileInfo {
+                hash: entry.hash,
+                size: entry.size,
+                stored_at: entry.stored_at,
+                in_use,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Permanently deletes the content of `hashes` that nothing live uses, and marks each
+    /// purged (ADR 023). Content still in use is left and counted as `in_use`.
+    pub fn purge_files(&self, hashes: &[String]) -> Result<PurgeReport> {
+        let files = self.files()?;
+        let mut report = PurgeReport::default();
+        for hash in hashes {
+            if !crate::files::is_hash(hash) {
+                return Err(Error::invalid(format!("'{hash}' is not a file hash")));
+            }
+            if self.file_in_use(hash)? {
+                report.in_use += 1;
+                continue;
+            }
+            if let Some(size) = files.remove(hash)? {
+                report.removed += 1;
+                report.freed_bytes += size;
+            }
+            files.mark_purged(hash)?;
+        }
+        Ok(report)
+    }
+
+    /// Drops this device's copy of content purged elsewhere (the server's list), unless a
+    /// live attachment here still uses it. Returns how many files were removed.
+    pub fn drop_purged(&self, hashes: &[String]) -> Result<u32> {
+        let files = self.files()?;
+        let mut removed = 0;
+        for hash in hashes {
+            if !crate::files::is_hash(hash) || self.file_in_use(hash)? {
+                continue;
+            }
+            if files.remove(hash)?.is_some() {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     /// Writes a consistent copy of the database to `target` (replacing it).

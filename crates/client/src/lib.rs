@@ -3,6 +3,8 @@
 //! [`Client`] wraps the HTTP endpoints; [`sync`] runs one full round for a local
 //! [`Store`]: correct the clock, upload new attachment content, push the outbox, pull
 //! what is new, push the repairs that produced, download missing attachment content.
+//! Purges (Settings → Files, ADR 023) go out after the push, and content purged on other
+//! devices is dropped after the pull.
 //! The store is locked only between network calls, so the app keeps writing meanwhile.
 
 pub mod google;
@@ -15,8 +17,8 @@ use std::time::Duration;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use taskmaster_core::{
-    IssuedToken, MAX_ATTACHMENT_BYTES, OidcExchange, PullPage, PushRequest, PushResult, ServerInfo,
-    Store, now_ms,
+    BlobList, IssuedToken, MAX_ATTACHMENT_BYTES, OidcExchange, PullPage, PushRequest, PushResult,
+    ServerInfo, Store, now_ms,
 };
 
 /// Ops per push or pull request.
@@ -203,6 +205,29 @@ impl Client {
             .map_err(|e| Error::Protocol(e.to_string()))
     }
 
+    /// `GET /blobs`: the content the server holds and the purged hashes. `None` from a
+    /// server older than purging (ADR 023).
+    pub fn list_blobs(&self) -> Result<Option<BlobList>> {
+        match self.get_json("/blobs") {
+            Ok(list) => Ok(Some(list)),
+            Err(Error::Http(404 | 405, _)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// `DELETE /blobs/{hash}`. `false` when the server kept it: a live attachment there
+    /// still uses it, or the server is older than purging.
+    pub fn delete_blob(&self, hash: &str) -> Result<bool> {
+        let req = self.auth(self.agent.delete(self.url(&format!("/blobs/{hash}"))));
+        let resp = req
+            .call()
+            .map_err(|e| Error::Unreachable(format!("{}: {e}", self.base)))?;
+        match resp.status().as_u16() {
+            404 | 405 | 409 => Ok(false),
+            _ => self.check(Ok(resp)).map(|_| true),
+        }
+    }
+
     /// Trades an ID token from the server's OpenID provider for a device token.
     pub fn oidc_exchange(&self, id_token: &str, device_name: &str) -> Result<IssuedToken> {
         self.post_json(
@@ -302,6 +327,10 @@ pub struct SyncReport {
     pub repairs: u32,
     pub files_up: u32,
     pub files_down: u32,
+    /// Purges from this device the server accepted.
+    pub files_purged: u32,
+    /// Local copies dropped because another device purged them.
+    pub files_dropped: u32,
     /// Applied to this device's clock: the server's time minus ours.
     pub clock_offset_ms: i64,
     /// The server's newest op `seq`.
@@ -347,6 +376,8 @@ pub fn sync(client: &Client, store: &Mutex<Store>) -> Result<SyncReport> {
     }
 
     push_all(client, store, schema, &mut report)?;
+    // After the push, so the server has the attachment deletions that free the content.
+    send_purges(client, store, &mut report)?;
     loop {
         let cursor = lock(store).sync_cursor()?;
         let page = client.pull(cursor, PAGE)?;
@@ -361,6 +392,10 @@ pub fn sync(client: &Client, store: &Mutex<Store>) -> Result<SyncReport> {
     }
     if report.repairs > 0 {
         push_all(client, store, schema, &mut report)?;
+    }
+    // After the pull, so the attachment deletions that freed the content are here too.
+    if let Some(list) = client.list_blobs()? {
+        report.files_dropped = lock(store).drop_purged(&list.purged)?;
     }
     download_missing(client, store, &mut report)?;
     Ok(report)
@@ -413,6 +448,20 @@ fn push_all(
             return Ok(());
         }
     }
+}
+
+/// Asks the server to purge what this device purged, then forgets each request.
+fn send_purges(client: &Client, store: &Mutex<Store>, report: &mut SyncReport) -> Result<()> {
+    let Ok(pending) = lock(store).files().and_then(|f| f.purged()) else {
+        return Ok(());
+    };
+    for hash in pending {
+        if client.delete_blob(&hash)? {
+            report.files_purged += 1;
+        }
+        lock(store).files()?.unmark_purged(&hash)?;
+    }
+    Ok(())
 }
 
 fn download_missing(client: &Client, store: &Mutex<Store>, report: &mut SyncReport) -> Result<()> {

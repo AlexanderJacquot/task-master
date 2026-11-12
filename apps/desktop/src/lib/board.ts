@@ -225,28 +225,39 @@ export function buildBoard(
 }
 
 /**
- * New ranks after dropping `movedId` so that a cell reads `order` (ids, top to bottom,
- * the moved card included). Usually one key between the new neighbours. When those
- * neighbours share a rank (or are out of order), the whole cell is renumbered so the drop
- * still lands where it was shown. Returns only the ranks that change.
+ * New ranks after dropping `moved` (one card, or several dragged together) so that a cell
+ * reads `order` (ids, top to bottom, the moved cards included; several cards must sit next
+ * to each other). Usually new keys between the new neighbours only. When those neighbours
+ * share a rank (or are out of order), the whole cell is renumbered so the drop still lands
+ * where it was shown. Returns only the ranks that change.
  */
 export function ranksForDrop(
   order: string[],
-  movedId: string,
+  moved: string | readonly string[],
   ranks: Record<string, string>,
 ): Record<string, string> {
-  const at = order.indexOf(movedId);
-  if (at < 0) throw new Error(`card ${movedId} is not in the drop order`);
-  const before = at > 0 ? ranks[order[at - 1] as string] : undefined;
-  const after = at < order.length - 1 ? ranks[order[at + 1] as string] : undefined;
-  if (before === undefined || after === undefined || before < after) {
-    return { [movedId]: rankBetween(before ?? null, after ?? null) };
+  const movedSet = new Set(typeof moved === "string" ? [moved] : moved);
+  const at = order.findIndex((id) => movedSet.has(id));
+  const block = at < 0 ? [] : order.slice(at, at + movedSet.size);
+  if (block.length !== movedSet.size || block.some((id) => !movedSet.has(id))) {
+    throw new Error(`cards ${[...movedSet].join(", ")} are not together in the drop order`);
   }
+  const before = at > 0 ? ranks[order[at - 1] as string] : undefined;
+  const next = at + block.length;
+  const after = next < order.length ? ranks[order[next] as string] : undefined;
   const out: Record<string, string> = {};
+  if (before === undefined || after === undefined || before < after) {
+    let prev = before ?? null;
+    for (const id of block) {
+      prev = rankBetween(prev, after ?? null);
+      out[id] = prev;
+    }
+    return out;
+  }
   let prev: string | null = null;
   for (const id of order) {
     const key = rankBetween(prev, null);
-    if (ranks[id] !== key || id === movedId) out[id] = key;
+    if (ranks[id] !== key || movedSet.has(id)) out[id] = key;
     prev = key;
   }
   return out;
