@@ -124,3 +124,14 @@ it("hides subtasks on request, but keeps a focused subtask", () => {
   expect(titles({ subtasks: false })).toEqual(["Parent"]);
   expect(titles({ subtasks: false, around: child.id })).toEqual(["Parent", "Child"]);
 });
+
+it("orders cards within columns so dependency arrows do not cross", () => {
+  const a = task({ id: "a" });
+  const b = task({ id: "b" });
+  const x = task({ id: "x", dependency_ids: ["b"] });
+  const y = task({ id: "y", dependency_ids: ["a"] });
+  // Stacked in listed order, a→y would cross b→x.
+  const { nodes } = layoutGraph([a, b, x, y]);
+  const at = (id: string) => nodes.find((n) => n.task.id === id)?.y as number;
+  expect(at("a") < at("b")).toBe(at("y") < at("x"));
+});
