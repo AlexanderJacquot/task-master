@@ -22,7 +22,9 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0010_agent_sessions.sql")),
     M::up(include_str!("../migrations/0011_review_status.sql")),
     M::up(include_str!("../migrations/0012_agent_session_model.sql")),
-    M::up(include_str!("../migrations/0013_agent_session_duration.sql")),
+    M::up(include_str!(
+        "../migrations/0013_agent_session_duration.sql"
+    )),
 ];
 
 pub(crate) fn migrations() -> Migrations<'static> {

@@ -1297,7 +1297,9 @@ fn view_spec_json(b: &Batch<'_, '_>, spec: &ViewSpec) -> Result<String> {
     if let Some(lineage) = &spec.lineage {
         // The Lineage page filters on one project at most, over every task.
         if spec.scope != ViewScope::All || f.project_ids.len() > 1 {
-            return Err(Error::invalid("a lineage view covers all tasks and at most one project"));
+            return Err(Error::invalid(
+                "a lineage view covers all tasks and at most one project",
+            ));
         }
         if let Some(id) = &lineage.around {
             live_task(b, id)?;

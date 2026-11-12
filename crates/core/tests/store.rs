@@ -1287,7 +1287,9 @@ fn lineage_views_keep_their_layout_and_are_validated() {
     // Moving a card is a spec update, undoable like any other.
     let mut moved = canvas.clone();
     let lineage = moved.lineage.as_mut().unwrap();
-    lineage.positions.insert(b.id.clone(), CanvasPoint { x: 600, y: 0 });
+    lineage
+        .positions
+        .insert(b.id.clone(), CanvasPoint { x: 600, y: 0 });
     roundtrip(
         &mut s,
         Command::UpdateView {
