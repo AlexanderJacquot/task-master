@@ -29,8 +29,8 @@ done (below). The other two:
   "No epic") lane only when picked in the Epic filter, to drop cards into. Before, every
   active epic of the scope had a lane. Same for "No project" in lanes by project.
   Test: `LineagePage.test.tsx` ("shows an empty epic lane only when…").
-`pnpm biome check .`, `pnpm typecheck` and `pnpm test` (495 passed, 2 skipped) pass; no Rust
-changed, so cargo was not run. Not tried in the app.
+  `pnpm biome check .`, `pnpm typecheck` and `pnpm test` (495 passed, 2 skipped) pass; no Rust
+  changed, so cargo was not run. Not tried in the app.
 
 **Three-day calendar view** (2026-11-12): the calendar range selector now
 has **3 days**, initially today plus two days. Previous/next moves by three days;
