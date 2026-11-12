@@ -425,3 +425,32 @@ it("asks before starting once a spend limit is used up", async () => {
   fireEvent.click(within(dialog).getByLabelText("Start anyway"));
   expect(start).toHaveProperty("disabled", false);
 });
+
+it("shows the release and branch of a project folder in a git repository, only then", async () => {
+  const p = project({ name: "App" });
+  const other = project({ name: "Notes" });
+  const repo = {
+    root: "/work/app",
+    branch: "main",
+    commit: "840216c",
+    tag: "v0.16.1",
+    commits_since_tag: 2,
+    dirty: true,
+  };
+  const folders = [
+    { project_id: p.id, path: "/work/app", runtime: "native" as const, updated_at: 1 },
+    { project_id: other.id, path: "/work/notes", runtime: "native" as const, updated_at: 1 },
+  ];
+  const opts = { folders, repos: { "/work/app": repo } };
+  const first = await renderAt(`/project/${p.id}`, { projects: [p, other] }, opts);
+  const badge = await screen.findByTestId("project-repo");
+  expect(badge.textContent).toContain("v0.16.1 +2 · main");
+  expect(badge.getAttribute("title")).toContain("Commit: 840216c (uncommitted changes)");
+  expect(first.agents.calls).toContain(`git ${p.id}`);
+  cleanup();
+
+  // A folder outside any repository: nothing about git.
+  const second = await renderAt(`/project/${other.id}`, { projects: [p, other] }, opts);
+  await waitFor(() => expect(second.agents.calls).toContain(`git ${other.id}`));
+  expect(screen.queryByTestId("project-repo")).toBeNull();
+});

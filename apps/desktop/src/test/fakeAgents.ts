@@ -5,6 +5,7 @@ import type {
   AgentSession,
   AgentSettings,
   AgentStart,
+  GitInfo,
   PlanUsage,
   ProjectFolder,
 } from "../lib/types";
@@ -21,6 +22,8 @@ export function fakeAgents(
     notes?: AgentNote[];
     live?: AgentActivity[];
     planUsage?: PlanUsage | Error;
+    /** The repository found in each folder (by path); none elsewhere. */
+    repos?: Record<string, GitInfo>;
   } = {},
 ) {
   const calls: string[] = [];
@@ -87,6 +90,11 @@ export function fakeAgents(
       folders = folders.filter((f) => f.project_id !== project_id);
       if (path) folders.push({ project_id, path, runtime: settings.runtime, updated_at: 1 });
       return folders;
+    },
+    projectGit: async (project_id) => {
+      calls.push(`git ${project_id}`);
+      const path = folders.find((f) => f.project_id === project_id)?.path;
+      return (path && opts.repos?.[path]) || null;
     },
     pickFolder: async () => "/picked",
     onActivity: async (handler) => {
