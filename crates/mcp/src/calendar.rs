@@ -156,7 +156,7 @@ pub fn render(
     let last = offset.date(to - 1);
     let mut out = format!(
         "Calendar {first} to {last} (times in {}). Block outcomes: planned, worked, done, \
-         cancelled.\n",
+         missed, cancelled.\n",
         offset.label()
     );
     let mut day_start = offset.midnight(&first).unwrap_or(from);

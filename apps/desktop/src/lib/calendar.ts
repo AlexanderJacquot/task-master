@@ -128,6 +128,14 @@ export function blockMinutes(task: Pick<Task, "estimate_min">): number {
   return Math.min(Math.max(snapMinute(estimate), SNAP_MIN), DAY_MIN);
 }
 
+/**
+ * Whether a block still holds its time and schedules its task: not removed, cancelled or
+ * missed (a missed task is back to be planned).
+ */
+export function holdsTime(block: Pick<TimeBlock, "deleted_at" | "outcome">): boolean {
+  return block.deleted_at === null && block.outcome !== "cancelled" && block.outcome !== "missed";
+}
+
 /** Minutes spent: the sum of `done` and `worked` blocks. */
 export function loggedMinutes(blocks: Iterable<TimeBlock>): number {
   let total = 0;

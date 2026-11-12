@@ -12,6 +12,17 @@ so 0.16.0 has no installers or update. 0.16.1 formats the 0.16.0 merges and adds
   list, see the `*_config_only_drops_the_main_frame` tests); `main.tsx` puts
   `capture-window` on `<html>` so `index.css` clears the page background there. macOS
   needs `macOSPrivateApi` for transparent windows (not enabled), so its corners stay square.
+- Calendar: replanning and a daily review (ADR 013 amended). New block outcome `missed`
+  (not worked on; logs nothing; the task is back to be planned) in the core, with
+  migration **0014** (no data change; bumps the schema to 14 so 0.16.0 servers refuse the
+  sync instead of failing on `missed`). The block menu has Done, Cancelled, "Worked,
+  replan", "Not done, replan" and Planned; the replan choices ask for later today, the
+  next working day, a picked time, or not now (`features/calendar/BlockOutcome.tsx`,
+  slots in `lib/replan.ts`). **Review** in the calendar header goes through the blocks of
+  the last 7 days that ended still planned (`DayReview.tsx`). Tests: `lib/replan.test.ts`,
+  `calendar.test.tsx`, core `time_blocks.rs` and `calendar_sync.rs` (missed takes the
+  Google event away). Limits: replanning sees calendar events of the shown range only
+  (a day view does not know tomorrow's events); the new block keeps the old length.
 
 **Release 0.16.0** (2026-11-12, on `release/0.16.0`, then `main`): integrates the seven feature
 branches that were not in main or had uncommitted work (agent timer, Agents page usage and

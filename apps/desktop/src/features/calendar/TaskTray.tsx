@@ -7,7 +7,7 @@ import { useDraggable } from "@dnd-kit/core";
 import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
 import { type PointerEvent as ReactPointerEvent, useMemo, useState } from "react";
 import { cx, Dot, FOCUS, IconButton, INPUT, SectionLabel } from "../../components/ui";
-import { addDays, atMinute, blockMinutes, formatDuration } from "../../lib/calendar";
+import { addDays, atMinute, blockMinutes, formatDuration, holdsTime } from "../../lib/calendar";
 import { DEFAULT_FOCUS, type PlanFocus } from "../../lib/planner";
 import type { Epic, Project, Status, Task } from "../../lib/types";
 import { compareTasks, inView, isOpen, type ViewContext } from "../../lib/views";
@@ -84,8 +84,7 @@ export function TaskTray({
     const scheduled = new Set<string>();
     const scheduledToday = new Set<string>();
     for (const block of Object.values(timeBlocks)) {
-      if (block.deleted_at !== null || block.outcome === "cancelled" || block.end_at <= start)
-        continue;
+      if (!holdsTime(block) || block.end_at <= start) continue;
       scheduled.add(block.task_id);
       if (block.start_at < end) scheduledToday.add(block.task_id);
     }

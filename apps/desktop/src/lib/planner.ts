@@ -8,6 +8,7 @@ import {
   atMinute,
   blockMinutes,
   DAY_MIN,
+  holdsTime,
   parseIso,
   SNAP_MIN,
   type Span,
@@ -91,8 +92,7 @@ export function planCandidates(
   const { tasks, statuses, blocks, focus, now } = input;
   const scheduled = new Set<string>();
   for (const b of blocks) {
-    if (b.deleted_at === null && b.outcome !== "cancelled" && b.end_at > now)
-      scheduled.add(b.task_id);
+    if (holdsTime(b) && b.end_at > now) scheduled.add(b.task_id);
   }
   const withOpenChildren = new Set<string>();
   for (const t of tasks) {
@@ -133,10 +133,9 @@ export function freeSlots(
   input: Pick<PlanInput, "days" | "hours" | "now" | "blocks" | "events">,
 ): Slot[] {
   const { hours, now } = input;
-  const busy: Span[] = [
-    ...input.blocks.filter((b) => b.deleted_at === null && b.outcome !== "cancelled"),
-    ...input.events,
-  ].sort((a, b) => a.start_at - b.start_at);
+  const busy: Span[] = [...input.blocks.filter(holdsTime), ...input.events].sort(
+    (a, b) => a.start_at - b.start_at,
+  );
   const quarter = SNAP_MIN * MS;
   const slots: Slot[] = [];
   for (const iso of planDays(input.days, hours, now)) {

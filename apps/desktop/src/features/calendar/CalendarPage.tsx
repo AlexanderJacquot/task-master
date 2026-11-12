@@ -15,7 +15,7 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { ChevronLeft, ChevronRight, Dices } from "lucide-react";
+import { ChevronLeft, ChevronRight, ClipboardCheck, Dices } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { CalendarIcon as CalendarDays } from "../../components/TaskIcons";
 import { Button, cx, Dot, FOCUS, IconButton } from "../../components/ui";
@@ -49,10 +49,12 @@ import {
   planCandidates,
   suggestPlan,
 } from "../../lib/planner";
+import { blocksToReview } from "../../lib/replan";
 import type { Task } from "../../lib/types";
 import { moveBlock, scheduleBlocks, scheduleTask, updateTask } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
+import { DayReview } from "./DayReview";
 import { MonthGrid } from "./MonthGrid";
 import { PlanBar } from "./PlanBar";
 import { CalendarContext, type CalendarData, type DragData } from "./shared";
@@ -150,6 +152,12 @@ export function CalendarPage() {
   }, []);
 
   const blocks = useMemo(() => Object.values(timeBlocks), [timeBlocks]);
+  // Blocks that ended without an outcome; the review goes through those taken on opening.
+  const toReview = useMemo(
+    () => blocksToReview(blocks, tasks, today, now),
+    [blocks, tasks, today, now],
+  );
+  const [review, setReview] = useState<string[] | null>(null);
   const [planning, setPlanning] = useState(false);
   const [planPrefs, setPlanPrefsState] = useState<PlanPrefs>(loadPlanPrefs);
   // A suggestion belongs to the days it was made for.
@@ -241,8 +249,21 @@ export function CalendarPage() {
       justDragged: () => Date.now() - lastDragEnd.current < 250,
       openUrl: api.files ? (url) => void api.files?.openUrl(url) : undefined,
       calendarName: (id) => sources?.find((s) => s.id === id)?.name ?? "Calendar",
+      hours: planPrefs.hours,
+      busyEvents,
     }),
-    [tasks, projects, statuses, today, now, openTaskPanel, api.files, sources],
+    [
+      tasks,
+      projects,
+      statuses,
+      today,
+      now,
+      openTaskPanel,
+      api.files,
+      sources,
+      planPrefs.hours,
+      busyEvents,
+    ],
   );
 
   const sensors = useSensors(
@@ -404,6 +425,24 @@ export function CalendarPage() {
             </div>
             <Button
               size="sm"
+              disabled={toReview.length === 0}
+              title={
+                toReview.length === 0
+                  ? "Every block that ended has an outcome"
+                  : "Say what became of the blocks that ended"
+              }
+              onClick={() => setReview(toReview.map((b) => b.id))}
+            >
+              <ClipboardCheck size={14} />
+              Review
+              {toReview.length > 0 && (
+                <span className="rounded-full bg-accent px-1.5 text-[11px] leading-4 text-accent-ink tabular-nums">
+                  {toReview.length}
+                </span>
+              )}
+            </Button>
+            <Button
+              size="sm"
               aria-pressed={planOn}
               disabled={mode === "month"}
               title={mode === "month" ? "Plan a day or a week" : "Fill the free time with tasks"}
@@ -498,6 +537,7 @@ export function CalendarPage() {
           </DragOverlay>
         </DndContext>
       </div>
+      {review && <DayReview ids={review} onClose={() => setReview(null)} />}
     </CalendarContext.Provider>
   );
 }

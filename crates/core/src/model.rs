@@ -278,6 +278,8 @@ pub enum BlockOutcome {
     Done,
     /// Time spent on the task without finishing it.
     Worked,
+    /// Planned but not worked on: no time logged, and the task is back to be planned.
+    Missed,
     Cancelled,
 }
 
@@ -287,6 +289,7 @@ impl BlockOutcome {
             Self::Planned => "planned",
             Self::Done => "done",
             Self::Worked => "worked",
+            Self::Missed => "missed",
             Self::Cancelled => "cancelled",
         }
     }
@@ -296,6 +299,7 @@ impl BlockOutcome {
             "planned" => Self::Planned,
             "done" => Self::Done,
             "worked" => Self::Worked,
+            "missed" => Self::Missed,
             "cancelled" => Self::Cancelled,
             _ => return None,
         })

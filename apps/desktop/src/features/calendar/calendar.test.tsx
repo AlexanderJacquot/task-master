@@ -173,10 +173,10 @@ describe("the calendar", () => {
     await renderCalendar();
     fireEvent.click(await screen.findByRole("button", { name: /^Dentist, / }));
     const menu = await screen.findByRole("dialog", { name: "Time block" });
-    fireEvent.click(within(menu).getByRole("button", { name: "Worked" }));
+    fireEvent.click(within(menu).getByRole("button", { name: "Cancelled" }));
     await waitFor(() =>
       expect(fake.executed[0]).toEqual([
-        { type: "update_time_block", id: block.id, changes: [{ outcome: "worked" }] },
+        { type: "update_time_block", id: block.id, changes: [{ outcome: "cancelled" }] },
       ]),
     );
     fireEvent.click(within(menu).getByRole("button", { name: "Remove" }));
@@ -262,6 +262,149 @@ describe("the calendar", () => {
     expect(router.state.location.pathname).toBe("/calendar");
     const nav = screen.getByRole("navigation");
     expect(within(nav).getByRole("link", { name: /Calendar/ })).toBeTruthy();
+  });
+});
+
+describe("replanning a block", () => {
+  it("Not done, replan marks it missed, then plans it again at a picked time", async () => {
+    await renderCalendar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dentist, / }));
+    const menu = await screen.findByRole("dialog", { name: "Time block" });
+    fireEvent.click(within(menu).getByRole("button", { name: "Not done, replan" }));
+    await waitFor(() =>
+      expect(fake.executed[0]).toEqual([
+        { type: "update_time_block", id: block.id, changes: [{ outcome: "missed" }] },
+      ]),
+    );
+    const replan = within(menu).getByRole("group", { name: "Replan" });
+    fireEvent.click(within(replan).getByRole("button", { name: "Pick a time…" }));
+    const day = addDays(today, 3);
+    fireEvent.change(within(replan).getByLabelText("Day"), { target: { value: day } });
+    fireEvent.change(within(replan).getByLabelText("Time"), { target: { value: "14:00" } });
+    fireEvent.click(within(replan).getByRole("button", { name: "Plan" }));
+    await waitFor(() => expect(fake.executed).toHaveLength(2));
+    expect(fake.executed[1]).toMatchObject([
+      {
+        type: "create_time_block",
+        block: {
+          task_id: blocked.id,
+          start_at: atMinute(day, 14 * 60),
+          end_at: atMinute(day, 15 * 60),
+          outcome: "planned",
+        },
+      },
+    ]);
+    // The menu closes once the block is replanned.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Time block" })).toBeNull());
+  });
+
+  it("Worked, replan logs the time, and Not now leaves the task to plan later", async () => {
+    await renderCalendar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dentist, / }));
+    const menu = await screen.findByRole("dialog", { name: "Time block" });
+    fireEvent.click(within(menu).getByRole("button", { name: "Worked, replan" }));
+    await waitFor(() =>
+      expect(fake.executed[0]).toEqual([
+        { type: "update_time_block", id: block.id, changes: [{ outcome: "worked" }] },
+      ]),
+    );
+    fireEvent.click(within(menu).getByRole("button", { name: /^Not now/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Time block" })).toBeNull());
+    expect(fake.executed).toHaveLength(1);
+  });
+});
+
+describe("the daily review", () => {
+  const yesterday = addDays(today, -1);
+  const bank = task({ title: "Call the bank" });
+  const gate = task({ title: "Fix the fence" });
+  const first = timeBlock({
+    task_id: bank.id,
+    start_at: atMinute(yesterday, 9 * 60),
+    end_at: atMinute(yesterday, 10 * 60),
+  });
+  const second = timeBlock({
+    task_id: gate.id,
+    start_at: atMinute(yesterday, 11 * 60),
+    end_at: atMinute(yesterday, 12 * 60),
+  });
+  const reviewed = timeBlock({
+    task_id: gate.id,
+    start_at: atMinute(yesterday, 13 * 60),
+    end_at: atMinute(yesterday, 14 * 60),
+    outcome: "worked",
+  });
+
+  async function renderReview() {
+    fake = fakeApi({ tasks: [bank, gate], time_blocks: [first, second, reviewed] });
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    const router = createAppRouter(createMemoryHistory({ initialEntries: ["/calendar"] }));
+    render(
+      <StoreProvider store={store} api={fake.api}>
+        <RouterProvider router={router} />
+      </StoreProvider>,
+    );
+  }
+
+  it("goes through the blocks that ended without an outcome, one at a time", async () => {
+    await renderReview();
+    const button = await screen.findByRole("button", { name: /^Review/ });
+    expect(button.textContent).toContain("2");
+    fireEvent.click(button);
+    const dialog = await screen.findByRole("dialog", { name: "Review the day" });
+    expect(within(dialog).getByText("1 of 2")).toBeTruthy();
+    expect(within(dialog).getByText("Call the bank")).toBeTruthy();
+    expect(within(dialog).getByText(/^Yesterday · /)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(fake.executed[0]?.[0]).toEqual({
+      type: "update_time_block",
+      id: first.id,
+      changes: [{ outcome: "done" }],
+    });
+
+    expect(within(dialog).getByText("2 of 2")).toBeTruthy();
+    expect(within(dialog).getByText("Fix the fence")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Skip" }));
+    expect(
+      within(dialog).getByText(
+        "All caught up: 1 block reviewed. 1 left as planned for the next review.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Review the day" })).toBeNull(),
+    );
+    // The skipped block is still waiting.
+    expect(screen.getByRole("button", { name: /^Review/ }).textContent).toContain("1");
+  });
+
+  it("replans a block from the review before moving on", async () => {
+    await renderReview();
+    fireEvent.click(await screen.findByRole("button", { name: /^Review/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Review the day" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Not done, replan" }));
+    await waitFor(() =>
+      expect(fake.executed[0]).toEqual([
+        { type: "update_time_block", id: first.id, changes: [{ outcome: "missed" }] },
+      ]),
+    );
+    const replan = within(dialog).getByRole("group", { name: "Replan" });
+    fireEvent.click(within(replan).getByRole("button", { name: "Pick a time…" }));
+    fireEvent.change(within(replan).getByLabelText("Day"), {
+      target: { value: addDays(today, 2) },
+    });
+    fireEvent.change(within(replan).getByLabelText("Time"), { target: { value: "09:30" } });
+    fireEvent.click(within(replan).getByRole("button", { name: "Plan" }));
+    await waitFor(() => expect(within(dialog).getByText("2 of 2")).toBeTruthy());
+    expect(fake.executed[1]).toMatchObject([
+      {
+        type: "create_time_block",
+        block: { task_id: bank.id, start_at: atMinute(addDays(today, 2), 9 * 60 + 30) },
+      },
+    ]);
   });
 });
 

@@ -341,7 +341,7 @@ struct Local {
 }
 
 /// The pushable state of `block:<id>`, `plan:<task id>` or `due:<task id>`; `None` when it
-/// should not be in the calendar (deleted, cancelled, no longer planned or due).
+/// should not be in the calendar (deleted, cancelled or missed, no longer planned or due).
 fn local_item(conn: &Connection, key: &str) -> Result<Option<Local>> {
     let Some((kind, id)) = key.split_once(':') else {
         return Ok(None);
@@ -356,7 +356,12 @@ fn local_item(conn: &Connection, key: &str) -> Result<Option<Local>> {
     match kind {
         "block" => {
             let block = match query::time_block(conn, id) {
-                Ok(b) if b.deleted_at.is_none() && b.outcome != BlockOutcome::Cancelled => b,
+                Ok(b)
+                    if b.deleted_at.is_none()
+                        && !matches!(b.outcome, BlockOutcome::Cancelled | BlockOutcome::Missed) =>
+                {
+                    b
+                }
                 Ok(_) | Err(Error::NotFound { .. }) => return Ok(None),
                 Err(e) => return Err(e),
             };
@@ -442,7 +447,7 @@ fn wanted_keys(conn: &Connection, now: Timestamp, today: &str) -> Result<Vec<Str
     let mut keys = Vec::new();
     let mut stmt = conn.prepare(
         "SELECT 'block:' || b.id FROM time_blocks b JOIN tasks t ON t.id = b.task_id
-         WHERE b.deleted_at IS NULL AND t.deleted_at IS NULL AND b.outcome != 'cancelled'
+         WHERE b.deleted_at IS NULL AND t.deleted_at IS NULL AND b.outcome NOT IN ('cancelled', 'missed')
            AND b.end_at >= ?1
          UNION ALL
          SELECT 'plan:' || id FROM tasks

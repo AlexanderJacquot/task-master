@@ -1,6 +1,6 @@
 // Day and week views: an all-day lane per day (tasks planned or due that day) above a
 // 24-hour grid of time blocks. Blocks move by drag, resize from their top or bottom edge
-// (or Shift+↑/↓ for the end), and open a small menu on click (outcome, open the task, remove). Clicking or dragging on an
+// (or Shift+↑/↓ for the end), and open a small menu on click (outcome and replanning, open the task, remove). Clicking or dragging on an
 // empty spot creates a task there (NewBlock.tsx).
 
 import { useDraggable, useDroppable } from "@dnd-kit/core";
@@ -36,9 +36,10 @@ import {
   timedSpans,
 } from "../../lib/calendar";
 import type { ProposedBlock } from "../../lib/planner";
-import type { BlockOutcome, CalendarEvent, Task, TimeBlock } from "../../lib/types";
-import { deleteBlock, moveBlock, setBlockOutcome } from "../../store/actions";
+import type { CalendarEvent, Task, TimeBlock } from "../../lib/types";
+import { deleteBlock, moveBlock } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
+import { BlockOutcomes } from "./BlockOutcome";
 import { EventChip, EventView } from "./events";
 import { DraftBlock, useDrawBlock } from "./NewBlock";
 import { blockStyle, DayChip, type DragData, dayTasks, projectColor, useCalendar } from "./shared";
@@ -305,13 +306,6 @@ function TimeColumn({
   );
 }
 
-const OUTCOMES: Array<{ value: BlockOutcome; label: string }> = [
-  { value: "planned", label: "Planned" },
-  { value: "done", label: "Done" },
-  { value: "worked", label: "Worked" },
-  { value: "cancelled", label: "Cancelled" },
-];
-
 function BlockView({ iso, placed }: { iso: string; placed: Placed<TimeBlock> }) {
   const store = useTaskStore();
   const { tasks, projects, openTask, justDragged } = useCalendar();
@@ -405,6 +399,7 @@ function BlockView({ iso, placed }: { iso: string; placed: Placed<TimeBlock> }) 
             "group cursor-grab select-none hover:brightness-110",
             resize && "z-20 shadow-md",
             block.outcome === "cancelled" && "text-ink-3 line-through",
+            block.outcome === "missed" && "text-ink-3",
             block.outcome === "done" && "text-ink-2",
             isDragging && "opacity-40",
             FOCUS,
@@ -471,25 +466,14 @@ function BlockView({ iso, placed }: { iso: string; placed: Placed<TimeBlock> }) 
               <X size={14} />
             </Popover.Close>
           </div>
-          <fieldset aria-label="Outcome" className="grid grid-cols-2 gap-1">
-            {OUTCOMES.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                aria-pressed={block.outcome === o.value}
-                onClick={() => void setBlockOutcome(store, block.id, o.value)}
-                className={cx(
-                  "rounded-md px-2 py-1 text-[12.5px] transition-colors",
-                  block.outcome === o.value
-                    ? "bg-selected text-ink shadow-sm"
-                    : "text-ink-2 hover:bg-hover",
-                  FOCUS,
-                )}
-              >
-                {o.label}
-              </button>
-            ))}
-          </fieldset>
+          <BlockOutcomes
+            block={block}
+            withPlanned
+            onChosen={(outcome) => {
+              // After the replan step the menu has done its job.
+              if (outcome === "worked" || outcome === "missed") setOpen(false);
+            }}
+          />
           <div className="flex gap-2">
             {task && (
               <Button

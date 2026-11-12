@@ -376,6 +376,24 @@ fn local_changes_are_pushed() {
     assert!(server.event(&server.target(), &event_id).cancelled);
     assert!(server.live(&server.target()).is_empty());
 
+    // Planned again, it comes back; missed (not worked on), it goes away like cancelled.
+    s.borrow_mut()
+        .execute(Command::UpdateTimeBlock {
+            id: block.id.clone(),
+            changes: vec![TimeBlockChange::Outcome(BlockOutcome::Planned)],
+        })
+        .unwrap();
+    run(&s, &mut server);
+    assert_eq!(server.live(&server.target()).len(), 1);
+    s.borrow_mut()
+        .execute(Command::UpdateTimeBlock {
+            id: block.id.clone(),
+            changes: vec![TimeBlockChange::Outcome(BlockOutcome::Missed)],
+        })
+        .unwrap();
+    assert_eq!(run(&s, &mut server).deleted, 1);
+    assert!(server.live(&server.target()).is_empty());
+
     // Renaming the task updates its events.
     s.borrow_mut()
         .execute(Command::UpdateTimeBlock {

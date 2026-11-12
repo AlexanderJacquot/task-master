@@ -20,7 +20,7 @@ around). Decided with the user before building:
 
 **Time blocks, not a date-time on the task.** Migration 0005 adds `time_blocks(task,
 start_at, end_at, outcome, timestamps, soft delete)` as in plan section 7. A task may have
-several blocks. `outcome` is `planned | done | worked | cancelled`; logged time is the sum
+several blocks. `outcome` is `planned | done | worked | cancelled` (and `missed`, below); logged time is the sum
 of `done` and `worked` blocks. Rows go through `CreateTimeBlock` / `UpdateTimeBlock` /
 `DeleteTimeBlock` with ops and undo, so every calendar edit is one undoable step. A block
 ends after it starts and lasts at most 24 hours. Each change bumps the task's
@@ -36,6 +36,21 @@ second "planned date" field.
 
 **Marking a block done completes the task** in the same batch (one undo). Worked and
 cancelled leave the task's status alone.
+
+**Missed blocks, replanning and the daily review** (0.16.1). A fifth outcome, `missed`:
+planned but not worked on. It logs no time and, like `cancelled`, the block no longer
+holds its time or schedules its task (`holdsTime` in `lib/calendar.ts`; the tray, the
+planner and the Google Calendar push use it), so the task is back to be planned. Cancelled
+means "not happening"; missed means "still to do". The column is free text, so migration
+0014 changes no data: it bumps the schema version, so apps and sync servers that do not
+know `missed` refuse to sync instead of failing to read a block. The block menu offers
+Done, Cancelled, **Worked, replan** and **Not done, replan** (plus Planned to reset); the
+two replan choices set the outcome, then ask where the next block goes: the first free
+stretch left today, the next working day with room (the Plan mode working hours, weekends
+per that setting), a picked day and time, or "Not now" (the task waits in the tray). The
+new block is as long as the old one, and is a separate undo step. **Review** in the
+calendar header goes through the blocks of the last 7 days that ended still `planned`, one
+at a time, with the same choices and Skip (`blocksToReview` in `lib/replan.ts`).
 
 **Pure model, thin components.** `lib/calendar.ts` holds the date math (local wall time,
 so DST days stay right; weeks start on Monday), the side-by-side overlap layout, and

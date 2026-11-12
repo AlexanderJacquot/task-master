@@ -255,7 +255,7 @@ pub struct UpdateBlock {
     pub start: Option<String>,
     #[serde(default)]
     pub end: Option<String>,
-    /// planned, worked, done or cancelled.
+    /// planned, worked, done, missed or cancelled.
     #[serde(default)]
     pub outcome: Option<String>,
     /// Take the block off the calendar.
@@ -742,7 +742,7 @@ impl TaskServer {
         }
         if let Some(outcome) = &p.outcome {
             let outcome = BlockOutcome::parse(outcome.trim()).ok_or_else(|| {
-                format!("unknown outcome '{outcome}' (planned, worked, done, cancelled)")
+                format!("unknown outcome '{outcome}' (planned, worked, done, missed, cancelled)")
             })?;
             changes.push(TimeBlockChange::Outcome(outcome));
         }

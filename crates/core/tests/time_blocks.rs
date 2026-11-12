@@ -113,6 +113,20 @@ fn create_move_resize_outcome_and_delete_roundtrip() {
     );
     assert_eq!(changes.time_blocks[0].outcome, BlockOutcome::Worked);
 
+    let changes = roundtrip(
+        &mut s,
+        Command::UpdateTimeBlock {
+            id: id.clone(),
+            changes: vec![TimeBlockChange::Outcome(BlockOutcome::Missed)],
+        },
+    );
+    assert_eq!(changes.time_blocks[0].outcome, BlockOutcome::Missed);
+    assert_eq!(
+        s.snapshot().unwrap().time_blocks[0].outcome,
+        BlockOutcome::Missed,
+        "read back from the table"
+    );
+
     let changes = roundtrip(&mut s, Command::DeleteTimeBlock { id: id.clone() });
     assert!(changes.time_blocks[0].deleted_at.is_some());
     assert!(s.snapshot().unwrap().time_blocks.is_empty());

@@ -513,7 +513,9 @@ export type BlockOutcome = "planned" |
 /**  The task was finished in this block. */
 "done" | 
 /**  Time spent on the task without finishing it. */
-"worked" | "cancelled";
+"worked" | 
+/**  Planned but not worked on: no time logged, and the task is back to be planned. */
+"missed" | "cancelled";
 
 /**  An event of a shown calendar, read-only in the app. */
 export type CalendarEvent = CalendarEvent_Serialize | CalendarEvent_Deserialize;

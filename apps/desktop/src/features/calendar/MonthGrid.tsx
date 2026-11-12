@@ -174,6 +174,7 @@ function MonthBlock({ block }: { block: TimeBlock }) {
       className={cx(
         "flex w-full min-w-0 items-center gap-1.5 rounded-md border-l-[3px] px-1.5 text-left text-[12px] leading-5",
         block.outcome === "cancelled" && "text-ink-3 line-through",
+        block.outcome === "missed" && "text-ink-3",
         isDragging && "opacity-40",
         FOCUS,
       )}
