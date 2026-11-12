@@ -69,19 +69,32 @@ export function CalendarSettings() {
       {status?.connected && status.can_set_runner && setRunner && (
         <fieldset className="flex items-center gap-3" disabled={waiting}>
           <legend className="text-xs text-ink-3">Runs on</legend>
-          {(["this_device", "server"] as const).map((runner) => (
-            <Button
-              key={runner}
-              size="sm"
-              variant={status.runner === runner ? "primary" : "ghost"}
-              onClick={() => {
-                setWaiting(true);
-                void run(() => setRunner(runner)).finally(() => setWaiting(false));
-              }}
-            >
-              {runner === "server" ? "Server" : "This device"}
-            </Button>
-          ))}
+          <div className="relative grid grid-cols-2 rounded-md border border-line-strong bg-hover p-0.5">
+            <span
+              aria-hidden
+              className={cx(
+                "absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded bg-accent shadow-sm transition-transform duration-200",
+                status.runner === "server" && "translate-x-full",
+              )}
+            />
+            {(["this_device", "server"] as const).map((runner) => (
+              <button
+                key={runner}
+                type="button"
+                aria-pressed={status.runner === runner}
+                className={cx(
+                  "relative z-10 px-3 py-1 text-[13px] transition-colors",
+                  status.runner === runner ? "text-accent-ink" : "text-ink-2 hover:text-ink",
+                )}
+                onClick={() => {
+                  setWaiting(true);
+                  void run(() => setRunner(runner)).finally(() => setWaiting(false));
+                }}
+              >
+                {runner === "server" ? "Server" : "This device"}
+              </button>
+            ))}
+          </div>
           <span className="text-xs text-ink-3">
             Moving to the server transfers your Google credentials.
           </span>
