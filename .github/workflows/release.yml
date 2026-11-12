@@ -87,11 +87,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Calendar: mark a block "Worked, replan" or "Not done, replan" and pick where the rest goes (later today, the next working day, or a time), and a daily Review goes through the blocks that ended without an outcome. The quick-capture window has rounded corners. 0.16.0 was never published, so this release also brings its changes: agent runs time the task, and the Agents page shows cost, agent time and spend limits per day, week and month. Multi-select in list and board, with a bulk bar and one undo. Saved Lineage views, and cards dragged onto the side panel to link them. Properties in the side panel keep one order. On the parchment theme, paper sounds (switch them off in Settings → Appearance).
+            Settings → Files lists attached files on this device and the sync server, with cleanup of unused files and permanent delete. The Agents page shows your Claude plan usage (5-hour and weekly windows) and groups recent sessions by day, with each task's project and epic. Calendar: a 3-day range, and the tray filter picks several projects, epics and statuses. Reset view in list and board. Drag a multi-selection of cards on the board. Lineage lanes by epic show only epics with cards in view. MCP: list_agent_sessions filters by state, task and project and pages its results.
 
-            Database change (schema 14): 0.16.1 desktops and sync servers sync only with each other, so upgrade the server together with the desktops. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.16.1.
+            No database change (schema 14): syncs with 0.16.1. Update the sync server to manage its files in Settings → Files. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.17.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.16.1/docs/releases/0.16.1.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.17.0/docs/releases/0.17.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

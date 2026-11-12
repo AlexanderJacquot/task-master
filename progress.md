@@ -11,6 +11,13 @@ board selection/drag and reset work below were checked together before committin
 (492 frontend tests passed, 2 skipped). Earlier "not run yet" notes below describe
 the individual work sessions and are superseded by this integration check.
 
+**Release 0.17.0** (2026-11-12, on `main`; notes `docs/releases/0.17.0.md`): Files page,
+Claude plan usage and sessions by day on the Agents page, MCP session filters, 3-day calendar,
+calendar filter picklists, Reset view, multi-selection drag, Lineage lanes for epics in view.
+No migration (schema 14). Checks before tagging: `cargo fmt --check`, clippy (`-D warnings`,
+all targets), `cargo test --workspace --locked`, `pnpm biome check .`, `pnpm typecheck`,
+`pnpm test`.
+
 **Agent runs stopped by the plan limit, finished** (2026-11-12, uncommitted on `main`): three
 agent sessions failed at 15:03–15:07 on Claude's 5-hour limit. The 3-day view was already
 done (below). The other two:
