@@ -9,7 +9,8 @@ import { TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FilesOverview_Serialize } from "../../bindings";
 import { Button, Checkbox, cx, Select } from "../../components/ui";
-import { formatSize } from "../../lib/attachments";
+import { FileIcon, FileTextIcon } from "../../components/TaskIcons";
+import { formatSize, isImage } from "../../lib/attachments";
 import { isoDate } from "../../lib/dates";
 import {
   type FileFilter,
@@ -23,10 +24,10 @@ import {
 } from "../../lib/files";
 import { settingsApi } from "../../lib/settingsApi";
 import { deleteAttachmentsOfFiles } from "../../store/actions";
-import { useStoreState, useTaskStore } from "../../store/context";
+import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { Section } from "./SettingsPage";
 
-const ROW_HEIGHT = 52;
+const ROW_HEIGHT = 56;
 const MB = 1024 * 1024;
 
 function message(err: unknown): string {
@@ -51,13 +52,41 @@ function Tile({ label, value, hint }: { label: string; value: string; hint?: str
   );
 }
 
+/** A sneak peek: the image itself when this device has it, else an icon by file type. */
+function Preview({ row, url }: { row: FileRow; url: string | null }) {
+  const [broken, setBroken] = useState(false);
+  const first = row.attachments[0];
+  if (first && url && isImage(first) && row.onDevice && !broken) {
+    return (
+      <img
+        src={url}
+        alt=""
+        loading="lazy"
+        onError={() => setBroken(true)}
+        className="size-10 shrink-0 rounded-md border border-line object-cover"
+      />
+    );
+  }
+  const Icon =
+    first && (first.mime === "application/pdf" || first.mime.startsWith("text/"))
+      ? FileTextIcon
+      : FileIcon;
+  return (
+    <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-md bg-hover text-ink-3">
+      <Icon size={18} />
+    </span>
+  );
+}
+
 function FileLine({
   row,
+  url,
   checked,
   onToggle,
   onOpenTask,
 }: {
   row: FileRow;
+  url: string | null;
   checked: boolean;
   onToggle: () => void;
   onOpenTask: (id: string) => void;
@@ -73,6 +102,7 @@ function FileLine({
   return (
     <div className="flex h-full items-center gap-3 border-b border-line px-2 text-sm">
       <Checkbox checked={checked} onChange={onToggle} label={`Select ${row.name}`} />
+      <Preview row={row} url={url} />
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate" title={row.name}>
           {row.name}
@@ -110,6 +140,7 @@ function FileLine({
 
 export function FilesSettings() {
   const store = useTaskStore();
+  const filesApi = useApi().files;
   const navigate = useNavigate();
   const attachments = useStoreState((s) => s.attachments);
   const tasks = useStoreState((s) => s.tasks);
@@ -328,6 +359,7 @@ export function FilesSettings() {
                   >
                     <FileLine
                       row={row}
+                      url={row.attachments[0] ? (filesApi?.url(row.attachments[0].id) ?? null) : null}
                       checked={selected.has(row.hash)}
                       onToggle={() => toggle(row.hash)}
                       onOpenTask={(taskId) =>
