@@ -221,6 +221,20 @@ in the same space without cluttering the user's views. Decided with the user:
   not an open subtask is refused too. The server instructions and the session rules tell
   the agent this. A headless run that ends without `complete_session` is not checked:
   the app cannot tell which subtasks were finished.
+- **Git repository of a project folder (amended 2026-11-12).** Shell command
+  `project_git(project_id)` reports whether the project's folder on this device is in a
+  git repository and where it stands (`GitInfo`: top folder, branch, short commit, latest
+  reachable tag as the release, commits since it, uncommitted changes). It runs the
+  system's git where the agents run (natively, or `wsl.exe --cd <folder> --exec git` for a
+  WSL folder), three read-only calls started together with `--no-optional-locks` so it
+  never takes the index lock from an agent: `rev-parse --show-toplevel`,
+  `symbolic-ref --short -q HEAD`, `describe --tags --long --always --dirty`. `None` when
+  there is no folder, the folder is not a repository, or git is missing; every
+  git-based feature hides then. Nothing is stored: it is device state, read when the
+  project page opens, when the folder changes and when the window gets focus. The
+  project page shows release and branch beside the folder button, details in its menu.
+  No library (`git2`/`gix`): the system git already reads the repository the way the
+  agents see it, WSL included.
 - Server instructions tell the agent how to track its work and which task it is on.
 - **Dependency: `rmcp` 3.9** (official Rust MCP SDK; features `server`, `macros`,
   `transport-io`) rather than a hand-written JSON-RPC loop.

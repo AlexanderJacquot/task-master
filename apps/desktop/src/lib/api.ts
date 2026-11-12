@@ -17,6 +17,7 @@ import type {
   Command,
   CommandError,
   EventRange,
+  GitInfo,
   JoinMode,
   PlanUsage,
   ProjectFolder,
@@ -91,6 +92,8 @@ export interface AgentsApi {
   distros(): Promise<string[]>;
   folders(): Promise<ProjectFolder[]>;
   setFolder(projectId: string, path: string | null): Promise<ProjectFolder[]>;
+  /** Where the project folder's git repository stands; null when it is not one. */
+  projectGit(projectId: string): Promise<GitInfo | null>;
   /** Asks for a folder; null when cancelled. */
   pickFolder(): Promise<string | null>;
   /** Called with each activity update (`activity: null` when a run stopped). */
@@ -118,6 +121,7 @@ export const tauriAgents: AgentsApi = {
   distros: () => commands.listWslDistros(),
   folders: () => unwrap(commands.projectFolders()),
   setFolder: (projectId, path) => unwrap(commands.setProjectFolder(projectId, path)),
+  projectGit: (projectId) => unwrap(commands.projectGit(projectId)),
   pickFolder: async () => {
     const picked = await open({ directory: true, multiple: false });
     return typeof picked === "string" ? picked : null;

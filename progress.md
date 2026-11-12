@@ -4,6 +4,20 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Project folder: git repository detection** (2026-11-12, worktree branch
+`worktree-git-folder-detection`, ADR 017 amended): shell command `project_git` reads the
+project folder with the system's git where agents run (native or WSL): repository root,
+branch, short commit, latest tag (the release) and commits since it, uncommitted changes;
+`null` when there is no folder, no repository or no git. The project page shows
+"v0.16.1 +2 · main" beside the folder button (details in its tooltip and menu), and
+nothing when the folder is not a repository. Read on open, on folder change, on window
+focus. Tests: `agents/git.rs` (parsing, native/WSL commands), `agents/mod.rs` (a real
+temporary repository), `features/agents/repo.test.ts`, `agents.test.tsx` ("shows the
+release and branch…"). `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --locked`, `cargo fmt --check`, `pnpm biome check .`,
+`pnpm typecheck`, `pnpm test` (496 passed, 2 skipped) pass. Not tried in the app, nor on
+Windows/WSL.
+
 **Pending-work integration** (2026-11-12): the Files page, Agents page updates,
 board selection/drag and reset work below were checked together before committing.
 `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`,
@@ -1845,6 +1859,12 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 3. Then Phase 2 (folder workspaces and the `tk` CLI on the same core and parser).
 
 ## Later
+
+- Git, on top of `project_git` (ADR 017): record the release (tag + commits, commit,
+  branch) an agent session started and ended on, as new `agent_sessions` columns (a
+  migration, synced); stamp a task with the release it was finished on; a "create PR"
+  link built from the repository's remote (`git remote get-url origin`, Forgejo/GitHub
+  URL forms). Each feature hides when `project_git` returns null.
 
 - Agents page: Claude subscription usage (5-hour and weekly windows) from Claude Code's
   `rate_limit_event` stream lines (capture a real one first; the shape is not in the

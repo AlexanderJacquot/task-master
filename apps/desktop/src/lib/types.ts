@@ -29,6 +29,7 @@ export type {
   EpicState,
   EventRange,
   FieldChange,
+  GitInfo_Serialize as GitInfo,
   GroupBy,
   ImportSummary,
   JoinMode,

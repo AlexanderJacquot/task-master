@@ -152,6 +152,12 @@ export const commands = {
 	 *  runtime sees it.
 	 */
 	setProjectFolder: (projectId: string, path: string | null) => typedError<ProjectFolder[], CommandError>(__TAURI_INVOKE("set_project_folder", { projectId, path })),
+	/**
+	 *  Where the git repository of a project's folder stands; `None` when the project has no
+	 *  folder on this device, the folder is not in a repository, or git is not installed (the
+	 *  UI then hides what needs git). Off the main thread: it starts git up to three times.
+	 */
+	projectGit: (projectId: string) => typedError<GitInfo_Serialize | null, CommandError>(__TAURI_INVOKE("project_git", { projectId })),
 };
 
 /** Events */
@@ -1006,6 +1012,41 @@ export type FilesOverview_Serialize = {
 	/**  `None` without a sync server, or when it could not be read (see `server_error`). */
 	server: BlobList | null,
 	server_error: string | null,
+};
+
+/**  Where a project folder's git repository stands. */
+export type GitInfo = GitInfo_Serialize | GitInfo_Deserialize;
+
+/**  Where a project folder's git repository stands. */
+export type GitInfo_Deserialize = {
+	/**  Top folder of the repository, as the runtime sees it (may be above the project folder). */
+	root: string,
+	/**  The checked-out branch; `None` when HEAD is detached. */
+	branch?: string | null,
+	/**  Short hash of HEAD; `None` before the first commit. */
+	commit?: string | null,
+	/**  The latest tag reachable from HEAD: the release the work is on. `None` without tags. */
+	tag?: string | null,
+	/**  Commits on top of `tag` (0 when HEAD is the tagged commit or there is no tag). */
+	commits_since_tag: number,
+	/**  Tracked files have uncommitted changes. */
+	dirty: boolean,
+};
+
+/**  Where a project folder's git repository stands. */
+export type GitInfo_Serialize = {
+	/**  Top folder of the repository, as the runtime sees it (may be above the project folder). */
+	root: string,
+	/**  The checked-out branch; `None` when HEAD is detached. */
+	branch: string | null,
+	/**  Short hash of HEAD; `None` before the first commit. */
+	commit: string | null,
+	/**  The latest tag reachable from HEAD: the release the work is on. `None` without tags. */
+	tag: string | null,
+	/**  Commits on top of `tag` (0 when HEAD is the tagged commit or there is no tag). */
+	commits_since_tag: number,
+	/**  Tracked files have uncommitted changes. */
+	dirty: boolean,
 };
 
 /**  List grouping (the board always has status columns). */

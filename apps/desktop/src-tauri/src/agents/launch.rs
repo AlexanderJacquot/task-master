@@ -95,7 +95,7 @@ pub fn claude_command(settings: &AgentSettings, run: &Run<'_>) -> Launch {
 
 /// `program args…` run in `folder` by the runtime: directly, or through `wsl.exe --exec`
 /// (no Linux shell, so arguments arrive exactly as given).
-fn in_runtime(
+pub(crate) fn in_runtime(
     settings: &AgentSettings,
     runtime: AgentRuntime,
     folder: &str,

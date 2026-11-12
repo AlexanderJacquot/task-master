@@ -7,6 +7,7 @@
 //! the end of the run is written with `execute_without_undo`. Runs are children of the
 //! app: quitting stops them and marks them interrupted.
 
+pub mod git;
 pub mod launch;
 pub mod plan;
 pub mod stream;
@@ -1529,9 +1530,129 @@ pub fn set_project_folder(
     })
 }
 
+/// Where the git repository of a project's folder stands; `None` when the project has no
+/// folder on this device, the folder is not in a repository, or git is not installed (the
+/// UI then hides what needs git). Off the main thread: it starts git up to three times.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn project_git(
+    state: State<'_, AppState>,
+    project_id: Id,
+) -> CommandResult<Option<git::GitInfo>> {
+    let folder = with_store(&state, |s| s.project_folders())?
+        .into_iter()
+        .find(|f| f.project_id == project_id);
+    let Some(folder) = folder else {
+        return Ok(None);
+    };
+    if folder.runtime == AgentRuntime::Native && !Path::new(&folder.path).is_dir() {
+        return Ok(None);
+    }
+    let settings = settings(&state)?;
+    Ok(read_git(&settings, folder.runtime, &folder.path))
+}
+
+/// Runs the git commands in `folder` and reads their answers.
+fn read_git(settings: &AgentSettings, runtime: AgentRuntime, folder: &str) -> Option<git::GitInfo> {
+    // Started together: through `wsl.exe` each start costs a noticeable moment.
+    let children: Vec<_> = [git::ROOT, git::BRANCH, git::DESCRIBE]
+        .iter()
+        .map(|args| {
+            let launch = git::command(settings, runtime, folder, args);
+            hidden(&mut process(&launch))
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()
+        })
+        .collect();
+    let outputs: Vec<Option<String>> = children
+        .into_iter()
+        .map(|child| {
+            let out = child?.wait_with_output().ok()?;
+            out.status
+                .success()
+                .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+        })
+        .collect();
+    git::info(
+        outputs[0].as_deref(),
+        outputs[1].as_deref(),
+        outputs[2].as_deref(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reads a real repository: none, then one commit, then a release tag with work on top.
+    #[test]
+    fn a_folder_is_read_as_a_git_repository_or_not() {
+        let has_git = Process::new("git").arg("--version").output().is_ok();
+        if !has_git {
+            eprintln!("git is not installed: skipped");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!(
+            "tm-git-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let folder = dir.to_str().unwrap();
+        let settings = AgentSettings::default();
+        let read = || read_git(&settings, AgentRuntime::Native, folder);
+        let run = |args: &[&str]| {
+            let ok = Process::new("git")
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(["-c", "tag.gpgsign=false"])
+                .args(args)
+                .current_dir(&dir)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+
+        // The temporary folder is (normally) in no repository.
+        if read().is_none() {
+            run(&["init", "-q", "-b", "main"]);
+            let fresh = read().expect("a repository");
+            assert_eq!(fresh.branch.as_deref(), Some("main"));
+            assert_eq!((fresh.commit, fresh.tag), (None, None), "no commit yet");
+
+            std::fs::write(dir.join("a.txt"), "1").unwrap();
+            run(&["add", "a.txt"]);
+            run(&["commit", "-q", "-m", "one"]);
+            run(&["tag", "v1.0.0"]);
+            std::fs::write(dir.join("a.txt"), "2").unwrap();
+            run(&["commit", "-q", "-am", "two"]);
+            std::fs::write(dir.join("a.txt"), "3").unwrap();
+
+            let info = read().expect("a repository");
+            assert_eq!(info.tag.as_deref(), Some("v1.0.0"));
+            assert_eq!(info.commits_since_tag, 1);
+            assert!(info.dirty);
+            assert!(info.commit.is_some());
+            let root = std::fs::canonicalize(&info.root).unwrap();
+            assert_eq!(root, std::fs::canonicalize(&dir).unwrap());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn session() -> AgentSession {
         AgentSession {
