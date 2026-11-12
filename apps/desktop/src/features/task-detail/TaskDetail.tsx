@@ -33,6 +33,7 @@ import { useOpenTask } from "../shell/useOpenTask";
 import { TaskTimer } from "../timer/Timer";
 import { ActivityFeed } from "./ActivityFeed";
 import { AttachmentList } from "./AttachmentList";
+import { CopyIdButton } from "./CopyIdButton";
 import { DependencyList } from "./DependencyList";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { parentCandidates } from "./hierarchy";
@@ -505,6 +506,7 @@ export function TaskDetail({
         >
           <Maximize2 size={13} /> Open
         </button>
+        <CopyIdButton taskId={task.id} />
         <IconButton
           label="Delete (Ctrl+Z to undo)"
           onClick={() => {
@@ -598,6 +600,7 @@ export function TaskPage({
           </>
         )}
         <span className="flex-1" />
+        <CopyIdButton taskId={task.id} />
         <IconButton
           label="Delete (Ctrl+Z to undo)"
           onClick={() => {
