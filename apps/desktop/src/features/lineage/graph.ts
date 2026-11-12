@@ -36,6 +36,98 @@ export function downstream(id: string, tasks: Task[]): string[] {
   return [...seen];
 }
 
+type Line = [number, number, number, number];
+
+function linesCross(a: Line, b: Line) {
+  const side = (p: Line, x: number, y: number) =>
+    Math.sign((p[2] - p[0]) * (y - p[1]) - (p[3] - p[1]) * (x - p[0]));
+  const shared = (ax: number, ay: number, bx: number, by: number) => ax === bx && ay === by;
+  for (const [ax, ay] of [
+    [a[0], a[1]],
+    [a[2], a[3]],
+  ] as const)
+    for (const [bx, by] of [
+      [b[0], b[1]],
+      [b[2], b[3]],
+    ] as const)
+      if (shared(ax, ay, bx, by)) return false; // sharing an endpoint is not a crossing
+  return (
+    side(a, b[0], b[1]) * side(a, b[2], b[3]) < 0 && side(b, a[0], a[1]) * side(b, a[2], a[3]) < 0
+  );
+}
+
+/**
+ * Orders the cards inside each column to reduce dependency arrows crossing: barycenter sweeps
+ * left-to-right then right-to-left, keeping the ordering with the fewest crossings.
+ */
+function orderRows(tasks: Task[], levels: Map<string, number>, byId: Map<string, Task>) {
+  const ids = new Set(tasks.map((task) => task.id));
+  const neighbours = new Map<string, string[]>(tasks.map((task) => [task.id, []]));
+  const edges: [string, string][] = [];
+  for (const task of tasks)
+    for (const id of task.dependency_ids ?? []) {
+      if (!byId.has(id) || !ids.has(id)) continue;
+      neighbours.get(id)?.push(task.id);
+      neighbours.get(task.id)?.push(id);
+      edges.push([id, task.id]);
+    }
+  const columns = new Map<number, string[]>();
+  for (const task of tasks) {
+    const level = levels.get(task.id) ?? 0;
+    columns.set(level, [...(columns.get(level) ?? []), task.id]);
+  }
+  const keys = [...columns.keys()].sort((a, b) => a - b);
+  const rows = new Map<string, number>();
+  const assign = () => {
+    for (const column of columns.values()) column.forEach((id, row) => rows.set(id, row));
+  };
+  const crossings = () => {
+    const lines = edges.map(
+      ([from, to]): Line => [
+        levels.get(from) ?? 0,
+        rows.get(from) ?? 0,
+        levels.get(to) ?? 0,
+        rows.get(to) ?? 0,
+      ],
+    );
+    let count = 0;
+    for (let i = 0; i < lines.length; i++)
+      for (let j = i + 1; j < lines.length; j++)
+        if (linesCross(lines[i] as Line, lines[j] as Line)) count++;
+    return count;
+  };
+  const snapshot = () => new Map([...columns].map(([level, column]) => [level, [...column]]));
+  const sweep = (level: number, wanted: (other: number) => boolean) => {
+    const column = columns.get(level) as string[];
+    const centre = new Map<string, number>();
+    column.forEach((id, index) => {
+      const near = (neighbours.get(id) ?? []).filter((n) => wanted(levels.get(n) ?? 0));
+      centre.set(
+        id,
+        near.length ? near.reduce((sum, n) => sum + (rows.get(n) ?? 0), 0) / near.length : index,
+      );
+    });
+    column.sort((a, b) => (centre.get(a) ?? 0) - (centre.get(b) ?? 0));
+    column.forEach((id, row) => rows.set(id, row));
+  };
+  assign();
+  let best = crossings();
+  let bestOrder = snapshot();
+  for (let pass = 0; pass < 12 && best > 0; pass++) {
+    const forward = pass % 2 === 0;
+    for (const level of forward ? keys : [...keys].reverse())
+      sweep(level, forward ? (o) => o < level : (o) => o > level);
+    const total = crossings();
+    if (total < best) {
+      best = total;
+      bestOrder = snapshot();
+    }
+  }
+  for (const [level, column] of bestOrder) columns.set(level, column);
+  assign();
+  return rows;
+}
+
 /** Longest-path columns keep chains and joins flowing from left to right. */
 export function layoutGraph(tasks: Task[]) {
   const byId = new Map(tasks.map((task) => [task.id, task]));
@@ -61,23 +153,17 @@ export function layoutGraph(tasks: Task[]) {
     }
   }
   // Concurrent sync edits can introduce cycles; still show every task so links can be removed.
-  const rows = new Map<number, number>();
   const isolated = tasks.filter(
     (task) => !((task.dependency_ids ?? []).some((id) => byId.has(id)) || outgoing.has(task.id)),
   );
   const isolatedIds = new Set(isolated.map((task) => task.id));
-  const nodes = tasks
-    .filter((task) => !isolatedIds.has(task.id))
-    .map((task) => {
-      const level = levels.get(task.id) ?? 0;
-      const row = rows.get(level) ?? 0;
-      rows.set(level, row + 1);
-      return {
-        task,
-        x: 40 + level * (NODE_WIDTH + COLUMN_GAP),
-        y: 40 + row * (NODE_HEIGHT + ROW_GAP),
-      };
-    });
+  const connected = tasks.filter((task) => !isolatedIds.has(task.id));
+  const rowOf = orderRows(connected, levels, byId);
+  const nodes = connected.map((task) => ({
+    task,
+    x: 40 + (levels.get(task.id) ?? 0) * (NODE_WIDTH + COLUMN_GAP),
+    y: 40 + (rowOf.get(task.id) ?? 0) * (NODE_HEIGHT + ROW_GAP),
+  }));
   // Unconnected tasks form a loose grid instead of an increasingly tall single column.
   const startY = nodes.length
     ? Math.max(...nodes.map((node) => node.y)) + NODE_HEIGHT + ROW_GAP * 2
