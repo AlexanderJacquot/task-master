@@ -4,6 +4,24 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Three-day calendar view** (2026-11-12): the calendar range selector now
+has **3 days**, initially today plus two days. Previous/next moves by three days;
+Today returns to the current range. The view shares the timed grid, day lanes,
+planning and event loading with the existing day/week views. Date math and UI tests
+cover month boundaries, event range, navigation and mode persistence.
+
+**MCP agent run filtering and pagination** (2026-11-12):
+`list_agent_sessions` reads live session history newest first, with `state`, `task_id`,
+`project_id` and `latest_only` filters. The latest filter selects each task's newest
+session before checking its state, so `state: "failed", latest_only: true` finds tasks
+whose latest run failed. JSON rows include task title/status, session state and times,
+and compact summary/error; `next_cursor` pages through results. `list_tasks` now returns
+a `next_cursor` when its 200-row limit leaves more tasks. MCP integration tests cover
+the filters and both cursors; `docs/mcp.md` explains usage. `cargo test --workspace
+--locked`, `cargo clippy -p taskmaster-mcp --all-targets -- -D warnings`,
+`cargo fmt --check`, `pnpm biome check .`, `pnpm typecheck` and `pnpm test` pass.
+A live stdio MCP call returned paginated failed sessions.
+
 **Release 0.16.1** (2026-11-12, on `release/0.16.1`, then `main`; notes `docs/releases/0.16.1.md`): the 0.16.0 release build never ran
 (its `release` workflow failed at the Rust format check, which the integration had not run),
 so 0.16.0 has no installers or update. 0.16.1 formats the 0.16.0 merges and adds:

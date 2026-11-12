@@ -1,4 +1,4 @@
-// The calendar (M9, ADR 013): day, week and month views of time blocks and day plans,
+// The calendar (M9, ADR 013): day, three-day, week and month views of time blocks and day plans,
 // with a tray of tasks to drag onto it. Drops are resolved by `resolveDrop`
 // (lib/calendar.ts); this file only measures where the pointer is.
 
@@ -63,7 +63,11 @@ import { type DropPreview, TimeGrid, useNow } from "./TimeGrid";
 import { useCalendarEvents } from "./useCalendarEvents";
 
 const MODE_KEY = "task-master.calendar-mode";
-const MODES: CalendarMode[] = ["day", "week", "month"];
+const MODES: CalendarMode[] = ["day", "three_day", "week", "month"];
+
+function modeLabel(mode: CalendarMode): string {
+  return mode === "three_day" ? "3 days" : mode;
+}
 
 function loadMode(): CalendarMode {
   try {
@@ -142,6 +146,7 @@ export function CalendarPage() {
   const lastDragEnd = useRef(0);
 
   const setMode = (next: CalendarMode) => {
+    if (next === "three_day" && mode !== "three_day") setDate(today);
     setModeState(next);
     saveMode(next);
   };
@@ -411,13 +416,13 @@ export function CalendarPage() {
             </Button>
             <div className="flex">
               <IconButton
-                label={`Previous ${mode}`}
+                label={`Previous ${modeLabel(mode)}`}
                 onClick={() => setDate((d) => shiftPeriod(mode, d, -1))}
               >
                 <ChevronLeft size={16} />
               </IconButton>
               <IconButton
-                label={`Next ${mode}`}
+                label={`Next ${modeLabel(mode)}`}
                 onClick={() => setDate((d) => shiftPeriod(mode, d, 1))}
               >
                 <ChevronRight size={16} />
@@ -445,7 +450,9 @@ export function CalendarPage() {
               size="sm"
               aria-pressed={planOn}
               disabled={mode === "month"}
-              title={mode === "month" ? "Plan a day or a week" : "Fill the free time with tasks"}
+              title={
+                mode === "month" ? "Plan a day or several days" : "Fill the free time with tasks"
+              }
               onClick={() => {
                 setPlanning((p) => !p);
                 setPlan(null);
@@ -471,7 +478,7 @@ export function CalendarPage() {
                     mode === m ? "bg-selected text-ink shadow-sm" : "text-ink-2 hover:text-ink",
                   )}
                 >
-                  {m}
+                  {modeLabel(m)}
                 </button>
               ))}
             </fieldset>
@@ -481,7 +488,7 @@ export function CalendarPage() {
           <PlanBar
             hours={planPrefs.hours}
             onHours={(hours) => setPlanPrefs({ ...planPrefs, hours })}
-            week={mode === "week"}
+            multiDay={mode === "week" || mode === "three_day"}
             matching={planInfo.matching}
             freeMin={planInfo.freeMin}
             plan={shownPlan}
@@ -516,7 +523,7 @@ export function CalendarPage() {
                 blocks={blocks}
                 events={events}
                 preview={preview}
-                onPickDay={mode === "week" ? pickDay : undefined}
+                onPickDay={mode === "day" ? undefined : pickDay}
                 proposals={shownPlan?.blocks}
                 onDropProposal={dropProposal}
               />

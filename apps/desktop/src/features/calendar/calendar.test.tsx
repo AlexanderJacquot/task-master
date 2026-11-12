@@ -240,6 +240,22 @@ describe("the calendar", () => {
     expect(screen.getByTestId(`time-column-${today}`)).toBeTruthy();
   });
 
+  it("shows today and the next two days in the three-day view", async () => {
+    await renderCalendar();
+    fireEvent.click(await screen.findByRole("button", { name: "3 days" }));
+    expect(localStorage.getItem("task-master.calendar-mode")).toBe("three_day");
+    expect(screen.getAllByTestId(/^time-column-/)).toHaveLength(3);
+    for (const offset of [0, 1, 2]) {
+      expect(screen.getByTestId(`time-column-${addDays(today, offset)}`)).toBeTruthy();
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Next 3 days" }));
+    expect(screen.getByTestId(`time-column-${addDays(today, 3)}`)).toBeTruthy();
+    expect(screen.queryByTestId(`time-column-${today}`)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(screen.getByTestId(`time-column-${today}`)).toBeTruthy();
+  });
+
   it("moves by a period and comes back with Today", async () => {
     localStorage.setItem("task-master.calendar-mode", "day");
     await renderCalendar();

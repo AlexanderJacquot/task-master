@@ -76,7 +76,7 @@ as it decides to read a file. "What should I work on today?" will usually lead t
 What it may do, outside a Send to Claude session:
 
 - Read everything: tasks, projects and epics, search, the calendar (time blocks and your
-  shown Google calendars), the lineage.
+  shown Google calendars), the lineage, and agent sessions.
 - Create **agent tasks**: they stay out of your views, on the **Agents** page, where
   **Make it mine** turns one into your task. It can plan time and add links only for
   those.
@@ -84,6 +84,19 @@ What it may do, outside a Send to Claude session:
 
 Writes go through the same commands as the app: they appear in the open app at once,
 are in the task's activity, and sync.
+
+### Agent run history
+
+`list_agent_sessions` lists runs newest first. Use `state: "failed"` to find failures.
+Use `latest_only: true` with that filter to find tasks whose **most recent** run failed;
+without it, the list also includes earlier failures on tasks that succeeded later.
+The optional `task_id` and `project_id` filters narrow the list. Each row includes the
+session and task ids, task title and current task status, run state, start/end times
+(Unix milliseconds), and a short summary and error. The response is JSON.
+
+`list_agent_sessions` and `list_tasks` return at most 200 rows per call (50 by default).
+When `next_cursor` is present, pass it as `cursor` with the same filters to read the next
+page. `list_tasks` has no `next_cursor` after its last page.
 
 ## 3. Versions and updates
 

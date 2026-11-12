@@ -139,6 +139,31 @@ pub struct ListTasks {
     /// At most this many rows (default 50, at most 200).
     #[serde(default)]
     pub limit: Option<u32>,
+    /// Continue after the task id returned as next_cursor. Reuse the same filters.
+    #[serde(default)]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct ListAgentSessions {
+    /// running, done, failed, cancelled, interrupted, or terminal. All when absent.
+    #[serde(default)]
+    pub state: Option<String>,
+    /// Only sessions of this task.
+    #[serde(default)]
+    pub task_id: Option<String>,
+    /// Only sessions of tasks in this project.
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// Consider only the most recent session per task, then apply the state filter.
+    #[serde(default)]
+    pub latest_only: bool,
+    /// At most this many rows (default 50, at most 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Continue after the session id returned as next_cursor. Reuse the same filters.
+    #[serde(default)]
+    pub cursor: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -314,16 +339,28 @@ impl TaskServer {
 
     #[tool(
         description = "List tasks, compactly, with their ids. Filters combine. Open tasks \
-                       only unless include_closed."
+                       only unless include_closed. Use next_cursor for the next page."
     )]
     pub fn list_tasks(&self, Parameters(p): Parameters<ListTasks>) -> ToolResult {
         let owner = p.owner.as_deref().map(parse_owner).transpose()?;
         let snapshot = self.with_store(|s| s.snapshot())?;
         let statuses = by_id(&snapshot.statuses);
         let limit = list_limit(p.limit);
+        let start = match p.cursor.as_deref() {
+            Some(cursor) => {
+                snapshot
+                    .tasks
+                    .iter()
+                    .position(|task| task.id == cursor)
+                    .ok_or_else(|| format!("unknown task cursor '{cursor}'"))?
+                    + 1
+            }
+            None => 0,
+        };
         let mut lines = Vec::new();
         let mut more = 0;
-        for task in &snapshot.tasks {
+        let mut next_cursor = None;
+        for task in snapshot.tasks.iter().skip(start) {
             let keep = p
                 .project_id
                 .as_ref()
@@ -341,11 +378,110 @@ impl TaskServer {
             }
             if lines.len() < limit as usize {
                 lines.push(task_line(&statuses, task));
+                next_cursor = Some(task.id.as_str());
             } else {
                 more += 1;
             }
         }
-        Ok(listing(lines, more, "No tasks match."))
+        if lines.is_empty() {
+            return Ok("No tasks match.".to_owned());
+        }
+        let mut out = lines.join("\n");
+        if more > 0
+            && let Some(cursor) = next_cursor
+        {
+            out.push_str(&format!("\n… and {more} more\nnext_cursor: `{cursor}`"));
+        }
+        Ok(out)
+    }
+
+    #[tool(
+        description = "List agent runs, newest first, with task title/status, timestamps, \
+                       summary and error. Filter by session state (e.g. failed). \
+                       latest_only checks each task's newest run before the state filter. \
+                       Returns JSON with next_cursor for pagination."
+    )]
+    pub fn list_agent_sessions(&self, Parameters(p): Parameters<ListAgentSessions>) -> ToolResult {
+        let state = p
+            .state
+            .as_deref()
+            .map(|value| {
+                SessionState::parse(&value.trim().to_ascii_lowercase()).ok_or_else(|| {
+                    format!(
+                        "unknown session state '{value}' \
+                         (running, done, failed, cancelled, interrupted, terminal)"
+                    )
+                })
+            })
+            .transpose()?;
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let tasks: HashMap<&str, &Task> = snapshot
+            .tasks
+            .iter()
+            .map(|task| (task.id.as_str(), task))
+            .collect();
+        let statuses = by_id(&snapshot.statuses);
+        let cursor_key = p
+            .cursor
+            .as_deref()
+            .map(|cursor| {
+                snapshot
+                    .agent_sessions
+                    .iter()
+                    .find(|session| session.id == cursor)
+                    .map(|session| (session.started_at, session.id.as_str()))
+                    .ok_or_else(|| format!("unknown session cursor '{cursor}'"))
+            })
+            .transpose()?;
+        let mut sessions: Vec<&AgentSession> = snapshot.agent_sessions.iter().collect();
+        sessions.sort_by(|a, b| {
+            b.started_at
+                .cmp(&a.started_at)
+                .then_with(|| b.id.cmp(&a.id))
+        });
+        let mut seen_tasks = HashSet::new();
+        let matching: Vec<&AgentSession> = sessions
+            .into_iter()
+            .filter(|session| {
+                let Some(task) = tasks.get(session.task_id.as_str()) else {
+                    return false;
+                };
+                p.task_id.as_deref().is_none_or(|id| id == task.id)
+                    && p.project_id
+                        .as_deref()
+                        .is_none_or(|id| task.project_id.as_deref() == Some(id))
+                    && (!p.latest_only || seen_tasks.insert(session.task_id.as_str()))
+            })
+            .filter(|session| state.is_none_or(|state| session.state == state))
+            .filter(|session| {
+                cursor_key.is_none_or(|key| (session.started_at, session.id.as_str()) < key)
+            })
+            .collect();
+        let limit = list_limit(p.limit) as usize;
+        let next_cursor = (matching.len() > limit).then(|| matching[limit - 1].id.clone());
+        let rows: Vec<_> = matching
+            .into_iter()
+            .take(limit)
+            .map(|session| {
+                let task = tasks[session.task_id.as_str()];
+                serde_json::json!({
+                    "session_id": session.id,
+                    "task_id": task.id,
+                    "task_title": task.title,
+                    "task_status": statuses.get(task.status_id.as_str()).map(|s| s.name.as_str()),
+                    "state": session.state.as_str(),
+                    "started_at_ms": session.started_at,
+                    "ended_at_ms": session.ended_at,
+                    "summary": session.summary.as_deref().map(short_session_text),
+                    "error": session.error.as_deref().map(short_session_text),
+                })
+            })
+            .collect();
+        Ok(serde_json::json!({
+            "sessions": rows,
+            "next_cursor": next_cursor,
+        })
+        .to_string())
     }
 
     #[tool(description = "Projects (with their areas) and epics, with their ids.")]
@@ -893,6 +1029,7 @@ impl TaskServer {
                 "task-master is the user's task manager, on this device. Use these tools \
                  when the user talks about their tasks, projects, plans or schedule: \
                  list_tasks, search and get_task read them (ids come from listings), \
+                 and list_agent_sessions finds agent runs and failures. \
                  list_projects gives projects and epics. Tasks you create are agent tasks: \
                  kept apart from the user's own (they find them on the Agents page and can \
                  make them theirs), so say so when you create one. The user's own tasks \
@@ -901,7 +1038,8 @@ impl TaskServer {
         };
         let mut text = format!(
             "task-master is the user's task manager. Use these tools to read task context \
-             and to track your own progress: create agent tasks for the steps you plan, move \
+             and to track your own progress: list_agent_sessions finds earlier runs and \
+             failures; create agent tasks for the steps you plan, move \
              them to in_progress and done as you go, add short notes for findings and \
              decisions, and call complete_session with a summary before you finish. When \
              you finish a subtask of the task (yours or the user's), mark it done right \
@@ -1026,6 +1164,19 @@ fn listing(lines: Vec<String>, more: usize, empty: &str) -> String {
 
 fn list_limit(limit: Option<u32>) -> u32 {
     limit.unwrap_or(DEFAULT_LIST).clamp(1, MAX_LIST)
+}
+
+/// Keep session listings compact while preserving the reason for a failed run.
+fn short_session_text(value: &str) -> String {
+    const MAX_CHARS: usize = 400;
+    let clean = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = clean.chars();
+    let short: String = chars.by_ref().take(MAX_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{short}…")
+    } else {
+        short
+    }
 }
 
 /// A status by name (case-insensitive), else the first column of a category.

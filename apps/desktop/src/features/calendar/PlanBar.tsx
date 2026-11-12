@@ -76,7 +76,7 @@ export function FocusFilter({
 export function PlanBar({
   hours,
   onHours,
-  week,
+  multiDay,
   matching,
   freeMin,
   plan,
@@ -87,8 +87,8 @@ export function PlanBar({
 }: {
   hours: PlanHours;
   onHours(hours: PlanHours): void;
-  /** The week view is shown (weekends can be included). */
-  week: boolean;
+  /** A multi-day view is shown (weekends can be included). */
+  multiDay: boolean;
   /** Tasks the focus offers to the plan. */
   matching: number;
   /** Free working minutes left in the shown days. */
@@ -133,7 +133,7 @@ export function PlanBar({
         options={hourOptions(Math.min(startHour + 1, 24), 24)}
         onValueChange={(v) => onHours({ ...hours, endMin: Number(v) * 60 })}
       />
-      {week && (
+      {multiDay && (
         <label className="flex items-center gap-1.5 text-ink-2">
           <input
             type="checkbox"

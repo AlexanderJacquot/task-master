@@ -29,10 +29,15 @@ ends after it starts and lasts at most 24 hours. Each change bumps the task's
 its blocks in the snapshot without extra ops, so undoing the delete brings them back.
 Export and import carry the table.
 
-**Days without a time use `today_on`.** The all-day lane (day and week views) and the
+**Days without a time use `today_on`.** The all-day lane (day, three-day and week views) and the
 month cells show tasks planned for that day (`today_on`) and tasks due that day. Dropping
 a task on a day sets `today_on`, so the task shows in Today when that day comes. No
 second "planned date" field.
+
+**Three-day range** (2026-11-12). The calendar also offers a three-day grid. Selecting
+it starts at today and shows today plus two days; previous/next moves by three days,
+and Today resets the range. It uses the same time columns, all-day lanes, planning and
+Google event range as the day and week grids.
 
 **Marking a block done completes the task** in the same batch (one undo). Worked and
 cancelled leave the task's status alone.

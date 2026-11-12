@@ -5,7 +5,7 @@
 import { isoDate } from "./dates";
 import type { CalendarEvent, EventRange, Task, TimeBlock } from "./types";
 
-export type CalendarMode = "day" | "week" | "month";
+export type CalendarMode = "day" | "three_day" | "week" | "month";
 
 /** Height of one hour in the day and week grids. */
 export const HOUR_PX = 48;
@@ -33,9 +33,10 @@ export function startOfWeek(iso: string): string {
   return addDays(iso, -((day - WEEK_STARTS_ON + 7) % 7));
 }
 
-/** The days a day or week view shows. */
-export function visibleDays(mode: "day" | "week", iso: string): string[] {
+/** The days a day, three-day or week view shows. */
+export function visibleDays(mode: Exclude<CalendarMode, "month">, iso: string): string[] {
   if (mode === "day") return [iso];
+  if (mode === "three_day") return Array.from({ length: 3 }, (_, i) => addDays(iso, i));
   const first = startOfWeek(iso);
   return Array.from({ length: 7 }, (_, i) => addDays(first, i));
 }
@@ -56,6 +57,7 @@ export function monthWeeks(iso: string): string[][] {
 /** The same place one period earlier (-1) or later (+1). */
 export function shiftPeriod(mode: CalendarMode, iso: string, direction: -1 | 1): string {
   if (mode === "day") return addDays(iso, direction);
+  if (mode === "three_day") return addDays(iso, 3 * direction);
   if (mode === "week") return addDays(iso, 7 * direction);
   const date = parseIso(`${iso.slice(0, 7)}-01`);
   date.setMonth(date.getMonth() + direction);
@@ -75,6 +77,11 @@ export function periodLabel(mode: CalendarMode, iso: string): string {
   }
   if (mode === "month") {
     return date.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  }
+  if (mode === "three_day") {
+    const last = parseIso(addDays(iso, 2));
+    const short = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return `${short(date)} – ${short(last)}, ${last.getFullYear()}`;
   }
   const days = visibleDays("week", iso);
   const first = parseIso(days[0] as string);

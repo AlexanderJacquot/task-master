@@ -157,6 +157,7 @@ async fn lists_its_tools_and_names_the_session_task() {
             "get_lineage",
             "get_task",
             "link_tasks",
+            "list_agent_sessions",
             "list_projects",
             "list_tasks",
             "schedule_block",
@@ -165,6 +166,174 @@ async fn lists_its_tools_and_names_the_session_task() {
             "update_task"
         ]
     );
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn task_listing_can_continue_past_its_limit() {
+    let f = fixture();
+    let client = connect(TaskServer::new(f.store, None).unwrap()).await;
+    let first = ok(&client, "list_tasks", json!({ "limit": 1 })).await;
+    let cursor = first
+        .lines()
+        .find_map(|line| line.strip_prefix("next_cursor: `")?.strip_suffix('`'))
+        .expect("first page has a cursor");
+    let second = ok(
+        &client,
+        "list_tasks",
+        json!({ "limit": 1, "cursor": cursor }),
+    )
+    .await;
+    assert_ne!(first.lines().next(), second.lines().next());
+    assert!(!second.contains("next_cursor:"));
+    refused(&client, "list_tasks", json!({ "cursor": new_id() })).await;
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn session_listing_filters_latest_outcome_and_paginates() {
+    let mut f = fixture();
+    f.store
+        .execute_without_undo(vec![Command::UpdateAgentSession {
+            id: f.session.clone(),
+            changes: vec![
+                AgentSessionChange::State(SessionState::Failed),
+                AgentSessionChange::Error(Some("First attempt failed".into())),
+            ],
+        }])
+        .unwrap();
+    let newer = f
+        .store
+        .execute_without_undo(vec![Command::CreateAgentSession {
+            session: NewAgentSession {
+                id: None,
+                task_id: f.task.clone(),
+                claude_session_id: new_id(),
+                folder: "/work".into(),
+                runtime: AgentRuntime::Native,
+                permission_mode: "default".into(),
+                model: None,
+                prompt: String::new(),
+            },
+        }])
+        .unwrap()
+        .agent_sessions
+        .remove(0)
+        .id;
+    f.store
+        .execute_without_undo(vec![Command::UpdateAgentSession {
+            id: newer.clone(),
+            changes: vec![
+                AgentSessionChange::State(SessionState::Done),
+                AgentSessionChange::Summary(Some("Recovered on retry".into())),
+            ],
+        }])
+        .unwrap();
+    let other_failed = f
+        .store
+        .execute_without_undo(vec![Command::CreateAgentSession {
+            session: NewAgentSession {
+                id: None,
+                task_id: f.other.clone(),
+                claude_session_id: new_id(),
+                folder: "/work".into(),
+                runtime: AgentRuntime::Native,
+                permission_mode: "default".into(),
+                model: None,
+                prompt: String::new(),
+            },
+        }])
+        .unwrap()
+        .agent_sessions
+        .remove(0)
+        .id;
+    f.store
+        .execute_without_undo(vec![Command::UpdateAgentSession {
+            id: other_failed.clone(),
+            changes: vec![
+                AgentSessionChange::State(SessionState::Failed),
+                AgentSessionChange::Summary(Some("Rate limit reached".into())),
+            ],
+        }])
+        .unwrap();
+    let client = connect(TaskServer::new(f.store, None).unwrap()).await;
+
+    let all: Value = serde_json::from_str(
+        &ok(&client, "list_agent_sessions", json!({ "state": "failed" })).await,
+    )
+    .unwrap();
+    assert_eq!(all["sessions"].as_array().unwrap().len(), 2);
+    assert!(all["sessions"].to_string().contains("First attempt failed"));
+    assert!(all["sessions"].to_string().contains("Rate limit reached"));
+
+    let latest: Value = serde_json::from_str(
+        &ok(
+            &client,
+            "list_agent_sessions",
+            json!({ "state": "failed", "latest_only": true }),
+        )
+        .await,
+    )
+    .unwrap();
+    assert_eq!(latest["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(latest["sessions"][0]["session_id"], other_failed);
+    assert_eq!(latest["sessions"][0]["task_title"], "Pay the rent");
+    assert_eq!(latest["sessions"][0]["summary"], "Rate limit reached");
+    assert!(latest["sessions"][0]["started_at_ms"].is_number());
+
+    let task_runs: Value = serde_json::from_str(
+        &ok(
+            &client,
+            "list_agent_sessions",
+            json!({ "task_id": f.task, "project_id": f.project }),
+        )
+        .await,
+    )
+    .unwrap();
+    assert_eq!(task_runs["sessions"].as_array().unwrap().len(), 2);
+    assert_eq!(task_runs["sessions"][0]["session_id"], newer);
+    let no_project: Value = serde_json::from_str(
+        &ok(
+            &client,
+            "list_agent_sessions",
+            json!({ "project_id": new_id() }),
+        )
+        .await,
+    )
+    .unwrap();
+    assert!(no_project["sessions"].as_array().unwrap().is_empty());
+
+    let first: Value = serde_json::from_str(
+        &ok(
+            &client,
+            "list_agent_sessions",
+            json!({ "state": "failed", "limit": 1 }),
+        )
+        .await,
+    )
+    .unwrap();
+    let cursor = first["next_cursor"].as_str().unwrap();
+    let second: Value = serde_json::from_str(
+        &ok(
+            &client,
+            "list_agent_sessions",
+            json!({ "state": "failed", "limit": 1, "cursor": cursor }),
+        )
+        .await,
+    )
+    .unwrap();
+    assert_ne!(
+        first["sessions"][0]["session_id"],
+        second["sessions"][0]["session_id"]
+    );
+    assert!(second["next_cursor"].is_null());
+    refused(&client, "list_agent_sessions", json!({ "state": "broken" })).await;
+    refused(
+        &client,
+        "list_agent_sessions",
+        json!({ "cursor": new_id() }),
+    )
+    .await;
     client.cancel().await.unwrap();
 }
 

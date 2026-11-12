@@ -16,6 +16,7 @@ import {
   segmentsOn,
   shiftPeriod,
   startOfWeek,
+  viewRange,
   visibleDays,
 } from "./calendar";
 
@@ -42,6 +43,11 @@ describe("dates", () => {
       "2026-11-08",
     ]);
     expect(visibleDays("day", "2026-11-05")).toEqual(["2026-11-05"]);
+    expect(visibleDays("three_day", "2026-10-31")).toEqual([
+      "2026-10-31",
+      "2026-11-01",
+      "2026-11-02",
+    ]);
   });
 
   it("covers a month with whole weeks", () => {
@@ -55,9 +61,17 @@ describe("dates", () => {
 
   it("moves by a period", () => {
     expect(shiftPeriod("day", "2026-11-05", 1)).toBe("2026-11-06");
+    expect(shiftPeriod("three_day", "2026-11-05", 1)).toBe("2026-11-08");
+    expect(shiftPeriod("three_day", "2026-11-05", -1)).toBe("2026-11-02");
     expect(shiftPeriod("week", "2026-11-05", -1)).toBe("2026-10-29");
     expect(shiftPeriod("month", "2026-01-31", 1)).toBe("2026-02-01");
     expect(shiftPeriod("month", "2026-01-15", -1)).toBe("2025-12-01");
+  });
+
+  it("requests events for all three visible days", () => {
+    const range = viewRange("three_day", "2026-10-31");
+    expect(range.from_date).toBe("2026-10-31");
+    expect(range.to_date).toBe("2026-11-03");
   });
 
   it("converts between times and minutes of the day", () => {
