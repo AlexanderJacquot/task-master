@@ -78,15 +78,65 @@ function Preview({ row, url }: { row: FileRow; url: string | null }) {
   );
 }
 
+/** The large preview beside the list (wide windows): the hovered row, else the clicked one. */
+function PreviewPane({ row, url }: { row: FileRow | null; url: string | null }) {
+  const [broken, setBroken] = useState(false);
+  const hash = row?.hash;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when another file shows
+  useEffect(() => setBroken(false), [hash]);
+  const first = row?.attachments[0];
+  const image = row && first && url && isImage(first) && row.onDevice && !broken;
+  return (
+    <aside
+      aria-label="File preview"
+      className="absolute inset-y-0 left-full ml-4 hidden w-72 xl:block"
+    >
+      <div className="sticky top-4 flex flex-col gap-2 rounded-lg border border-line p-3 text-sm">
+        {row ? (
+          <>
+            {image ? (
+              <img
+                src={url}
+                alt={row.name}
+                onError={() => setBroken(true)}
+                className="max-h-72 w-full rounded-md bg-hover object-contain"
+              />
+            ) : (
+              <div className="flex h-40 items-center justify-center rounded-md bg-hover text-ink-3">
+                <Preview row={row} url={null} />
+              </div>
+            )}
+            <span className="break-all">{row.name}</span>
+            <span className="text-xs text-ink-3">
+              {[first?.mime, formatSize(row.size)].filter(Boolean).join(" · ")}
+            </span>
+            {!image && first && isImage(first) && (
+              <span className="text-xs text-ink-3">Preview unavailable on this device.</span>
+            )}
+          </>
+        ) : (
+          <span className="text-xs text-ink-3">Hover or click a file to preview it.</span>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 function FileLine({
   row,
   url,
   checked,
   onToggle,
   onOpenTask,
+  onHover,
+  onPin,
+  active,
 }: {
   row: FileRow;
   url: string | null;
+  onHover: (hash: string | null) => void;
+  onPin: (hash: string) => void;
+  active: boolean;
   checked: boolean;
   onToggle: () => void;
   onOpenTask: (id: string) => void;
@@ -100,7 +150,17 @@ function FileLine({
           ? "Not downloaded"
           : null;
   return (
-    <div className="flex h-full items-center gap-3 border-b border-line px-2 text-sm">
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the preview also follows hover
+    // biome-ignore lint/a11y/noStaticElementInteractions: same
+    <div
+      className={cx(
+        "flex h-full items-center gap-3 border-b border-line px-2 text-sm",
+        active && "bg-hover",
+      )}
+      onMouseEnter={() => onHover(row.hash)}
+      onMouseLeave={() => onHover(null)}
+      onClick={() => onPin(row.hash)}
+    >
       <Checkbox checked={checked} onChange={onToggle} label={`Select ${row.name}`} />
       <Preview row={row} url={url} />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -152,6 +212,8 @@ export function FilesSettings() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [confirm, setConfirm] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(
@@ -188,6 +250,8 @@ export function FilesSettings() {
   );
   const totals = useMemo(() => fileTotals(rows, server), [rows, server]);
   const byHash = useMemo(() => new Map(rows.map((r) => [r.hash, r])), [rows]);
+  const previewRow = byHash.get(hovered ?? pinned ?? "") ?? null;
+  const previewAttachment = previewRow?.attachments[0];
   const picked = [...selected].flatMap((h) => byHash.get(h) ?? []);
   const allShown = shown.length > 0 && shown.every((r) => selected.has(r.hash));
 
@@ -242,6 +306,10 @@ export function FilesSettings() {
 
   return (
     <>
+      <PreviewPane
+        row={previewRow}
+        url={previewAttachment ? (filesApi?.url(previewAttachment.id) ?? null) : null}
+      />
       <Section
         title="Storage"
         hint="Attached files are stored once each on every device and on the sync server. Backups keep their own copy, so a deleted file can still be recovered from a backup."
@@ -362,6 +430,9 @@ export function FilesSettings() {
                       url={
                         row.attachments[0] ? (filesApi?.url(row.attachments[0].id) ?? null) : null
                       }
+                      active={row.hash === previewRow?.hash}
+                      onHover={setHovered}
+                      onPin={setPinned}
                       checked={selected.has(row.hash)}
                       onToggle={() => toggle(row.hash)}
                       onOpenTask={(taskId) =>

@@ -762,7 +762,7 @@ export function SettingsPage() {
         </nav>
         {/* Keyed so a new category starts scrolled to its top. */}
         <div key={current.id} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="max-w-3xl px-10 pb-10 md:pl-6">{current.render()}</div>
+          <div className="relative max-w-3xl px-10 pb-10 md:pl-6">{current.render()}</div>
         </div>
       </div>
     </div>
