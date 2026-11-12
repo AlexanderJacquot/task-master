@@ -87,11 +87,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            0.17.0 was tagged but never published (a format check stopped its build); 0.17.1 is the same release. Settings → Files lists attached files on this device and the sync server, with cleanup of unused files and permanent delete. The Agents page shows your Claude plan usage (5-hour and weekly windows) and groups recent sessions by day, with each task's project and epic. Calendar: a 3-day range, and the tray filter picks several projects, epics and statuses. Reset view in list and board. Drag a multi-selection of cards on the board. Lineage lanes by epic show only epics with cards in view. MCP: list_agent_sessions filters by state, task and project and pages its results.
+            Several timers can run at once, one per task. Project pages show the git release and branch of the project folder. Quick capture: Ctrl+Enter saves and closes the expanded editor. Task detail: copy the task id. Settings → Files shows image thumbnails and file-type icons. Sync now and Back up now show a spinner while they work. Lineage: more room for the canvas.
 
-            No database change (schema 14): syncs with 0.16.1. Update the sync server to manage its files in Settings → Files. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.17.1.
+            No database change (schema 14): syncs with 0.17.1 desktops and servers. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.18.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.17.1/docs/releases/0.17.1.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.18.0/docs/releases/0.18.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

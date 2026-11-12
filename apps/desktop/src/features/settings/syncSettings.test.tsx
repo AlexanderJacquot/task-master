@@ -208,7 +208,7 @@ describe("sync settings", () => {
     expect(screen.getByText(/2 changes waiting/)).toBeTruthy();
 
     act(() => sync.push({ syncing: true }));
-    expect(await screen.findByText("Syncing…")).toBeTruthy();
+    expect(await screen.findByText("Syncing…", { selector: "[role=status]" })).toBeTruthy();
     act(() =>
       sync.push({
         syncing: false,

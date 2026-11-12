@@ -8,8 +8,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FilesOverview_Serialize } from "../../bindings";
-import { Button, Checkbox, cx, Select } from "../../components/ui";
 import { FileIcon, FileTextIcon } from "../../components/TaskIcons";
+import { Button, Checkbox, cx, Select } from "../../components/ui";
 import { formatSize, isImage } from "../../lib/attachments";
 import { isoDate } from "../../lib/dates";
 import {
@@ -359,7 +359,9 @@ export function FilesSettings() {
                   >
                     <FileLine
                       row={row}
-                      url={row.attachments[0] ? (filesApi?.url(row.attachments[0].id) ?? null) : null}
+                      url={
+                        row.attachments[0] ? (filesApi?.url(row.attachments[0].id) ?? null) : null
+                      }
                       checked={selected.has(row.hash)}
                       onToggle={() => toggle(row.hash)}
                       onOpenTask={(taskId) =>

@@ -4,6 +4,17 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.18.0** (2026-11-12, on `release/0.18.0`, then `main`; notes
+`docs/releases/0.18.0.md`): integrates the uncommitted worktree work: several timers at once
+(`worktree-multi-timers`), project folder git detection (`worktree-git-folder-detection`),
+quick capture Ctrl+Enter (`worktree-capture-ctrl-enter`), Copy task id
+(`worktree-task-copy-id`), Files page thumbnails (`worktree-files-preview`), tighter Lineage
+header (`worktree-lineage-canvas-space`), and busy spinners on Sync now / Back up now. The
+sync settings test now queries the status line ("Syncing…" also labels the button). No
+schema change (14). `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets
+-- -D warnings`, `cargo test --workspace --locked`, `pnpm biome check .`, `pnpm typecheck`,
+`pnpm test` (500 passed, 2 skipped) pass on the integrated branch. Not tried in the app.
+
 **Project folder: git repository detection** (2026-11-12, worktree branch
 `worktree-git-folder-detection`, ADR 017 amended): shell command `project_git` reads the
 project folder with the system's git where agents run (native or WSL): repository root,

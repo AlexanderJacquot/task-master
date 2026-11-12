@@ -73,7 +73,6 @@ export function TaskTimer({ task }: { task: Task }) {
   );
 }
 
-
 /**
  * The running timers in the sidebar, on every page: one row per timer (opens its task) with
  * Stop. Nothing when no timer runs.
