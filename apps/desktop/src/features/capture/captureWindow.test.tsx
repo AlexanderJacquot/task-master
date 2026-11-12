@@ -139,6 +139,32 @@ describe("the quick-capture window", () => {
     expect(screen.queryByRole("region", { name: "Description" })).toBeNull();
   });
 
+  it("saves the field being edited and closes on Ctrl+Enter", async () => {
+    const { fake, executed, input, store } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Draft title" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    const title = await screen.findByRole("textbox", { name: "Title" });
+
+    title.focus();
+    fireEvent.change(title, { target: { value: "Final title" } });
+    // Captured before any field sees it, so the description editor adds no line.
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      title.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    await waitFor(() => expect(fake.calls).toEqual(["expand", "hide"]));
+    expect(executed.length).toBe(2);
+    expect(Object.values(store.getState().tasks).some((t) => t.title === "Final title")).toBe(true);
+    await screen.findByRole("textbox", { name: "New task" });
+  });
+
   it("deletes the expanded task and closes the popup", async () => {
     const { fake, executed, input, store } = await renderWindow();
     fireEvent.change(input, { target: { value: "Unwanted task" } });

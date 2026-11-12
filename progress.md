@@ -118,6 +118,14 @@ carries the group. Tests: `lib/board.test.ts`, `store/board.test.ts` ("moveCards
 drag at all, so this is board only. **Not run yet**: no pnpm/tsc/vitest/biome in the agent
 session (approval needed); not tried in the app.
 
+**Quick capture: Ctrl+Enter saves and closes the expanded editor** (2026-11-12, branch
+`worktree-capture-ctrl-enter`): in the editor Shift+Enter opens, Ctrl+Enter (or Cmd+Enter)
+blurs the focused field (fields save on blur, so the text being typed is committed) and
+hides the window. The listener runs in the capture phase so CodeMirror's own Mod-Enter
+(insert blank line) never sees it. Header hint updated. Test in
+`features/capture/captureWindow.test.tsx`. **Not run yet**: no pnpm/vitest/biome in the
+agent session (approval needed); not tried in the app.
+
 **Release 0.16.1** (2026-11-12, on `release/0.16.1`, then `main`; notes `docs/releases/0.16.1.md`): the 0.16.0 release build never ran
 (its `release` workflow failed at the Rust format check, which the integration had not run),
 so 0.16.0 has no installers or update. 0.16.1 formats the 0.16.0 merges and adds:
