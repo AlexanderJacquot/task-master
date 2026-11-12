@@ -574,7 +574,7 @@ export function LineagePage({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-line px-6 py-5">
+      <header className="border-b border-line px-6 py-3">
         <div className="flex items-center gap-3">
           <GitBranch size={24} className="shrink-0 text-rubric" />
           {view ? (
@@ -630,7 +630,7 @@ export function LineagePage({
             ? "A saved lineage view: its filters and card layout. Changes stay a draft until you save the view."
             : "Arrange tasks on the canvas. Drag a connector between cards to link a prerequisite to its dependent."}
         </p>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-2 flex flex-wrap items-center gap-3">
           {focus && (
             <span className="flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 py-1 pr-1 pl-3 text-sm text-ink">
               <span className="max-w-64 truncate">Lineage of “{focus.title}”</span>
