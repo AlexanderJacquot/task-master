@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/core", "crates/client", "crates/server", "crates/mcp", "apps/desktop/src-tauri"]
 
 [workspace.package]
-version = "0.17.0"
+version = "0.17.1"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 publish = false

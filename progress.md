@@ -11,7 +11,12 @@ board selection/drag and reset work below were checked together before committin
 (492 frontend tests passed, 2 skipped). Earlier "not run yet" notes below describe
 the individual work sessions and are superseded by this integration check.
 
-**Release 0.17.0** (2026-11-12, on `main`; notes `docs/releases/0.17.0.md`): Files page,
+**Release 0.17.1** (2026-11-12, on `main`; notes `docs/releases/0.17.1.md`): 0.17.0 was
+tagged but its release build stopped at `pnpm biome ci .` (progress.md, edited after the
+local biome run), so it was never published; 0.17.1 is the same release. Run the checks
+after the last edit, `biome ci` included.
+
+**Release 0.17.0** (2026-11-12, tagged, never published; notes `docs/releases/0.17.0.md`): Files page,
 Claude plan usage and sessions by day on the Agents page, MCP session filters, 3-day calendar,
 calendar filter picklists, Reset view, multi-selection drag, Lineage lanes for epics in view.
 No migration (schema 14). Checks before tagging: `cargo fmt --check`, clippy (`-D warnings`,
