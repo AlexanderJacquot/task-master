@@ -119,7 +119,9 @@ are when Claude finishes.
 - The MCP server opens this device's database directly, so what Claude writes appears at
   once, syncs, and is in the task's activity. Its tools: `get_task`, `list_tasks`,
   `list_projects`, `search`, `create_task`, `update_task`, `add_note`,
-  `complete_session`.
+  `complete_session`, `list_agent_sessions`, `get_calendar`, `schedule_block`,
+  `update_block`, `get_lineage`, `link_tasks`, and `create_project` / `create_epic`
+  (these two make the user's own projects and epics, not agent ones; ADR 017).
 - Under WSL, Claude Code runs the Windows `task-master-mcp.exe` through WSL interop, so
   the database stays on the Windows side.
 

@@ -4,6 +4,16 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**MCP: create projects and epics** (2026-11-13, branch `mcp-create-project-epic` from
+`main`, merged to `main`; ADR 017 amended): new tools `create_project` (name, `area_id`,
+color) and `create_epic` (name, `project_id` defaulting to the session task's unless
+`no_project`, description, target date) over the existing core commands. What they create
+is the user's (no owner field); a same-named one in the same place is returned instead of
+a duplicate. An earlier agent session reported this done but its work was never committed
+(task `01a1d524…`). Tests: `creates_projects_in_areas_without_duplicates`,
+`creates_epics_in_the_session_project_by_default` in `crates/mcp/tests/tools.rs`. Not in
+`m17-remote-mcp` yet: merge `main` into it (both touch `crates/mcp/src/lib.rs`).
+
 **Release 0.18.0** (2026-11-12, on `release/0.18.0`, then `main`; notes
 `docs/releases/0.18.0.md`): integrates the uncommitted worktree work: several timers at once
 (`worktree-multi-timers`), project folder git detection (`worktree-git-folder-detection`),

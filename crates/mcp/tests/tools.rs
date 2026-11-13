@@ -152,6 +152,8 @@ async fn lists_its_tools_and_names_the_session_task() {
         [
             "add_note",
             "complete_session",
+            "create_epic",
+            "create_project",
             "create_task",
             "get_calendar",
             "get_lineage",
@@ -166,6 +168,134 @@ async fn lists_its_tools_and_names_the_session_task() {
             "update_task"
         ]
     );
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn creates_projects_in_areas_without_duplicates() {
+    let f = fixture();
+    let server = TaskServer::new(f.store, None).unwrap();
+    let client = connect(server.clone()).await;
+    let area = id_in(&ok(&client, "create_project", json!({ "name": "Work" })).await);
+    let made = ok(
+        &client,
+        "create_project",
+        json!({ "name": "Billing", "area_id": area, "color": "#7a5cff" }),
+    )
+    .await;
+    assert!(
+        made.starts_with("Created project Billing in Work"),
+        "{made}"
+    );
+    let billing = id_in(&made);
+    // Same name, same area, any case: the existing one comes back.
+    let again = ok(
+        &client,
+        "create_project",
+        json!({ "name": " billing ", "area_id": area }),
+    )
+    .await;
+    assert!(again.contains("already exists"), "{again}");
+    assert_eq!(id_in(&again), billing);
+    // The same name elsewhere is another project.
+    let top = id_in(&ok(&client, "create_project", json!({ "name": "Billing" })).await);
+    assert_ne!(top, billing);
+    // One level of nesting only, and the area must exist.
+    refused(
+        &client,
+        "create_project",
+        json!({ "name": "Invoices", "area_id": billing }),
+    )
+    .await;
+    refused(
+        &client,
+        "create_project",
+        json!({ "name": "Invoices", "area_id": new_id() }),
+    )
+    .await;
+    refused(&client, "create_project", json!({ "name": "  " })).await;
+    let listed = ok(&client, "list_projects", json!({})).await;
+    assert!(
+        listed.contains(&format!("Work / Billing (`{billing}`)")),
+        "{listed}"
+    );
+    let stored = server
+        .with_store_for_tests(|s| s.snapshot())
+        .unwrap()
+        .projects
+        .into_iter()
+        .find(|p| p.id == billing)
+        .unwrap();
+    assert_eq!(stored.parent_id.as_deref(), Some(area.as_str()));
+    assert_eq!(stored.color.as_deref(), Some("#7a5cff"));
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn creates_epics_in_the_session_project_by_default() {
+    let f = fixture();
+    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    let client = connect(server.clone()).await;
+    let made = ok(
+        &client,
+        "create_epic",
+        json!({
+            "name": "AI Integration",
+            "description": "Agents can plan work.",
+            "target_date": "2026-12-31",
+        }),
+    )
+    .await;
+    assert!(
+        made.starts_with("Created epic AI Integration in task-master"),
+        "{made}"
+    );
+    let epic = id_in(&made);
+    let again = ok(&client, "create_epic", json!({ "name": "ai integration" })).await;
+    assert!(again.contains("already exists (active"), "{again}");
+    assert_eq!(id_in(&again), epic);
+    // Without a project it is another epic.
+    let loose = ok(
+        &client,
+        "create_epic",
+        json!({ "name": "AI Integration", "no_project": true }),
+    )
+    .await;
+    assert!(
+        loose.starts_with("Created epic AI Integration (`"),
+        "{loose}"
+    );
+    let loose = id_in(&loose);
+    refused(
+        &client,
+        "create_epic",
+        json!({ "name": "Later", "project_id": new_id() }),
+    )
+    .await;
+    refused(
+        &client,
+        "create_epic",
+        json!({ "name": "Later", "target_date": "next week" }),
+    )
+    .await;
+    let epics = server.with_store_for_tests(|s| s.snapshot()).unwrap().epics;
+    let stored = epics.iter().find(|e| e.id == epic).unwrap();
+    assert_eq!(stored.project_id.as_deref(), Some(f.project.as_str()));
+    assert_eq!(stored.description.as_deref(), Some("Agents can plan work."));
+    assert_eq!(stored.target_date.as_deref(), Some("2026-12-31"));
+    assert_eq!(
+        epics.iter().find(|e| e.id == loose).unwrap().project_id,
+        None
+    );
+    // Tasks can go in it straight away.
+    let task = ok(
+        &client,
+        "create_task",
+        json!({ "title": "Wire the tool", "epic_id": epic }),
+    )
+    .await;
+    let listed = ok(&client, "list_tasks", json!({ "epic_id": epic })).await;
+    assert!(listed.contains(&id_in(&task)), "{listed}");
     client.cancel().await.unwrap();
 }
 
