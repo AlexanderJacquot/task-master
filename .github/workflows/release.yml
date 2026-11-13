@@ -87,11 +87,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            New app icon: a eucalyptus zen stone stack, for the window, taskbar, installers and the in-app logo. Also an App logo option in the asset lab.
+            Agents can edit your own tasks through the MCP tools (title, description, priority, prerequisites, status), without closing the task they were sent. Settings → Agents → Let agents edit my tasks turns it off.
 
-            No database change (schema 14): syncs with 0.17.1 desktops and servers. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.20.1.
+            No database change (schema 14): syncs with 0.17.1 desktops and servers. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.21.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.20.1/docs/releases/0.20.1.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.21.0/docs/releases/0.21.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

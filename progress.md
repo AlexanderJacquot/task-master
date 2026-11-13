@@ -5,13 +5,15 @@ Running log for task-master. Read at the start of every session; update at the e
 ## Current milestone
 
 **Release 0.21.0** (2026-11-14, on `main`; notes `docs/releases/0.21.0.md`): agents may
-edit the user's tasks.
+edit the user's tasks. Its `the_users_tasks_are_mostly_off_limits` test still expected the
+old rule (another task of the user's left unchanged); updated and renamed
+`the_users_tasks_can_be_edited_within_limits`.
 
 **MCP: agents edit the user's tasks** (2026-11-14, branch `worktree-mcp-edit-personal-tasks`,
 released in 0.21.0; ADR 017 amended): `update_task` now changes the user's own tasks too
 (title, description, priority, prerequisites, any status), anywhere. Kept: the session's
 task is never marked done by the agent, and the session's subtree is never cancelled.
-Settings → Agents → *Let agents edit my tasks* (`AgentSettings::edit_user_tasks`, default
+Settings → Agents → _Let agents edit my tasks_ (`AgentSettings::edit_user_tasks`, default
 on) turns it off: the app passes `--no-edit-user-tasks` and the old rule applies. The
 remote MCP on the sync server has no setting and allows edits. The work was left
 uncommitted by another session and taken over for the release. Tests:
