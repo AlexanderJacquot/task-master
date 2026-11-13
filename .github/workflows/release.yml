@@ -87,11 +87,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            The sync server can serve the task-master MCP tools to claude.ai and the mobile apps (TM_MCP=on, OAuth through Authelia; docs/mcp.md). New MCP tools create_project and create_epic. Sync routes check the token before reading uploads, so the server can be public.
+            New app icon: a eucalyptus zen stone stack, for the window, taskbar, installers and the in-app logo. Also an App logo option in the asset lab.
 
-            No database change (schema 14): syncs with 0.17.1 desktops and servers. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.20.0.
+            No database change (schema 14): syncs with 0.17.1 desktops and servers. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.20.1.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.20.0/docs/releases/0.20.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.20.1/docs/releases/0.20.1.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

@@ -82,8 +82,10 @@ The app logo is wired into the sidebar, About panel, and web favicon. Tauri's co
 `pack/` holds the painted asset pack as WebP, imported by
 `scripts/asset-pack/import.sh <task-master-png-assets.zip>`. In development the asset lab
 (Ctrl+Alt+A) switches them around the UI; releases ship each slot's `initial` choice from
-`src/lib/ornaments.ts`. The native app icon is `app-linux-purple`
-(`scripts/asset-pack/set-app-icon.sh <variant>`); the in-app logo is `app-banner`.
+`src/lib/ornaments.ts`. The native app icon and the in-app logo are `app-zen-stones`
+(since 0.20.1; `scripts/asset-pack/set-app-icon.sh <variant>` sets the native one). It is
+not in the zip: its trimmed source is `scripts/asset-pack/extra/app-icons/`, which
+`import.sh` includes.
 
 ## Parchment textures
 

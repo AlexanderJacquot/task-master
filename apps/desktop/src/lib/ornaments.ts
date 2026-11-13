@@ -23,7 +23,7 @@ const ALL_FILES: Record<string, string> = import.meta.env.DEV
 /** Release: only the assets the slots' `initial` choices use. Keep in step with SLOTS. */
 const RELEASE_FILES = import.meta.glob(
   [
-    "../assets/pack/app-icons/app-banner.webp",
+    "../assets/pack/app-icons/app-zen-stones.webp",
     "../assets/pack/decorations/divider.webp",
     "../assets/pack/wax-seals/seal-full.webp",
   ],
@@ -60,7 +60,7 @@ export const SLOTS = {
     label: "App logo",
     hint: "Sidebar, collapsed rail, About and the window favicon.",
     options: ["builtin", ...inFolder("app-icons")],
-    initial: "app-icons/app-banner",
+    initial: "app-icons/app-zen-stones",
   },
   wordmark: {
     label: "Sidebar title",

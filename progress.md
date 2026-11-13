@@ -4,6 +4,14 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.20.1** (2026-11-13, branch `zen-stones-icon`, then `main`; notes
+`docs/releases/0.20.1.md`): new app icon, a eucalyptus zen stone stack, as the native icon
+(`src-tauri/icons`, `app-icon.png`, via `scripts/generate-app-icons.mjs` from a 1024 px
+source with ~6% margin) and the in-app logo (`app-icons/app-zen-stones`, the `logo`
+slot's `initial`, in RELEASE_FILES). Its trimmed source is
+`scripts/asset-pack/extra/app-icons/app-zen-stones.png`; `import.sh` now includes that
+folder so re-importing the zip keeps it. ADR 019 amended. Not tried in the app.
+
 **Release 0.20.0** (2026-11-13, on `release/0.20.0`, then `main`; notes
 `docs/releases/0.20.0.md`): M17 remote MCP and safe public sync (PR #5) and the
 `create_project` / `create_epic` MCP tools. The iPhone branches (`p0-phone-core`,

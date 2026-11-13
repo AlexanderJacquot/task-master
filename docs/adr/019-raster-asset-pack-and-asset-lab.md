@@ -36,6 +36,12 @@ assets:generate` no longer reverts it to the vector logo. Shipped: `app-linux-pu
 the native icon, `app-banner` as the in-app logo and favicon, the divider under page
 titles and the full wax seal on empty pages.
 
+**2026-11-13 (0.20.1):** the native icon and the in-app logo are now `app-zen-stones`, a
+eucalyptus stone stack added outside the zip (`scripts/asset-pack/extra/app-icons/`,
+which `import.sh` includes so a re-import keeps it). The native icon has a small margin
+around the stones; the pack WebP is trimmed like the others. The clean theme keeps its
+own vector mark.
+
 ## Consequences
 
 - Changing a shipped choice means editing both the slot's `initial` and `RELEASE_FILES`.
