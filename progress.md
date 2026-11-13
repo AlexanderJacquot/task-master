@@ -1963,6 +1963,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- Scribe (meetings, docs/meetings-plan.md, ADR 025/026): planned as M18–M21, not
+  started. After it: a synced contacts list replacing free-text participant names
+  (task `01a1d747…`), live captions, Linux capture, voice profiles.
 - Git, on top of `project_git` (ADR 017): record the release (tag + commits, commit,
   branch) an agent session started and ended on, as new `agent_sessions` columns (a
   migration, synced); stamp a task with the release it was finished on; a "create PR"
