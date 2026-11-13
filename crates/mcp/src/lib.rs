@@ -37,6 +37,9 @@ const DEFAULT_LIST: u32 = 50;
 
 type ToolResult = Result<String, String>;
 
+/// Called after every successful write (the sync server announces the new ops).
+pub type WriteHook = Arc<dyn Fn() + Send + Sync>;
+
 /// The MCP server: one store, and the session it serves (if any).
 #[derive(Clone)]
 pub struct TaskServer {
@@ -44,6 +47,7 @@ pub struct TaskServer {
     session: Option<AgentSession>,
     /// Where the session's task goes when the agent reports it done (Settings → Agents).
     workflow: AgentWorkflow,
+    on_write: Option<WriteHook>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -63,8 +67,27 @@ impl TaskServer {
             store: Arc::new(Mutex::new(store)),
             session,
             workflow: AgentWorkflow::default(),
+            on_write: None,
             tool_router: Self::tool_router(),
         })
+    }
+
+    /// Serves a store shared with its owner (the sync server's, ADR 024), without a
+    /// session.
+    pub fn shared(store: Arc<Mutex<Store>>) -> Self {
+        Self {
+            store,
+            session: None,
+            workflow: AgentWorkflow::default(),
+            on_write: None,
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    /// Runs `hook` after every successful write.
+    pub fn with_on_write(mut self, hook: WriteHook) -> Self {
+        self.on_write = Some(hook);
+        self
     }
 
     /// The statuses picked for agent work (the app passes `--done-status`).
@@ -109,7 +132,11 @@ impl TaskServer {
     }
 
     fn write(&self, commands: Vec<Command>) -> Result<taskmaster_core::Changes, String> {
-        self.with_store(|s| s.execute_without_undo(commands))
+        let changes = self.with_store(|s| s.execute_without_undo(commands))?;
+        if let Some(hook) = &self.on_write {
+            hook();
+        }
+        Ok(changes)
     }
 }
 
@@ -1174,7 +1201,7 @@ impl TaskServer {
         let Some(session) = &self.session else {
             // Added to Claude by hand (docs/mcp.md): no task was sent, nothing to report.
             return format!(
-                "task-master is the user's task manager, on this device. Use these tools \
+                "task-master is the user's task manager. Use these tools \
                  when the user talks about their tasks, projects, plans or schedule: \
                  list_tasks, search and get_task read them (ids come from listings), \
                  and list_agent_sessions finds agent runs and failures. \

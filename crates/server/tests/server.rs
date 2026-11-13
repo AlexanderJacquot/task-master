@@ -891,3 +891,349 @@ fn a_purge_made_while_another_device_still_uses_the_file_keeps_it() {
     );
     assert!(holds(&b, &first.hash));
 }
+
+// ---------------------------------------------------------------------------------------
+// Remote MCP (ADR 024)
+
+const MCP_CLIENT: &str = "task-master-claude";
+
+/// An RFC 9068 access token from the fake provider.
+fn access_token(
+    issuer: &str,
+    audience: &str,
+    client_id: &str,
+    groups: &[&str],
+    expires_in: i64,
+    typ: &str,
+) -> String {
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::EdDSA);
+    header.kid = Some("test".into());
+    header.typ = Some(typ.into());
+    let now = now_ms() / 1000;
+    let claims = json!({
+        "iss": issuer, "aud": [audience], "sub": "u-123", "client_id": client_id,
+        "scope": "openid profile groups", "groups": groups, "iat": now, "exp": now + expires_in,
+        "jti": new_id(),
+    });
+    let key = jsonwebtoken::EncodingKey::from_ed_der(TEST_KEY);
+    jsonwebtoken::encode(&header, &claims, &key).unwrap()
+}
+
+struct Answer {
+    status: u16,
+    www_authenticate: Option<String>,
+    body: serde_json::Value,
+}
+
+fn http() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_global(Some(Duration::from_secs(10)))
+        .build()
+        .into()
+}
+
+/// One JSON-RPC request to `/mcp`, as Claude sends it (stateless Streamable HTTP).
+fn mcp(url: &str, token: Option<&str>, method: &str, params: serde_json::Value) -> Answer {
+    let mut request = http()
+        .post(format!("{url}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .header("MCP-Protocol-Version", "2025-06-18");
+    if let Some(token) = token {
+        request = request.header("Authorization", &format!("Bearer {token}"));
+    }
+    let message = json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params });
+    let mut response = request.send(message.to_string()).unwrap();
+    let status = response.status().as_u16();
+    let www_authenticate = response
+        .headers()
+        .get("www-authenticate")
+        .map(|v| v.to_str().unwrap().to_owned());
+    let text = response.body_mut().read_to_string().unwrap();
+    // A JSON body, or server-sent events whose `data:` line holds the answer.
+    let json_text = text
+        .lines()
+        .find_map(|l| l.strip_prefix("data:"))
+        .map_or(text.as_str(), str::trim)
+        .to_owned();
+    Answer {
+        status,
+        www_authenticate,
+        body: serde_json::from_str(&json_text).unwrap_or(serde_json::Value::Null),
+    }
+}
+
+fn initialize(url: &str, token: Option<&str>) -> Answer {
+    mcp(
+        url,
+        token,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": { "name": "test", "version": "1" }
+        }),
+    )
+}
+
+/// An OIDC server with the MCP endpoint on; returns its URL, state and the issuer. The
+/// public URL is the local one, so the resource is `<url>/mcp`.
+fn mcp_server(groups: &[&str]) -> (String, Arc<AppState>, String) {
+    let issuer = fake_provider();
+    let dir = temp_dir("mcp");
+    let store = Store::open(dir.join("tasks.sqlite")).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let state = AppState::new(
+        Config {
+            data_dir: dir,
+            auth: AuthMode::Oidc,
+            oidc_issuer: Some(issuer.clone()),
+            oidc_allowed_groups: groups.iter().map(|g| (*g).to_owned()).collect(),
+            public_url: Some(url.clone()),
+            mcp: true,
+            ..Config::default()
+        },
+        store,
+        Tokens::open_in_memory().unwrap(),
+    );
+    let app = router(state.clone());
+    let addr = url.trim_start_matches("http://").to_owned();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+            tx.send(()).unwrap();
+            axum::serve(listener, app).await.unwrap();
+        });
+    });
+    rx.recv().unwrap();
+    (url, state, issuer)
+}
+
+#[test]
+fn mcp_without_a_token_points_claude_to_the_sign_in() {
+    let (url, _, issuer) = mcp_server(&[]);
+    let answer = initialize(&url, None);
+    assert_eq!(answer.status, 401);
+    let metadata_url = format!("{url}/.well-known/oauth-protected-resource/mcp");
+    assert_eq!(
+        answer.www_authenticate.as_deref(),
+        Some(format!(r#"Bearer resource_metadata="{metadata_url}""#).as_str())
+    );
+
+    for path in [
+        metadata_url,
+        format!("{url}/.well-known/oauth-protected-resource"),
+    ] {
+        let metadata: serde_json::Value = serde_json::from_str(
+            &http()
+                .get(&path)
+                .call()
+                .unwrap()
+                .body_mut()
+                .read_to_string()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(metadata["resource"], format!("{url}/mcp"));
+        assert_eq!(metadata["authorization_servers"], json!([issuer]));
+    }
+}
+
+#[test]
+fn mcp_with_an_access_token_reads_and_writes_tasks_that_sync() {
+    let (url, state, issuer) = mcp_server(&["family"]);
+    let token = access_token(
+        &issuer,
+        &format!("{url}/mcp"),
+        MCP_CLIENT,
+        &["family"],
+        300,
+        "at+jwt",
+    );
+
+    let answer = initialize(&url, Some(&token));
+    assert_eq!(answer.status, 200, "{}", answer.body);
+    assert_eq!(answer.body["result"]["serverInfo"]["name"], "task-master");
+
+    let tools = mcp(&url, Some(&token), "tools/list", json!({}));
+    let names: Vec<&str> = tools.body["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"create_task") && names.contains(&"list_tasks"),
+        "{names:?}"
+    );
+
+    // A desktop watching for changes hears about the MCP write.
+    let watcher = Client::new(&url, Some(state.tokens.add("laptop", Scope::Sync).unwrap()));
+    let (heads_tx, heads_rx) = std::sync::mpsc::channel();
+    let watching = watcher.clone();
+    std::thread::spawn(move || {
+        let _ = watching.watch(|head| heads_tx.send(head).is_ok());
+    });
+    assert_eq!(heads_rx.recv_timeout(Duration::from_secs(5)).unwrap(), 0);
+
+    let created = mcp(
+        &url,
+        Some(&token),
+        "tools/call",
+        json!({ "name": "create_task", "arguments": { "title": "from my phone" } }),
+    );
+    assert_eq!(created.status, 200);
+    assert_ne!(
+        created.body["result"]["isError"],
+        json!(true),
+        "{}",
+        created.body
+    );
+    assert!(heads_rx.recv_timeout(Duration::from_secs(5)).unwrap() > 0);
+
+    // The desktop pulls it.
+    let laptop = device();
+    sync(&watcher, &laptop).unwrap();
+    assert!(titles(&laptop).contains(&"from my phone".to_owned()));
+}
+
+#[test]
+fn mcp_refuses_tokens_that_are_not_ours() {
+    let (url, _, issuer) = mcp_server(&["family"]);
+    let resource = format!("{url}/mcp");
+    let id = |aud: &str| id_token(&issuer, aud, &["family"], 300);
+    for (token, why) in [
+        // An ID token, even for the right audience: wrong `typ`.
+        (id(&resource), "an ID token"),
+        (id("task-master"), "the desktop's ID token"),
+        (
+            access_token(
+                &issuer,
+                "https://other.example/mcp",
+                MCP_CLIENT,
+                &["family"],
+                300,
+                "at+jwt",
+            ),
+            "audience",
+        ),
+        (
+            access_token(
+                &issuer,
+                &resource,
+                "some-other-app",
+                &["family"],
+                300,
+                "at+jwt",
+            ),
+            "client",
+        ),
+        (
+            access_token(
+                &issuer,
+                &resource,
+                MCP_CLIENT,
+                &["family"],
+                -3_600,
+                "at+jwt",
+            ),
+            "expired",
+        ),
+        (
+            access_token(&issuer, &resource, MCP_CLIENT, &["guests"], 300, "at+jwt"),
+            "group",
+        ),
+        (
+            access_token(
+                "https://evil.example",
+                &resource,
+                MCP_CLIENT,
+                &["family"],
+                300,
+                "at+jwt",
+            ),
+            "issuer",
+        ),
+        ("tm_not_a_token".into(), "unknown server token"),
+        ("garbage".into(), "not a JWT"),
+    ] {
+        let answer = initialize(&url, Some(&token));
+        assert_eq!(answer.status, 401, "{why}: {}", answer.body);
+        let header = answer.www_authenticate.unwrap_or_default();
+        assert!(
+            header.contains("resource_metadata=") && header.contains(r#"error="invalid_token""#),
+            "{why}: {header}"
+        );
+    }
+    let mut forged = access_token(&issuer, &resource, MCP_CLIENT, &["family"], 300, "at+jwt");
+    forged.replace_range(forged.len() - 4.., "AAAA");
+    assert_eq!(
+        initialize(&url, Some(&forged)).status,
+        401,
+        "a bad signature"
+    );
+}
+
+#[test]
+fn mcp_takes_server_tokens_with_api_write_only() {
+    let (url, state, _) = mcp_server(&[]);
+    let write = state.tokens.add("claude-code", Scope::ApiWrite).unwrap();
+    assert_eq!(initialize(&url, Some(&write)).status, 200);
+    for scope in [Scope::Sync, Scope::ApiRead] {
+        let token = state.tokens.add(scope.as_str(), scope).unwrap();
+        let answer = initialize(&url, Some(&token));
+        assert_eq!(answer.status, 403, "{scope:?}");
+        assert!(
+            answer
+                .www_authenticate
+                .unwrap()
+                .contains("insufficient_scope")
+        );
+    }
+}
+
+#[test]
+fn mcp_is_off_unless_asked_for() {
+    let (url, _) = server(Config {
+        auth: AuthMode::Token,
+        ..Config::default()
+    });
+    assert_eq!(initialize(&url, None).status, 404);
+    let status = http()
+        .get(format!("{url}/.well-known/oauth-protected-resource"))
+        .call()
+        .unwrap()
+        .status();
+    assert_eq!(status.as_u16(), 404);
+}
+
+#[test]
+fn an_anonymous_upload_is_refused_before_its_body_is_read() {
+    let (url, _) = server(Config {
+        auth: AuthMode::Token,
+        ..Config::default()
+    });
+    // 8 MB, announced up front: refused at once by the token check, not after a full
+    // read (the body limit is 64 MB) or a JSON error.
+    let body = vec![b'x'; 8 * 1024 * 1024];
+    for (method, path) in [
+        ("POST", "/sync/push"),
+        ("PUT", &*format!("/blobs/{}", "a".repeat(64))),
+    ] {
+        let request = match method {
+            "POST" => http().post(format!("{url}{path}")),
+            _ => http().put(format!("{url}{path}")),
+        }
+        .header("Content-Type", "application/json");
+        let status = request.send(&body[..]).map(|r| r.status().as_u16());
+        // Either the 401 arrives, or the server closes the connection before reading it all.
+        assert!(
+            matches!(status, Ok(401) | Err(_)),
+            "{method} {path}: {status:?}"
+        );
+    }
+}
