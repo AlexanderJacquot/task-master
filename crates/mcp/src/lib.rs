@@ -6,8 +6,8 @@
 //! history.
 //!
 //! Rules: tasks an agent creates are `owner = agent`. An agent may change its own tasks
-//! freely, but of the user's tasks only the status, and only of the session's task and its
-//! subtasks. Notes and the session summary need a session. Projects and epics have no
+//! freely, and the user's tasks too (title, description, priority, prerequisites, status),
+//! except that the session's task is never closed or cancelled by the agent. Notes and the session summary need a session. Projects and epics have no
 //! owner: those an agent creates are the user's, so creating one returns an existing one
 //! of the same name in the same place instead of a duplicate.
 
@@ -47,6 +47,9 @@ pub struct TaskServer {
     session: Option<AgentSession>,
     /// Where the session's task goes when the agent reports it done (Settings → Agents).
     workflow: AgentWorkflow,
+    /// May the agent edit the user's own tasks (Settings → Agents)? When off, only the
+    /// status of the session's task and its subtasks can change.
+    edit_user_tasks: bool,
     on_write: Option<WriteHook>,
     tool_router: ToolRouter<Self>,
 }
@@ -67,6 +70,7 @@ impl TaskServer {
             store: Arc::new(Mutex::new(store)),
             session,
             workflow: AgentWorkflow::default(),
+            edit_user_tasks: true,
             on_write: None,
             tool_router: Self::tool_router(),
         })
@@ -79,6 +83,7 @@ impl TaskServer {
             store,
             session: None,
             workflow: AgentWorkflow::default(),
+            edit_user_tasks: true,
             on_write: None,
             tool_router: Self::tool_router(),
         }
@@ -93,6 +98,13 @@ impl TaskServer {
     /// The statuses picked for agent work (the app passes `--done-status`).
     pub fn with_workflow(mut self, workflow: AgentWorkflow) -> Self {
         self.workflow = workflow;
+        self
+    }
+
+    /// Whether the user's own tasks can be edited (on by default; the app passes
+    /// `--no-edit-user-tasks` when Settings → Agents turns it off).
+    pub fn with_edit_user_tasks(mut self, on: bool) -> Self {
+        self.edit_user_tasks = on;
         self
     }
 
@@ -269,19 +281,18 @@ pub struct UpdateTask {
     /// A status name, or a category: backlog, todo, in_progress, done, cancelled.
     #[serde(default)]
     pub status: Option<String>,
-    /// Agent tasks only.
     #[serde(default)]
     pub title: Option<String>,
-    /// Replaces the description. Agent tasks only.
+    /// Replaces the description.
     #[serde(default)]
     pub description: Option<String>,
-    /// Added at the end of the description, on a new paragraph. Agent tasks only.
+    /// Added at the end of the description, on a new paragraph.
     #[serde(default)]
     pub append_description: Option<String>,
-    /// urgent, high, normal or low. Agent tasks only.
+    /// urgent, high, normal or low.
     #[serde(default)]
     pub priority: Option<String>,
-    /// Replaces the prerequisites (task ids). Agent tasks only.
+    /// Replaces the prerequisites (task ids).
     #[serde(default)]
     pub depends_on: Option<Vec<String>>,
 }
@@ -770,8 +781,10 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Change a task. Agent tasks: any field. The user's tasks: only the \
-                       status, and only of the session's task and its subtasks."
+        description = "Change a task, the user's own or an agent's: status, title, \
+                       description, priority, prerequisites. In a session, the session's task \
+                       cannot be marked done or cancelled (complete_session reports it) and \
+                       its subtasks cannot be cancelled."
     )]
     pub fn update_task(&self, Parameters(p): Parameters<UpdateTask>) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;
@@ -781,19 +794,24 @@ impl TaskServer {
             .find(|t| t.id == p.task_id)
             .ok_or_else(|| format!("task {} not found", p.task_id))?;
         let own = task.owner == TaskOwner::Agent;
-        let user_fields = p.title.is_some()
-            || p.description.is_some()
-            || p.append_description.is_some()
-            || p.priority.is_some()
-            || p.depends_on.is_some();
-        if !own {
+        if !own && !self.edit_user_tasks {
+            let user_fields = p.title.is_some()
+                || p.description.is_some()
+                || p.append_description.is_some()
+                || p.priority.is_some()
+                || p.depends_on.is_some();
             if user_fields {
-                return Err("this is the user's task: only its status can be changed".into());
+                return Err(
+                    "this is the user's task: editing the user's tasks is turned off \
+                            (Settings → Agents); only its status can be changed"
+                        .into(),
+                );
             }
             if !self.in_session_scope(&snapshot, task) {
                 return Err(
-                    "this is the user's task, outside this session: it cannot be \
-                            changed; add a note or an agent task instead"
+                    "this is the user's task, outside this session: editing the \
+                            user's tasks is turned off (Settings → Agents); add a note or an \
+                            agent task instead"
                         .into(),
                 );
             }
@@ -810,6 +828,7 @@ impl TaskServer {
             // marks them done as it finishes them. The session's task itself goes to the
             // user's review (complete_session), and cancelling stays the user's call.
             let is_session_task = self.session.as_ref().is_some_and(|s| s.task_id == task.id);
+            let in_scope = self.in_session_scope(&snapshot, task);
             match category {
                 Some(StatusCategory::Done) if !own && is_session_task => {
                     return Err(format!(
@@ -818,7 +837,7 @@ impl TaskServer {
                         self.done_status_name()
                     ));
                 }
-                Some(StatusCategory::Cancelled) if !own => {
+                Some(StatusCategory::Cancelled) if !own && in_scope => {
                     return Err(format!(
                         "only the user cancels their tasks; leave it open, list it in \
                          complete_session's left_open and say why in the summary (the task \
@@ -1198,6 +1217,11 @@ impl TaskServer {
         const VIEWS: &str = " get_calendar shows the user's time blocks and events \
                              (schedule_block plans time); get_lineage shows which tasks wait \
                              on which (link_tasks adds a link).";
+        let edit = if self.edit_user_tasks {
+            "You may edit the user's own tasks with update_task when they ask."
+        } else {
+            "The user's own tasks are read-only here; suggest changes instead of making them."
+        };
         let Some(session) = &self.session else {
             // Added to Claude by hand (docs/mcp.md): no task was sent, nothing to report.
             return format!(
@@ -1208,8 +1232,7 @@ impl TaskServer {
                  list_projects gives projects and epics; create_project and create_epic \
                  add them when the user asks (they are the user's at once). Tasks you create are agent tasks: \
                  kept apart from the user's own (they find them on the Agents page and can \
-                 make them theirs), so say so when you create one. The user's own tasks \
-                 are read-only here; suggest changes instead of making them.{VIEWS}"
+                 make them theirs), so say so when you create one. {edit}{VIEWS}"
             );
         };
         let mut text = format!(
@@ -1222,7 +1245,7 @@ impl TaskServer {
              away; complete_session refuses while a subtask is open unless you list it in \
              left_open. The app then moves the task to {} for the user to check: never \
              mark the user's task done yourself. Agent tasks are kept apart from the user's \
-             own; never try to change the user's other tasks.{VIEWS}",
+             own. {edit}{VIEWS}",
             self.done_status_name()
         );
         text.push_str(&format!(

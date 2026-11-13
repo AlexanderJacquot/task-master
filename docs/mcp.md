@@ -80,7 +80,9 @@ What it may do, outside a Send to Claude session:
 - Create **agent tasks**: they stay out of your views, on the **Agents** page, where
   **Make it mine** turns one into your task. It can plan time and add links only for
   those.
-- Your own tasks are read-only. Notes and session summaries need a session.
+- Edit your own tasks (title, description, priority, prerequisites, status), unless
+  Settings → Agents → **Let agents edit my tasks** is off; the remote MCP on the sync
+  server always may. Notes and session summaries need a session.
 
 Writes go through the same commands as the app: they appear in the open app at once,
 are in the task's activity, and sync.

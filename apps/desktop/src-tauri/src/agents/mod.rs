@@ -144,10 +144,19 @@ fn app_rules(task_title: &str, task_id: &str, done_status: &str) -> String {
 
 /// `--mcp-config` content: our server for this session, and the status picked for agent
 /// work done (the server's default, Review, when `None`).
-pub fn mcp_config(server: &str, db: &str, session_id: &str, done_status: Option<&str>) -> String {
+pub fn mcp_config(
+    server: &str,
+    db: &str,
+    session_id: &str,
+    done_status: Option<&str>,
+    edit_user_tasks: bool,
+) -> String {
     let mut args = vec!["--db", db, "--session", session_id];
     if let Some(id) = done_status {
         args.extend(["--done-status", id]);
+    }
+    if !edit_user_tasks {
+        args.push("--no-edit-user-tasks");
     }
     let config = serde_json::json!({
         "mcpServers": {
@@ -279,7 +288,13 @@ fn write_mcp_config(
     let done_status = settings.done_status_id.as_deref();
     std::fs::write(
         &config_file,
-        mcp_config(&server, &db, session_id, done_status),
+        mcp_config(
+            &server,
+            &db,
+            session_id,
+            done_status,
+            settings.edit_user_tasks,
+        ),
     )
     .map_err(|e| format!("cannot write the MCP config: {e}"))?;
     Ok(config_file)
@@ -1963,6 +1978,7 @@ mod tests {
                 &db.display().to_string(),
                 &session.id,
                 None,
+                true,
             ),
         )
         .unwrap();
@@ -2093,7 +2109,8 @@ mod tests {
             "{tail}"
         );
         let picked: serde_json::Value =
-            serde_json::from_str(&mcp_config("tm-mcp", "tm.sqlite", "s1", Some("st1"))).unwrap();
+            serde_json::from_str(&mcp_config("tm-mcp", "tm.sqlite", "s1", Some("st1"), false))
+                .unwrap();
         assert_eq!(
             picked["mcpServers"]["task-master"]["args"],
             serde_json::json!([
@@ -2102,7 +2119,8 @@ mod tests {
                 "--session",
                 "s1",
                 "--done-status",
-                "st1"
+                "st1",
+                "--no-edit-user-tasks"
             ])
         );
         let config: serde_json::Value = serde_json::from_str(&mcp_config(
@@ -2110,6 +2128,7 @@ mod tests {
             r"C:\data\tm.sqlite",
             "s1",
             None,
+            true,
         ))
         .unwrap();
         assert_eq!(
