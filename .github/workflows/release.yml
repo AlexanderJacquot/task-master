@@ -87,11 +87,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Several timers can run at once, one per task. Project pages show the git release and branch of the project folder. Quick capture: Ctrl+Enter saves and closes the expanded editor. Task detail: copy the task id. Settings → Files shows image thumbnails and file-type icons. Sync now and Back up now show a spinner while they work. Lineage: more room for the canvas.
+            The sync server can serve the task-master MCP tools to claude.ai and the mobile apps (TM_MCP=on, OAuth through Authelia; docs/mcp.md). New MCP tools create_project and create_epic. Sync routes check the token before reading uploads, so the server can be public.
 
-            No database change (schema 14): syncs with 0.17.1 desktops and servers. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.18.0.
+            No database change (schema 14): syncs with 0.17.1 desktops and servers. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.20.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.18.0/docs/releases/0.18.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.20.0/docs/releases/0.20.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

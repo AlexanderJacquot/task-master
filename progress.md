@@ -4,6 +4,12 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.20.0** (2026-11-13, on `release/0.20.0`, then `main`; notes
+`docs/releases/0.20.0.md`): M17 remote MCP and safe public sync (PR #5) and the
+`create_project` / `create_epic` MCP tools. The iPhone branches (`p0-phone-core`,
+`p1-ios-walking-skeleton`) stay out. No schema change (14). The release body in
+`release.yml` still carried the 0.18.0 text (0.19.0 shipped with it); rewritten.
+
 **MCP: create projects and epics** (2026-11-13, branch `mcp-create-project-epic` from
 `main`, released in 0.20.0; ADR 017 amended): new tools `create_project` (name, `area_id`,
 color) and `create_epic` (name, `project_id` defaulting to the session task's unless
