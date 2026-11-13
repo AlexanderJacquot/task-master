@@ -46,7 +46,7 @@ task-master:
   domain: tasks.solarnexus.space
   # renovate: datasource=docker depName=ghcr.io/alexanderjacquot/task-master-server
   version: v0.6.0
-  exposure: private        # LAN/VPN, like s3.solarnexus.space
+  exposure: private        # LAN/VPN; `public` works too (ADR 024): every data route needs a token
   port: 8080
   # OIDC, not forward-auth: desktops, the dashboard and MCP send bearer tokens, which
   # Authelia's forward-auth would refuse. The server checks every request itself.
@@ -218,9 +218,11 @@ own provider. Register the same public client as in step 3; its redirect URIs ar
 | `TM_OIDC_ALLOWED_GROUPS` | (empty) | Comma-separated groups allowed to sign in |
 | `TM_BACKUP_S3_*` | (unset: no remote backup) | `ENDPOINT`, `REGION`, `BUCKET`, `ACCESS_KEY_ID`, `SECRET_ACCESS_KEY`, optional `PREFIX` |
 | `TM_BACKUP_KEEP_DAYS` | `30` | Local daily copies kept in `/data/backups` |
+| `TM_MCP` | `off` | `on` serves the remote MCP endpoint `/mcp` for claude.ai and the mobile apps (docs/mcp.md, section 5; ADR 024). With `oidc` it needs `TM_PUBLIC_URL`. |
+| `TM_MCP_OAUTH_CLIENTS` | `task-master-claude` | Comma-separated OAuth clients whose access tokens `/mcp` accepts |
 
 Token scopes: `sync` (desktops; desktops signed in with OIDC get one automatically),
-`api:read`, `api:write`.
+`api:read`, `api:write` (also opens `/mcp`).
 
 ## 6. Connect the desktop (M13)
 

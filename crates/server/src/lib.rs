@@ -8,6 +8,7 @@ pub mod auth;
 pub mod backup;
 pub mod calendar;
 pub mod config;
+pub mod mcp;
 
 use std::convert::Infallible;
 use std::path::PathBuf;
@@ -41,7 +42,8 @@ const MAX_PULL: u32 = 1_000;
 
 pub struct AppState {
     pub config: Config,
-    pub store: Mutex<Store>,
+    /// Shared with the remote MCP tools (ADR 024), which write through the same connection.
+    pub store: Arc<Mutex<Store>>,
     pub tokens: Tokens,
     pub calendar: calendar::Runtime,
     oidc: Option<Oidc>,
@@ -73,7 +75,7 @@ impl AppState {
         let (heads, _) = broadcast::channel(16);
         Arc::new(Self {
             config,
-            store: Mutex::new(store),
+            store: Arc::new(Mutex::new(store)),
             tokens,
             calendar: calendar::Runtime::default(),
             oidc,
@@ -83,6 +85,15 @@ impl AppState {
 
     pub fn store(&self) -> MutexGuard<'_, Store> {
         self.store.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Tells `/events` listeners about new ops written here (not by a push), and wakes the
+    /// calendar runner.
+    pub fn announce(&self) {
+        if let Ok(head) = self.store().last_seq() {
+            let _ = self.heads.send(head);
+        }
+        self.calendar.kick();
     }
 
     pub fn backup_dir(&self) -> PathBuf {
@@ -155,9 +166,9 @@ fn authorize(state: &AppState, headers: &HeaderMap, needed: Scope) -> ApiResult<
 
 pub fn router(state: Arc<AppState>) -> Router {
     let blob_limit = usize::try_from(MAX_ATTACHMENT_BYTES).unwrap_or(usize::MAX) + 1024;
-    Router::new()
-        .route("/health", get(|| async { "ok" }))
-        .route("/info", get(info))
+    // Everything a device does. The token is checked before the body is read, so an
+    // anonymous caller cannot make the server buffer a 64 MB push or an attachment.
+    let sync = Router::new()
         .route(
             "/sync/push",
             post(push).layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
@@ -179,8 +190,30 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/calendar/sync", post(calendar::sync_now))
         .route("/calendar/shown", post(calendar::shown))
         .route("/calendar/events", get(calendar::events))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_sync,
+        ));
+    Router::new()
+        .route("/health", get(|| async { "ok" }))
+        .route("/info", get(info))
         .route("/auth/oidc", post(oidc_exchange))
-        .with_state(state)
+        .merge(sync)
+        .with_state(state.clone())
+        .merge(mcp::routes(state))
+}
+
+/// Refuses a request without a `sync` token before its body is read. The handlers check
+/// again (cheap), so a route moved out of this group stays protected.
+async fn require_sync(
+    State(state): State<Arc<AppState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    match authorize(&state, request.headers(), Scope::Sync) {
+        Ok(()) => next.run(request).await,
+        Err(refusal) => refusal.into_response(),
+    }
 }
 
 fn server_info(state: &AppState) -> ApiResult<ServerInfo> {

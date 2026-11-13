@@ -4,6 +4,25 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**M17 remote MCP** (2026-11-13, branch `m17-remote-mcp`, ADR 024): the sync server serves
+the MCP tools at `POST /mcp` (rmcp Streamable HTTP, stateless, JSON) when `TM_MCP=on`, for
+claude.ai and the mobile apps. `TaskServer::shared` runs on the server's own store
+(`AppState::store` is now `Arc<Mutex<Store>>`); a write hook announces the new head on
+`/events` and kicks the calendar runner. Auth: the server is an OAuth resource server for
+Authelia: 401 + `WWW-Authenticate: Bearer resource_metadata=…`, RFC 9728 metadata at
+`/.well-known/oauth-protected-resource[/mcp]`, `Oidc::verify_access` checks RFC 9068 access
+tokens (`typ: at+jwt`, issuer, audience `<public>/mcp`, expiry, `client_id` in
+`TM_MCP_OAUTH_CLIENTS`, allowed groups); server tokens need `api:write`. Setup:
+docs/mcp.md section 5 (Authelia client, public Traefik router for `/mcp` only). Tests:
+5 end-to-end in `crates/server/tests/server.rs` (challenge and metadata, a tool write that
+syncs to a device and is announced, nine refused tokens, server token scopes, off by
+default), config tests. Not yet tried against real Authelia and claude.ai: check whether
+Claude sends `resource` and Authelia accepts it, the access token's `aud`, refresh token
+lifetime (Authelia default 1 h 30 min idle) and rotation. Homelab changes not made yet.
+Public sync: sync routes now check the token in a `route_layer` before the body is read
+(an anonymous 64 MB push was buffered before); test
+`an_anonymous_upload_is_refused_before_its_body_is_read`.
+
 **Release 0.18.0** (2026-11-12, on `release/0.18.0`, then `main`; notes
 `docs/releases/0.18.0.md`): integrates the uncommitted worktree work: several timers at once
 (`worktree-multi-timers`), project folder git detection (`worktree-git-folder-detection`),
@@ -1916,9 +1935,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
   fixture); a daily spend chart; split a long session's cost across the days it ran.
 
 - MCP for your own Claude (docs/mcp.md, Later): an opt-in flag so Claude creates tasks
-  owned by the user (ADR 017 rule change, decide first); a remote MCP endpoint on the
-  sync server for claude.ai and mobile; the `claude mcp add` line to copy in Settings →
-  Agents; a Claude Code plugin marketplace.
+  owned by the user (ADR 017 rule change, decide first); the `claude mcp add` line to
+  copy in Settings → Agents; a Claude Code plugin marketplace. (The remote endpoint for
+  claude.ai and mobile is M17, ADR 024.)
 
 - Task drop targets (`features/shell/taskDrop.ts`): let the calendar tray and blocks use
   them too; open the collapsed Epics section on hover while dragging; targets in the
