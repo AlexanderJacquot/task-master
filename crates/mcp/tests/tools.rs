@@ -548,7 +548,7 @@ async fn agent_tasks_are_steps_of_the_session_task() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn the_users_tasks_are_mostly_off_limits() {
+async fn the_users_tasks_can_be_edited_within_limits() {
     let f = fixture();
     let (task, other) = (f.task.clone(), f.other.clone());
     let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
@@ -649,11 +649,16 @@ async fn the_users_tasks_are_mostly_off_limits() {
 
     let snapshot = server_snapshot(&server);
     let find = |id: &str| snapshot.tasks.iter().find(|t| t.id == id).unwrap().clone();
-    assert_eq!(find(&task).status_id, IN_PROGRESS);
+    let edited = find(&task);
+    assert_eq!(edited.status_id, IN_PROGRESS);
+    assert_eq!(edited.title, "Renamed");
     assert_eq!(find(&sub).status_id, DONE, "a finished subtask");
-    assert_eq!(
-        find(&other).status_id,
-        "00000000-0000-7000-8000-000000000002"
+    let other = find(&other);
+    assert_eq!(other.status_id, DONE, "the user's task outside the session");
+    assert!(
+        other.description.ends_with("More."),
+        "{}",
+        other.description
     );
     let mine = find(&mine);
     assert_eq!(mine.title, "Step 1");
