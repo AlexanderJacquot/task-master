@@ -175,7 +175,8 @@ in the same space without cluttering the user's views. Decided with the user:
   from the parent, else the session task; status by name or category; `depends_on`),
   `update_task` (agent tasks: status, title, description or `append_description`,
   priority, prerequisites; the user's tasks: status only, and only the session's task and
-  its subtasks at any depth; never cancelled, and done only for a subtask, see below),
+  its subtasks at any depth; never cancelled, and done only for a subtask, see below;
+  amended 2026-11-14, see *Editing the user's tasks*),
   `add_note`, `complete_session` (stores the summary; for a
   `running` session the shell still sets the state when the run ends, which keeps the
   agent's summary over Claude's last message; any other session, in a terminal or
@@ -219,6 +220,15 @@ in the same space without cluttering the user's views. Decided with the user:
   ends `done`, whether or not the agent called `complete_session`; a task the user
   closed stays closed. A failed, cancelled or interrupted run moves nothing, nor does Mark
   done or a terminal closing. A pick whose status was deleted falls back to the default.
+- **Editing the user's tasks (amended 2026-11-14).** Agents may now edit the user's own
+  tasks with `update_task` (title, description or `append_description`, priority,
+  prerequisites, any status), in or outside the session's task tree. Two limits stay: the
+  session's task is never marked done by the agent (`complete_session` sends it to
+  review), and the session's subtree is never cancelled. Settings → Agents → *Let agents
+  edit my tasks* (`edit_user_tasks`, per device, on by default) turns it off: the app
+  then passes `--no-edit-user-tasks` and the earlier rule applies (status only, session
+  tree only). The server instructions say which rule holds. The remote MCP on the sync
+  server (ADR 024) has no such setting and allows edits.
 - **Subtasks (amended 2026-11-08).** Agents finished the work but left the session task's
   subtasks open. The subtasks are steps of the work, so `update_task` now lets the agent
   mark the user's subtasks of the session's task (any depth) done; the session's task

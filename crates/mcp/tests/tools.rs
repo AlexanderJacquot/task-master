@@ -561,13 +561,13 @@ async fn the_users_tasks_are_mostly_off_limits() {
         json!({ "task_id": task, "status": "In progress" }),
     )
     .await;
-    let message = refused(
+    // The user's tasks can be edited too.
+    ok(
         &client,
         "update_task",
-        json!({ "task_id": task, "title": "Renamed" }),
+        json!({ "task_id": task, "title": "Renamed", "priority": "low" }),
     )
     .await;
-    assert!(message.contains("only its status"), "{message}");
     // The user's own subtask of it is in scope too.
     let sub = with_store(&server, |s| {
         s.execute(Command::CreateTask {
@@ -611,14 +611,13 @@ async fn the_users_tasks_are_mostly_off_limits() {
         .await;
         assert!(message.contains("Review"), "{message}");
     }
-    // Another task of the user's is not.
-    let message = refused(
+    // Another task of the user's outside the session can be edited and closed.
+    ok(
         &client,
         "update_task",
-        json!({ "task_id": other, "status": "done" }),
+        json!({ "task_id": other, "append_description": "More.", "status": "done" }),
     )
     .await;
-    assert!(message.contains("outside this session"), "{message}");
     refused(
         &client,
         "update_task",
@@ -894,17 +893,50 @@ async fn a_task_the_user_already_closed_stays_closed() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn with_editing_turned_off_the_users_tasks_keep_to_their_status() {
+    let f = fixture();
+    let (task, other) = (f.task.clone(), f.other.clone());
+    let server = TaskServer::new(f.store, Some(&f.session))
+        .unwrap()
+        .with_edit_user_tasks(false);
+    let client = connect(server).await;
+    let instructions = client.peer_info().unwrap().instructions.clone().unwrap();
+    assert!(instructions.contains("read-only"), "{instructions}");
+    ok(
+        &client,
+        "update_task",
+        json!({ "task_id": task, "status": "In progress" }),
+    )
+    .await;
+    let message = refused(
+        &client,
+        "update_task",
+        json!({ "task_id": task, "title": "Renamed" }),
+    )
+    .await;
+    assert!(message.contains("turned off"), "{message}");
+    let message = refused(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "status": "done" }),
+    )
+    .await;
+    assert!(message.contains("turned off"), "{message}");
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn without_a_session_it_reads_and_tracks_only_agent_tasks() {
     let f = fixture();
     let task = f.task.clone();
     let client = connect(TaskServer::new(f.store, None).unwrap()).await;
-    // Added to Claude by hand: no session to report on, the user's tasks read-only.
+    // Added to Claude by hand: no session to report on, the user's tasks editable.
     let instructions = client.peer_info().unwrap().instructions.clone().unwrap();
     assert!(!instructions.contains("complete_session"), "{instructions}");
-    assert!(instructions.contains("read-only"), "{instructions}");
+    assert!(instructions.contains("edit the user's"), "{instructions}");
     refused(&client, "get_task", json!({})).await;
     refused(&client, "add_note", json!({ "body": "hi" })).await;
-    refused(
+    ok(
         &client,
         "update_task",
         json!({ "task_id": task, "status": "done" }),

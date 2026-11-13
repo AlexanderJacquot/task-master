@@ -369,6 +369,11 @@ export type AgentSettings_Deserialize = {
 	 */
 	directive?: string | null,
 	/**
+	 *  May agents edit the user's own tasks (title, description, priority, prerequisites,
+	 *  any status)? When off, only the status of a session's task and its subtasks.
+	 */
+	edit_user_tasks?: boolean,
+	/**
 	 *  Spending the user allows agents, shown against what they cost on the Agents page;
 	 *  "Send to agent" asks before going over one.
 	 */
@@ -403,6 +408,11 @@ export type AgentSettings_Serialize = {
 	 *  session's system prompt after the app's own rules; none when `None`.
 	 */
 	directive: string | null,
+	/**
+	 *  May agents edit the user's own tasks (title, description, priority, prerequisites,
+	 *  any status)? When off, only the status of a session's task and its subtasks.
+	 */
+	edit_user_tasks: boolean,
 	/**
 	 *  Spending the user allows agents, shown against what they cost on the Agents page;
 	 *  "Send to agent" asks before going over one.

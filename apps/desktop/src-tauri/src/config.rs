@@ -82,6 +82,10 @@ pub struct AgentSettings {
     /// session's system prompt after the app's own rules; none when `None`.
     #[serde(default)]
     pub directive: Option<String>,
+    /// May agents edit the user's own tasks (title, description, priority, prerequisites,
+    /// any status)? When off, only the status of a session's task and its subtasks.
+    #[serde(default = "default_true")]
+    pub edit_user_tasks: bool,
     /// Spending the user allows agents, shown against what they cost on the Agents page;
     /// "Send to agent" asks before going over one.
     #[serde(default)]
@@ -112,6 +116,10 @@ impl SpendLimits {
     }
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_claude() -> String {
     "claude".into()
 }
@@ -132,6 +140,7 @@ impl Default for AgentSettings {
             started_status_id: None,
             done_status_id: None,
             directive: None,
+            edit_user_tasks: true,
             limits: SpendLimits::default(),
         }
     }
@@ -428,6 +437,11 @@ mod tests {
         // Settings saved before limits existed still load.
         let old: AgentSettings = serde_json::from_str(r#"{"runtime":"native"}"#).unwrap();
         assert_eq!(old.limits, SpendLimits::default());
+        // Agents may edit the user's tasks unless the setting says otherwise.
+        assert!(old.edit_user_tasks);
+        let off: AgentSettings =
+            serde_json::from_str(r#"{"runtime":"native","edit_user_tasks":false}"#).unwrap();
+        assert!(!off.edit_user_tasks);
     }
 
     #[test]

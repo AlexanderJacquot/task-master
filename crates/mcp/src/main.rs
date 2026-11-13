@@ -8,7 +8,7 @@ use taskmaster_core::{AgentWorkflow, Store};
 use taskmaster_mcp::{TaskServer, locate};
 
 const USAGE: &str = "usage: task-master-mcp [--db <path to task-master.sqlite>] \
-                     [--session <session id>] [--done-status <status id>]\n       \
+                     [--session <session id>] [--done-status <status id>] [--no-edit-user-tasks]\n       \
                      task-master-mcp --show-db\n\n\
                      Without --db: $TASK_MASTER_DB, else the task-master app's database on \
                      this device.\n--show-db prints that path and exits.";
@@ -26,6 +26,8 @@ async fn run() -> Result<(), String> {
     let mut session = None;
     // Where the session's task goes when the agent reports it done (Settings → Agents).
     let mut workflow = AgentWorkflow::default();
+    // Settings → Agents: may the agent edit the user's own tasks?
+    let mut edit_user_tasks = true;
     let mut show_db = false;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -33,6 +35,7 @@ async fn run() -> Result<(), String> {
             "--db" => db = args.next(),
             "--session" => session = args.next(),
             "--done-status" => workflow.done_status_id = args.next(),
+            "--no-edit-user-tasks" => edit_user_tasks = false,
             "--show-db" => show_db = true,
             "--help" | "-h" => {
                 println!("{USAGE}");
@@ -60,7 +63,8 @@ async fn run() -> Result<(), String> {
     let store = Store::open(&db).map_err(|e| format!("cannot open {db}: {e}"))?;
     let server = TaskServer::new(store, session.as_deref())
         .map_err(|e| format!("cannot load session: {e}"))?
-        .with_workflow(workflow);
+        .with_workflow(workflow)
+        .with_edit_user_tasks(edit_user_tasks);
     let service = server
         .serve(rmcp::transport::stdio())
         .await

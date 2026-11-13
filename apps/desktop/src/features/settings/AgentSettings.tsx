@@ -1,7 +1,7 @@
 // Settings → Agents (ADR 017): how this device runs the agent for "Send to agent".
 
 import { useEffect, useState } from "react";
-import { Button, cx, INPUT, Select } from "../../components/ui";
+import { Button, Checkbox, cx, INPUT, Select } from "../../components/ui";
 import type { ClaudeCheck, AgentSettings as Settings } from "../../lib/types";
 import { useApi, useStoreState } from "../../store/context";
 import { PERMISSION_MODES } from "../agents/sessions";
@@ -196,6 +196,20 @@ export function AgentSettings() {
       <p className="pl-28 text-xs text-ink-3">
         The app moves the task itself: to the first status when it is sent to an agent, to the
         second when the agent reports it done (a task you closed stays closed).
+      </p>
+      <Row label="Edit my tasks">
+        <Checkbox
+          checked={draft.edit_user_tasks}
+          onChange={() => edit({ edit_user_tasks: !draft.edit_user_tasks })}
+          label="Let agents edit my tasks"
+        />
+        <span className="text-xs text-ink-3">
+          Title, description, priority, prerequisites and status of any of your tasks
+        </span>
+      </Row>
+      <p className="pl-28 text-xs text-ink-3">
+        Off: an agent can only move its own task and that task's subtasks between statuses. Takes
+        effect for sessions started or resumed from now on.
       </p>
       <div className="flex items-start gap-2 text-xs">
         <span className="w-26 shrink-0 pt-1.5 text-ink-3">Directive</span>

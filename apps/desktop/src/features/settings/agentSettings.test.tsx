@@ -104,3 +104,24 @@ it("saves a directive for every agent, and clears it", async () => {
   await screen.findByText("Saved.");
   expect((await agents.api.settings()).directive).toBeNull();
 });
+
+it("turns agents' editing of my tasks off and on", async () => {
+  const agents = fakeAgents();
+  const api = { agents: agents.api } as Api;
+  render(
+    <StoreProvider store={createTaskStore(api)} api={api}>
+      <AgentSettings />
+    </StoreProvider>,
+  );
+  const toggle = await screen.findByRole("checkbox", { name: "Let agents edit my tasks" });
+  expect((toggle as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await screen.findByText("Saved.");
+  expect((await agents.api.settings()).edit_user_tasks).toBe(false);
+
+  fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await screen.findByText("Saved.");
+  expect((await agents.api.settings()).edit_user_tasks).toBe(true);
+});

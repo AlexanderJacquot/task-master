@@ -38,6 +38,7 @@ export function fakeAgents(
     started_status_id: null,
     done_status_id: null,
     directive: null,
+    edit_user_tasks: true,
     limits: { day_usd_micros: null, week_usd_micros: null, month_usd_micros: null },
     ...opts.settings,
   };
