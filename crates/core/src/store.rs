@@ -14,7 +14,7 @@ use crate::events::{Changed, EntityRef, EventBus};
 use crate::files::FileStore;
 use crate::history::{self, History};
 use crate::model::{
-    AgentNote, AgentRuntime, AgentSession, Attachment, Epic, Id, Project, ProjectFolder,
+    AgentNote, AgentRuntime, AgentSession, Attachment, Epic, Id, Meeting, Project, ProjectFolder,
     SessionState, Snapshot, Status, Tag, Task, TimeBlock, View,
 };
 use crate::ops::{Batch, EntityKind};
@@ -39,6 +39,8 @@ pub struct Changes {
     pub time_blocks: Vec<TimeBlock>,
     pub agent_sessions: Vec<AgentSession>,
     pub agent_notes: Vec<AgentNote>,
+    #[serde(default)]
+    pub meetings: Vec<Meeting>,
 }
 
 impl Changes {
@@ -309,6 +311,17 @@ impl Store {
         query::search(&self.conn, text, limit)
     }
 
+    /// One meeting, deleted ones included.
+    pub fn meeting(&self, id: &str) -> Result<Meeting> {
+        query::meeting(&self.conn, id)
+    }
+
+    /// Live meetings by start; with `link` (`("project" | "epic" | "task", id)`), only
+    /// those linked to it.
+    pub fn meetings(&self, link: Option<(&str, &str)>) -> Result<Vec<Meeting>> {
+        query::meetings(&self.conn, link)
+    }
+
     /// One attachment (deleted ones included), e.g. to serve or open its file.
     pub fn attachment(&self, id: &str) -> Result<Attachment> {
         query::attachment(&self.conn, id)
@@ -342,12 +355,17 @@ impl Store {
         Ok(missing)
     }
 
-    /// Whether a live attachment of a live task uses the content with `hash`. A file only
-    /// used by deleted attachments, or by attachments of deleted tasks, can be purged.
+    /// Whether a live attachment of a live task or meeting uses the content with `hash`. A
+    /// file only used by deleted attachments, or by attachments of deleted tasks and
+    /// meetings, can be purged.
     pub fn file_in_use(&self, hash: &str) -> Result<bool> {
         Ok(self.conn.query_row(
-            "SELECT EXISTS (SELECT 1 FROM attachments a JOIN tasks t ON t.id = a.task_id \
-             WHERE a.hash = ?1 AND a.deleted_at IS NULL AND t.deleted_at IS NULL)",
+            "SELECT EXISTS (SELECT 1 FROM attachments a \
+             LEFT JOIN tasks t ON t.id = a.task_id \
+             LEFT JOIN meetings m ON m.id = a.meeting_id \
+             WHERE a.hash = ?1 AND a.deleted_at IS NULL \
+               AND (t.id IS NOT NULL AND t.deleted_at IS NULL \
+                    OR m.id IS NOT NULL AND m.deleted_at IS NULL))",
             [hash],
             |r| r.get(0),
         )?)
@@ -769,6 +787,7 @@ fn load_changes(
                 changes.agent_sessions.push(query::agent_session(conn, id)?);
             }
             EntityKind::AgentNote => changes.agent_notes.push(query::agent_note(conn, id)?),
+            EntityKind::Meeting => changes.meetings.push(query::meeting(conn, id)?),
         }
     }
     Ok(changes)

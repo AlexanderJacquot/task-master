@@ -51,6 +51,7 @@ pub enum EntityKind {
     TimeBlock,
     AgentSession,
     AgentNote,
+    Meeting,
 }
 
 /// What an op targets. `TaskTag` rows are links: `entity_id` is the task, the patch holds
@@ -68,6 +69,7 @@ pub(crate) enum Entity {
     TimeBlock,
     AgentSession,
     AgentNote,
+    Meeting,
 }
 
 impl Entity {
@@ -84,6 +86,7 @@ impl Entity {
             Self::TaskTag => "task_tag",
             Self::Attachment => "attachment",
             Self::TimeBlock => "time_block",
+            Self::Meeting => "meeting",
         }
     }
 
@@ -100,6 +103,7 @@ impl Entity {
             "time_block" => Self::TimeBlock,
             "agent_session" => Self::AgentSession,
             "agent_note" => Self::AgentNote,
+            "meeting" => Self::Meeting,
             other => return Err(Error::invalid(format!("unknown op entity '{other}'"))),
         })
     }
@@ -117,6 +121,7 @@ impl Entity {
             Self::TimeBlock => "time_blocks",
             Self::AgentSession => "agent_sessions",
             Self::AgentNote => "agent_notes",
+            Self::Meeting => "meetings",
         }
     }
 
@@ -201,6 +206,7 @@ impl Entity {
             Self::Attachment => &[
                 "id",
                 "task_id",
+                "meeting_id",
                 "hash",
                 "name",
                 "mime",
@@ -250,6 +256,24 @@ impl Entity {
                 "updated_at",
                 "deleted_at",
             ],
+            Self::Meeting => &[
+                "id",
+                "title",
+                "started_at",
+                "ended_at",
+                "project_id",
+                "epic_id",
+                "task_id",
+                "state",
+                "participants",
+                "notes",
+                "summary",
+                "transcribed_at",
+                "validated_at",
+                "created_at",
+                "updated_at",
+                "deleted_at",
+            ],
         }
     }
 
@@ -265,6 +289,7 @@ impl Entity {
             Self::TimeBlock => EntityKind::TimeBlock,
             Self::AgentSession => EntityKind::AgentSession,
             Self::AgentNote => EntityKind::AgentNote,
+            Self::Meeting => EntityKind::Meeting,
         }
     }
 }

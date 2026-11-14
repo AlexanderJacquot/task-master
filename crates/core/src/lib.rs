@@ -28,7 +28,7 @@ pub use agent_workflow::{AgentWorkflow, IN_PROGRESS_STATUS_ID};
 pub use clock::{new_id, now_ms, utc_date};
 pub use commands::{
     AgentSessionChange, AttachmentChange, Command, EpicChange, MAX_BLOCK_MS, MAX_NOTE_CHARS,
-    MAX_RANK_LEN, NewAgentNote, NewAgentSession, NewAttachment, NewEpic, NewProject, NewStatus,
+    MAX_PARTICIPANTS, MAX_RANK_LEN, MeetingChange, NewAgentNote, NewAgentSession, NewAttachment, NewEpic, NewMeeting, NewProject, NewStatus,
     NewTag, NewTask, NewTimeBlock, NewView, PERMISSION_MODES, ProjectChange, StatusChange,
     TagChange, TaskChange, TimeBlockChange, ViewChange,
 };
@@ -40,7 +40,7 @@ pub use files::{
 };
 pub use model::{
     AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, CanvasPoint, DueFilter, Epic,
-    EpicState, FILTER_NONE, GroupBy, Id, IsoDate, LaneKeys, LanePositions, Layout, LineageArrange,
+    EpicState, FILTER_NONE, GroupBy, Meeting, MeetingState, Id, IsoDate, LaneKeys, LanePositions, Layout, LineageArrange,
     LineageCompletion, LineageSpec, Priority, Project, ProjectFolder, REVIEW_STATUS_ID,
     SessionState, Snapshot, SortBy, Status, StatusCategory, Swimlane, Tag, Task, TaskOwner,
     TimeBlock, Timestamp, VIEW_SPEC_VERSION, View, ViewFilter, ViewScope, ViewSpec, review_status,
