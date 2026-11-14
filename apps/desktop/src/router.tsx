@@ -16,6 +16,8 @@ import { MetricsPage } from "./features/metrics/MetricsPage";
 import { EpicPage } from "./features/organize/EpicPage";
 import { ProjectPage } from "./features/organize/ProjectPage";
 import { TagMenu } from "./features/organize/TagMenu";
+import { MeetingPage } from "./features/scribe/MeetingPage";
+import { ScribePage } from "./features/scribe/ScribePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { Layout } from "./features/shell/Layout";
 import { SavedViewPage, ViewPage } from "./features/shell/ViewPage";
@@ -87,6 +89,21 @@ const agentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "agents",
   component: AgentsPage,
+});
+
+const scribeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "scribe",
+  component: ScribePage,
+});
+
+const meetingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "meeting/$meetingId",
+  component: function MeetingView() {
+    const { meetingId } = meetingRoute.useParams();
+    return <MeetingPage key={meetingId} meetingId={meetingId} />;
+  },
 });
 
 const metricsRoute = createRoute({
@@ -202,6 +219,8 @@ const routeTree = rootRoute.addChildren([
   metricsRoute,
   lineageRoute,
   agentsRoute,
+  scribeRoute,
+  meetingRoute,
   allRoute,
   projectRoute,
   epicRoute,

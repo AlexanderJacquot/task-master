@@ -18,6 +18,7 @@ const none = (): Changes => ({
   time_blocks: [],
   agent_sessions: [],
   agent_notes: [],
+  meetings: [],
   statuses: [],
 });
 

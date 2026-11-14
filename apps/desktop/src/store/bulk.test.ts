@@ -24,6 +24,7 @@ async function setup(tasks: Task[], extra: Parameters<typeof snapshot>[0] = {}) 
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
         statuses: [],
       } as Changes;
     },

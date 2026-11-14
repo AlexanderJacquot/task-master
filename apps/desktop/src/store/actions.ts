@@ -3,6 +3,7 @@
 
 import { ranksForDrop } from "../lib/board";
 import type { RestorePlan } from "../lib/history";
+import { applyMeetingChanges, cleanParticipants } from "../lib/meetings";
 import { rankBetween } from "../lib/rank";
 import { playSound } from "../lib/sounds";
 import {
@@ -21,6 +22,9 @@ import type {
   Command,
   Epic,
   EpicChange,
+  Meeting,
+  MeetingChange,
+  MeetingState,
   Priority,
   Project,
   ProjectChange,
@@ -973,22 +977,38 @@ export function deleteStatus(store: TaskStore, id: string) {
 // ---------------------------------------------------------------------------------------
 // Attachments (ADR 011). The content is stored first (`FilesApi.store*`); these record it.
 
+/** What files are attached to: a task or a meeting. */
+export type AttachmentOwner = { task: string } | { meeting: string };
+
 /**
  * Attaches stored files to a task in one undoable batch. Resolves to the new attachments
  * (empty when the core refused them).
  */
-export async function attachFiles(
+export function attachFiles(
   store: TaskStore,
   taskId: string,
   uploads: StoredUpload[],
 ): Promise<Attachment[]> {
+  return attachFilesTo(store, { task: taskId }, uploads);
+}
+
+/** Attaches stored files to a task or a meeting in one undoable batch. */
+export async function attachFilesTo(
+  store: TaskStore,
+  owner: AttachmentOwner,
+  uploads: StoredUpload[],
+): Promise<Attachment[]> {
   const s = store.getState();
-  const task = s.tasks[taskId];
-  if (!task || !uploads.length) return [];
+  const task_id = "task" in owner ? owner.task : null;
+  const meeting_id = "meeting" in owner ? owner.meeting : null;
+  const task = task_id ? s.tasks[task_id] : undefined;
+  const meeting = meeting_id ? s.meetings[meeting_id] : undefined;
+  if ((!task && !meeting) || !uploads.length) return [];
   const now = Date.now();
   const attachments: Attachment[] = uploads.map((u, i) => ({
     id: uuidv7(now + i),
-    task_id: taskId,
+    task_id,
+    meeting_id,
     hash: u.hash,
     name: u.name,
     mime: u.mime,
@@ -1002,14 +1022,20 @@ export async function attachFiles(
       type: "create_attachment" as const,
       attachment: {
         id: a.id,
-        task_id: taskId,
+        ...(task_id ? { task_id } : { meeting_id }),
         hash: a.hash,
         name: a.name,
         mime: a.mime,
         size: a.size,
       },
     })),
-    { upsert: { attachments, tasks: [{ ...task, updated_at: now }] } },
+    {
+      upsert: {
+        attachments,
+        ...(task && { tasks: [{ ...task, updated_at: now }] }),
+        ...(meeting && { meetings: [{ ...meeting, updated_at: now }] }),
+      },
+    },
   );
   if (!changes) return [];
   const confirmed = store.getState().attachments;
@@ -1330,5 +1356,90 @@ export function deleteBlock(store: TaskStore, id: string) {
   return s.mutate([{ type: "delete_time_block", id }], {
     remove: { time_blocks: [id] },
     ...(task && { upsert: { tasks: [{ ...task, updated_at: Date.now() }] } }),
+  });
+}
+
+// ---------------------------------------------------------------------------------------
+// Meetings (Scribe, ADR 025)
+
+export interface NewMeetingInput {
+  title: string;
+  started_at: number;
+  ended_at: number | null;
+  project_id?: string | null;
+  epic_id?: string | null;
+  task_id?: string | null;
+  state?: MeetingState;
+  participants?: string[];
+  notes?: string;
+}
+
+/** Adds a meeting. Resolves to its id, or null when the core refused it. */
+export async function createMeeting(
+  store: TaskStore,
+  input: NewMeetingInput,
+): Promise<string | null> {
+  const s = store.getState();
+  const title = input.title.trim();
+  if (!title) return null;
+  const now = Date.now();
+  const meeting: Meeting = {
+    id: uuidv7(now),
+    title,
+    started_at: input.started_at,
+    ended_at: input.ended_at,
+    project_id: input.project_id ?? null,
+    epic_id: input.epic_id ?? null,
+    task_id: input.task_id ?? null,
+    state: input.state ?? "scheduled",
+    participants: cleanParticipants(input.participants ?? []),
+    notes: input.notes ?? "",
+    summary: null,
+    transcribed_at: null,
+    validated_at: input.state === "validated" ? now : null,
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  };
+  const changes = await s.mutate(
+    [
+      {
+        type: "create_meeting",
+        meeting: {
+          id: meeting.id,
+          title,
+          started_at: meeting.started_at,
+          ended_at: meeting.ended_at,
+          project_id: meeting.project_id,
+          epic_id: meeting.epic_id,
+          task_id: meeting.task_id,
+          state: meeting.state,
+          participants: meeting.participants,
+          notes: meeting.notes,
+        },
+      },
+    ],
+    { upsert: { meetings: [meeting] } },
+  );
+  return changes ? meeting.id : null;
+}
+
+export function updateMeeting(store: TaskStore, id: string, changes: MeetingChange[]) {
+  const s = store.getState();
+  const meeting = s.meetings[id];
+  if (!meeting || !changes.length) return Promise.resolve(null);
+  const next = applyMeetingChanges(meeting, changes, Date.now());
+  return s.mutate([{ type: "update_meeting", id, changes }], { upsert: { meetings: [next] } });
+}
+
+/** Deletes a meeting; its attachments go with it (undo restores both). */
+export function deleteMeeting(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.meetings[id]) return Promise.resolve(null);
+  const files = Object.values(s.attachments)
+    .filter((a) => a.meeting_id === id)
+    .map((a) => a.id);
+  return s.mutate([{ type: "delete_meeting", id }], {
+    remove: { meetings: [id], attachments: files },
   });
 }

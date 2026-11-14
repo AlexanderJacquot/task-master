@@ -7,8 +7,9 @@ use serde_json::{Map, Value, json};
 use crate::clock::{check_date, check_id, new_id};
 use crate::error::{Error, Result};
 use crate::model::{
-    AgentRuntime, BlockOutcome, EpicState, FILTER_NONE, Id, IsoDate, Priority, SessionState,
-    Status, StatusCategory, Task, TaskOwner, Timestamp, VIEW_SPEC_VERSION, ViewScope, ViewSpec,
+    AgentRuntime, BlockOutcome, EpicState, FILTER_NONE, Id, IsoDate, MeetingState, Priority,
+    SessionState, Status, StatusCategory, Task, TaskOwner, Timestamp, VIEW_SPEC_VERSION, ViewScope,
+    ViewSpec,
 };
 use crate::ops::{Batch, Change, Entity, OpKind};
 use crate::{files, query, rank};
@@ -147,6 +148,19 @@ pub enum Command {
     /// A progress line from the agent, on its session's task.
     AddAgentNote {
         note: NewAgentNote,
+    },
+    /// Adds a meeting (Scribe, ADR 025).
+    CreateMeeting {
+        meeting: NewMeeting,
+    },
+    /// Edits a meeting. The result must still end after it starts.
+    UpdateMeeting {
+        id: Id,
+        changes: Vec<MeetingChange>,
+    },
+    /// Removes a meeting; its attachments are hidden with it, and undo brings both back.
+    DeleteMeeting {
+        id: Id,
     },
 }
 
@@ -351,7 +365,11 @@ pub enum ViewChange {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct NewAttachment {
     pub id: Option<Id>,
-    pub task_id: Id,
+    /// The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two.
+    #[serde(default)]
+    pub task_id: Option<Id>,
+    #[serde(default)]
+    pub meeting_id: Option<Id>,
     /// From `FileStore::put_*`.
     pub hash: String,
     /// Folders are stripped.
@@ -392,6 +410,55 @@ pub enum TimeBlockChange {
     StartAt(Timestamp),
     EndAt(Timestamp),
     Outcome(BlockOutcome),
+}
+
+/// Most participants a meeting may list.
+pub const MAX_PARTICIPANTS: usize = 100;
+/// Longest participant name.
+const MAX_PARTICIPANT_CHARS: usize = 200;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewMeeting {
+    pub id: Option<Id>,
+    pub title: String,
+    /// Unix ms.
+    pub started_at: Timestamp,
+    /// Unix ms, after `started_at`, at most [`MAX_BLOCK_MS`] later. `None` while
+    /// recording.
+    #[serde(default)]
+    pub ended_at: Option<Timestamp>,
+    #[serde(default)]
+    pub project_id: Option<Id>,
+    #[serde(default)]
+    pub epic_id: Option<Id>,
+    #[serde(default)]
+    pub task_id: Option<Id>,
+    /// Defaults to `scheduled`.
+    #[serde(default)]
+    pub state: Option<MeetingState>,
+    /// Trimmed; blanks and repeats (ignoring case) are dropped.
+    #[serde(default)]
+    pub participants: Vec<String>,
+    #[serde(default)]
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MeetingChange {
+    Title(String),
+    StartedAt(Timestamp),
+    EndedAt(Option<Timestamp>),
+    ProjectId(Option<Id>),
+    EpicId(Option<Id>),
+    TaskId(Option<Id>),
+    /// Entering `validated` records when; leaving it clears that.
+    State(MeetingState),
+    Participants(Vec<String>),
+    Notes(String),
+    Summary(Option<String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -444,6 +511,9 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
         Command::UpdateAgentSession { id, changes } => update_agent_session(b, &id, changes),
         Command::DeleteAgentSession { id } => delete_agent_session(b, &id),
         Command::AddAgentNote { note } => add_agent_note(b, note),
+        Command::CreateMeeting { meeting } => create_meeting(b, meeting),
+        Command::UpdateMeeting { id, changes } => update_meeting(b, &id, changes),
+        Command::DeleteMeeting { id } => delete_meeting(b, &id),
     }
 }
 
@@ -1388,9 +1458,53 @@ fn live_view(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::View> {
 // ---------------------------------------------------------------------------------------
 // Attachments
 
+/// What an attachment belongs to.
+enum Owner {
+    Task(Id),
+    Meeting(Id),
+}
+
+fn attachment_owner(a: &crate::model::Attachment) -> Result<Owner> {
+    match (&a.task_id, &a.meeting_id) {
+        (Some(task_id), None) => Ok(Owner::Task(task_id.clone())),
+        (None, Some(meeting_id)) => Ok(Owner::Meeting(meeting_id.clone())),
+        _ => Err(Error::invalid(format!(
+            "attachment {} has no single owner",
+            a.id
+        ))),
+    }
+}
+
+/// Bumps the owner's `updated_at`, so views of it refresh.
+fn touch_owner(b: &mut Batch<'_, '_>, owner: &Owner) -> Result<()> {
+    match owner {
+        Owner::Task(id) => touch_task(b, id),
+        Owner::Meeting(id) => b.apply(Change::new(
+            Entity::Meeting,
+            id,
+            OpKind::Update,
+            json!({ "updated_at": b.now }),
+        )),
+    }
+}
+
 fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
     let id = client_id(n.id)?;
-    live_task(b, &n.task_id)?;
+    let owner = match (&n.task_id, &n.meeting_id) {
+        (Some(task_id), None) => {
+            live_task(b, task_id)?;
+            Owner::Task(task_id.clone())
+        }
+        (None, Some(meeting_id)) => {
+            live_meeting(b, meeting_id)?;
+            Owner::Meeting(meeting_id.clone())
+        }
+        _ => {
+            return Err(Error::invalid(
+                "an attachment belongs to exactly one task or meeting",
+            ));
+        }
+    };
     if !files::is_hash(&n.hash) {
         return Err(Error::invalid(format!("'{}' is not a file hash", n.hash)));
     }
@@ -1413,6 +1527,7 @@ fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
         OpKind::Create,
         json!({
             "task_id": n.task_id,
+            "meeting_id": n.meeting_id,
             "hash": n.hash,
             "name": name,
             "mime": mime,
@@ -1422,7 +1537,7 @@ fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
             "deleted_at": null,
         }),
     ))?;
-    touch_task(b, &n.task_id)
+    touch_owner(b, &owner)
 }
 
 /// Bumps the task's `updated_at`, as tag changes do, so views of it refresh.
@@ -1445,7 +1560,7 @@ fn update_attachment(
             "update_attachment needs at least one change",
         ));
     }
-    let task_id = live_attachment(b, id)?.task_id;
+    let owner = attachment_owner(&live_attachment(b, id)?)?;
     let mut patch = Map::new();
     for change in changes {
         let (key, value) = match change {
@@ -1463,18 +1578,18 @@ fn update_attachment(
         OpKind::Update,
         Value::Object(patch),
     ))?;
-    touch_task(b, &task_id)
+    touch_owner(b, &owner)
 }
 
 fn delete_attachment(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
-    let task_id = live_attachment(b, id)?.task_id;
+    let owner = attachment_owner(&live_attachment(b, id)?)?;
     b.apply(Change::new(
         Entity::Attachment,
         id,
         OpKind::Delete,
         json!({ "deleted_at": b.now, "updated_at": b.now }),
     ))?;
-    touch_task(b, &task_id)
+    touch_owner(b, &owner)
 }
 
 fn live_attachment(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Attachment> {
@@ -1574,6 +1689,170 @@ fn live_time_block(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::TimeBloc
         return Err(Error::not_found("time block", id));
     }
     Ok(block)
+}
+
+// ---------------------------------------------------------------------------------------
+// Meetings (ADR 025)
+
+fn check_meeting_times(started_at: Timestamp, ended_at: Option<Timestamp>) -> Result<()> {
+    if started_at < 0 {
+        return Err(Error::invalid("a meeting cannot start before 1970"));
+    }
+    if let Some(end) = ended_at {
+        if end <= started_at {
+            return Err(Error::invalid("a meeting must end after it starts"));
+        }
+        if end - started_at > MAX_BLOCK_MS {
+            return Err(Error::invalid("a meeting can last at most 24 hours"));
+        }
+    }
+    Ok(())
+}
+
+/// Names with their spaces tidied, blanks and repeats (ignoring case) dropped, as the JSON
+/// array the column stores.
+fn participants_json(names: &[String]) -> Result<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for name in names {
+        let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+        if name.is_empty() || !seen.insert(name.to_lowercase()) {
+            continue;
+        }
+        if name.chars().count() > MAX_PARTICIPANT_CHARS {
+            return Err(Error::invalid(format!(
+                "a participant's name is limited to {MAX_PARTICIPANT_CHARS} characters"
+            )));
+        }
+        out.push(name);
+    }
+    if out.len() > MAX_PARTICIPANTS {
+        return Err(Error::invalid(format!(
+            "a meeting lists at most {MAX_PARTICIPANTS} participants"
+        )));
+    }
+    Ok(serde_json::to_string(&out)?)
+}
+
+fn create_meeting(b: &mut Batch<'_, '_>, n: NewMeeting) -> Result<()> {
+    let id = client_id(n.id)?;
+    let title = non_empty("title", &n.title)?;
+    check_meeting_times(n.started_at, n.ended_at)?;
+    if let Some(project_id) = &n.project_id {
+        live_project(b, project_id)?;
+    }
+    if let Some(epic_id) = &n.epic_id {
+        live_epic(b, epic_id)?;
+    }
+    if let Some(task_id) = &n.task_id {
+        live_task(b, task_id)?;
+    }
+    let state = n.state.unwrap_or_default();
+    b.apply(Change::new(
+        Entity::Meeting,
+        &id,
+        OpKind::Create,
+        json!({
+            "title": title,
+            "started_at": n.started_at,
+            "ended_at": n.ended_at,
+            "project_id": n.project_id,
+            "epic_id": n.epic_id,
+            "task_id": n.task_id,
+            "state": state.as_str(),
+            "participants": participants_json(&n.participants)?,
+            "notes": n.notes,
+            "summary": null,
+            "transcribed_at": null,
+            "validated_at": (state == MeetingState::Validated).then_some(b.now),
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn update_meeting(b: &mut Batch<'_, '_>, id: &str, changes: Vec<MeetingChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_meeting needs at least one change"));
+    }
+    let meeting = live_meeting(b, id)?;
+    let (mut started_at, mut ended_at) = (meeting.started_at, meeting.ended_at);
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            MeetingChange::Title(t) => ("title", json!(non_empty("title", &t)?)),
+            MeetingChange::StartedAt(t) => {
+                started_at = t;
+                ("started_at", json!(t))
+            }
+            MeetingChange::EndedAt(t) => {
+                ended_at = t;
+                ("ended_at", json!(t))
+            }
+            MeetingChange::ProjectId(p) => {
+                if let Some(p) = &p {
+                    live_project(b, p)?;
+                }
+                ("project_id", json!(p))
+            }
+            MeetingChange::EpicId(e) => {
+                if let Some(e) = &e {
+                    live_epic(b, e)?;
+                }
+                ("epic_id", json!(e))
+            }
+            MeetingChange::TaskId(t) => {
+                if let Some(t) = &t {
+                    live_task(b, t)?;
+                }
+                ("task_id", json!(t))
+            }
+            MeetingChange::State(state) => {
+                let validated_at = match (state, meeting.validated_at) {
+                    (MeetingState::Validated, Some(at)) => Some(at),
+                    (MeetingState::Validated, None) => Some(b.now),
+                    _ => None,
+                };
+                if validated_at != meeting.validated_at {
+                    patch.insert("validated_at".into(), json!(validated_at));
+                }
+                ("state", json!(state.as_str()))
+            }
+            MeetingChange::Participants(names) => {
+                ("participants", json!(participants_json(&names)?))
+            }
+            MeetingChange::Notes(n) => ("notes", json!(n)),
+            MeetingChange::Summary(s) => ("summary", json!(trimmed(s))),
+        };
+        patch.insert(key.into(), value);
+    }
+    check_meeting_times(started_at, ended_at)?;
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Meeting,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_meeting(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_meeting(b, id)?;
+    b.apply(Change::new(
+        Entity::Meeting,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+fn live_meeting(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Meeting> {
+    let meeting = query::meeting(b.tx, id)?;
+    if meeting.deleted_at.is_some() {
+        return Err(Error::not_found("meeting", id));
+    }
+    Ok(meeting)
 }
 
 // ---------------------------------------------------------------------------------------

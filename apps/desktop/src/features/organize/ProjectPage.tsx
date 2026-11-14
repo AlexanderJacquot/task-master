@@ -11,6 +11,7 @@ import type { Project } from "../../lib/types";
 import { deleteProject, moveProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { ProjectFolderButton } from "../agents/ProjectFolderButton";
+import { MeetingsSection } from "../scribe/MeetingsSection";
 import { EditableTitle } from "../shell/EditableTitle";
 import { ViewPage } from "../shell/ViewPage";
 import { PROJECT_ENGRAVINGS, ProjectMark } from "./ProjectMark";
@@ -101,6 +102,14 @@ export function ProjectPage({ project }: { project: Project }) {
     <ViewPage
       scope={{ kind: "project", id: project.id }}
       eyebrow={area?.name}
+      details={
+        <MeetingsSection
+          link={{ project: project.id }}
+          page={false}
+          limit={3}
+          className="px-10 pb-3"
+        />
+      }
       title={
         <span className="flex min-w-0 items-center gap-2">
           <ColorPicker project={project} />

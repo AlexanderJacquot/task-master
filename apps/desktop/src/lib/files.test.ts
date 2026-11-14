@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BlobList, StoredFileInfo } from "../bindings";
-import { attachment, task } from "../test/fixtures";
+import { attachment, meeting, task } from "../test/fixtures";
 import { fileRows, fileTotals, filterFiles, sortFiles } from "./files";
 
 const A = "a".repeat(64);
@@ -14,6 +14,22 @@ const local = (hash: string, size: number, stored_at: number): StoredFileInfo =>
 });
 
 describe("files overview", () => {
+  it("names the meeting holding a file, and drops files of deleted meetings", () => {
+    const m = meeting({ title: "Kick-off" });
+    const held = attachment({ task_id: null, meeting_id: m.id, hash: A, name: "deck.pdf" });
+    const gone = attachment({ task_id: null, meeting_id: "deleted", hash: B });
+    const rows = fileRows({
+      local: [local(A, 10, 1)],
+      server: null,
+      attachments: [held, gone],
+      tasks: {},
+      meetings: { [m.id]: m },
+    });
+    expect(rows.map((r) => [r.name, r.task, r.meeting?.title])).toEqual([
+      ["deck.pdf", null, "Kick-off"],
+    ]);
+  });
+
   it("joins duplicate attachments with device and server content, including missing content", () => {
     const firstTask = task({ id: "first", title: "First", description: "" });
     const secondTask = task({ id: "second", title: "Second" });

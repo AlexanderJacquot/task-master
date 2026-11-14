@@ -42,7 +42,8 @@ fn attach(s: &mut Store, task_id: &str, name: &str, bytes: &[u8]) -> Attachment 
     let stored = s.files().unwrap().put_bytes(bytes).unwrap();
     let attachment = NewAttachment {
         id: None,
-        task_id: task_id.into(),
+        task_id: Some(task_id.into()),
+        meeting_id: None,
         hash: stored.hash,
         name: name.into(),
         mime: None,
@@ -151,7 +152,8 @@ fn bad_attachments_are_refused() {
     let stored = s.files().unwrap().put_bytes(b"x").unwrap();
     let good = NewAttachment {
         id: None,
-        task_id: task.id.clone(),
+        task_id: Some(task.id.clone()),
+        meeting_id: None,
         hash: stored.hash.clone(),
         name: "x.bin".into(),
         mime: Some("application/x-custom".into()),
@@ -192,7 +194,7 @@ fn bad_attachments_are_refused() {
     );
 
     let missing_task = NewAttachment {
-        task_id: new_id(),
+        task_id: Some(new_id()),
         ..good.clone()
     };
     assert!(matches!(
@@ -232,7 +234,8 @@ fn bad_attachments_are_refused() {
     let t = add_task(&mut bare, "T");
     let attachment = NewAttachment {
         id: None,
-        task_id: t.id,
+        task_id: Some(t.id),
+        meeting_id: None,
         hash: stored.hash,
         name: "x".into(),
         mime: None,

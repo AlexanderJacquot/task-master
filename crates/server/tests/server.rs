@@ -170,7 +170,8 @@ fn attachments_travel_by_hash() {
             .execute(Command::CreateAttachment {
                 attachment: NewAttachment {
                     id: None,
-                    task_id,
+                    task_id: Some(task_id),
+                    meeting_id: None,
                     hash: stored.hash.clone(),
                     name: "hello.txt".into(),
                     mime: None,
@@ -775,7 +776,8 @@ fn attach(device: &Mutex<Store>, task_id: &str, bytes: &[u8]) -> Attachment {
         .execute(Command::CreateAttachment {
             attachment: NewAttachment {
                 id: None,
-                task_id: task_id.into(),
+                task_id: Some(task_id.into()),
+                meeting_id: None,
                 hash: stored.hash,
                 name: "file.bin".into(),
                 mime: None,

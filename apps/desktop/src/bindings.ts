@@ -450,20 +450,21 @@ export type AgentStart_Serialize = {
 };
 
 /**
- *  A file attached to a task. The content is stored by hash outside the database (see
- *  [`crate::FileStore`]); several rows may share one file.
+ *  A file attached to a task or a meeting (exactly one of the two). The content is stored
+ *  by hash outside the database (see [`crate::FileStore`]); several rows may share one file.
  */
 export type Attachment = Attachment_Serialize | Attachment_Deserialize;
 
 export type AttachmentChange = { name: string };
 
 /**
- *  A file attached to a task. The content is stored by hash outside the database (see
- *  [`crate::FileStore`]); several rows may share one file.
+ *  A file attached to a task or a meeting (exactly one of the two). The content is stored
+ *  by hash outside the database (see [`crate::FileStore`]); several rows may share one file.
  */
 export type Attachment_Deserialize = {
 	id: string,
-	task_id: string,
+	task_id?: string | null,
+	meeting_id?: string | null,
 	/**  SHA-256 of the content, lowercase hex. */
 	hash: string,
 	/**  File name, without any folder. */
@@ -477,12 +478,13 @@ export type Attachment_Deserialize = {
 };
 
 /**
- *  A file attached to a task. The content is stored by hash outside the database (see
- *  [`crate::FileStore`]); several rows may share one file.
+ *  A file attached to a task or a meeting (exactly one of the two). The content is stored
+ *  by hash outside the database (see [`crate::FileStore`]); several rows may share one file.
  */
 export type Attachment_Serialize = {
 	id: string,
-	task_id: string,
+	task_id: string | null,
+	meeting_id: string | null,
 	/**  SHA-256 of the content, lowercase hex. */
 	hash: string,
 	/**  File name, without any folder. */
@@ -743,6 +745,7 @@ export type Changes_Deserialize = {
 	time_blocks: TimeBlock_Deserialize[],
 	agent_sessions: AgentSession_Deserialize[],
 	agent_notes: AgentNote_Deserialize[],
+	meetings: Meeting_Deserialize[],
 };
 
 /**
@@ -763,6 +766,7 @@ export type Changes_Serialize = {
 	time_blocks: TimeBlock_Serialize[],
 	agent_sessions: AgentSession_Serialize[],
 	agent_notes: AgentNote_Serialize[],
+	meetings: Meeting_Serialize[],
 };
 
 /**  Claude Code as found with these settings (not saved). */
@@ -827,7 +831,13 @@ export type Command_Deserialize = { type: "create_task"; task: NewTask_Deseriali
 /**  Removes a finished session (and its notes) from the task's history. */
 { type: "delete_agent_session"; id: string } | 
 /**  A progress line from the agent, on its session's task. */
-{ type: "add_agent_note"; note: NewAgentNote_Deserialize };
+{ type: "add_agent_note"; note: NewAgentNote_Deserialize } | 
+/**  Adds a meeting (Scribe, ADR 025). */
+{ type: "create_meeting"; meeting: NewMeeting_Deserialize } | 
+/**  Edits a meeting. The result must still end after it starts. */
+{ type: "update_meeting"; id: string; changes: MeetingChange_Deserialize[] } | 
+/**  Removes a meeting; its attachments are hidden with it, and undo brings both back. */
+{ type: "delete_meeting"; id: string };
 
 /**  A user action. Several commands sent together form one undoable batch. */
 export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize } | { type: "update_task"; id: string; changes: TaskChange_Serialize[] } | 
@@ -874,7 +884,13 @@ export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize }
 /**  Removes a finished session (and its notes) from the task's history. */
 { type: "delete_agent_session"; id: string } | 
 /**  A progress line from the agent, on its session's task. */
-{ type: "add_agent_note"; note: NewAgentNote_Serialize };
+{ type: "add_agent_note"; note: NewAgentNote_Serialize } | 
+/**  Adds a meeting (Scribe, ADR 025). */
+{ type: "create_meeting"; meeting: NewMeeting_Serialize } | 
+/**  Edits a meeting. The result must still end after it starts. */
+{ type: "update_meeting"; id: string; changes: MeetingChange_Serialize[] } | 
+/**  Removes a meeting; its attachments are hidden with it, and undo brings both back. */
+{ type: "delete_meeting"; id: string };
 
 /**  What the settings screen shows: never the secret itself. */
 export type ConfigView = ConfigView_Serialize | ConfigView_Deserialize;
@@ -920,7 +936,7 @@ export type DueFilter =
 "none";
 
 /**  Kinds of entity front ends get back in [`crate::Changes`] and events. */
-export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block" | "agent_session" | "agent_note";
+export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block" | "agent_session" | "agent_note" | "meeting";
 
 export type EntityRef = {
 	kind: EntityKind,
@@ -1071,6 +1087,7 @@ export type ImportSummary = {
 	views: number,
 	attachments: number,
 	time_blocks: number,
+	meetings: number,
 	/**  Attachments whose file was not found (an export copied without its folder). */
 	missing_files: number,
 };
@@ -1162,6 +1179,94 @@ export type LineageSpec_Serialize = {
 	collapsed: LaneKeys_Serialize,
 };
 
+/**
+ *  A meeting (Scribe, ADR 025): on the calendar, optionally linked to a project, an epic
+ *  and a task, with participants and notes. Its audio never enters the database.
+ */
+export type Meeting = Meeting_Serialize | Meeting_Deserialize;
+
+export type MeetingChange = MeetingChange_Serialize | MeetingChange_Deserialize;
+
+export type MeetingChange_Deserialize = ({ title: string }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never } | ({ started_at: number }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ ended_at?: number | null }) & { epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ project_id?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ epic_id?: string | null }) & { ended_at?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ task_id?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; title?: never } | 
+/**  Entering `validated` records when; leaving it clears that. */
+({ state: MeetingState }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; summary?: never; task_id?: never; title?: never } | ({ participants: string[] }) & { ended_at?: never; epic_id?: never; notes?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ notes: string }) & { ended_at?: never; epic_id?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ summary?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; task_id?: never; title?: never };
+
+export type MeetingChange_Serialize = ({ title: string }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never } | ({ started_at: number }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ ended_at: number | null }) & { epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ project_id: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ epic_id: string | null }) & { ended_at?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ task_id: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; title?: never } | 
+/**  Entering `validated` records when; leaving it clears that. */
+({ state: MeetingState }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; summary?: never; task_id?: never; title?: never } | ({ participants: string[] }) & { ended_at?: never; epic_id?: never; notes?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ notes: string }) & { ended_at?: never; epic_id?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ summary: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; task_id?: never; title?: never };
+
+/**
+ *  Where a [`Meeting`] is in its life (ADR 025). Only `scheduled` and `held` are set by
+ *  hand; the others belong to recording and transcription (M19, M20).
+ */
+export type MeetingState = 
+/**  Planned, not started. */
+"scheduled" | 
+/**  Took place, with notes but no transcript. */
+"held" | "recording" | 
+/**  Recorded, being transcribed. */
+"processing" | 
+/**  Transcript ready, to be checked. */
+"review" | 
+/**  Transcript checked: the audio's retention period has started. */
+"validated" | 
+/**  Recording or transcription failed; can be retried. */
+"failed";
+
+/**
+ *  A meeting (Scribe, ADR 025): on the calendar, optionally linked to a project, an epic
+ *  and a task, with participants and notes. Its audio never enters the database.
+ */
+export type Meeting_Deserialize = {
+	id: string,
+	title: string,
+	started_at: number,
+	/**  After `started_at`; `None` while it is being recorded. */
+	ended_at?: number | null,
+	project_id?: string | null,
+	epic_id?: string | null,
+	task_id?: string | null,
+	state: MeetingState,
+	/**  Names, as typed. */
+	participants: string[],
+	/**  Markdown. */
+	notes: string,
+	/**  Markdown. */
+	summary?: string | null,
+	transcribed_at?: number | null,
+	validated_at?: number | null,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**
+ *  A meeting (Scribe, ADR 025): on the calendar, optionally linked to a project, an epic
+ *  and a task, with participants and notes. Its audio never enters the database.
+ */
+export type Meeting_Serialize = {
+	id: string,
+	title: string,
+	started_at: number,
+	/**  After `started_at`; `None` while it is being recorded. */
+	ended_at: number | null,
+	project_id: string | null,
+	epic_id: string | null,
+	task_id: string | null,
+	state: MeetingState,
+	/**  Names, as typed. */
+	participants: string[],
+	/**  Markdown. */
+	notes: string,
+	/**  Markdown. */
+	summary: string | null,
+	transcribed_at: number | null,
+	validated_at: number | null,
+	created_at: number,
+	updated_at: number,
+	deleted_at: number | null,
+};
+
 /**  A name from the line and the live entity it matched, if any. */
 export type NameMatch = NameMatch_Serialize | NameMatch_Deserialize;
 
@@ -1233,7 +1338,9 @@ export type NewAttachment = NewAttachment_Serialize | NewAttachment_Deserialize;
 
 export type NewAttachment_Deserialize = {
 	id?: string | null,
-	task_id: string,
+	/**  The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two. */
+	task_id?: string | null,
+	meeting_id?: string | null,
 	/**  From `FileStore::put_*`. */
 	hash: string,
 	/**  Folders are stripped. */
@@ -1245,7 +1352,9 @@ export type NewAttachment_Deserialize = {
 
 export type NewAttachment_Serialize = {
 	id: string | null,
-	task_id: string,
+	/**  The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two. */
+	task_id: string | null,
+	meeting_id: string | null,
 	/**  From `FileStore::put_*`. */
 	hash: string,
 	/**  Folders are stripped. */
@@ -1277,6 +1386,48 @@ export type NewEpic_Serialize = {
 	description: string | null,
 	target_date: string | null,
 	rank: string | null,
+};
+
+export type NewMeeting = NewMeeting_Serialize | NewMeeting_Deserialize;
+
+export type NewMeeting_Deserialize = {
+	id?: string | null,
+	title: string,
+	/**  Unix ms. */
+	started_at: number,
+	/**
+	 *  Unix ms, after `started_at`, at most [`MAX_BLOCK_MS`] later. `None` while
+	 *  recording.
+	 */
+	ended_at?: number | null,
+	project_id?: string | null,
+	epic_id?: string | null,
+	task_id?: string | null,
+	/**  Defaults to `scheduled`. */
+	state?: MeetingState | null,
+	/**  Trimmed; blanks and repeats (ignoring case) are dropped. */
+	participants?: string[],
+	notes?: string,
+};
+
+export type NewMeeting_Serialize = {
+	id: string | null,
+	title: string,
+	/**  Unix ms. */
+	started_at: number,
+	/**
+	 *  Unix ms, after `started_at`, at most [`MAX_BLOCK_MS`] later. `None` while
+	 *  recording.
+	 */
+	ended_at: number | null,
+	project_id: string | null,
+	epic_id: string | null,
+	task_id: string | null,
+	/**  Defaults to `scheduled`. */
+	state: MeetingState | null,
+	/**  Trimmed; blanks and repeats (ignoring case) are dropped. */
+	participants: string[],
+	notes: string,
 };
 
 export type NewProject = NewProject_Serialize | NewProject_Deserialize;
@@ -1597,12 +1748,14 @@ export type Snapshot_Deserialize = {
 	statuses: Status_Deserialize[],
 	tags: Tag_Deserialize[],
 	views: View_Deserialize[],
-	/**  Attachments of live tasks. */
+	/**  Attachments of live tasks and live meetings. */
 	attachments: Attachment_Deserialize[],
 	/**  Time blocks of live tasks, by start. */
 	time_blocks: TimeBlock_Deserialize[],
 	/**  Agent sessions of live tasks, every device's, by start. */
 	agent_sessions: AgentSession_Deserialize[],
+	/**  Live meetings, by start. */
+	meetings: Meeting_Deserialize[],
 };
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
@@ -1613,12 +1766,14 @@ export type Snapshot_Serialize = {
 	statuses: Status_Serialize[],
 	tags: Tag_Serialize[],
 	views: View_Serialize[],
-	/**  Attachments of live tasks. */
+	/**  Attachments of live tasks and live meetings. */
 	attachments: Attachment_Serialize[],
 	/**  Time blocks of live tasks, by start. */
 	time_blocks: TimeBlock_Serialize[],
 	/**  Agent sessions of live tasks, every device's, by start. */
 	agent_sessions: AgentSession_Serialize[],
+	/**  Live meetings, by start. */
+	meetings: Meeting_Serialize[],
 };
 
 export type SortBy = 

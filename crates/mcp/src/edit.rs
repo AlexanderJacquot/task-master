@@ -375,12 +375,13 @@ impl TaskServer {
         let lines: Vec<String> = snapshot
             .attachments
             .iter()
-            .filter(|a| p.task_id.as_ref().is_none_or(|t| &a.task_id == t))
+            .filter(|a| a.task_id.is_some())
+            .filter(|a| p.task_id.is_none() || a.task_id == p.task_id)
             .map(|a| {
                 let task = snapshot
                     .tasks
                     .iter()
-                    .find(|t| t.id == a.task_id)
+                    .find(|t| Some(&t.id) == a.task_id.as_ref())
                     .map_or("?", |t| t.title.as_str());
                 format!(
                     "- {} ({}, {}) on {task} (`{}`)",
@@ -441,7 +442,8 @@ impl TaskServer {
         let changes = self.write(vec![Command::CreateAttachment {
             attachment: NewAttachment {
                 id: Some(id.clone()),
-                task_id: task.id.clone(),
+                task_id: Some(task.id.clone()),
+                meeting_id: None,
                 hash: stored.hash,
                 name,
                 mime: None,
@@ -616,7 +618,11 @@ fn attachment_and_task<'a>(
         .iter()
         .find(|a| a.id == id)
         .ok_or_else(|| format!("attachment {id} not found"))?;
-    Ok((attachment, find_task(snapshot, &attachment.task_id)?))
+    let task_id = attachment
+        .task_id
+        .as_deref()
+        .ok_or_else(|| format!("attachment {id} is not on a task"))?;
+    Ok((attachment, find_task(snapshot, task_id)?))
 }
 
 fn is_text(mime: &str) -> bool {

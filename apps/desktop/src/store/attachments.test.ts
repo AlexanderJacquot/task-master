@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 import type { Api } from "../lib/api";
-import type { Attachment, Changes, Command, StoredUpload, Task } from "../lib/types";
-import { attachment, fakeParse, snapshot, task } from "../test/fixtures";
-import { attachFiles, deleteAttachment, renameAttachment } from "./actions";
+import type { Attachment, Changes, Command, Meeting, StoredUpload, Task } from "../lib/types";
+import { attachment, fakeParse, meeting, snapshot, task } from "../test/fixtures";
+import {
+  attachFiles,
+  attachFilesTo,
+  deleteAttachment,
+  deleteMeeting,
+  renameAttachment,
+} from "./actions";
 import { createTaskStore } from "./store";
 
-function setup(data: { tasks?: Task[]; attachments?: Attachment[] }, refuse = false) {
+function setup(
+  data: { tasks?: Task[]; attachments?: Attachment[]; meetings?: Meeting[] },
+  refuse = false,
+) {
   const executed: Command[][] = [];
   const api: Api = {
     snapshot: async () => snapshot(data),
@@ -24,6 +33,7 @@ function setup(data: { tasks?: Task[]; attachments?: Attachment[] }, refuse = fa
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
         statuses: [],
       } as Changes);
     },
@@ -46,6 +56,29 @@ const upload = (name: string, mime = "image/png"): StoredUpload => ({
 });
 
 describe("attachment actions", () => {
+  it("attaches files to a meeting, and deleting the meeting hides them", async () => {
+    const m = meeting();
+    const { store, executed, ready } = setup({ meetings: [m] });
+    await ready;
+    const [added] = await attachFilesTo(store, { meeting: m.id }, [upload("deck.pdf")]);
+    expect(added).toMatchObject({ meeting_id: m.id, task_id: null });
+    expect(executed[0]?.[0]).toEqual({
+      type: "create_attachment",
+      attachment: {
+        id: added?.id,
+        meeting_id: m.id,
+        hash: "b".repeat(64),
+        name: "deck.pdf",
+        mime: "image/png",
+        size: 10,
+      },
+    });
+    await deleteMeeting(store, m.id);
+    expect(executed[1]).toEqual([{ type: "delete_meeting", id: m.id }]);
+    expect(store.getState().meetings[m.id]).toBeUndefined();
+    expect(store.getState().attachments).toEqual({});
+  });
+
   it("attaches several stored files in one batch, shown at once", async () => {
     const t = task();
     const { store, executed, ready } = setup({ tasks: [t] });

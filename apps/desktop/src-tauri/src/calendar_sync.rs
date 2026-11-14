@@ -2,8 +2,8 @@
 //! background thread running `taskmaster_core::calendar::sync`, and the commands and event
 //! the UI uses.
 //!
-//! A sync runs every 5 minutes, a few seconds after tasks or time blocks change (several
-//! quick edits make one sync), and on "Sync now".
+//! A sync runs every 5 minutes, a few seconds after tasks, time blocks or meetings change
+//! (several quick edits make one sync), and on "Sync now".
 
 use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
@@ -84,11 +84,14 @@ impl CalendarRuntime {
         let _ = self.kick.send(());
     }
 
-    /// Whether a committed batch touched what is pushed (tasks, time blocks).
+    /// Whether a committed batch touched what is pushed (tasks, time blocks, meetings).
     pub fn wants(entities: &[taskmaster_core::EntityRef]) -> bool {
-        entities
-            .iter()
-            .any(|e| matches!(e.kind, EntityKind::Task | EntityKind::TimeBlock))
+        entities.iter().any(|e| {
+            matches!(
+                e.kind,
+                EntityKind::Task | EntityKind::TimeBlock | EntityKind::Meeting
+            )
+        })
     }
 }
 

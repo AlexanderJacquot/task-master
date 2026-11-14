@@ -2,6 +2,7 @@ import type {
   AgentSession,
   Attachment,
   Capture,
+  Meeting,
   Project,
   Snapshot,
   Status,
@@ -144,6 +145,7 @@ export function attachment(overrides: Partial<Attachment> = {}): Attachment {
   return {
     id: `0192f0c4-0000-7000-8000-${String(counter).padStart(12, "0")}`,
     task_id: "t0",
+    meeting_id: null,
     hash: "a".repeat(64),
     name: `file-${counter}.png`,
     mime: "image/png",
@@ -200,6 +202,31 @@ export function agentSession(overrides: Partial<AgentSession> = {}): AgentSessio
   };
 }
 
+/** A held meeting of one hour, 2026-11-05 10:00 local unless overridden. */
+export function meeting(overrides: Partial<Meeting> = {}): Meeting {
+  counter += 1;
+  const started_at = overrides.started_at ?? new Date(2026, 10, 5, 10).getTime();
+  return {
+    id: `0192f0c6-0000-7000-8000-${String(counter).padStart(12, "0")}`,
+    title: `Meeting ${counter}`,
+    started_at,
+    ended_at: started_at + 3_600_000,
+    project_id: null,
+    epic_id: null,
+    task_id: null,
+    state: "held",
+    participants: [],
+    notes: "",
+    summary: null,
+    transcribed_at: null,
+    validated_at: null,
+    created_at: counter,
+    updated_at: counter,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
 export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
   return {
     tasks: [],
@@ -211,6 +238,7 @@ export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     attachments: [],
     time_blocks: [],
     agent_sessions: [],
+    meetings: [],
     ...overrides,
   };
 }

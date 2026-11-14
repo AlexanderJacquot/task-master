@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 
-use crate::commands::{Command, TaskChange, TimeBlockChange};
+use crate::commands::{Command, MeetingChange, TaskChange, TimeBlockChange};
 use crate::error::{Error, Result};
 use crate::model::{BlockOutcome, Id, IsoDate, Timestamp};
 use crate::parse::dates;
@@ -80,7 +80,8 @@ pub struct EventBody {
     pub title: String,
     pub description: String,
     pub when: When,
-    /// `block:<id>`, `plan:<task id>` or `due:<task id>`, stored with the event.
+    /// `block:<id>`, `plan:<task id>`, `due:<task id>` or `meeting:<id>`, stored with the
+    /// event.
     pub key: String,
 }
 
@@ -340,8 +341,9 @@ struct Local {
     body: EventBody,
 }
 
-/// The pushable state of `block:<id>`, `plan:<task id>` or `due:<task id>`; `None` when it
-/// should not be in the calendar (deleted, cancelled or missed, no longer planned or due).
+/// The pushable state of `block:<id>`, `plan:<task id>`, `due:<task id>` or
+/// `meeting:<id>`; `None` when it should not be in the calendar (deleted, cancelled or
+/// missed, no longer planned or due, a meeting still being recorded).
 fn local_item(conn: &Connection, key: &str) -> Result<Option<Local>> {
     let Some((kind, id)) = key.split_once(':') else {
         return Ok(None);
@@ -430,8 +432,76 @@ fn local_item(conn: &Connection, key: &str) -> Result<Option<Local>> {
                 },
             }))
         }
+        "meeting" => {
+            let meeting = match query::meeting(conn, id) {
+                Ok(m) if m.deleted_at.is_none() => m,
+                Ok(_) | Err(Error::NotFound { .. }) => return Ok(None),
+                Err(e) => return Err(e),
+            };
+            let Some(end_at) = meeting.ended_at else {
+                return Ok(None);
+            };
+            let description = meeting_description(conn, &meeting)?;
+            Ok(Some(Local {
+                fingerprint: format!(
+                    "meeting|{}|{}|{end_at}|{description}",
+                    meeting.title, meeting.started_at
+                ),
+                body: EventBody {
+                    title: meeting.title,
+                    description,
+                    when: When::Timed {
+                        start_at: meeting.started_at,
+                        end_at,
+                    },
+                    key: key.to_owned(),
+                },
+            }))
+        }
         _ => Ok(None),
     }
+}
+
+/// A meeting's event text: who takes part and what it is about.
+fn meeting_description(conn: &Connection, m: &crate::model::Meeting) -> Result<String> {
+    let name = |sql: &str, id: &Option<Id>| -> Result<Option<String>> {
+        let Some(id) = id else { return Ok(None) };
+        Ok(conn.query_row(sql, [id], |r| r.get(0)).optional()?)
+    };
+    let mut lines = Vec::new();
+    if !m.participants.is_empty() {
+        lines.push(format!("With {}.", m.participants.join(", ")));
+    }
+    let links = [
+        (
+            "Project",
+            name(
+                "SELECT name FROM projects WHERE id = ?1 AND deleted_at IS NULL",
+                &m.project_id,
+            )?,
+        ),
+        (
+            "Epic",
+            name(
+                "SELECT name FROM epics WHERE id = ?1 AND deleted_at IS NULL",
+                &m.epic_id,
+            )?,
+        ),
+        (
+            "Task",
+            name(
+                "SELECT title FROM tasks WHERE id = ?1 AND deleted_at IS NULL",
+                &m.task_id,
+            )?,
+        ),
+    ];
+    for (label, value) in links {
+        if let Some(value) = value {
+            lines.push(format!("{label}: {value}"));
+        }
+    }
+    lines.push("Meeting in task-master.".into());
+    Ok(lines.join("\n"))
 }
 
 fn next_day(iso: &str) -> Result<IsoDate> {
@@ -454,7 +524,10 @@ fn wanted_keys(conn: &Connection, now: Timestamp, today: &str) -> Result<Vec<Str
          WHERE deleted_at IS NULL AND today_on IS NOT NULL AND today_on >= ?2
          UNION ALL
          SELECT 'due:' || id FROM tasks
-         WHERE deleted_at IS NULL AND due_date IS NOT NULL AND due_date >= ?2",
+         WHERE deleted_at IS NULL AND due_date IS NOT NULL AND due_date >= ?2
+         UNION ALL
+         SELECT 'meeting:' || id FROM meetings
+         WHERE deleted_at IS NULL AND ended_at IS NOT NULL AND ended_at >= ?1",
     )?;
     let rows = stmt.query_map(params![now - PUSH_PAST_MS, since], |r| r.get(0))?;
     for row in rows {
@@ -532,12 +605,28 @@ fn follow(conn: &Connection, key: &str, when: &When) -> Result<Option<Command>> 
                 })
             }
         }
+        ("meeting", When::Timed { start_at, end_at }) => {
+            let meeting = query::meeting(conn, id)?;
+            let valid = *end_at > *start_at && end_at - start_at <= MAX_BLOCK_MS && *start_at >= 0;
+            if !valid || (meeting.started_at == *start_at && meeting.ended_at == Some(*end_at)) {
+                None
+            } else {
+                Some(Command::UpdateMeeting {
+                    id: id.to_owned(),
+                    changes: vec![
+                        MeetingChange::StartedAt(*start_at),
+                        MeetingChange::EndedAt(Some(*end_at)),
+                    ],
+                })
+            }
+        }
         // A block turned into an all-day event (or the reverse): the next push restores it.
         _ => None,
     })
 }
 
-/// The command that removes a local item whose event was deleted in the calendar.
+/// The command that removes a local item whose event was deleted in the calendar. A
+/// meeting holds notes and is not removed: the next push creates its event again.
 fn removal(key: &str) -> Option<Command> {
     let (kind, id) = key.split_once(':')?;
     match kind {

@@ -44,6 +44,31 @@ in Google moves the meeting, like blocks.
 `scribe_purge_audio`. Playback goes through `tm://meeting-audio/<id>/<track>` with range
 requests.
 
+## M18 notes (2026-11-14)
+
+What M18 built, where it differs from or adds to the decisions above:
+
+- **Migration 15 holds `meetings` and `attachments.meeting_id` only.** `meeting_speakers`
+  and `transcript_segments` (with their FTS) come with transcription in M20, as
+  migration 16. How `SetTranscript` writes a whole transcript as one op (the op engine
+  writes one row per op) is decided there, with the pipeline that produces it.
+- **States.** `scheduled | held | recording | processing | review | validated | failed`.
+  `held` is new: the meeting took place, with notes but no recording. The UI shows
+  "Upcoming", "In progress" or "Held" for the first two from the times. Entering
+  `validated` sets `validated_at`; leaving it clears it.
+- **Attachments.** The table was rebuilt (SQLite cannot drop NOT NULL): `task_id` is now
+  nullable, `meeting_id` added, and a CHECK keeps exactly one of them. A deleted meeting
+  hides its attachments like a deleted task does, and their files become purgeable.
+- **Calendar.** A meeting is pushed when it has an end (not while recording), with its
+  participants and links in the description; notes stay out. Moving the event in Google
+  moves the meeting. **Deleting the event in Google does not delete the meeting** (it
+  holds notes): the next sync creates the event again. A Google event's popover has
+  "Make it a meeting". The planner treats meetings as busy time.
+- **Links** are checked when set but do not follow deletions: a meeting linked to a task,
+  epic or project that is deleted keeps its link and shows nothing for it.
+- **MCP:** `list_meetings`, `get_meeting`, and meetings in `get_calendar`; read-only.
+- No new IPC in M18: meetings go through `execute` and the snapshot like other entities.
+
 ## Consequences
 
 - Recording works on Windows and macOS only at first; Linux shows the meetings without

@@ -248,13 +248,14 @@ pub struct Tag {
     pub deleted_at: Option<Timestamp>,
 }
 
-/// A file attached to a task. The content is stored by hash outside the database (see
-/// [`crate::FileStore`]); several rows may share one file.
+/// A file attached to a task or a meeting (exactly one of the two). The content is stored
+/// by hash outside the database (see [`crate::FileStore`]); several rows may share one file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct Attachment {
     pub id: Id,
-    pub task_id: Id,
+    pub task_id: Option<Id>,
+    pub meeting_id: Option<Id>,
     /// SHA-256 of the content, lowercase hex.
     pub hash: String,
     /// File name, without any folder.
@@ -316,6 +317,82 @@ pub struct TimeBlock {
     /// After `start_at`.
     pub end_at: Timestamp,
     pub outcome: BlockOutcome,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
+/// Where a [`Meeting`] is in its life (ADR 025). Only `scheduled` and `held` are set by
+/// hand; the others belong to recording and transcription (M19, M20).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MeetingState {
+    /// Planned, not started.
+    #[default]
+    Scheduled,
+    /// Took place, with notes but no transcript.
+    Held,
+    Recording,
+    /// Recorded, being transcribed.
+    Processing,
+    /// Transcript ready, to be checked.
+    Review,
+    /// Transcript checked: the audio's retention period has started.
+    Validated,
+    /// Recording or transcription failed; can be retried.
+    Failed,
+}
+
+impl MeetingState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Scheduled => "scheduled",
+            Self::Held => "held",
+            Self::Recording => "recording",
+            Self::Processing => "processing",
+            Self::Review => "review",
+            Self::Validated => "validated",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "scheduled" => Self::Scheduled,
+            "held" => Self::Held,
+            "recording" => Self::Recording,
+            "processing" => Self::Processing,
+            "review" => Self::Review,
+            "validated" => Self::Validated,
+            "failed" => Self::Failed,
+            _ => return None,
+        })
+    }
+}
+
+/// A meeting (Scribe, ADR 025): on the calendar, optionally linked to a project, an epic
+/// and a task, with participants and notes. Its audio never enters the database.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct Meeting {
+    pub id: Id,
+    pub title: String,
+    pub started_at: Timestamp,
+    /// After `started_at`; `None` while it is being recorded.
+    pub ended_at: Option<Timestamp>,
+    pub project_id: Option<Id>,
+    pub epic_id: Option<Id>,
+    pub task_id: Option<Id>,
+    pub state: MeetingState,
+    /// Names, as typed.
+    pub participants: Vec<String>,
+    /// Markdown.
+    pub notes: String,
+    /// Markdown.
+    pub summary: Option<String>,
+    pub transcribed_at: Option<Timestamp>,
+    pub validated_at: Option<Timestamp>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub deleted_at: Option<Timestamp>,
@@ -692,10 +769,12 @@ pub struct Snapshot {
     pub statuses: Vec<Status>,
     pub tags: Vec<Tag>,
     pub views: Vec<View>,
-    /// Attachments of live tasks.
+    /// Attachments of live tasks and live meetings.
     pub attachments: Vec<Attachment>,
     /// Time blocks of live tasks, by start.
     pub time_blocks: Vec<TimeBlock>,
     /// Agent sessions of live tasks, every device's, by start.
     pub agent_sessions: Vec<AgentSession>,
+    /// Live meetings, by start.
+    pub meetings: Vec<Meeting>,
 }

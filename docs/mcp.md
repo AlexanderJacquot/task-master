@@ -113,9 +113,16 @@ The optional `task_id` and `project_id` filters narrow the list. Each row includ
 session and task ids, task title and current task status, run state, start/end times
 (Unix milliseconds), and a short summary and error. The response is JSON.
 
-`list_agent_sessions` and `list_tasks` return at most 200 rows per call (50 by default).
-When `next_cursor` is present, pass it as `cursor` with the same filters to read the next
-page. `list_tasks` has no `next_cursor` after its last page.
+### Meetings
+
+`list_meetings` lists the user's meetings (Scribe, ADR 025) newest first, filtered by
+project, epic, task or participant name; `get_meeting` returns one in full (links,
+participants, attachment names, notes, summary). Both are read-only. `get_calendar` shows
+meetings among the day's items. Pass `utc_offset` to read times in local time.
+
+`list_agent_sessions`, `list_tasks` and `list_meetings` return at most 200 rows per call
+(50 by default). When `next_cursor` is present, pass it as `cursor` with the same filters
+to read the next page. `list_tasks` has no `next_cursor` after its last page.
 
 ## 3. Versions and updates
 

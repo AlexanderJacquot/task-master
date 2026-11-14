@@ -37,6 +37,7 @@ export function sessionChanges(session: AgentSession): Changes {
     time_blocks: [],
     agent_sessions: [session],
     agent_notes: [],
+    meetings: [],
   };
 }
 

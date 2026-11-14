@@ -73,6 +73,7 @@ async function renderTask(
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
         statuses: [],
       } as Changes;
     },

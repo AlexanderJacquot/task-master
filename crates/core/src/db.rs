@@ -26,6 +26,7 @@ const MIGRATIONS: &[M<'static>] = &[
         "../migrations/0013_agent_session_duration.sql"
     )),
     M::up(include_str!("../migrations/0014_block_missed.sql")),
+    M::up(include_str!("../migrations/0015_meetings.sql")),
 ];
 
 pub(crate) fn migrations() -> Migrations<'static> {
@@ -197,6 +198,49 @@ mod tests {
             )
             .unwrap();
         assert_eq!(seeded, 0);
+    }
+
+    #[test]
+    fn meetings_migration_keeps_task_attachments() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        configure(&conn).unwrap();
+        migrations().to_version(&mut conn, 14).unwrap();
+        let status: String = conn
+            .query_row("SELECT id FROM statuses LIMIT 1", [], |r| r.get(0))
+            .unwrap();
+        conn.execute(
+            "INSERT INTO tasks (id, status_id, title, rank, created_at, updated_at)
+             VALUES ('t', ?1, 'T', 'a0', 1, 1)",
+            [status],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO attachments (id, task_id, hash, name, mime, size, created_at, updated_at)
+             VALUES ('a', 't', 'h', 'x.txt', 'text/plain', 3, 1, 1)",
+            [],
+        )
+        .unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+        let (task_id, meeting_id, name): (String, Option<String>, String) = conn
+            .query_row(
+                "SELECT task_id, meeting_id, name FROM attachments WHERE id = 'a'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (task_id.as_str(), meeting_id, name.as_str()),
+            ("t", None, "x.txt")
+        );
+        // An attachment names exactly one owner.
+        assert!(
+            conn.execute(
+                "INSERT INTO attachments (id, hash, name, mime, size, created_at, updated_at)
+                 VALUES ('b', 'h', 'y', 'text/plain', 1, 1, 1)",
+                [],
+            )
+            .is_err()
+        );
     }
 
     #[test]

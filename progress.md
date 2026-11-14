@@ -30,6 +30,30 @@ tools.rs) `the_users_tasks_move_between_projects_epics_and_parents`,
 the calendar and lineage scope tests now run with editing off. Not tried in the app; the
 NSIS hook is untested (needs a Windows installer build).
 
+**M18 Scribe: meetings without audio** (2026-11-14, branch `worktree-m18-meetings`, ADR 025
+amended with "M18 notes"; plan docs/meetings-plan.md): migration 15 adds `meetings` and
+rebuilds `attachments` (`task_id` nullable, `meeting_id`, CHECK exactly one). Commands
+`CreateMeeting` / `UpdateMeeting` / `DeleteMeeting` with undo, sync, export/import;
+snapshot and `Changes` carry `meetings`. Calendar sync pushes `meeting:<id>` events and
+follows moves back; a deletion in Google does not delete the meeting. MCP `list_meetings`,
+`get_meeting`, meetings in `get_calendar`. UI: sidebar tab **Scribe** (`/scribe`,
+virtualized list, search, project filter, Start meeting / Plan a meeting), meeting page
+(`/meeting/$id`: title, date and times, project / epic / task links, participant chips with
+suggestions from earlier meetings, markdown notes, attachments, End now / Start now,
+delete), meetings drawn on the calendar (week/day/month) and used as busy time by the
+planner, "Make it a meeting" on Google events, Meetings sections on task, project and epic
+pages, meeting attachments in Settings → Files. New icon `scribe` (quill on a page;
+`NotebookPen` in the clean look). Not in M18 (deferred to M20): transcript and speaker
+tables. Tests: `crates/core/tests/meetings.rs` (7), `db.rs`
+`meetings_migration_keeps_task_attachments`, `calendar_sync.rs`
+`meetings_are_pushed_followed_and_come_back_when_deleted_there`, `crates/mcp/tests/tools.rs`
+`meetings_are_listed_read_in_full_and_on_the_calendar`, `lib/meetings.test.ts`,
+`features/scribe/scribe.test.tsx`, `lib/files.test.ts`, `store/attachments.test.ts`.
+`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --locked`, `pnpm biome ci .`, `pnpm typecheck`, `pnpm test`
+(519 passed, 2 skipped) pass. Not tried in the app; Google push not tried against Google.
+Schema 15: the sync server must be updated with the app.
+
 **Release 0.21.0** (2026-11-14, on `main`; notes `docs/releases/0.21.0.md`): agents may
 edit the user's tasks. Its `the_users_tasks_are_mostly_off_limits` test still expected the
 old rule (another task of the user's left unchanged); updated and renamed
@@ -1989,9 +2013,11 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
-- Scribe (meetings, docs/meetings-plan.md, ADR 025/026): planned as M18–M21, not
-  started. After it: a synced contacts list replacing free-text participant names
-  (task `01a1d747…`), live captions, Linux capture, voice profiles.
+- Scribe (meetings, docs/meetings-plan.md, ADR 025/026): M18 built; M19 (recording),
+  M20 (transcription, speakers; migration 16 for segments), M21 (summary) to do. After
+  it: a synced contacts list replacing free-text participant names (task `01a1d747…`),
+  live captions, Linux capture, voice profiles. Smaller: palette search over meetings,
+  recurring meetings.
 - Git, on top of `project_git` (ADR 017): record the release (tag + commits, commit,
   branch) an agent session started and ended on, as new `agent_sessions` columns (a
   migration, synced); stamp a task with the release it was finished on; a "create PR"

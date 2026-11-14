@@ -6,9 +6,9 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter, types::ToSq
 
 use crate::error::{Error, Result};
 use crate::model::{
-    AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, Epic, EpicState, Id, Priority,
-    Project, ProjectFolder, SessionState, Snapshot, Status, StatusCategory, Tag, Task, TaskOwner,
-    TimeBlock, View,
+    AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, Epic, EpicState, Id, Meeting,
+    MeetingState, Priority, Project, ProjectFolder, SessionState, Snapshot, Status, StatusCategory,
+    Tag, Task, TaskOwner, TimeBlock, View,
 };
 
 const TASK_COLS: &str = "id, project_id, epic_id, parent_id, status_id, title, description, \
@@ -23,7 +23,11 @@ const STATUS_COLS: &str =
     "id, name, category, color, rank, wip_limit, created_at, updated_at, deleted_at";
 const VIEW_COLS: &str = "id, name, spec, rank, created_at, updated_at, deleted_at";
 const ATTACHMENT_COLS: &str =
-    "id, task_id, hash, name, mime, size, created_at, updated_at, deleted_at";
+    "id, task_id, hash, name, mime, size, created_at, updated_at, deleted_at, meeting_id";
+
+const MEETING_COLS: &str = "id, title, started_at, ended_at, project_id, epic_id, task_id, \
+    state, participants, notes, summary, transcribed_at, validated_at, created_at, updated_at, \
+    deleted_at";
 
 const TIME_BLOCK_COLS: &str =
     "id, task_id, start_at, end_at, outcome, created_at, updated_at, deleted_at";
@@ -144,6 +148,31 @@ fn attachment_row(r: &Row<'_>) -> rusqlite::Result<Attachment> {
         created_at: r.get(6)?,
         updated_at: r.get(7)?,
         deleted_at: r.get(8)?,
+        meeting_id: r.get(9)?,
+    })
+}
+
+fn meeting_row(r: &Row<'_>) -> rusqlite::Result<Meeting> {
+    let state: String = r.get(7)?;
+    let participants: String = r.get(8)?;
+    Ok(Meeting {
+        id: r.get(0)?,
+        title: r.get(1)?,
+        started_at: r.get(2)?,
+        ended_at: r.get(3)?,
+        project_id: r.get(4)?,
+        epic_id: r.get(5)?,
+        task_id: r.get(6)?,
+        state: MeetingState::parse(&state).ok_or_else(|| bad_value(7, state))?,
+        participants: serde_json::from_str(&participants)
+            .map_err(|_| bad_value(8, participants))?,
+        notes: r.get(9)?,
+        summary: r.get(10)?,
+        transcribed_at: r.get(11)?,
+        validated_at: r.get(12)?,
+        created_at: r.get(13)?,
+        updated_at: r.get(14)?,
+        deleted_at: r.get(15)?,
     })
 }
 
@@ -400,6 +429,49 @@ pub(crate) fn time_block(conn: &Connection, id: &str) -> Result<TimeBlock> {
     .ok_or_else(|| Error::not_found("time block", id))
 }
 
+/// Any meeting, including soft-deleted ones.
+pub(crate) fn meeting(conn: &Connection, id: &str) -> Result<Meeting> {
+    conn.query_row(
+        &format!("SELECT {MEETING_COLS} FROM meetings WHERE id = ?1"),
+        [id],
+        meeting_row,
+    )
+    .optional()?
+    .ok_or_else(|| Error::not_found("meeting", id))
+}
+
+/// Live meetings by start, optionally only those linked to a project, epic or task.
+pub(crate) fn meetings(conn: &Connection, link: Option<(&str, &str)>) -> Result<Vec<Meeting>> {
+    match link {
+        None => query(
+            conn,
+            &format!(
+                "SELECT {MEETING_COLS} FROM meetings WHERE deleted_at IS NULL
+                 ORDER BY started_at, id"
+            ),
+            &[],
+            meeting_row,
+        ),
+        Some((column, id)) => {
+            let column = match column {
+                "project" => "project_id",
+                "epic" => "epic_id",
+                "task" => "task_id",
+                other => return Err(Error::invalid(format!("meetings have no '{other}' link"))),
+            };
+            query(
+                conn,
+                &format!(
+                    "SELECT {MEETING_COLS} FROM meetings WHERE deleted_at IS NULL AND {column} = ?1
+                     ORDER BY started_at, id"
+                ),
+                &[&id],
+                meeting_row,
+            )
+        }
+    }
+}
+
 /// Every live entity, in display order (rank, then id).
 pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
     let mut tasks = query(
@@ -445,13 +517,18 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
             &[],
             view_row,
         )?,
-        // A deleted task keeps its attachment rows, so undoing the delete restores them.
+        // A deleted task or meeting keeps its attachment rows, so undoing the delete
+        // restores them.
         attachments: query(
             conn,
             "SELECT a.id, a.task_id, a.hash, a.name, a.mime, a.size, a.created_at,
-                    a.updated_at, a.deleted_at
-             FROM attachments a JOIN tasks t ON t.id = a.task_id
-             WHERE a.deleted_at IS NULL AND t.deleted_at IS NULL
+                    a.updated_at, a.deleted_at, a.meeting_id
+             FROM attachments a
+             LEFT JOIN tasks t ON t.id = a.task_id
+             LEFT JOIN meetings m ON m.id = a.meeting_id
+             WHERE a.deleted_at IS NULL
+               AND (t.deleted_at IS NULL AND t.id IS NOT NULL
+                    OR m.deleted_at IS NULL AND m.id IS NOT NULL)
              ORDER BY a.created_at, a.id",
             &[],
             attachment_row,
@@ -477,6 +554,7 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
             &[],
             session_row,
         )?,
+        meetings: meetings(conn, None)?,
     })
 }
 

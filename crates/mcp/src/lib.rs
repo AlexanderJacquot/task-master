@@ -20,6 +20,7 @@ mod calendar;
 mod edit;
 mod lineage;
 pub mod locate;
+mod meetings;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -467,6 +468,36 @@ pub struct CompleteSession {
     /// marked done first.
     #[serde(default)]
     pub left_open: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct ListMeetings {
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub epic_id: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    /// Only meetings with a participant whose name contains this (any case).
+    #[serde(default)]
+    pub participant: Option<String>,
+    /// The user's UTC offset, like `+01:00`. Times are shown in it. Default: UTC.
+    #[serde(default)]
+    pub utc_offset: Option<String>,
+    /// At most this many rows (default 50, at most 200).
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Continue after the meeting id returned as next_cursor. Reuse the same filters.
+    #[serde(default)]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct GetMeeting {
+    pub meeting_id: String,
+    /// The user's UTC offset, like `+01:00`. Default: UTC.
+    #[serde(default)]
+    pub utc_offset: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -1256,9 +1287,84 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "The calendar day by day: time blocks (task, outcome, block id), the \
-                       user's events from their shown Google calendars, and open tasks due \
-                       or planned on each day. Pass utc_offset to read it in local time."
+        description = "The user's meetings (Scribe), newest first: time, title, state, \
+                       participants and id. Filter by project, epic, task or participant. \
+                       Read-only."
+    )]
+    pub fn list_meetings(&self, Parameters(p): Parameters<ListMeetings>) -> ToolResult {
+        let offset = Offset::parse(p.utc_offset.as_deref().unwrap_or(""))?;
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let limit = list_limit(p.limit) as usize;
+        let participant = p
+            .participant
+            .as_deref()
+            .map(|n| n.trim().to_lowercase())
+            .filter(|n| !n.is_empty());
+        let mut newest: Vec<_> = snapshot.meetings.iter().rev().collect();
+        if let Some(cursor) = p.cursor.as_deref() {
+            let at = newest
+                .iter()
+                .position(|m| m.id == cursor)
+                .ok_or_else(|| format!("unknown meeting cursor '{cursor}'"))?;
+            newest.drain(..=at);
+        }
+        let matching: Vec<_> = newest
+            .into_iter()
+            .filter(|m| {
+                p.project_id
+                    .as_ref()
+                    .is_none_or(|v| m.project_id.as_ref() == Some(v))
+                    && p.epic_id
+                        .as_ref()
+                        .is_none_or(|v| m.epic_id.as_ref() == Some(v))
+                    && p.task_id
+                        .as_ref()
+                        .is_none_or(|v| m.task_id.as_ref() == Some(v))
+                    && participant.as_ref().is_none_or(|n| {
+                        m.participants
+                            .iter()
+                            .any(|name| name.to_lowercase().contains(n))
+                    })
+            })
+            .collect();
+        if matching.is_empty() {
+            return Ok("No meetings match.".to_owned());
+        }
+        let shown = &matching[..matching.len().min(limit)];
+        let mut out = shown
+            .iter()
+            .map(|m| meetings::line(offset, m))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let more = matching.len() - shown.len();
+        if more > 0
+            && let Some(last) = shown.last()
+        {
+            out.push_str(&format!("\n… and {more} more\nnext_cursor: `{}`", last.id));
+        }
+        Ok(out)
+    }
+
+    #[tool(
+        description = "One meeting in full as markdown: time, state, linked project, epic \
+                       and task, participants, attachment names, notes and summary."
+    )]
+    pub fn get_meeting(&self, Parameters(p): Parameters<GetMeeting>) -> ToolResult {
+        let offset = Offset::parse(p.utc_offset.as_deref().unwrap_or(""))?;
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let meeting = snapshot
+            .meetings
+            .iter()
+            .find(|m| m.id == p.meeting_id)
+            .ok_or_else(|| format!("meeting {} not found", p.meeting_id))?;
+        Ok(meetings::render(&snapshot, offset, meeting))
+    }
+
+    #[tool(
+        description = "The calendar day by day: time blocks (task, outcome, block id), \
+                       meetings, the user's events from their shown Google calendars, and \
+                       open tasks due or planned on each day. Pass utc_offset to read it in \
+                       local time."
     )]
     pub fn get_calendar(&self, Parameters(p): Parameters<GetCalendar>) -> ToolResult {
         let offset = Offset::parse(p.utc_offset.as_deref().unwrap_or(""))?;
@@ -1463,9 +1569,10 @@ impl TaskServer {
     }
 
     fn instructions(&self) -> String {
-        const VIEWS: &str = " get_calendar shows the user's time blocks and events \
-                             (schedule_block plans time); get_lineage shows which tasks wait \
-                             on which (link_tasks adds a link).";
+        const VIEWS: &str = " get_calendar shows the user's time blocks, meetings and events \
+                             (schedule_block plans time); list_meetings and get_meeting read \
+                             the user's meetings and their notes; get_lineage shows which \
+                             tasks wait on which (link_tasks adds a link).";
         let edit = if self.edit_user_tasks {
             "You may do anything the user can do in the app when they ask: edit their tasks \
              (update_task: status, fields, project, epic, parent, tags, order), create tasks of \
