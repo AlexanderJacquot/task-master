@@ -35,7 +35,7 @@ export const commands = {
 	/**  Writes every user table to a JSON file, and the attachment files to a folder beside it. */
 	exportTo: (path: string) => typedError<null, CommandError>(__TAURI_INVOKE("export_to", { path })),
 	/**  Replaces all data with an export file, after saving a backup of the current data. */
-	importFrom: (path: string) => typedError<ImportSummary_Serialize, CommandError>(__TAURI_INVOKE("import_from", { path })),
+	importFrom: (path: string) => typedError<ImportSummary, CommandError>(__TAURI_INVOKE("import_from", { path })),
 	/**
 	 *  Moves the data to `path` (or back to the OS default when `None`) and restarts. An
 	 *  existing database there is used as is; otherwise the current one is copied over.
@@ -745,7 +745,7 @@ export type Changes_Deserialize = {
 	time_blocks: TimeBlock_Deserialize[],
 	agent_sessions: AgentSession_Deserialize[],
 	agent_notes: AgentNote_Deserialize[],
-	meetings?: Meeting_Deserialize[],
+	meetings: Meeting_Deserialize[],
 };
 
 /**
@@ -1079,24 +1079,7 @@ export type GitInfo_Serialize = {
 export type GroupBy = "status" | "project" | "epic" | "priority" | "due";
 
 /**  What an import replaced, for the UI to report. */
-export type ImportSummary = ImportSummary_Serialize | ImportSummary_Deserialize;
-
-/**  What an import replaced, for the UI to report. */
-export type ImportSummary_Deserialize = {
-	tasks: number,
-	projects: number,
-	epics: number,
-	tags: number,
-	views: number,
-	attachments: number,
-	time_blocks: number,
-	meetings?: number,
-	/**  Attachments whose file was not found (an export copied without its folder). */
-	missing_files: number,
-};
-
-/**  What an import replaced, for the UI to report. */
-export type ImportSummary_Serialize = {
+export type ImportSummary = {
 	tasks: number,
 	projects: number,
 	epics: number,
@@ -1772,7 +1755,7 @@ export type Snapshot_Deserialize = {
 	/**  Agent sessions of live tasks, every device's, by start. */
 	agent_sessions: AgentSession_Deserialize[],
 	/**  Live meetings, by start. */
-	meetings?: Meeting_Deserialize[],
+	meetings: Meeting_Deserialize[],
 };
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */

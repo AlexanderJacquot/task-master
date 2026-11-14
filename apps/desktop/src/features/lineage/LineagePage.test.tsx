@@ -42,6 +42,7 @@ async function setup(
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
       };
     },
     undo: async () => null,

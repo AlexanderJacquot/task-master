@@ -128,6 +128,7 @@ function FileLine({
   checked,
   onToggle,
   onOpenTask,
+  onOpenMeeting,
   onHover,
   onPin,
   active,
@@ -140,6 +141,7 @@ function FileLine({
   checked: boolean;
   onToggle: () => void;
   onOpenTask: (id: string) => void;
+  onOpenMeeting: (id: string) => void;
 }) {
   const where =
     !row.onDevice && row.onServer
@@ -179,6 +181,14 @@ function FileLine({
             >
               {row.task.title}
             </button>
+          ) : row.meeting ? (
+            <button
+              type="button"
+              className="truncate hover:text-accent hover:underline"
+              onClick={() => row.meeting && onOpenMeeting(row.meeting.id)}
+            >
+              Meeting: {row.meeting.title}
+            </button>
           ) : (
             <span>No task uses it</span>
           )}
@@ -204,6 +214,7 @@ export function FilesSettings() {
   const navigate = useNavigate();
   const attachments = useStoreState((s) => s.attachments);
   const tasks = useStoreState((s) => s.tasks);
+  const meetings = useStoreState((s) => s.meetings);
   const [overview, setOverview] = useState<FilesOverview_Serialize | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -240,9 +251,10 @@ export function FilesSettings() {
             server,
             attachments: Object.values(attachments),
             tasks,
+            meetings,
           })
         : [],
-    [overview, server, attachments, tasks],
+    [overview, server, attachments, tasks, meetings],
   );
   const shown = useMemo(
     () => sortFiles(filterFiles(rows, filter, Date.now()), sort),
@@ -437,6 +449,13 @@ export function FilesSettings() {
                       onToggle={() => toggle(row.hash)}
                       onOpenTask={(taskId) =>
                         void navigate({ to: "/task/$taskId", params: { taskId }, search: {} })
+                      }
+                      onOpenMeeting={(meetingId) =>
+                        void navigate({
+                          to: "/meeting/$meetingId",
+                          params: { meetingId },
+                          search: {},
+                        })
                       }
                     />
                   </div>

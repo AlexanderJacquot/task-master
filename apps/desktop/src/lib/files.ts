@@ -2,17 +2,20 @@
 // attachment folder, the sync server's, and the attachments that use each file.
 
 import type { BlobList, StoredFileInfo } from "../bindings";
-import type { Attachment, Task } from "./types";
+import type { Attachment, Meeting, Task } from "./types";
 
 export type FileRow = {
   hash: string;
   size: number;
   /** The first attachment's name, or the hash's start for a file nothing uses. */
   name: string;
-  /** Live attachments of live tasks using it (several when the same file was attached twice). */
+  /** Live attachments of live tasks and meetings using it (several when the same file was
+   * attached twice). */
   attachments: Attachment[];
-  /** The task of the first attachment. */
+  /** The task of the first attachment, when a task holds it. */
   task: Task | null;
+  /** The meeting of the first attachment, when a meeting holds it. */
+  meeting: Meeting | null;
   /** When it was first attached, else when it was stored. Unix ms. */
   addedAt: number;
   onDevice: boolean;
@@ -28,15 +31,23 @@ export type FilesInput = {
   /** Live attachments (the snapshot keeps only those of live tasks). */
   attachments: Attachment[];
   tasks: Record<string, Task>;
+  meetings?: Record<string, Meeting>;
 };
 
-export function fileRows({ local, server, attachments, tasks }: FilesInput): FileRow[] {
+export function fileRows({
+  local,
+  server,
+  attachments,
+  tasks,
+  meetings = {},
+}: FilesInput): FileRow[] {
   const localBy = new Map(local.map((f) => [f.hash, f]));
   const serverBy = new Map((server?.files ?? []).map((f) => [f.hash, f]));
   const purged = new Set(server?.purged ?? []);
   const usedBy = new Map<string, Attachment[]>();
   for (const a of attachments) {
-    if (!tasks[a.task_id]) continue;
+    const live = a.task_id ? tasks[a.task_id] : a.meeting_id ? meetings[a.meeting_id] : null;
+    if (!live) continue;
     const list = usedBy.get(a.hash);
     if (list) list.push(a);
     else usedBy.set(a.hash, [a]);
@@ -59,7 +70,8 @@ export function fileRows({ local, server, attachments, tasks }: FilesInput): Fil
       size: mine?.size ?? theirs?.size ?? first?.size ?? 0,
       name: first?.name ?? `Unused file ${hash.slice(0, 8)}`,
       attachments: used,
-      task: first ? (tasks[first.task_id] ?? null) : null,
+      task: first?.task_id ? (tasks[first.task_id] ?? null) : null,
+      meeting: first?.meeting_id ? (meetings[first.meeting_id] ?? null) : null,
       addedAt: first?.created_at ?? mine?.stored_at ?? theirs?.stored_at ?? 0,
       onDevice: !!mine,
       onServer: server ? !!theirs : null,

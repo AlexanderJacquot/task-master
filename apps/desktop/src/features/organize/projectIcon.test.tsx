@@ -28,6 +28,7 @@ async function renderProject(p: Project) {
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
         statuses: [],
       } as Changes;
     },

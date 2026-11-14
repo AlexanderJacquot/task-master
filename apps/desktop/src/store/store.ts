@@ -10,6 +10,7 @@ import type {
   Changes,
   Command,
   Epic,
+  Meeting,
   Project,
   Snapshot,
   Status,
@@ -36,6 +37,8 @@ export interface Entities {
   time_blocks: ById<TimeBlock>;
   /** Agent sessions of live tasks, every device's (ADR 017). */
   agent_sessions: ById<AgentSession>;
+  /** Live meetings (Scribe, ADR 025). */
+  meetings: ById<Meeting>;
 }
 
 /** Local edits shown before the core confirms them. */
@@ -50,6 +53,7 @@ export interface Optimistic {
     attachments?: Attachment[];
     time_blocks?: TimeBlock[];
     agent_sessions?: AgentSession[];
+    meetings?: Meeting[];
   };
   remove?: {
     tasks?: string[];
@@ -61,6 +65,7 @@ export interface Optimistic {
     attachments?: string[];
     time_blocks?: string[];
     agent_sessions?: string[];
+    meetings?: string[];
   };
 }
 
@@ -95,7 +100,8 @@ type Kind =
   | "statuses"
   | "attachments"
   | "time_blocks"
-  | "agent_sessions";
+  | "agent_sessions"
+  | "meetings";
 const KINDS: Kind[] = [
   "tasks",
   "projects",
@@ -106,6 +112,7 @@ const KINDS: Kind[] = [
   "attachments",
   "time_blocks",
   "agent_sessions",
+  "meetings",
 ];
 
 /** Statuses are kept as an array in workflow order; every other kind as a map by id. */
@@ -136,6 +143,7 @@ function fromSnapshot(snapshot: Snapshot): Entities {
     attachments: byId(snapshot.attachments),
     time_blocks: byId(snapshot.time_blocks),
     agent_sessions: byId(snapshot.agent_sessions),
+    meetings: byId(snapshot.meetings),
   };
 }
 
@@ -212,6 +220,7 @@ export function createTaskStore(api: Api): TaskStore {
       attachments: {},
       time_blocks: {},
       agent_sessions: {},
+      meetings: {},
       agentActivity: {},
       ready: false,
       loadError: null,

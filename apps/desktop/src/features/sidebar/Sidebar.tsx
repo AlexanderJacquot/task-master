@@ -26,6 +26,7 @@ import {
   EditIcon as Pencil,
   AddIcon as Plus,
   ProjectsIcon,
+  ScribeIcon,
   SearchIcon as Search,
   SettingsIcon as Settings2,
   TodayIcon as Sun,
@@ -621,6 +622,9 @@ export function Sidebar({
         <RailLink to="/lineage" label="Lineage">
           <GitBranch size={18} className="text-green-700 dark:text-green-300 clean:text-ink-2" />
         </RailLink>
+        <RailLink to="/scribe" label="Scribe">
+          <ScribeIcon size={18} className="text-amber-800 dark:text-amber-200 clean:text-ink-2" />
+        </RailLink>
         <RailLink to="/agents" label="Agents">
           <Bot size={18} className={cx(runningAgents > 0 && "animate-pulse text-accent")} />
         </RailLink>
@@ -776,6 +780,17 @@ export function Sidebar({
             }
           >
             Lineage
+          </NavItem>
+          <NavItem
+            to="/scribe"
+            icon={
+              <ScribeIcon
+                size={17}
+                className="shrink-0 text-amber-800 dark:text-amber-200 clean:text-ink-2"
+              />
+            }
+          >
+            Scribe
           </NavItem>
           <NavItem
             to="/agents"

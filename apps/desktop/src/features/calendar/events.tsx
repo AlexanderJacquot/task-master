@@ -1,6 +1,7 @@
 import {
   ExternalIcon as ExternalLink,
   MapPinIcon as MapPin,
+  ScribeIcon,
   CloseIcon as X,
 } from "../../components/TaskIcons";
 // Events from the user's calendars (M10, ADR 014): read-only, drawn outlined in their
@@ -20,6 +21,7 @@ import {
   parseIso,
 } from "../../lib/calendar";
 import type { CalendarEvent } from "../../lib/types";
+import { useNewMeeting } from "../scribe/newMeeting";
 import { useCalendar } from "./shared";
 
 function edge(event: CalendarEvent) {
@@ -53,6 +55,7 @@ function when(event: CalendarEvent): string {
 /** The details popover around an event's trigger element. */
 function EventDetails({ event, children }: { event: CalendarEvent; children: ReactNode }) {
   const { openUrl, calendarName } = useCalendar();
+  const newMeeting = useNewMeeting();
   const [open, setOpen] = useState(false);
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
@@ -92,6 +95,28 @@ function EventDetails({ event, children }: { event: CalendarEvent; children: Rea
           <div className="text-[12px] text-ink-3">
             {calendarName(event.calendar_id)} · read-only here
           </div>
+          {event.start_at !== null && event.end_at !== null && (
+            <Button
+              size="sm"
+              className="self-start"
+              onClick={() => {
+                setOpen(false);
+                if (event.start_at === null || event.end_at === null) return;
+                void newMeeting(
+                  false,
+                  {},
+                  {
+                    title: event.title.trim() || "Meeting",
+                    started_at: event.start_at,
+                    ended_at: event.end_at,
+                  },
+                );
+              }}
+            >
+              <ScribeIcon size={13} />
+              Make it a meeting
+            </Button>
+          )}
           {event.link && openUrl && (
             <Button
               size="sm"

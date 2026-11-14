@@ -28,6 +28,7 @@ import { adoptTask, deleteTask, setParent, toggleDone, updateTask } from "../../
 import { useStoreState, useTaskStore } from "../../store/context";
 import { SessionsPanel } from "../agents/SessionsPanel";
 import { ProjectMark } from "../organize/ProjectMark";
+import { MeetingsSection } from "../scribe/MeetingsSection";
 import { DROP_OVER_CLASS, useTaskDropTarget } from "../shell/taskDrop";
 import { useOpenTask } from "../shell/useOpenTask";
 import { TaskTimer } from "../timer/Timer";
@@ -374,6 +375,7 @@ export function TaskEditor({
       {/* The page follows the mockup: subtasks right under the text, files after. */}
       {page ? [subtasks, attachmentList] : [attachmentList, subtasks]}
       <DependencyList task={task} page={page} />
+      <MeetingsSection link={{ task: task.id }} page={page} />
       <SessionsPanel task={task} page={page} />
       {page ? (
         <details className="pl-10">

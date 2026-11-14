@@ -39,6 +39,7 @@ async function renderAt(path: string) {
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
         statuses: [],
       } as Changes;
     },

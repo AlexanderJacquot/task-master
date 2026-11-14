@@ -41,6 +41,7 @@ import { deleteBlock, moveBlock } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
 import { BlockOutcomes } from "./BlockOutcome";
 import { EventChip, EventView } from "./events";
+import { type MeetingSpan, MeetingView, useMeetingSpans } from "./meetings";
 import { DraftBlock, useDrawBlock } from "./NewBlock";
 import { blockStyle, DayChip, type DragData, dayTasks, projectColor, useCalendar } from "./shared";
 
@@ -242,18 +243,19 @@ function TimeColumn({
   showNow: boolean;
 }) {
   const { now } = useCalendar();
+  const meetings = useMeetingSpans(now);
   const { setNodeRef } = useDroppable({ id: dropId.time(iso) });
   const { draft, setDraft, onPointerDown } = useDrawBlock();
-  // Blocks, events and proposals share the day's width where they overlap.
+  // Blocks, meetings, events and proposals share the day's width where they overlap.
   const placed = useMemo(
     () =>
       layoutDay(
-        segmentsOn<TimeBlock | EventSpan | ProposedBlock>(
-          [...blocks, ...events, ...proposals],
+        segmentsOn<TimeBlock | EventSpan | MeetingSpan | ProposedBlock>(
+          [...blocks, ...meetings, ...events, ...proposals],
           iso,
         ),
       ),
-    [blocks, events, proposals, iso],
+    [blocks, meetings, events, proposals, iso],
   );
   return (
     <div
@@ -269,6 +271,8 @@ function TimeColumn({
       {placed.map((p) =>
         "event" in p.item ? (
           <EventView key={p.item.id} placed={p as Placed<EventSpan>} />
+        ) : "meeting" in p.item ? (
+          <MeetingView key={p.item.id} placed={p as Placed<MeetingSpan>} />
         ) : "outcome" in p.item ? (
           <BlockView key={p.item.id} iso={iso} placed={p as Placed<TimeBlock>} />
         ) : (

@@ -8,7 +8,7 @@ import {
   pastedName,
 } from "../../lib/attachments";
 import type { Attachment, StoredUpload } from "../../lib/types";
-import { attachFiles } from "../../store/actions";
+import { type AttachmentOwner, attachFilesTo } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import type { Uploader } from "./DescriptionEditor";
 import type { MarkdownActions } from "./MarkdownView";
@@ -22,6 +22,15 @@ function message(err: unknown): string {
  * open, save a copy, open links. Without a `files` API (some tests) uploads do nothing.
  */
 export function useTaskFiles(taskId: string) {
+  return useFiles("task", taskId);
+}
+
+/** A meeting's attachments, as `useTaskFiles` for a task. */
+export function useMeetingFiles(meetingId: string) {
+  return useFiles("meeting", meetingId);
+}
+
+function useFiles(kind: "task" | "meeting", id: string) {
   const store = useTaskStore();
   const files = useApi().files;
 
@@ -41,7 +50,8 @@ export function useTaskFiles(taskId: string) {
           fail(err);
         }
       }
-      return attachFiles(store, taskId, stored);
+      const owner: AttachmentOwner = kind === "task" ? { task: id } : { meeting: id };
+      return attachFilesTo(store, owner, stored);
     };
 
     const fromFiles = (list: File[]) => {
@@ -93,7 +103,7 @@ export function useTaskFiles(taskId: string) {
       },
       saveCopy: (a: Attachment) => void files?.saveCopy(a.id, a.name).catch(fail),
     };
-  }, [files, store, taskId]);
+  }, [files, store, kind, id]);
 }
 
 /** The task's attachments, oldest first. */
@@ -105,5 +115,17 @@ export function useTaskAttachments(taskId: string): Attachment[] {
         .filter((a) => a.task_id === taskId)
         .sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1)),
     [all, taskId],
+  );
+}
+
+/** The meeting's attachments, oldest first. */
+export function useMeetingAttachments(meetingId: string): Attachment[] {
+  const all = useStoreState((s) => s.attachments);
+  return useMemo(
+    () =>
+      Object.values(all)
+        .filter((a) => a.meeting_id === meetingId)
+        .sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1)),
+    [all, meetingId],
   );
 }

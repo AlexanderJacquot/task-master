@@ -28,6 +28,7 @@ async function renderEpic(p: Epic) {
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
         statuses: [],
       } as Changes;
     },

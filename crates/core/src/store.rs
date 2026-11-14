@@ -39,7 +39,6 @@ pub struct Changes {
     pub time_blocks: Vec<TimeBlock>,
     pub agent_sessions: Vec<AgentSession>,
     pub agent_notes: Vec<AgentNote>,
-    #[serde(default)]
     pub meetings: Vec<Meeting>,
 }
 

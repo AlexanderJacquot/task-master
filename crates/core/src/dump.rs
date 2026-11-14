@@ -58,7 +58,6 @@ pub struct ImportSummary {
     pub views: u32,
     pub attachments: u32,
     pub time_blocks: u32,
-    #[serde(default)]
     pub meetings: u32,
     /// Attachments whose file was not found (an export copied without its folder).
     pub missing_files: u32,

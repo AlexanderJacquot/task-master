@@ -255,7 +255,6 @@ pub struct Tag {
 pub struct Attachment {
     pub id: Id,
     pub task_id: Option<Id>,
-    #[serde(default)]
     pub meeting_id: Option<Id>,
     /// SHA-256 of the content, lowercase hex.
     pub hash: String,
@@ -777,6 +776,5 @@ pub struct Snapshot {
     /// Agent sessions of live tasks, every device's, by start.
     pub agent_sessions: Vec<AgentSession>,
     /// Live meetings, by start.
-    #[serde(default)]
     pub meetings: Vec<Meeting>,
 }

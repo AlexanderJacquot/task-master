@@ -31,6 +31,7 @@ async function setup(tasks: Task[]) {
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
         statuses: [],
       } as Changes;
     },

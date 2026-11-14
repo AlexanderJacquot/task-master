@@ -181,14 +181,22 @@ export function CalendarPage() {
   const statusMap = useMemo(() => Object.fromEntries(statuses.map((s) => [s.id, s])), [statuses]);
   const planDays = mode === "month" ? [] : visibleDays(mode, date);
   const planDaysKey = planDays.join(",");
+  const meetings = useStoreState((s) => s.meetings);
+  // The planner works around other calendars' events and meetings.
   const busyEvents = useMemo(
-    () =>
-      events.flatMap((e) =>
+    () => [
+      ...events.flatMap((e) =>
         e.start_at != null && e.end_at != null
           ? [{ id: `${e.calendar_id}:${e.id}`, start_at: e.start_at, end_at: e.end_at }]
           : [],
       ),
-    [events],
+      ...Object.values(meetings).flatMap((m) =>
+        m.ended_at !== null
+          ? [{ id: `meeting:${m.id}`, start_at: m.started_at, end_at: m.ended_at }]
+          : [],
+      ),
+    ],
+    [events, meetings],
   );
   const planOn = planning && mode !== "month";
   const planInfo = useMemo(() => {

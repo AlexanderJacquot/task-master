@@ -53,6 +53,7 @@ async function renderWindow({ failDelete = false } = {}) {
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
         statuses: [],
       } as Changes;
     },
