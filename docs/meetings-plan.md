@@ -1,6 +1,7 @@
 # Scribe: meetings, recording and local transcription (draft plan)
 
-Status: **accepted** 2026-11-14, not started. Decisions recorded in ADR 025 (data, IPC,
+Status: **accepted** 2026-11-14. M18 (meetings without audio) built 2026-11-14 on branch
+`worktree-m18-meetings`; M19–M21 not started. Decisions recorded in ADR 025 (data, IPC,
 calendar, retention) and ADR 026 (audio and ML dependencies).
 
 ## 1. Goal
@@ -130,6 +131,10 @@ Snapshot gets meetings (not segments; they load per meeting through a new read
 Each milestone is one branch and ends with something usable.
 
 ### M18 Meetings without audio (`m18-meetings`)
+Built as planned except: `meeting_speakers` and `transcript_segments` wait for M20
+(migration 16), and a `held` state marks a meeting that took place without a recording
+(ADR 025, M18 notes).
+
 1. Migration 15: meetings, meeting_speakers, transcript_segments (+FTS),
    attachments.meeting_id. Migration test on an existing DB.
 2. Core commands + inverses + tests; snapshot and `meeting_transcript` read; sync of
