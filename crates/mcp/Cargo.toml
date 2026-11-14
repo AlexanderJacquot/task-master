@@ -18,6 +18,8 @@ workspace = true
 
 [dependencies]
 taskmaster-core = { workspace = true }
+# Binary attachment content over the remote MCP (already used by the client and desktop).
+base64 = "0.23.1"
 # Official Rust MCP SDK (ADR 017).
 rmcp = { version = "3.9.0", default-features = false, features = ["macros", "server", "transport-io"] }
 # The version rmcp derives tool schemas with.

@@ -4768,6 +4768,7 @@ dependencies = [
 name = "taskmaster-mcp"
 version = "0.21.0"
 dependencies = [
+ "base64 0.23.1",
  "rmcp",
  "schemars 1.2.3",
  "serde",

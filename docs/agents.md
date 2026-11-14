@@ -117,11 +117,17 @@ are when Claude finishes.
   (`task-master-mcp`, installed next to the app) in its `--mcp-config`. Files per session
   are in the app's data folder, `agents/<session id>/` (`mcp.json`, `rules.md`).
 - The MCP server opens this device's database directly, so what Claude writes appears at
-  once, syncs, and is in the task's activity. Its tools: `get_task`, `list_tasks`,
-  `list_projects`, `search`, `create_task`, `update_task`, `add_note`,
-  `complete_session`, `list_agent_sessions`, `get_calendar`, `schedule_block`,
-  `update_block`, `get_lineage`, `link_tasks`, and `create_project` / `create_epic`
-  (these two make the user's own projects and epics, not agent ones; ADR 017).
+  once, syncs, and is in the task's activity. Its tools cover what the user can do in
+  the app except board columns and saved views: tasks (`get_task`, `list_tasks`,
+  `search`, `create_task`, `update_task`, `delete_task`), projects and epics
+  (`list_projects`, `create_/update_/delete_project`, `create_/update_/delete_epic`),
+  tags (`list_tags`, `update_tag`, `delete_tag`), the calendar (`get_calendar`,
+  `schedule_block`, `update_block`), the lineage (`get_lineage`, `link_tasks`),
+  attachments (`list_attachments`, `attach_file`, `read_attachment`,
+  `rename_attachment`, `remove_attachment`), sessions (`add_note`, `complete_session`,
+  `list_agent_sessions`, `remove_agent_session`) and `undo` (by a write's `change_id`).
+  See docs/mcp.md and ADR 017 for what Settings → Agents → *Let agents edit my tasks*
+  allows.
 - Under WSL, Claude Code runs the Windows `task-master-mcp.exe` through WSL interop, so
   the database stays on the Windows side.
 

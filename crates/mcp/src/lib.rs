@@ -5,13 +5,19 @@
 //! commands, so ops, sync and the desktop's live reload apply; writes stay out of any undo
 //! history.
 //!
-//! Rules: tasks an agent creates are `owner = agent`. An agent may change its own tasks
-//! freely, and the user's tasks too (title, description, priority, prerequisites, status),
-//! except that the session's task is never closed or cancelled by the agent. Notes and the session summary need a session. Projects and epics have no
-//! owner: those an agent creates are the user's, so creating one returns an existing one
-//! of the same name in the same place instead of a duplicate.
+//! Rules: tasks an agent creates are `owner = agent` unless the user asks for one of their
+//! own. An agent may change and delete its own tasks freely. Everything else the user can
+//! do in the app (their tasks, projects, epics, tags, calendar, links, attachments,
+//! deletes and undo) is open to it while Settings → Agents → _Let agents edit my tasks_
+//! is on (the default); turned off, only the status of the session's task tree changes.
+//! Always kept: the session's task is never closed, cancelled or deleted by its agent.
+//! Notes and the session summary need a session. Projects and epics have no owner: those
+//! an agent creates are the user's, so creating one returns an existing one of the same
+//! name in the same place instead of a duplicate. Every write reports its change id;
+//! `undo` reverts it.
 
 mod calendar;
+mod edit;
 mod lineage;
 pub mod locate;
 
@@ -50,6 +56,11 @@ pub struct TaskServer {
     /// May the agent edit the user's own tasks (Settings → Agents)? When off, only the
     /// status of the session's task and its subtasks can change.
     edit_user_tasks: bool,
+    /// May tools read and write files by path on this machine? Only the stdio server:
+    /// the sync server must never open its own files for a remote caller.
+    local_files: bool,
+    /// Batches this server wrote: `undo` reverts them even with editing turned off.
+    written: Arc<Mutex<HashSet<Id>>>,
     on_write: Option<WriteHook>,
     tool_router: ToolRouter<Self>,
 }
@@ -71,8 +82,10 @@ impl TaskServer {
             session,
             workflow: AgentWorkflow::default(),
             edit_user_tasks: true,
+            local_files: true,
+            written: Arc::default(),
             on_write: None,
-            tool_router: Self::tool_router(),
+            tool_router: Self::tool_router() + Self::edit_router(),
         })
     }
 
@@ -84,8 +97,10 @@ impl TaskServer {
             session: None,
             workflow: AgentWorkflow::default(),
             edit_user_tasks: true,
+            local_files: false,
+            written: Arc::default(),
             on_write: None,
-            tool_router: Self::tool_router(),
+            tool_router: Self::tool_router() + Self::edit_router(),
         }
     }
 
@@ -145,11 +160,95 @@ impl TaskServer {
 
     fn write(&self, commands: Vec<Command>) -> Result<taskmaster_core::Changes, String> {
         let changes = self.with_store(|s| s.execute_without_undo(commands))?;
+        self.wrote(&changes);
+        Ok(changes)
+    }
+
+    /// Bookkeeping after a write: remembers its batch for `undo`, runs the hook.
+    fn wrote(&self, changes: &taskmaster_core::Changes) {
+        if let Some(batch) = &changes.batch_id
+            && let Ok(mut written) = self.written.lock()
+        {
+            written.insert(batch.clone());
+        }
         if let Some(hook) = &self.on_write {
             hook();
         }
-        Ok(changes)
     }
+
+    /// The user's own data (their tasks, projects, epics, tags, sessions): changed only
+    /// while Settings → Agents allows it.
+    fn check_may_edit_users(&self, what: &str) -> Result<(), String> {
+        if self.edit_user_tasks {
+            Ok(())
+        } else {
+            Err(format!(
+                "{what} is the user's: editing the user's tasks is turned off (Settings → \
+                 Agents); suggest the change in a note instead"
+            ))
+        }
+    }
+
+    /// What hangs off a task (time blocks, links, attachments, tags): agent tasks, the
+    /// session's task tree, or any task while editing the user's tasks is allowed.
+    fn check_may_change(&self, snapshot: &Snapshot, task: &Task) -> Result<(), String> {
+        if task.owner == TaskOwner::Agent
+            || self.edit_user_tasks
+            || self.in_session_scope(snapshot, task)
+        {
+            Ok(())
+        } else {
+            Err(
+                "this is the user's task, outside this session: editing the user's tasks is \
+                 turned off (Settings → Agents); add a note or an agent task instead"
+                    .into(),
+            )
+        }
+    }
+
+    /// Deleting `task` (and its subtasks): the user's tasks need the setting, and the
+    /// session's own task is never deleted by its agent.
+    fn check_may_delete(&self, snapshot: &Snapshot, task: &Task) -> Result<(), String> {
+        if let Some(session) = &self.session
+            && is_within(snapshot, &session.task_id, &task.id)
+        {
+            return Err(
+                "this would delete the task this session works on; only the user deletes it".into(),
+            );
+        }
+        if task.owner == TaskOwner::Agent {
+            Ok(())
+        } else {
+            self.check_may_edit_users("this task")
+        }
+    }
+}
+
+/// The line a write's result ends with: its change id, which `undo` takes.
+fn change_line(changes: &taskmaster_core::Changes) -> String {
+    changes
+        .batch_id
+        .as_deref()
+        .map(|id| format!("\nchange_id: {id} (undo reverts it)"))
+        .unwrap_or_default()
+}
+
+/// Whether `id` is `root` or one of its subtasks, at any depth.
+fn is_within(snapshot: &Snapshot, id: &str, root: &str) -> bool {
+    let parents: HashMap<&str, Option<&str>> = snapshot
+        .tasks
+        .iter()
+        .map(|t| (t.id.as_str(), t.parent_id.as_deref()))
+        .collect();
+    let mut current = Some(id);
+    for _ in 0..=parents.len() {
+        match current {
+            Some(c) if c == root => return true,
+            Some(c) => current = parents.get(c).copied().flatten(),
+            None => return false,
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------------------
@@ -208,6 +307,13 @@ pub struct ListAgentSessions {
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct ListProjects {
+    /// Include archived projects (default false).
+    #[serde(default)]
+    pub include_archived: bool,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct Search {
     /// Words to find in titles and descriptions (prefix match).
     pub query: String,
@@ -243,6 +349,22 @@ pub struct CreateTask {
     /// Ids of tasks that must be finished first.
     #[serde(default)]
     pub depends_on: Vec<String>,
+    /// `agent` (default: an agent task, kept apart) or `me`: a task of the user's own,
+    /// only when they ask for one.
+    #[serde(default)]
+    pub owner: Option<String>,
+    /// `YYYY-MM-DD`.
+    #[serde(default)]
+    pub due_date: Option<String>,
+    /// `YYYY-MM-DD`: the day it is planned for (the Today list).
+    #[serde(default)]
+    pub today_on: Option<String>,
+    /// Estimated minutes.
+    #[serde(default)]
+    pub estimate_min: Option<i64>,
+    /// Tag names (`#` optional); missing tags are created.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -295,6 +417,39 @@ pub struct UpdateTask {
     /// Replaces the prerequisites (task ids).
     #[serde(default)]
     pub depends_on: Option<Vec<String>>,
+    /// Move it to this project (subtasks that shared its project follow); `""` puts it in
+    /// the Inbox.
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// Move it to this epic (subtasks that shared its epic follow); `""` takes it out.
+    #[serde(default)]
+    pub epic_id: Option<String>,
+    /// Make it a subtask of this task (it takes the parent's project and epic); `""` makes
+    /// it a top-level task.
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    /// `YYYY-MM-DD`; `""` clears it.
+    #[serde(default)]
+    pub due_date: Option<String>,
+    /// `YYYY-MM-DD`, the day it is planned for (the Today list); `""` clears it.
+    #[serde(default)]
+    pub today_on: Option<String>,
+    /// Estimated minutes; 0 clears it.
+    #[serde(default)]
+    pub estimate_min: Option<i64>,
+    /// `me` makes an agent task the user's own (as Adopt does in the app).
+    #[serde(default)]
+    pub owner: Option<String>,
+    /// Tag names to add (`#` optional); missing tags are created.
+    #[serde(default)]
+    pub add_tags: Vec<String>,
+    /// Tag names to remove.
+    #[serde(default)]
+    pub remove_tags: Vec<String>,
+    /// Reorder within its column (after any status change): `top`, `bottom`, or the id
+    /// of a task in that column to place it right after.
+    #[serde(default)]
+    pub position: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -340,6 +495,9 @@ pub struct ScheduleBlock {
     /// The offset of times given without one, like `+01:00`. Default: UTC.
     #[serde(default)]
     pub utc_offset: Option<String>,
+    /// planned (default), or worked to log time already spent (done, missed, cancelled).
+    #[serde(default)]
+    pub outcome: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -554,8 +712,11 @@ impl TaskServer {
         .to_string())
     }
 
-    #[tool(description = "Projects (with their areas) and epics, with their ids.")]
-    pub fn list_projects(&self) -> ToolResult {
+    #[tool(
+        description = "Projects (with their areas) and epics (with their state and home \
+                       project), with their ids. Archived projects only with include_archived."
+    )]
+    pub fn list_projects(&self, Parameters(p): Parameters<ListProjects>) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;
         let mut out = String::from("Projects:\n");
         let names: HashMap<&str, &str> = snapshot
@@ -563,19 +724,36 @@ impl TaskServer {
             .iter()
             .map(|p| (p.id.as_str(), p.name.as_str()))
             .collect();
-        for project in snapshot.projects.iter().filter(|p| p.archived_at.is_none()) {
+        for project in snapshot
+            .projects
+            .iter()
+            .filter(|x| p.include_archived || x.archived_at.is_none())
+        {
             let area = project
                 .parent_id
                 .as_deref()
                 .and_then(|id| names.get(id))
                 .map(|name| format!("{name} / "))
                 .unwrap_or_default();
-            out.push_str(&format!("- {area}{} (`{}`)\n", project.name, project.id));
+            let archived = if project.archived_at.is_some() {
+                "archived, "
+            } else {
+                ""
+            };
+            out.push_str(&format!(
+                "- {area}{} ({archived}`{}`)\n",
+                project.name, project.id
+            ));
         }
         out.push_str("\nEpics:\n");
         for epic in &snapshot.epics {
+            let home = epic
+                .project_id
+                .as_deref()
+                .and_then(|id| names.get(id))
+                .map_or("no project".to_owned(), |name| format!("in {name}"));
             out.push_str(&format!(
-                "- {} ({}, `{}`)\n",
+                "- {} ({}, {home}, `{}`)\n",
                 epic.name,
                 epic.state.as_str(),
                 epic.id
@@ -619,7 +797,7 @@ impl TaskServer {
             ));
         }
         let id = taskmaster_core::new_id();
-        self.write(vec![Command::CreateProject {
+        let changes = self.write(vec![Command::CreateProject {
             project: NewProject {
                 id: Some(id.clone()),
                 name: name.to_owned(),
@@ -628,7 +806,10 @@ impl TaskServer {
                 ..NewProject::default()
             },
         }])?;
-        Ok(format!("Created project {name}{place} (`{id}`)"))
+        Ok(format!(
+            "Created project {name}{place} (`{id}`){}",
+            change_line(&changes)
+        ))
     }
 
     #[tool(
@@ -687,7 +868,7 @@ impl TaskServer {
             .map(|d| d.trim().to_owned())
             .filter(|d| !d.is_empty());
         let id = taskmaster_core::new_id();
-        self.write(vec![Command::CreateEpic {
+        let changes = self.write(vec![Command::CreateEpic {
             epic: NewEpic {
                 id: Some(id.clone()),
                 name: name.to_owned(),
@@ -697,7 +878,10 @@ impl TaskServer {
                 ..NewEpic::default()
             },
         }])?;
-        Ok(format!("Created epic {name}{place} (`{id}`)"))
+        Ok(format!(
+            "Created epic {name}{place} (`{id}`){}",
+            change_line(&changes)
+        ))
     }
 
     #[tool(description = "Find tasks by words in their title or description, best first.")]
@@ -717,11 +901,20 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Create an agent task to track your own work (a step, a follow-up, a \
-                       finding to handle). In a session it becomes a subtask of the session's \
-                       task unless parent_id or top_level is given. Returns its id."
+        description = "Create a task. By default an agent task, to track your own work (a \
+                       step, a follow-up, a finding to handle); owner me makes one of the \
+                       user's own, when they ask for it. In a session it becomes a subtask \
+                       of the session's task unless parent_id or top_level is given. \
+                       Returns its id."
     )]
     pub fn create_task(&self, Parameters(p): Parameters<CreateTask>) -> ToolResult {
+        let owner = match p.owner.as_deref() {
+            Some(o) => parse_owner(o)?,
+            None => TaskOwner::Agent,
+        };
+        if owner == TaskOwner::Me {
+            self.check_may_edit_users("a task of their own")?;
+        }
         let snapshot = self.with_store(|s| s.snapshot())?;
         let parent_id = match (p.parent_id, p.top_level, &self.session) {
             (Some(id), _, _) => Some(id),
@@ -745,21 +938,26 @@ impl TaskServer {
             .map(|s| resolve_status(&snapshot, s))
             .transpose()?;
         let priority = p.priority.as_deref().map(parse_priority).transpose()?;
+        let (tag_ids, mut commands) = resolve_tags(&snapshot, &p.tags, true)?;
         let id = taskmaster_core::new_id();
-        let mut commands = vec![Command::CreateTask {
+        commands.push(Command::CreateTask {
             task: NewTask {
                 id: Some(id.clone()),
                 title: p.title,
                 description: p.description,
-                owner: TaskOwner::Agent,
+                owner,
                 project_id,
                 epic_id: p.epic_id,
                 parent_id,
                 status_id,
                 priority: priority.unwrap_or_default(),
+                due_date: non_empty(p.due_date),
+                today_on: non_empty(p.today_on),
+                estimate_min: p.estimate_min.filter(|m| *m > 0),
+                tag_ids,
                 ..NewTask::default()
             },
-        }];
+        });
         if !p.depends_on.is_empty() {
             commands.push(Command::UpdateTask {
                 id: id.clone(),
@@ -775,31 +973,39 @@ impl TaskServer {
             .find(|t| t.id == id)
             .ok_or("the task was not created")?;
         Ok(format!(
-            "Created {}",
-            task_line(&statuses, task).trim_start_matches("- ")
+            "Created {}{}",
+            task_line(&statuses, task).trim_start_matches("- "),
+            change_line(&changes)
         ))
     }
 
     #[tool(
         description = "Change a task, the user's own or an agent's: status, title, \
-                       description, priority, prerequisites. In a session, the session's task \
-                       cannot be marked done or cancelled (complete_session reports it) and \
-                       its subtasks cannot be cancelled."
+                       description, priority, prerequisites, project, epic, parent, due \
+                       date, today, estimate, tags, owner and its place in its column. In a \
+                       session, the session's task cannot be marked done or cancelled \
+                       (complete_session reports it) and its subtasks cannot be cancelled."
     )]
     pub fn update_task(&self, Parameters(p): Parameters<UpdateTask>) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;
-        let task = snapshot
-            .tasks
-            .iter()
-            .find(|t| t.id == p.task_id)
-            .ok_or_else(|| format!("task {} not found", p.task_id))?;
+        let task = find_task(&snapshot, &p.task_id)?;
         let own = task.owner == TaskOwner::Agent;
         if !own && !self.edit_user_tasks {
             let user_fields = p.title.is_some()
                 || p.description.is_some()
                 || p.append_description.is_some()
                 || p.priority.is_some()
-                || p.depends_on.is_some();
+                || p.depends_on.is_some()
+                || p.project_id.is_some()
+                || p.epic_id.is_some()
+                || p.parent_id.is_some()
+                || p.due_date.is_some()
+                || p.today_on.is_some()
+                || p.estimate_min.is_some()
+                || p.owner.is_some()
+                || !p.add_tags.is_empty()
+                || !p.remove_tags.is_empty()
+                || p.position.is_some();
             if user_fields {
                 return Err(
                     "this is the user's task: editing the user's tasks is turned off \
@@ -816,7 +1022,9 @@ impl TaskServer {
                 );
             }
         }
+        let mut commands = Vec::new();
         let mut changes = Vec::new();
+        let mut status_id = task.status_id.clone();
         if let Some(status) = &p.status {
             let id = resolve_status(&snapshot, status)?;
             let category = snapshot
@@ -847,7 +1055,18 @@ impl TaskServer {
                 }
                 _ => {}
             }
+            status_id = id.clone();
             changes.push(TaskChange::StatusId(id));
+        }
+        if let Some(parent) = &p.parent_id {
+            let parent_id = match parent.trim() {
+                "" => None,
+                id => Some(find_task(&snapshot, id)?.id.clone()),
+            };
+            commands.push(Command::SetParent {
+                id: task.id.clone(),
+                parent_id,
+            });
         }
         if let Some(title) = p.title {
             changes.push(TaskChange::Title(title));
@@ -874,23 +1093,73 @@ impl TaskServer {
         if let Some(deps) = p.depends_on {
             changes.push(TaskChange::DependencyIds(deps));
         }
-        if changes.is_empty() {
+        if let Some(project) = p.project_id {
+            changes.push(TaskChange::ProjectId(non_empty(Some(project))));
+        }
+        if let Some(epic) = p.epic_id {
+            changes.push(TaskChange::EpicId(non_empty(Some(epic))));
+        }
+        if let Some(due) = p.due_date {
+            changes.push(TaskChange::DueDate(non_empty(Some(due))));
+        }
+        if let Some(day) = p.today_on {
+            changes.push(TaskChange::TodayOn(non_empty(Some(day))));
+        }
+        if let Some(minutes) = p.estimate_min {
+            changes.push(TaskChange::EstimateMin(Some(minutes).filter(|m| *m != 0)));
+        }
+        if let Some(owner) = &p.owner {
+            match parse_owner(owner)? {
+                TaskOwner::Me if own => changes.push(TaskChange::Owner(TaskOwner::Me)),
+                TaskOwner::Me => {}
+                TaskOwner::Agent if own => {}
+                TaskOwner::Agent => {
+                    return Err("the user's tasks stay theirs; owner can only become me".into());
+                }
+            }
+        }
+        if let Some(position) = &p.position {
+            changes.push(TaskChange::Rank(rank_in_column(
+                &snapshot, task, &status_id, position,
+            )?));
+        }
+        let (add, tag_commands) = resolve_tags(&snapshot, &p.add_tags, true)?;
+        let (remove, _) = resolve_tags(&snapshot, &p.remove_tags, false)?;
+        if !changes.is_empty() {
+            commands.push(Command::UpdateTask {
+                id: task.id.clone(),
+                changes,
+            });
+        }
+        commands.splice(0..0, tag_commands);
+        for tag_id in add.into_iter().filter(|t| !task.tag_ids.contains(t)) {
+            commands.push(Command::TagTask {
+                task_id: task.id.clone(),
+                tag_id,
+            });
+        }
+        for tag_id in remove.into_iter().filter(|t| task.tag_ids.contains(t)) {
+            commands.push(Command::UntagTask {
+                task_id: task.id.clone(),
+                tag_id,
+            });
+        }
+        if commands.is_empty() {
             return Err("nothing to change".into());
         }
-        let updated = self.write(vec![Command::UpdateTask {
-            id: task.id.clone(),
-            changes,
-        }])?;
+        let updated = self.write(commands)?;
+        let snapshot = self.with_store(|s| s.snapshot())?;
         let statuses = by_id(&snapshot.statuses);
-        let task = updated
-            .tasks
-            .iter()
-            .find(|t| t.id == p.task_id)
-            .ok_or("the task was not updated")?;
-        Ok(format!(
+        let task = find_task(&snapshot, &p.task_id)?;
+        let mut out = format!(
             "Updated {}",
             task_line(&statuses, task).trim_start_matches("- ")
-        ))
+        );
+        if updated.tasks.len() > 1 {
+            out.push_str(&format!(" ({} subtasks followed)", updated.tasks.len() - 1));
+        }
+        out.push_str(&change_line(&updated));
+        Ok(out)
     }
 
     #[tool(
@@ -1010,8 +1279,8 @@ impl TaskServer {
 
     #[tool(
         description = "Plan time for a task: puts a planned block on the user's calendar \
-                       (and their synced Google calendar). For agent tasks and the session's \
-                       task and its subtasks. Check get_calendar for free time first."
+                       (and their synced Google calendar), or logs time already worked \
+                       (outcome worked). Check get_calendar for free time first."
     )]
     pub fn schedule_block(&self, Parameters(p): Parameters<ScheduleBlock>) -> ToolResult {
         let offset = Offset::parse(p.utc_offset.as_deref().unwrap_or(""))?;
@@ -1019,29 +1288,33 @@ impl TaskServer {
         let end_at = calendar::parse_time("end", &p.end, offset)?;
         let snapshot = self.with_store(|s| s.snapshot())?;
         let task = find_task(&snapshot, &p.task_id)?;
-        self.check_may_plan(&snapshot, task)?;
+        self.check_may_change(&snapshot, task)?;
+        let outcome = p.outcome.as_deref().map(parse_outcome).transpose()?;
         let id = taskmaster_core::new_id();
-        self.write(vec![Command::CreateTimeBlock {
+        let changes = self.write(vec![Command::CreateTimeBlock {
             block: NewTimeBlock {
                 id: Some(id.clone()),
                 task_id: task.id.clone(),
                 start_at,
                 end_at,
-                outcome: None,
+                outcome,
             },
         }])?;
+        let what = match outcome {
+            None | Some(BlockOutcome::Planned) => "Planned",
+            Some(BlockOutcome::Worked) => "Logged",
+            Some(_) => "Recorded",
+        };
         Ok(format!(
-            "Planned {} to {} for {} (block `{id}`)",
+            "{what} {} to {} for {} (block `{id}`){}",
             p.start.trim(),
             p.end.trim(),
-            task.title
+            task.title,
+            change_line(&changes)
         ))
     }
 
-    #[tool(
-        description = "Move, resize, set the outcome of, or remove a time block. For blocks \
-                       of agent tasks and of the session's task and its subtasks."
-    )]
+    #[tool(description = "Move, resize, set the outcome of, or remove a time block.")]
     pub fn update_block(&self, Parameters(p): Parameters<UpdateBlock>) -> ToolResult {
         let offset = Offset::parse(p.utc_offset.as_deref().unwrap_or(""))?;
         let snapshot = self.with_store(|s| s.snapshot())?;
@@ -1051,15 +1324,23 @@ impl TaskServer {
             .find(|b| b.id == p.block_id && b.deleted_at.is_none())
             .ok_or_else(|| format!("block {} not found", p.block_id))?;
         let task = find_task(&snapshot, &block.task_id)?;
-        self.check_may_plan(&snapshot, task)?;
+        self.check_may_change(&snapshot, task)?;
         if p.remove {
             if p.start.is_some() || p.end.is_some() || p.outcome.is_some() {
                 return Err("give remove alone, or the changes without it".into());
             }
-            self.write(vec![Command::DeleteTimeBlock {
+            if task.owner != TaskOwner::Agent && !self.in_session_scope(&snapshot, task) {
+                self.check_may_edit_users("this task's block")?;
+            }
+            let changes = self.write(vec![Command::DeleteTimeBlock {
                 id: block.id.clone(),
             }])?;
-            return Ok(format!("Removed block `{}` of {}", block.id, task.title));
+            return Ok(format!(
+                "Removed block `{}` of {}{}",
+                block.id,
+                task.title,
+                change_line(&changes)
+            ));
         }
         let mut changes = Vec::new();
         if let Some(start) = &p.start {
@@ -1071,19 +1352,21 @@ impl TaskServer {
             changes.push(TimeBlockChange::EndAt(at));
         }
         if let Some(outcome) = &p.outcome {
-            let outcome = BlockOutcome::parse(outcome.trim()).ok_or_else(|| {
-                format!("unknown outcome '{outcome}' (planned, worked, done, missed, cancelled)")
-            })?;
-            changes.push(TimeBlockChange::Outcome(outcome));
+            changes.push(TimeBlockChange::Outcome(parse_outcome(outcome)?));
         }
         if changes.is_empty() {
             return Err("nothing to change".into());
         }
-        self.write(vec![Command::UpdateTimeBlock {
+        let changes = self.write(vec![Command::UpdateTimeBlock {
             id: block.id.clone(),
             changes,
         }])?;
-        Ok(format!("Updated block `{}` of {}", block.id, task.title))
+        Ok(format!(
+            "Updated block `{}` of {}{}",
+            block.id,
+            task.title,
+            change_line(&changes)
+        ))
     }
 
     #[tool(
@@ -1133,21 +1416,13 @@ impl TaskServer {
 
     #[tool(
         description = "Add (or remove) a lineage link: task_id waits on prerequisite_id. \
-                       The waiting task must be an agent task or the session's task or one \
-                       of its subtasks; the prerequisite can be any task. Links cannot form \
-                       a circle."
+                       Links cannot form a circle."
     )]
     pub fn link_tasks(&self, Parameters(p): Parameters<LinkTasks>) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;
         let task = find_task(&snapshot, &p.task_id)?;
         let prerequisite = find_task(&snapshot, &p.prerequisite_id)?;
-        if task.owner != TaskOwner::Agent && !self.in_session_scope(&snapshot, task) {
-            return Err(
-                "this is the user's task, outside this session: its links cannot be \
-                 changed; link an agent task instead, or add a note"
-                    .into(),
-            );
-        }
+        self.check_may_change(&snapshot, task)?;
         let linked = task.dependency_ids.contains(&prerequisite.id);
         let mut deps = task.dependency_ids.clone();
         match (p.remove, linked) {
@@ -1166,51 +1441,25 @@ impl TaskServer {
             (false, false) => deps.push(prerequisite.id.clone()),
             (true, true) => deps.retain(|d| d != &prerequisite.id),
         }
-        self.write(vec![Command::UpdateTask {
+        let changes = self.write(vec![Command::UpdateTask {
             id: task.id.clone(),
             changes: vec![TaskChange::DependencyIds(deps)],
         }])?;
-        Ok(if p.remove {
+        let done = if p.remove {
             format!("{} no longer waits on {}.", task.title, prerequisite.title)
         } else {
             format!("{} now waits on {}.", task.title, prerequisite.title)
-        })
+        };
+        Ok(format!("{done}{}", change_line(&changes)))
     }
 }
 
 impl TaskServer {
-    /// Time blocks may be planned for agent tasks and the session's task tree.
-    fn check_may_plan(&self, snapshot: &Snapshot, task: &Task) -> Result<(), String> {
-        if task.owner == TaskOwner::Agent || self.in_session_scope(snapshot, task) {
-            Ok(())
-        } else {
-            Err(
-                "this is the user's task, outside this session: its calendar is the user's \
-                 to plan; suggest times in a note instead"
-                    .into(),
-            )
-        }
-    }
-
     /// The session's task or one of its subtasks (at any depth).
     fn in_session_scope(&self, snapshot: &Snapshot, task: &Task) -> bool {
-        let Some(session) = &self.session else {
-            return false;
-        };
-        let parents: HashMap<&str, Option<&str>> = snapshot
-            .tasks
-            .iter()
-            .map(|t| (t.id.as_str(), t.parent_id.as_deref()))
-            .collect();
-        let mut current = Some(task.id.as_str());
-        for _ in 0..=parents.len() {
-            match current {
-                Some(id) if id == session.task_id => return true,
-                Some(id) => current = parents.get(id).copied().flatten(),
-                None => return false,
-            }
-        }
-        false
+        self.session
+            .as_ref()
+            .is_some_and(|session| is_within(snapshot, &task.id, &session.task_id))
     }
 
     fn instructions(&self) -> String {
@@ -1218,9 +1467,15 @@ impl TaskServer {
                              (schedule_block plans time); get_lineage shows which tasks wait \
                              on which (link_tasks adds a link).";
         let edit = if self.edit_user_tasks {
-            "You may edit the user's own tasks with update_task when they ask."
+            "You may do anything the user can do in the app when they ask: edit their tasks \
+             (update_task: status, fields, project, epic, parent, tags, order), create tasks of \
+             their own (create_task with owner me), delete tasks (delete_task), edit or delete \
+             projects, epics and tags, plan their calendar, link tasks and manage attachments. \
+             Every write reports a change_id; undo reverts it."
         } else {
-            "The user's own tasks are read-only here; suggest changes instead of making them."
+            "The user's own tasks, projects, epics and tags are read-only here; suggest \
+             changes instead of making them. Your own agent tasks you may change and delete; \
+             every write reports a change_id, and undo reverts your own changes."
         };
         let Some(session) = &self.session else {
             // Added to Claude by hand (docs/mcp.md): no task was sent, nothing to report.
@@ -1229,10 +1484,11 @@ impl TaskServer {
                  when the user talks about their tasks, projects, plans or schedule: \
                  list_tasks, search and get_task read them (ids come from listings), \
                  and list_agent_sessions finds agent runs and failures. \
-                 list_projects gives projects and epics; create_project and create_epic \
-                 add them when the user asks (they are the user's at once). Tasks you create are agent tasks: \
-                 kept apart from the user's own (they find them on the Agents page and can \
-                 make them theirs), so say so when you create one. {edit}{VIEWS}"
+                 list_projects gives projects and epics, list_tags the tags; create_project \
+                 and create_epic add them when the user asks (they are the user's at once). \
+                 Tasks you create are agent tasks unless you pass owner me: kept apart from \
+                 the user's own (they find them on the Agents page and can make them theirs), \
+                 so say so when you create one. {edit}{VIEWS}"
             );
         };
         let mut text = format!(
@@ -1421,4 +1677,95 @@ fn parse_priority(value: &str) -> Result<Priority, String> {
 
 fn parse_owner(value: &str) -> Result<TaskOwner, String> {
     TaskOwner::parse(value.trim()).ok_or_else(|| format!("unknown owner '{value}' (me, agent)"))
+}
+
+fn parse_outcome(value: &str) -> Result<BlockOutcome, String> {
+    BlockOutcome::parse(value.trim()).ok_or_else(|| {
+        format!("unknown outcome '{value}' (planned, worked, done, missed, cancelled)")
+    })
+}
+
+/// `None` for an absent or blank value, else the trimmed value.
+fn non_empty(value: Option<String>) -> Option<String> {
+    value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
+}
+
+/// A tag's name as stored: no `#`, compared ignoring case.
+fn tag_key(name: &str) -> String {
+    name.trim().trim_start_matches('#').to_lowercase()
+}
+
+/// The ids of tags named `names`. With `create`, missing tags get new ids and the
+/// commands that create them (to run first); otherwise an unknown name is an error.
+fn resolve_tags(
+    snapshot: &Snapshot,
+    names: &[String],
+    create: bool,
+) -> Result<(Vec<Id>, Vec<Command>), String> {
+    let mut ids = Vec::new();
+    let mut commands = Vec::new();
+    let mut made: HashMap<String, Id> = HashMap::new();
+    for name in names {
+        let key = tag_key(name);
+        if key.is_empty() {
+            return Err("a tag name cannot be empty".into());
+        }
+        let id = match snapshot
+            .tags
+            .iter()
+            .find(|t| t.deleted_at.is_none() && tag_key(&t.name) == key)
+        {
+            Some(tag) => tag.id.clone(),
+            None if !create => return Err(format!("no tag named '{name}'")),
+            None => made
+                .entry(key)
+                .or_insert_with(|| {
+                    let id = taskmaster_core::new_id();
+                    commands.push(Command::CreateTag {
+                        tag: taskmaster_core::NewTag {
+                            id: Some(id.clone()),
+                            name: name.trim().to_owned(),
+                            color: None,
+                        },
+                    });
+                    id
+                })
+                .clone(),
+        };
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    Ok((ids, commands))
+}
+
+/// A rank placing `task` in the column `status_id`: `top`, `bottom`, or right after the
+/// task with the given id (which must be in that column).
+fn rank_in_column(
+    snapshot: &Snapshot,
+    task: &Task,
+    status_id: &str,
+    position: &str,
+) -> Result<String, String> {
+    let mut column: Vec<&Task> = snapshot
+        .tasks
+        .iter()
+        .filter(|t| t.status_id == status_id && t.id != task.id && t.deleted_at.is_none())
+        .collect();
+    column.sort_by(|a, b| a.rank.cmp(&b.rank));
+    let ranks: Vec<&str> = column.iter().map(|t| t.rank.as_str()).collect();
+    let (before, after) = match position.trim() {
+        "top" => (None, ranks.first().copied()),
+        "bottom" => (ranks.last().copied(), None),
+        id => {
+            let at = column.iter().position(|t| t.id == id).ok_or_else(|| {
+                format!(
+                    "position: give top, bottom or the id of a task in the same column, \
+                     not '{id}'"
+                )
+            })?;
+            (Some(ranks[at]), ranks.get(at + 1).copied())
+        }
+    };
+    taskmaster_core::rank::key_between(before, after).map_err(|e| e.to_string())
 }

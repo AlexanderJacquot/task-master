@@ -4,6 +4,32 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**MCP: everything the user can do** (2026-11-14, branch `mcp-full-parity`, not released;
+ADR 017 amended): audit of agents saying they "can't" create, delete or move tasks.
+(1) This device's `task-master-mcp.exe` was the 2026-11-12 build next to a 0.21.0 app:
+the passive NSIS update cannot replace the exe while Claude Code sessions run it. Fix:
+`src-tauri/windows/installer-hooks.nsh` (`NSIS_HOOK_PREINSTALL`, taskkill), wired in
+`tauri.sidecar.conf.json`; `task-master-mcp --version`. Until it ships: close Claude
+Code sessions and run the 0.21.0 setup again. (2) New tools and fields: `update_task`
+project/epic/parent/due/today/estimate/owner/tags/position; `create_task` owner me,
+dates, estimate, tags; `delete_task`, `update_/delete_project`, `update_/delete_epic`,
+`list_tags`, `update_/delete_tag`, attachments (`list_/attach_/read_/rename_/
+remove_attachment`; `path` stdio only), `remove_agent_session`, `undo` (by the
+`change_id` every write now reports; core `Store::revert_batch`, refused when the rows
+changed since). `edit_user_tasks` now also opens `schedule_block`, `update_block`,
+`link_tasks` on any task; deletes stay behind it; the session's task is never closed,
+cancelled or deleted by its agent. `list_projects` takes `include_archived`, shows each
+epic's project. New MCP dependency `base64` 0.23 (already in the workspace). Board
+columns and saved views left out on purpose. Tests: core
+`reverting_a_batch_restores_it_unless_its_rows_changed_since`; MCP (crates/mcp/tests/
+tools.rs) `the_users_tasks_move_between_projects_epics_and_parents`,
+`deletes_and_undo_follow_the_setting_and_spare_the_session_task`,
+`projects_epics_and_tags_are_edited_and_deleted`,
+`the_users_calendar_and_links_are_editable_by_default`,
+`attachments_are_added_read_renamed_and_removed`, `ended_agent_sessions_can_be_removed`;
+the calendar and lineage scope tests now run with editing off. Not tried in the app; the
+NSIS hook is untested (needs a Windows installer build).
+
 **Release 0.21.0** (2026-11-14, on `main`; notes `docs/releases/0.21.0.md`): agents may
 edit the user's tasks. Its `the_users_tasks_are_mostly_off_limits` test still expected the
 old rule (another task of the user's left unchanged); updated and renamed

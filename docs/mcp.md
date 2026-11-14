@@ -78,11 +78,28 @@ What it may do, outside a Send to Claude session:
 - Read everything: tasks, projects and epics, search, the calendar (time blocks and your
   shown Google calendars), the lineage, and agent sessions.
 - Create **agent tasks**: they stay out of your views, on the **Agents** page, where
-  **Make it mine** turns one into your task. It can plan time and add links only for
-  those.
-- Edit your own tasks (title, description, priority, prerequisites, status), unless
-  Settings → Agents → **Let agents edit my tasks** is off; the remote MCP on the sync
-  server always may. Notes and session summaries need a session.
+  **Make it mine** turns one into your task. It changes and deletes those freely.
+- Everything else you can do in the app, when you ask: create tasks of your own
+  (`create_task` with `owner: "me"`); edit your tasks (`update_task`: status, title,
+  description, priority, prerequisites, project, epic, parent, due date, today, estimate,
+  tags, order in the column, adopting an agent task); delete them (`delete_task`); edit,
+  archive and delete projects, epics and tags (`update_project`, `delete_project`,
+  `update_epic`, `delete_epic`, `list_tags`, `update_tag`, `delete_tag`); plan or log
+  time on any task (`schedule_block`, `update_block`); link any tasks (`link_tasks`);
+  attachments (`list_attachments`, `attach_file`, `read_attachment`,
+  `rename_attachment`, `remove_attachment`); remove ended agent sessions
+  (`remove_agent_session`). Settings → Agents → **Let agents edit my tasks** turns all
+  of this off (deletes included); the remote MCP on the sync server always may. Notes and
+  session summaries need a session.
+- Every write reports a `change_id`; `undo` reverts that change (refused when the same
+  things changed since). With editing off it still undoes the agent's own changes.
+- Not available: board columns and saved views (Settings), and app preferences.
+- Attaching by `path` works on this device's server only; the remote MCP takes `text`
+  or `base64` content and never reads the server's files.
+
+`task-master-mcp --version` prints its version: it should match the app's (Settings →
+About). On Windows, an update stops a running `task-master-mcp.exe` before replacing it
+(Claude Code reconnects to the new one); before 0.22.0 it could stay on an old version.
 
 Writes go through the same commands as the app: they appear in the open app at once,
 are in the task's activity, and sync.

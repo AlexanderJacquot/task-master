@@ -204,7 +204,8 @@ export function AgentSettings() {
           label="Let agents edit my tasks"
         />
         <span className="text-xs text-ink-3">
-          Title, description, priority, prerequisites and status of any of your tasks
+          Anything you can do here: edit, move, tag and delete your tasks, projects, epics and tags,
+          plan your calendar, attach files, undo
         </span>
       </Row>
       <p className="pl-28 text-xs text-ink-3">

@@ -151,20 +151,35 @@ async fn lists_its_tools_and_names_the_session_task() {
         names,
         [
             "add_note",
+            "attach_file",
             "complete_session",
             "create_epic",
             "create_project",
             "create_task",
+            "delete_epic",
+            "delete_project",
+            "delete_tag",
+            "delete_task",
             "get_calendar",
             "get_lineage",
             "get_task",
             "link_tasks",
             "list_agent_sessions",
+            "list_attachments",
             "list_projects",
+            "list_tags",
             "list_tasks",
+            "read_attachment",
+            "remove_agent_session",
+            "remove_attachment",
+            "rename_attachment",
             "schedule_block",
             "search",
+            "undo",
             "update_block",
+            "update_epic",
+            "update_project",
+            "update_tag",
             "update_task"
         ]
     );
@@ -938,7 +953,10 @@ async fn without_a_session_it_reads_and_tracks_only_agent_tasks() {
     // Added to Claude by hand: no session to report on, the user's tasks editable.
     let instructions = client.peer_info().unwrap().instructions.clone().unwrap();
     assert!(!instructions.contains("complete_session"), "{instructions}");
-    assert!(instructions.contains("edit the user's"), "{instructions}");
+    assert!(
+        instructions.contains("anything the user can do"),
+        "{instructions}"
+    );
     refused(&client, "get_task", json!({})).await;
     refused(&client, "add_note", json!({ "body": "hi" })).await;
     ok(
@@ -966,7 +984,7 @@ fn at(text: &str) -> Timestamp {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn the_calendar_shows_blocks_and_days_and_plans_in_scope() {
+async fn the_calendar_shows_blocks_and_days_and_plans_in_scope_with_editing_off() {
     let mut f = fixture();
     let (task, other) = (f.task.clone(), f.other.clone());
     f.store
@@ -986,7 +1004,10 @@ async fn the_calendar_shows_blocks_and_days_and_plans_in_scope() {
             changes: vec![TaskChange::DueDate(Some("2026-11-13".into()))],
         })
         .unwrap();
-    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    // With editing the user's tasks turned off: the session's task tree only.
+    let server = TaskServer::new(f.store, Some(&f.session))
+        .unwrap()
+        .with_edit_user_tasks(false);
     let client = connect(server.clone()).await;
 
     let week = json!({ "from": "2026-11-12", "to": "2026-11-14", "utc_offset": "+01:00" });
@@ -1081,7 +1102,7 @@ async fn the_calendar_shows_blocks_and_days_and_plans_in_scope() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn the_lineage_shows_chains_and_links_in_scope() {
+async fn the_lineage_shows_chains_and_links_in_scope_with_editing_off() {
     let mut f = fixture();
     let (task, other, project) = (f.task.clone(), f.other.clone(), f.project.clone());
     let upstream = f
@@ -1106,7 +1127,10 @@ async fn the_lineage_shows_chains_and_links_in_scope() {
             })
             .unwrap();
     }
-    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    // With editing the user's tasks turned off: links of the session's task tree only.
+    let server = TaskServer::new(f.store, Some(&f.session))
+        .unwrap()
+        .with_edit_user_tasks(false);
     let client = connect(server.clone()).await;
 
     let lineage = ok(&client, "get_lineage", json!({})).await;
@@ -1193,4 +1217,565 @@ fn server_snapshot(server: &TaskServer) -> Snapshot {
 
 fn with_store<T>(server: &TaskServer, f: impl FnOnce(&mut Store) -> Result<T>) -> T {
     server.with_store_for_tests(f).unwrap()
+}
+
+// ---------------------------------------------------------------------------------------
+// Everything the user can do in the app (audit of 2026-11-14)
+
+/// The change id in a write's result.
+fn change_in(text: &str) -> String {
+    let start = text.find("change_id: ").expect("a change id") + "change_id: ".len();
+    text[start..].split_whitespace().next().unwrap().to_owned()
+}
+
+fn task_of(server: &TaskServer, id: &str) -> Option<Task> {
+    server_snapshot(server)
+        .tasks
+        .into_iter()
+        .find(|t| t.id == id)
+}
+
+/// A folder of its own under the system temp folder, for attachment content.
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("tm-mcp-{name}-{}", new_id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_users_tasks_move_between_projects_epics_and_parents() {
+    let f = fixture();
+    let (task, other, project) = (f.task.clone(), f.other.clone(), f.project.clone());
+    let server = TaskServer::new(f.store, None).unwrap();
+    let client = connect(server.clone()).await;
+    let home = id_in(&ok(&client, "create_project", json!({ "name": "Home" })).await);
+    let epic = id_in(
+        &ok(
+            &client,
+            "create_epic",
+            json!({ "name": "Move out", "project_id": home }),
+        )
+        .await,
+    );
+
+    // A task of the user's own, when they ask for one, with everything the app sets.
+    let made = ok(
+        &client,
+        "create_task",
+        json!({
+            "title": "Book the van",
+            "owner": "me",
+            "project_id": home,
+            "epic_id": epic,
+            "due_date": "2026-12-01",
+            "today_on": "2026-11-14",
+            "estimate_min": 30,
+            "tags": ["#errand", "errand", "Phone"],
+        }),
+    )
+    .await;
+    assert!(!made.contains("[agent]"), "{made}");
+    let van = task_of(&server, &id_in(&made)).unwrap();
+    assert_eq!(van.owner, TaskOwner::Me);
+    assert_eq!(van.epic_id.as_deref(), Some(epic.as_str()));
+    assert_eq!(
+        (
+            van.due_date.as_deref(),
+            van.today_on.as_deref(),
+            van.estimate_min
+        ),
+        (Some("2026-12-01"), Some("2026-11-14"), Some(30))
+    );
+    assert_eq!(van.tag_ids.len(), 2, "the same tag named twice is one tag");
+
+    // Into another project and epic, with its subtask following.
+    let sub = id_in(
+        &ok(
+            &client,
+            "create_task",
+            json!({ "title": "Measure boxes", "owner": "me", "parent_id": other }),
+        )
+        .await,
+    );
+    let moved = ok(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "project_id": home, "epic_id": epic }),
+    )
+    .await;
+    assert!(moved.contains("1 subtasks followed"), "{moved}");
+    let rent = task_of(&server, &other).unwrap();
+    assert_eq!(
+        (rent.project_id.as_deref(), rent.epic_id.as_deref()),
+        (Some(home.as_str()), Some(epic.as_str()))
+    );
+    assert_eq!(
+        task_of(&server, &sub).unwrap().epic_id.as_deref(),
+        Some(epic.as_str())
+    );
+
+    // Out of the epic, to the Inbox, a subtask of another task and back to the top level.
+    ok(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "epic_id": "", "project_id": "", "due_date": "2026-11-30",
+                "estimate_min": 45, "add_tags": ["errand"], "remove_tags": [] }),
+    )
+    .await;
+    let rent = task_of(&server, &other).unwrap();
+    assert_eq!((rent.project_id, rent.epic_id), (None, None));
+    assert_eq!(rent.due_date.as_deref(), Some("2026-11-30"));
+    assert_eq!(rent.tag_ids, van.tag_ids[..1].to_vec());
+    ok(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "parent_id": task }),
+    )
+    .await;
+    let rent = task_of(&server, &other).unwrap();
+    assert_eq!(rent.parent_id.as_deref(), Some(task.as_str()));
+    assert_eq!(
+        rent.project_id.as_deref(),
+        Some(project.as_str()),
+        "takes its parent's"
+    );
+    ok(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "parent_id": "", "remove_tags": ["#errand"],
+                "estimate_min": 0, "due_date": "" }),
+    )
+    .await;
+    let rent = task_of(&server, &other).unwrap();
+    assert_eq!(rent.parent_id, None);
+    assert!(rent.tag_ids.is_empty());
+    assert_eq!((rent.estimate_min, rent.due_date), (None, None));
+    refused(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "remove_tags": ["nope"] }),
+    )
+    .await;
+
+    // Reordering within the column.
+    ok(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "position": "top" }),
+    )
+    .await;
+    let snapshot = server_snapshot(&server);
+    let rank = |id: &str| {
+        snapshot
+            .tasks
+            .iter()
+            .find(|t| t.id == id)
+            .unwrap()
+            .rank
+            .clone()
+    };
+    assert!(rank(&other) < rank(&task), "top of the column");
+    ok(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "position": task }),
+    )
+    .await;
+    let snapshot = server_snapshot(&server);
+    let rank = |id: &str| {
+        snapshot
+            .tasks
+            .iter()
+            .find(|t| t.id == id)
+            .unwrap()
+            .rank
+            .clone()
+    };
+    assert!(rank(&other) > rank(&task), "right after it");
+    refused(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "position": "middle" }),
+    )
+    .await;
+
+    // An agent task is adopted; the user's tasks never become an agent's.
+    let step = id_in(&ok(&client, "create_task", json!({ "title": "Spike" })).await);
+    ok(
+        &client,
+        "update_task",
+        json!({ "task_id": step, "owner": "me" }),
+    )
+    .await;
+    assert_eq!(task_of(&server, &step).unwrap().owner, TaskOwner::Me);
+    refused(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "owner": "agent" }),
+    )
+    .await;
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn deletes_and_undo_follow_the_setting_and_spare_the_session_task() {
+    let f = fixture();
+    let (task, other, session) = (f.task.clone(), f.other.clone(), f.session.clone());
+    let server = TaskServer::new(f.store, Some(&session)).unwrap();
+    let client = connect(server.clone()).await;
+
+    // The user's task, with an agent step under it.
+    let step = id_in(
+        &ok(
+            &client,
+            "create_task",
+            json!({ "title": "Check", "parent_id": other }),
+        )
+        .await,
+    );
+    let deleted = ok(&client, "delete_task", json!({ "task_id": other })).await;
+    assert!(
+        deleted.starts_with("Deleted Pay the rent and its subtask."),
+        "{deleted}"
+    );
+    assert!(task_of(&server, &other).is_none() && task_of(&server, &step).is_none());
+    let undone = ok(&client, "undo", json!({ "change_id": change_in(&deleted) })).await;
+    assert!(undone.contains("2 tasks"), "{undone}");
+    assert!(task_of(&server, &other).is_some() && task_of(&server, &step).is_some());
+    // Undoing it again is refused; undoing the undo deletes them again.
+    refused(&client, "undo", json!({ "change_id": change_in(&deleted) })).await;
+    ok(&client, "undo", json!({ "change_id": change_in(&undone) })).await;
+    assert!(task_of(&server, &other).is_none());
+
+    // The session's task, or a task above it, is never deleted by its agent.
+    let message = refused(&client, "delete_task", json!({ "task_id": task })).await;
+    assert!(message.contains("this session works on"), "{message}");
+    refused(&client, "undo", json!({ "change_id": "nonsense" })).await;
+    client.cancel().await.unwrap();
+
+    // Turned off: the agent's own tasks and changes only.
+    let mut store = Store::open_in_memory().unwrap();
+    let theirs = store
+        .execute(Command::CreateTask {
+            task: NewTask {
+                title: "Theirs".into(),
+                ..NewTask::default()
+            },
+        })
+        .unwrap();
+    let theirs_change = theirs.batch_id.clone().unwrap();
+    let theirs = theirs.tasks[0].id.clone();
+    let server = TaskServer::new(store, None)
+        .unwrap()
+        .with_edit_user_tasks(false);
+    let client = connect(server.clone()).await;
+    let message = refused(&client, "delete_task", json!({ "task_id": theirs })).await;
+    assert!(message.contains("turned off"), "{message}");
+    refused(&client, "undo", json!({ "change_id": theirs_change })).await;
+    refused(
+        &client,
+        "create_task",
+        json!({ "title": "Mine", "owner": "me" }),
+    )
+    .await;
+    let mine = ok(&client, "create_task", json!({ "title": "Scratch" })).await;
+    let deleted = ok(&client, "delete_task", json!({ "task_id": id_in(&mine) })).await;
+    ok(&client, "undo", json!({ "change_id": change_in(&deleted) })).await;
+    assert!(task_of(&server, &id_in(&mine)).is_some());
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn projects_epics_and_tags_are_edited_and_deleted() {
+    let f = fixture();
+    let (other, project) = (f.other.clone(), f.project.clone());
+    let server = TaskServer::new(f.store, None).unwrap();
+    let client = connect(server.clone()).await;
+    let area = id_in(&ok(&client, "create_project", json!({ "name": "Work" })).await);
+
+    let updated = ok(
+        &client,
+        "update_project",
+        json!({ "project_id": project, "name": "Task Master", "color": "#7a5cff",
+                "area_id": area, "archived": true }),
+    )
+    .await;
+    assert!(updated.contains("Task Master (archived)"), "{updated}");
+    let p = server_snapshot(&server)
+        .projects
+        .into_iter()
+        .find(|p| p.id == project)
+        .unwrap();
+    assert_eq!(p.parent_id.as_deref(), Some(area.as_str()));
+    assert!(p.archived_at.is_some());
+    let listed = ok(&client, "list_projects", json!({})).await;
+    assert!(
+        !listed.contains("Task Master"),
+        "archived ones are hidden: {listed}"
+    );
+    let listed = ok(
+        &client,
+        "list_projects",
+        json!({ "include_archived": true }),
+    )
+    .await;
+    assert!(listed.contains("Work / Task Master (archived"), "{listed}");
+    ok(
+        &client,
+        "update_project",
+        json!({ "project_id": project, "archived": false, "area_id": "", "color": "" }),
+    )
+    .await;
+    // Not while it holds tasks.
+    refused(&client, "delete_project", json!({ "project_id": project })).await;
+    let gone = ok(&client, "delete_project", json!({ "project_id": area })).await;
+    assert!(gone.starts_with("Deleted project Work."), "{gone}");
+
+    let epic = id_in(
+        &ok(
+            &client,
+            "create_epic",
+            json!({ "name": "Launch", "project_id": project }),
+        )
+        .await,
+    );
+    ok(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "epic_id": epic }),
+    )
+    .await;
+    let done = ok(
+        &client,
+        "update_epic",
+        json!({ "epic_id": epic, "name": "Launch 1.0", "state": "done",
+                "target_date": "2026-12-24", "description": "Ship it", "project_id": "" }),
+    )
+    .await;
+    assert!(done.starts_with("Updated epic Launch 1.0 (done"), "{done}");
+    let listed = ok(&client, "list_projects", json!({})).await;
+    assert!(listed.contains("Launch 1.0 (done, no project"), "{listed}");
+    refused(
+        &client,
+        "update_epic",
+        json!({ "epic_id": epic, "state": "finished" }),
+    )
+    .await;
+    ok(&client, "delete_epic", json!({ "epic_id": epic })).await;
+    assert_eq!(
+        task_of(&server, &other).unwrap().epic_id,
+        None,
+        "its tasks stay"
+    );
+
+    ok(
+        &client,
+        "update_task",
+        json!({ "task_id": other, "add_tags": ["bills"] }),
+    )
+    .await;
+    let tags = ok(&client, "list_tags", json!({})).await;
+    assert!(
+        tags.contains("#bills") && tags.contains("1 open tasks"),
+        "{tags}"
+    );
+    ok(
+        &client,
+        "update_tag",
+        json!({ "tag": "#bills", "name": "money", "color": "#00aa00" }),
+    )
+    .await;
+    assert!(ok(&client, "list_tags", json!({})).await.contains("#money"));
+    let deleted = ok(&client, "delete_tag", json!({ "tag": "money" })).await;
+    assert!(task_of(&server, &other).unwrap().tag_ids.is_empty());
+    ok(&client, "undo", json!({ "change_id": change_in(&deleted) })).await;
+    assert_eq!(
+        task_of(&server, &other).unwrap().tag_ids.len(),
+        1,
+        "undo re-tags it"
+    );
+    client.cancel().await.unwrap();
+
+    // Turned off: the user's projects, epics and tags stay as they are.
+    let server = server.with_edit_user_tasks(false);
+    let client = connect(server).await;
+    for (tool, args) in [
+        (
+            "update_project",
+            json!({ "project_id": project, "name": "X" }),
+        ),
+        ("delete_project", json!({ "project_id": project })),
+        ("update_tag", json!({ "tag": "money", "name": "x" })),
+        ("delete_tag", json!({ "tag": "money" })),
+    ] {
+        let message = refused(&client, tool, args).await;
+        assert!(message.contains("turned off"), "{tool}: {message}");
+    }
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn the_users_calendar_and_links_are_editable_by_default() {
+    let f = fixture();
+    let (task, other) = (f.task.clone(), f.other.clone());
+    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    let client = connect(server.clone()).await;
+    let logged = ok(
+        &client,
+        "schedule_block",
+        json!({ "task_id": other, "start": "2026-11-12T16:00Z", "end": "2026-11-12T17:00Z",
+                "outcome": "worked" }),
+    )
+    .await;
+    assert!(logged.starts_with("Logged"), "{logged}");
+    let block = id_in(&logged);
+    assert_eq!(
+        server_snapshot(&server).time_blocks[0].outcome,
+        BlockOutcome::Worked
+    );
+    ok(
+        &client,
+        "link_tasks",
+        json!({ "task_id": other, "prerequisite_id": task }),
+    )
+    .await;
+    assert_eq!(task_of(&server, &other).unwrap().dependency_ids, vec![task]);
+    ok(
+        &client,
+        "update_block",
+        json!({ "block_id": block, "remove": true }),
+    )
+    .await;
+    assert!(server_snapshot(&server).time_blocks.is_empty());
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn attachments_are_added_read_renamed_and_removed() {
+    let f = fixture();
+    let other = f.other.clone();
+    let store = f.store.with_files(temp_dir("files"));
+    let server = TaskServer::new(store, None).unwrap();
+    let client = connect(server.clone()).await;
+
+    let made = ok(
+        &client,
+        "attach_file",
+        json!({ "task_id": other, "name": "lease.md", "text": "# Lease\nDue on the 1st." }),
+    )
+    .await;
+    assert!(
+        made.starts_with("Attached lease.md (23 B) to Pay the rent"),
+        "{made}"
+    );
+    let id = id_in(&made);
+    let listed = ok(&client, "list_attachments", json!({ "task_id": other })).await;
+    assert!(listed.contains("lease.md (text/markdown"), "{listed}");
+    assert_eq!(
+        ok(&client, "read_attachment", json!({ "attachment_id": id })).await,
+        "# Lease\nDue on the 1st."
+    );
+    ok(
+        &client,
+        "rename_attachment",
+        json!({ "attachment_id": id, "name": "lease-2026.md" }),
+    )
+    .await;
+
+    // Binary content, and a file on this device.
+    let png = ok(
+        &client,
+        "attach_file",
+        json!({ "task_id": other, "name": "dot.png", "base64": "iVBORw0KGgo=" }),
+    )
+    .await;
+    let shown = ok(
+        &client,
+        "read_attachment",
+        json!({ "attachment_id": id_in(&png) }),
+    )
+    .await;
+    assert!(
+        shown.contains("image/png") && shown.contains("The file is at"),
+        "{shown}"
+    );
+    let source = temp_dir("source").join("notes.txt");
+    std::fs::write(&source, "hello").unwrap();
+    let from_path = ok(
+        &client,
+        "attach_file",
+        json!({ "task_id": other, "path": source.display().to_string() }),
+    )
+    .await;
+    assert!(
+        from_path.starts_with("Attached notes.txt (5 B)"),
+        "{from_path}"
+    );
+    refused(
+        &client,
+        "attach_file",
+        json!({ "task_id": other, "name": "x", "text": "a", "base64": "YQ==" }),
+    )
+    .await;
+
+    ok(&client, "remove_attachment", json!({ "attachment_id": id })).await;
+    let names: Vec<String> = server_snapshot(&server)
+        .attachments
+        .iter()
+        .map(|a| a.name.clone())
+        .collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert!(!names.contains(&"lease-2026.md".to_owned()));
+    client.cancel().await.unwrap();
+
+    // The sync server's MCP never reads its own files by path.
+    let store = Store::open_in_memory()
+        .unwrap()
+        .with_files(temp_dir("shared"));
+    let shared = TaskServer::shared(std::sync::Arc::new(std::sync::Mutex::new(store)));
+    let client = connect(shared).await;
+    let made = ok(&client, "create_task", json!({ "title": "Remote" })).await;
+    let message = refused(
+        &client,
+        "attach_file",
+        json!({ "task_id": id_in(&made), "path": source.display().to_string() }),
+    )
+    .await;
+    assert!(message.contains("cannot read files by path"), "{message}");
+    ok(
+        &client,
+        "attach_file",
+        json!({ "task_id": id_in(&made), "name": "a.txt", "base64": "YQ==" }),
+    )
+    .await;
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn ended_agent_sessions_can_be_removed() {
+    let f = fixture();
+    let session = f.session.clone();
+    let server = TaskServer::new(f.store, None).unwrap();
+    let client = connect(server.clone()).await;
+    let message = refused(
+        &client,
+        "remove_agent_session",
+        json!({ "session_id": session }),
+    )
+    .await;
+    assert!(message.contains("has not ended"), "{message}");
+    with_store(&server, |s| {
+        s.execute_without_undo(vec![Command::UpdateAgentSession {
+            id: session.clone(),
+            changes: vec![AgentSessionChange::State(SessionState::Done)],
+        }])
+    });
+    ok(
+        &client,
+        "remove_agent_session",
+        json!({ "session_id": session }),
+    )
+    .await;
+    assert!(server_snapshot(&server).agent_sessions.is_empty());
+    client.cancel().await.unwrap();
 }

@@ -1744,3 +1744,76 @@ fn create_and_link_a_task_in_one_batch() {
     assert!(task(&s, &a.id).dependency_ids.is_empty());
     assert!(s.snapshot().unwrap().tasks.iter().all(|t| t.id != id));
 }
+
+// ---------------------------------------------------------------------------------------
+// Reverting one change by its batch id (agents' undo)
+
+#[test]
+fn reverting_a_batch_restores_it_unless_its_rows_changed_since() {
+    let mut s = store();
+    let parent = add_task(&mut s, new_task("Parent"));
+    add_task(
+        &mut s,
+        NewTask {
+            parent_id: Some(parent.id.clone()),
+            ..new_task("Child")
+        },
+    );
+    let before = s.snapshot().unwrap();
+    let deleted = s
+        .execute_without_undo(vec![Command::DeleteTask {
+            id: parent.id.clone(),
+        }])
+        .unwrap();
+    let batch = deleted.batch_id.unwrap();
+    assert!(s.snapshot().unwrap().tasks.is_empty());
+
+    let reverted = s.revert_batch(&batch).unwrap();
+    assert!(!reverted.is_empty());
+    assert_eq!(
+        s.snapshot().unwrap(),
+        before,
+        "the task and its subtask are back"
+    );
+    // Its rows changed since (by the revert itself): a second revert is refused.
+    let message = invalid(s.revert_batch(&batch));
+    assert!(message.contains("changed since"), "{message}");
+
+    // A later edit of the same row blocks reverting the earlier one.
+    let renamed = s
+        .execute(Command::UpdateTask {
+            id: parent.id.clone(),
+            changes: vec![TaskChange::Title("Renamed".into())],
+        })
+        .unwrap()
+        .batch_id
+        .unwrap();
+    s.execute(Command::UpdateTask {
+        id: parent.id.clone(),
+        changes: vec![TaskChange::Priority(Priority::High)],
+    })
+    .unwrap();
+    invalid(s.revert_batch(&renamed));
+    // Another row's later edit does not.
+    let other = add_task(&mut s, new_task("Other"));
+    let titled = s
+        .execute(Command::UpdateTask {
+            id: other.id.clone(),
+            changes: vec![TaskChange::Title("Other, renamed".into())],
+        })
+        .unwrap()
+        .batch_id
+        .unwrap();
+    s.execute(Command::UpdateTask {
+        id: parent.id.clone(),
+        changes: vec![TaskChange::Title("Again".into())],
+    })
+    .unwrap();
+    s.revert_batch(&titled).unwrap();
+    assert_eq!(task(&s, &other.id).title, "Other");
+
+    assert!(matches!(
+        s.revert_batch("00000000-0000-7000-8000-00000000dead"),
+        Err(Error::NotFound { .. })
+    ));
+}

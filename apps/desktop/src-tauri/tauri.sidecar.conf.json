@@ -4,6 +4,11 @@
     "beforeBuildCommand": "pnpm build && node scripts/sidecar.mjs"
   },
   "bundle": {
-    "externalBin": ["binaries/task-master-mcp"]
+    "externalBin": ["binaries/task-master-mcp"],
+    "windows": {
+      "nsis": {
+        "installerHooks": "windows/installer-hooks.nsh"
+      }
+    }
   }
 }

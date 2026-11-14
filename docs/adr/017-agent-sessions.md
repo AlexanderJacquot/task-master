@@ -229,6 +229,33 @@ in the same space without cluttering the user's views. Decided with the user:
   then passes `--no-edit-user-tasks` and the earlier rule applies (status only, session
   tree only). The server instructions say which rule holds. The remote MCP on the sync
   server (ADR 024) has no such setting and allows edits.
+- **Everything the user can do (amended 2026-11-14, branch `mcp-full-parity`).** Agents
+  kept telling the user they could not create, delete or move tasks. An audit found two
+  causes. (1) On Windows the in-app update never replaced `task-master-mcp.exe` while a
+  Claude Code session kept it running, so devices ran a pre-0.20 server (no
+  `create_project`, user tasks read-only) next to a 0.21 app; an NSIS pre-install hook
+  (`src-tauri/windows/installer-hooks.nsh`, in `tauri.sidecar.conf.json`) now stops it
+  first, and `task-master-mcp --version` shows which one runs. (2) The tools covered a
+  fraction of the commands. They now cover every user action except board columns, saved
+  views and preferences: `update_task` gains project, epic, parent (`SetParent`), due
+  date, today, estimate, owner (`me` adopts), tags (missing ones created) and position in
+  the column; `create_task` gains `owner: "me"`, dates, estimate and tags; new
+  `delete_task`, `update_/delete_project`, `update_/delete_epic`, `list_tags`,
+  `update_/delete_tag`, `list_/attach_/read_/rename_/remove_attachment`,
+  `remove_agent_session` and `undo`. One rule now governs them: the agent's own tasks are
+  always its to change and delete; the user's data (their tasks, projects, epics, tags,
+  their tasks' blocks, links and attachments) needs `edit_user_tasks`, which also covers
+  `schedule_block`, `update_block` and `link_tasks` (before, those stayed limited to the
+  session tree even with editing on). Deletes stay behind the setting. Kept: the
+  session's task is never closed, cancelled or deleted by its agent (nor a task above
+  it). **Undo**: undo history is in memory per process, and the remote MCP is stateless,
+  so every write reports its batch id as `change_id` and `undo` calls the new
+  `Store::revert_batch`, which inverts that batch as a new one, outside the undo history,
+  and refuses when a later op touched any of its rows (also after an earlier revert; a
+  revert of the revert redoes it). With editing off, `undo` still reverts batches this
+  server process wrote. **Attachments**: content by `text`, `base64` or (stdio only)
+  `path`; the sync server's MCP never reads files by path (`local_files`). New
+  dependency for the MCP crate: `base64` 0.23, already used by the client and desktop.
 - **Subtasks (amended 2026-11-08).** Agents finished the work but left the session task's
   subtasks open. The subtasks are steps of the work, so `update_task` now lets the agent
   mark the user's subtasks of the session's task (any depth) done; the session's task

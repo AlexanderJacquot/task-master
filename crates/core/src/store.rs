@@ -299,6 +299,48 @@ impl Store {
         Ok(Some(changes))
     }
 
+    /// Reverts one earlier batch (a change an agent reports, by its `batch_id`) as a new
+    /// batch, outside the undo history. Refused when the batch is unknown, or when a later
+    /// op (from any batch or device) touched a row it changed: reverting would undo that
+    /// later edit too. Revert newer changes first. A batch already reverted counts as
+    /// changed since.
+    pub fn revert_batch(&mut self, batch_id: &str) -> Result<Changes> {
+        let (count, last): (i64, Option<i64>) = self.conn.query_row(
+            "SELECT COUNT(*), MAX(seq) FROM ops WHERE batch_id = ?1",
+            [batch_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let Some(last) = last.filter(|_| count > 0) else {
+            return Err(Error::not_found("change", batch_id));
+        };
+        let changed: Vec<(String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT DISTINCT later.entity, later.entity_id FROM ops later
+                 WHERE later.seq > ?2 AND later.batch_id IS NOT ?1
+                   AND EXISTS (SELECT 1 FROM ops mine WHERE mine.batch_id = ?1
+                               AND mine.entity = later.entity
+                               AND mine.entity_id = later.entity_id)
+                 ORDER BY later.entity, later.entity_id",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![batch_id, last], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        if !changed.is_empty() {
+            let names: Vec<String> = changed
+                .iter()
+                .map(|(entity, id)| format!("{entity} {id}"))
+                .collect();
+            return Err(Error::invalid(format!(
+                "cannot undo change {batch_id}: {} changed since (or it was already undone); \
+                 undo the newer changes first",
+                names.join(", ")
+            )));
+        }
+        self.write(|b| history::invert_batch(b, batch_id))
+    }
+
     /// Every live entity, for hydrating a front end.
     pub fn snapshot(&self) -> Result<Snapshot> {
         query::snapshot(&self.conn)

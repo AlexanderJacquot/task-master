@@ -9,7 +9,7 @@ use taskmaster_mcp::{TaskServer, locate};
 
 const USAGE: &str = "usage: task-master-mcp [--db <path to task-master.sqlite>] \
                      [--session <session id>] [--done-status <status id>] [--no-edit-user-tasks]\n       \
-                     task-master-mcp --show-db\n\n\
+                     task-master-mcp --show-db | --version\n\n\
                      Without --db: $TASK_MASTER_DB, else the task-master app's database on \
                      this device.\n--show-db prints that path and exits.";
 
@@ -37,6 +37,10 @@ async fn run() -> Result<(), String> {
             "--done-status" => workflow.done_status_id = args.next(),
             "--no-edit-user-tasks" => edit_user_tasks = false,
             "--show-db" => show_db = true,
+            "--version" | "-V" => {
+                println!("task-master-mcp {}", taskmaster_core::VERSION);
+                return Ok(());
+            }
             "--help" | "-h" => {
                 println!("{USAGE}");
                 return Ok(());
