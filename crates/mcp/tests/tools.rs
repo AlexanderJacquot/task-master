@@ -157,9 +157,11 @@ async fn lists_its_tools_and_names_the_session_task() {
             "create_task",
             "get_calendar",
             "get_lineage",
+            "get_meeting",
             "get_task",
             "link_tasks",
             "list_agent_sessions",
+            "list_meetings",
             "list_projects",
             "list_tasks",
             "schedule_block",
@@ -1193,4 +1195,84 @@ fn server_snapshot(server: &TaskServer) -> Snapshot {
 
 fn with_store<T>(server: &TaskServer, f: impl FnOnce(&mut Store) -> Result<T>) -> T {
     server.with_store_for_tests(f).unwrap()
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn meetings_are_listed_read_in_full_and_on_the_calendar() {
+    let mut f = fixture();
+    let mut add = |title: &str, start: &str, participants: &[&str], task: Option<Id>| {
+        f.store
+            .execute(Command::CreateMeeting {
+                meeting: NewMeeting {
+                    title: title.into(),
+                    started_at: at(start),
+                    ended_at: Some(at(start) + 3_600_000),
+                    project_id: Some(f.project.clone()),
+                    task_id: task,
+                    participants: participants.iter().map(|p| (*p).to_owned()).collect(),
+                    notes: format!("Notes of {title}"),
+                    ..NewMeeting::default()
+                },
+            })
+            .unwrap()
+            .meetings
+            .remove(0)
+            .id
+    };
+    let kickoff = add(
+        "Kick-off",
+        "2026-11-12T08:00:00Z",
+        &["Ada", "Grace"],
+        Some(f.task.clone()),
+    );
+    let retro = add("Retro", "2026-11-13T15:00:00Z", &["Bob"], None);
+    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    let client = connect(server).await;
+
+    let all = ok(&client, "list_meetings", json!({ "utc_offset": "+01:00" })).await;
+    let lines: Vec<&str> = all.lines().collect();
+    assert_eq!(lines.len(), 2, "{all}");
+    assert!(lines[0].contains("Retro"), "newest first: {all}");
+    assert!(
+        lines[1].contains("2026-11-12 09:00–10:00: Kick-off (scheduled, with Ada, Grace"),
+        "{all}"
+    );
+
+    let by_name = ok(&client, "list_meetings", json!({ "participant": "grace" })).await;
+    assert!(
+        by_name.contains(&kickoff) && !by_name.contains(&retro),
+        "{by_name}"
+    );
+    let by_task = ok(&client, "list_meetings", json!({ "task_id": f.task })).await;
+    assert!(by_task.contains(&kickoff) && !by_task.contains(&retro));
+    let none = ok(&client, "list_meetings", json!({ "participant": "Zed" })).await;
+    assert_eq!(none, "No meetings match.");
+
+    let page = ok(&client, "list_meetings", json!({ "limit": 1 })).await;
+    assert!(page.contains("next_cursor"), "{page}");
+    let next = ok(
+        &client,
+        "list_meetings",
+        json!({ "limit": 1, "cursor": retro }),
+    )
+    .await;
+    assert!(next.contains(&kickoff), "{next}");
+
+    let full = ok(&client, "get_meeting", json!({ "meeting_id": kickoff })).await;
+    assert!(full.contains("# Meeting: Kick-off"), "{full}");
+    assert!(full.contains("- Project: task-master"), "{full}");
+    assert!(full.contains("- Task: Spawn Claude sessions"), "{full}");
+    assert!(full.contains("- Participants: Ada, Grace"), "{full}");
+    assert!(full.contains("Notes of Kick-off"), "{full}");
+    refused(&client, "get_meeting", json!({ "meeting_id": new_id() })).await;
+
+    let week = json!({ "from": "2026-11-12", "to": "2026-11-14" });
+    let shown = ok(&client, "get_calendar", week).await;
+    assert!(
+        shown.contains(&format!(
+            "- 08:00–09:00 meeting: Kick-off (meeting `{kickoff}`)"
+        )),
+        "{shown}"
+    );
+    client.cancel().await.unwrap();
 }

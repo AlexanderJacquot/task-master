@@ -45,7 +45,7 @@ impl Offset {
         Ok(Self(sign * (hours * 60 + minutes) * 60_000))
     }
 
-    fn label(self) -> String {
+    pub(crate) fn label(self) -> String {
         if self.0 == 0 {
             return "UTC".into();
         }
@@ -55,7 +55,7 @@ impl Offset {
     }
 
     /// The local date of an instant.
-    fn date(self, ms: Timestamp) -> String {
+    pub(crate) fn date(self, ms: Timestamp) -> String {
         utc_date(ms + self.0)
     }
 
@@ -65,7 +65,7 @@ impl Offset {
     }
 
     /// `HH:MM` local.
-    fn clock(self, ms: Timestamp) -> String {
+    pub(crate) fn clock(self, ms: Timestamp) -> String {
         format_utc(ms + self.0)[11..16].to_owned()
     }
 }
@@ -187,6 +187,24 @@ pub fn render(
                     task.title,
                     task.id,
                     block.id
+                ),
+            ));
+        }
+
+        for meeting in &snapshot.meetings {
+            // A meeting being recorded has no end yet: it shows as a moment.
+            let end = meeting.ended_at.unwrap_or(meeting.started_at + 1);
+            let overlaps = meeting.started_at < day_end.min(to) && end > day_start.max(from);
+            if !overlaps || offset.date(meeting.started_at.max(from)) != date {
+                continue;
+            }
+            lines.push((
+                meeting.started_at,
+                format!(
+                    "- {} meeting: {} (meeting `{}`)",
+                    span(offset, meeting.started_at, end),
+                    meeting.title,
+                    meeting.id
                 ),
             ));
         }
