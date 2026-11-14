@@ -8,8 +8,8 @@ use crate::clock::{check_date, check_id, new_id};
 use crate::error::{Error, Result};
 use crate::model::{
     AgentRuntime, BlockOutcome, EpicState, FILTER_NONE, Id, IsoDate, MeetingState, Priority,
-    SessionState,
-    Status, StatusCategory, Task, TaskOwner, Timestamp, VIEW_SPEC_VERSION, ViewScope, ViewSpec,
+    SessionState, Status, StatusCategory, Task, TaskOwner, Timestamp, VIEW_SPEC_VERSION, ViewScope,
+    ViewSpec,
 };
 use crate::ops::{Batch, Change, Entity, OpKind};
 use crate::{files, query, rank};

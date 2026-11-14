@@ -7,8 +7,8 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter, types::ToSq
 use crate::error::{Error, Result};
 use crate::model::{
     AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, Epic, EpicState, Id, Meeting,
-    MeetingState, Priority, Project, ProjectFolder, SessionState, Snapshot, Status, StatusCategory, Tag, Task, TaskOwner,
-    TimeBlock, View,
+    MeetingState, Priority, Project, ProjectFolder, SessionState, Snapshot, Status, StatusCategory,
+    Tag, Task, TaskOwner, TimeBlock, View,
 };
 
 const TASK_COLS: &str = "id, project_id, epic_id, parent_id, status_id, title, description, \
@@ -164,7 +164,8 @@ fn meeting_row(r: &Row<'_>) -> rusqlite::Result<Meeting> {
         epic_id: r.get(5)?,
         task_id: r.get(6)?,
         state: MeetingState::parse(&state).ok_or_else(|| bad_value(7, state))?,
-        participants: serde_json::from_str(&participants).map_err(|_| bad_value(8, participants))?,
+        participants: serde_json::from_str(&participants)
+            .map_err(|_| bad_value(8, participants))?,
         notes: r.get(9)?,
         summary: r.get(10)?,
         transcribed_at: r.get(11)?,

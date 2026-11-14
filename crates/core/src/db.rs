@@ -228,7 +228,10 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .unwrap();
-        assert_eq!((task_id.as_str(), meeting_id, name.as_str()), ("t", None, "x.txt"));
+        assert_eq!(
+            (task_id.as_str(), meeting_id, name.as_str()),
+            ("t", None, "x.txt")
+        );
         // An attachment names exactly one owner.
         assert!(
             conn.execute(

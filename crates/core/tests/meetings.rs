@@ -178,7 +178,10 @@ fn validating_records_when_and_leaving_it_clears() {
     let validated = state(&mut s, MeetingState::Validated);
     assert!(validated.validated_at.is_some());
     let again = state(&mut s, MeetingState::Validated);
-    assert_eq!(again.validated_at, validated.validated_at, "kept when re-set");
+    assert_eq!(
+        again.validated_at, validated.validated_at,
+        "kept when re-set"
+    );
     assert_eq!(state(&mut s, MeetingState::Review).validated_at, None);
 }
 
@@ -320,8 +323,7 @@ fn meetings_take_attachments_hidden_with_them() {
 
     let task = add_task(&mut s, "T");
     assert!(
-        invalid(s.execute(attach(Some(meeting.id.clone()), Some(task.id))))
-            .contains("exactly one")
+        invalid(s.execute(attach(Some(meeting.id.clone()), Some(task.id)))).contains("exactly one")
     );
     assert!(invalid(s.execute(attach(None, None))).contains("exactly one"));
 
@@ -330,7 +332,10 @@ fn meetings_take_attachments_hidden_with_them() {
     })
     .unwrap();
     assert!(s.snapshot().unwrap().attachments.is_empty());
-    assert!(!s.file_in_use(&stored.hash).unwrap(), "purgeable once hidden");
+    assert!(
+        !s.file_in_use(&stored.hash).unwrap(),
+        "purgeable once hidden"
+    );
     s.undo().unwrap();
     assert_eq!(s.snapshot().unwrap().attachments, vec![attachment.clone()]);
 
@@ -341,10 +346,7 @@ fn meetings_take_attachments_hidden_with_them() {
             changes: vec![AttachmentChange::Name("deck.pdf".into())],
         },
     );
-    roundtrip(
-        &mut s,
-        Command::DeleteAttachment { id: attachment.id },
-    );
+    roundtrip(&mut s, Command::DeleteAttachment { id: attachment.id });
 }
 
 #[test]
@@ -374,7 +376,10 @@ fn meetings_sync_between_replicas() {
     .unwrap();
     b.execute(Command::UpdateMeeting {
         id: meeting.id.clone(),
-        changes: vec![MeetingChange::Participants(vec!["Ada".into(), "Bob".into()])],
+        changes: vec![MeetingChange::Participants(vec![
+            "Ada".into(),
+            "Bob".into(),
+        ])],
     })
     .unwrap();
     sync(&mut a, &mut server);
