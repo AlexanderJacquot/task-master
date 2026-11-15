@@ -1,7 +1,8 @@
 # Scribe: meetings, recording and local transcription (draft plan)
 
 Status: **accepted** 2026-11-14. M18 (meetings without audio) built 2026-11-14 on branch
-`worktree-m18-meetings`; M19–M21 not started. Decisions recorded in ADR 025 (data, IPC,
+`worktree-m18-meetings`; M19 (recording) built 2026-11-15 on `m19-scribe-capture`;
+M20–M21 not started. Decisions recorded in ADR 025 (data, IPC,
 calendar, retention) and ADR 026 (audio and ML dependencies).
 
 ## 1. Goal

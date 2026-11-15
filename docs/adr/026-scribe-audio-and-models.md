@@ -1,7 +1,7 @@
 # ADR 026: Scribe audio capture and speech models
 
-Date: 2026-11-14 · Status: accepted in principle; crate versions are pinned after the
-M19 build spike
+Date: 2026-11-14 · Status: accepted; capture and storage settled by the M19 spike
+(2026-11-15, below), speech models by M20
 
 ## Context
 
@@ -33,3 +33,26 @@ crates for this are in the tree yet.
 - Native builds in `release.yml` on three OSes: cmake/clang for whisper.cpp, and
   notarization of the bundled onnxruntime dylib on macOS. Test this first.
 - CPU transcription of a 1 h meeting with `large-v3-turbo` takes about 15–30 min.
+
+## M19 spike (2026-11-15)
+
+- **cpal 0.18.2 records both tracks on both systems.** On Windows an input stream on the
+  default output device records it in loopback (WASAPI). On macOS the same call makes a
+  CoreAudio process tap (macOS 14.6 and later). This replaces ScreenCaptureKit: no screen
+  recording permission, only "system audio recording" (`NSAudioCaptureUsageDescription`)
+  and the microphone (`NSMicrophoneUsageDescription`), both in `src-tauri/Info.plist`.
+  Before 14.6, starting with "Record the computer's sound" on fails with a message saying
+  to record the microphone only. cpal is a dependency on Windows and macOS only, so Linux
+  needs no ALSA headers; there, `scribe_status` says recording is unsupported.
+- **Releases are not signed**, so no entitlements file is needed. Signing and notarizing
+  later needs `com.apple.security.device.audio-input`.
+- **Opus: `opus-rs` =0.1.42** (a pure-Rust port of libopus 1.6, BSD-3-Clause; pinned
+  exactly as it releases often) **in `ogg` 0.9.2** (BSD-3-Clause). 24 kb/s SILK wideband
+  mono at 16 kHz is about 11 MB an hour per track. Decoding is the same crate, for
+  transcription.
+- **Resampling to 16 kHz and the mixdown are in-house** (`scribe/audio.rs`, a windowed-sinc
+  resampler at exact rational positions; unit tested), not `rubato`.
+- **No `unsafe`** in the app: the FFI is inside cpal.
+- CI gets a `native` job (Windows, macOS) that lints and tests the desktop crate, because
+  the capture code compiles nowhere else before a release tag.
+

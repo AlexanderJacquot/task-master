@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the app's Info.plist by Tauri. Scribe (ADR 025, ADR 026) records meetings:
+     macOS shows these when it asks for the microphone and for the computer's sound. -->
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Scribe records your voice in the meetings you record. The audio stays on this Mac.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Scribe records the computer's sound in the meetings you record, so the other people on a call are in the recording too. The audio stays on this Mac.</string>
+</dict>
+</plist>

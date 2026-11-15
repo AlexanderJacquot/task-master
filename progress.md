@@ -4,6 +4,31 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**M19 Scribe: recording** (2026-11-15, branch `m19-scribe-capture`; ADR 025 "M19 notes",
+ADR 026 "M19 spike"): the meeting page records the microphone and the computer's sound
+(Windows WASAPI loopback, macOS 14.6+ CoreAudio process tap, both through cpal 0.18.2;
+Linux says recording is unsupported). `src-tauri/src/scribe/`: `capture.rs` (cpal, streams
+on their own thread; stub off Windows/macOS), `audio.rs` (mixdown, windowed-sinc resampler
+to 16 kHz, levels), `recorder.rs` (two aligned tracks, silence across gaps, first chunk at
+its time), `wav.rs` (header rewritten every second, `repair` after a crash), `opus.rs` (Ogg
+Opus via opus-rs =0.1.42 + ogg 0.9.2, 24 kb/s), `files.rs` (folder layout,
+`recording.json`, byte ranges), `mod.rs` (IPC: `scribe_status/devices/settings/
+set_scribe_settings/start/stop/audio/recover/purge_audio/audio_usage`, events
+`ScribeLevels`, `ScribeChanged`; `tm://localhost/meeting-audio/<id>/<track>` with ranges;
+resume on start, clean stop on quit). UI: `lib/scribe.ts` (own store and `ScribeApi`),
+`features/scribe/Recording.tsx` (recording bar on every page, meeting page panel: Record,
+live levels and consent reminder, Keep/Discard after an interruption, a two-track player,
+Delete audio), Settings → Scribe (microphone, computer's sound, reminder, audio list) and
+the audio list in Settings → Files; quitting while recording asks. `Info.plist` usage
+strings for macOS. CI: new `native` job lints and tests the desktop crate on Windows and
+macOS. Tests: scribe `audio` (5), `wav` (3), `opus` (2), `recorder` (3), `files` (3),
+config roundtrip; `lib/scribe.test.ts` (3), `features/scribe/recording.test.tsx` (4).
+The capture code was checked with clippy for `x86_64-pc-windows-msvc` and
+`aarch64-apple-darwin` from WSL (a scratch crate including the real files); never run on a
+real device: WSL has no audio. `cargo fmt --check`, `cargo clippy --workspace --all-targets
+-- -D warnings`, `cargo test --workspace --locked`, `pnpm biome ci .`, `pnpm typecheck`,
+`pnpm test` (526 passed, 2 skipped) pass.
+
 **MCP: everything the user can do** (2026-11-14, branch `mcp-full-parity`, not released;
 ADR 017 amended): audit of agents saying they "can't" create, delete or move tasks.
 (1) This device's `task-master-mcp.exe` was the 2026-11-12 build next to a 0.21.0 app:

@@ -15,7 +15,9 @@ The full plan is in docs/plan.md. Architecture decisions are in docs/adr/.
   files_overview, purge_files; the `tm:` protocol serves files by attachment id; ADR 011,
   ADR 023), and agent sessions, which run a
   process the core cannot own (agent_start/send/cancel/open_terminal/live, agent_brief,
-  agent_notes, agent settings, Claude plan usage, project folders and their git state; ADR 017).
+  agent_notes, agent settings, Claude plan usage, project folders and their git state; ADR 017),
+  and meeting recording on the device (scribe_*: status, devices, settings, start/stop, audio,
+  recover, purge, usage; `tm://localhost/meeting-audio/…` plays it; ADR 025).
 - apps/desktop/src/bindings.ts is generated. Never edit it by hand.
 
 ## Frontend

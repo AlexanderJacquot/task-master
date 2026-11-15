@@ -9,6 +9,7 @@ import {
   ColumnsIcon,
   OptionsIcon,
   RefreshIcon,
+  ScribeIcon,
 } from "../../components/TaskIcons";
 import { Button, cx, Dot, InlineInput, Select } from "../../components/ui";
 import {
@@ -53,6 +54,7 @@ import { About } from "./About";
 import { AgentSettings } from "./AgentSettings";
 import { CalendarSettings } from "./CalendarSettings";
 import { FilesSettings } from "./FilesSettings";
+import { ScribeSettings } from "./ScribeSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SyncSettings } from "./SyncSettings";
 
@@ -721,6 +723,7 @@ const SETTINGS_CATEGORIES: SettingsCategory[] = [
   { id: "sync", label: "Sync", icon: RefreshIcon, render: () => <SyncSettings /> },
   { id: "calendar", label: "Calendar", icon: CalendarIcon, render: () => <CalendarSettings /> },
   { id: "agents", label: "Agents", icon: AgentsIcon, render: () => <AgentSettings /> },
+  { id: "scribe", label: "Scribe", icon: ScribeIcon, render: () => <ScribeSettings /> },
   { id: "data", label: "Data and backups", icon: Database, render: () => <Data /> },
   { id: "files", label: "Files", icon: HardDrive, render: () => <FilesSettings /> },
   { id: "about", label: "About", icon: Info, render: () => <About /> },

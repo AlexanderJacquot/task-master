@@ -9,6 +9,7 @@ mod backups;
 mod calendar_sync;
 mod config;
 mod google;
+mod scribe;
 mod server_sync;
 
 use backups::BackupStatus;
@@ -54,6 +55,8 @@ struct AppState {
     /// The database file (the MCP server of agent sessions opens it too).
     db_path: PathBuf,
     agents: agents::AgentRunner,
+    /// Meeting recordings on this device (ADR 025, M19).
+    scribe: scribe::ScribeRuntime,
     config_path: PathBuf,
     config: Mutex<AppConfig>,
     backup: Mutex<BackupStatus>,
@@ -307,7 +310,8 @@ fn save_attachment(state: State<'_, AppState>, id: Id, path: String) -> CommandR
 }
 
 /// Serves attachment content to the UI: `tm://localhost/<attachment id>` (on Windows
-/// `http://tm.localhost/<id>`). Only ids of attachments resolve, never paths.
+/// `http://tm.localhost/<id>`). Only ids of attachments resolve, never paths. Meeting
+/// audio is `meeting-audio/<meeting id>/<track>` (ADR 025).
 fn serve_attachment(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     let empty = |status: StatusCode| {
         Response::builder()
@@ -316,6 +320,9 @@ fn serve_attachment(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec
             .unwrap_or_default()
     };
     let id = request.uri().path().trim_start_matches('/');
+    if let Some(rest) = id.strip_prefix("meeting-audio/") {
+        return scribe::serve(app, request, rest);
+    }
     let Some(state) = app.try_state::<AppState>() else {
         return empty(StatusCode::SERVICE_UNAVAILABLE);
     };
@@ -630,14 +637,26 @@ fn specta_builder() -> Builder<tauri::Wry> {
             agents::list_wsl_distros,
             agents::project_folders,
             agents::set_project_folder,
-            agents::project_git
+            agents::project_git,
+            scribe::scribe_status,
+            scribe::scribe_devices,
+            scribe::scribe_settings,
+            scribe::set_scribe_settings,
+            scribe::scribe_start,
+            scribe::scribe_stop,
+            scribe::scribe_audio,
+            scribe::scribe_recover,
+            scribe::scribe_purge_audio,
+            scribe::scribe_audio_usage
         ])
         .events(collect_events![
             StoreChanged,
             CaptureOpened,
             calendar_sync::CalendarSynced,
             server_sync::SyncChanged,
-            agents::AgentActivity
+            agents::AgentActivity,
+            scribe::ScribeLevels,
+            scribe::ScribeChanged
         ])
         // Timestamps (Unix ms) and op sequence numbers stay far below 2^53.
         .dangerously_cast_bigints_to_number()
@@ -746,6 +765,7 @@ pub fn run() {
                 data_dir,
                 db_path: path,
                 agents: agents::AgentRunner::default(),
+                scribe: scribe::ScribeRuntime::default(),
                 config_path,
                 config: Mutex::new(config),
                 backup: Mutex::new(BackupStatus::default()),
@@ -755,6 +775,9 @@ pub fn run() {
 
             // Finished terminal sessions close even across a restart (ADR 017).
             agents::watch_terminals(app.handle());
+
+            // Interrupted recordings are repaired for "keep", cut-short encodings resume.
+            scribe::resume(app.handle());
 
             // Local tools share this database but have their own SQLite connection.
             let handle = app.handle().clone();
@@ -817,6 +840,7 @@ pub fn run() {
         .run(|app, event| {
             // Agent runs are children of the app: stop them, marked interrupted.
             if let tauri::RunEvent::Exit = event {
+                scribe::shutdown(app);
                 agents::shutdown(app);
             }
         });

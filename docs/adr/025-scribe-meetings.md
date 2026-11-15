@@ -69,6 +69,38 @@ What M18 built, where it differs from or adds to the decisions above:
 - **MCP:** `list_meetings`, `get_meeting`, and meetings in `get_calendar`; read-only.
 - No new IPC in M18: meetings go through `execute` and the snapshot like other entities.
 
+## M19 notes (2026-11-15)
+
+Recording, as built (ADR 026 for the libraries):
+
+- **IPC.** `scribe_status` (what this system can record, the recording in progress),
+  `scribe_devices`, `scribe_settings` / `set_scribe_settings` (microphone, record the
+  computer's sound, consent reminder; per device, in `config.json`), `scribe_start(meeting)`,
+  `scribe_stop`, `scribe_audio(meeting)` (this device's audio: recording, interrupted,
+  encoding or ready, tracks, size, warnings), `scribe_recover(meeting, keep)`,
+  `scribe_purge_audio(meeting)`, `scribe_audio_usage`. Events `ScribeLevels` (ten a second)
+  and `ScribeChanged`. Start reads the saved devices instead of taking them as arguments.
+- **Meeting row.** Start sets `started_at` to now, clears `ended_at` and sets `recording`;
+  stop sets `ended_at` (at least a minute after the start) and `held` until M20 moves it to
+  `processing`. These are the app's writes (`execute_without_undo`), not the user's undo.
+  One recording at a time per device. Recording stops by itself 5 minutes short of the
+  core's 24-hour limit.
+- **Files.** `scribe/<meeting id>/recording.json` (start, devices, finished, length,
+  warnings), `mic.wav` and `system.wav` while recording (header sizes rewritten every second,
+  so a crash keeps everything but the last second), then `mic.opus` / `system.opus`
+  (written aside, renamed, then the WAV removed; an interrupted encode restarts on the next
+  start). A recording a crash left unfinished is repaired on start; the meeting page offers
+  "Keep what was recorded" (the meeting ends where the audio does) or "Discard". A recording
+  folder blocks a second recording of the same meeting until its audio is deleted.
+- **Alignment.** Both tracks start at the recording's start. A track that delivers nothing
+  for 250 ms (WASAPI loopback sends nothing while nothing plays) is padded with silence to
+  the wall clock, and its next chunk is placed at its own time, so a sample's position is
+  its time in both files.
+- **Playback.** `tm://localhost/meeting-audio/<meeting id>/<track>`, with range requests
+  (206, at most 4 MB a response). The meeting page plays both tracks together, each mutable.
+  Settings → Scribe and Settings → Files list the audio on this device with its size.
+- **Quitting** asks first while recording; the recording is finished cleanly either way.
+
 ## Consequences
 
 - Recording works on Windows and macOS only at first; Linux shows the meetings without

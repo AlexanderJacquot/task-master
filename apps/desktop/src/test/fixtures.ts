@@ -1,3 +1,4 @@
+import type { Levels, MeetingAudio, ScribeApi, ScribeSettings, ScribeStatus } from "../lib/scribe";
 import type {
   AgentSession,
   Attachment,
@@ -277,4 +278,120 @@ export function fakeParse(text: string, snap: Partial<Snapshot> = {}): Capture {
   }
   capture.title = title.join(" ");
   return capture;
+}
+
+/** A fake recording backend (Scribe, M19): records calls, emits levels and changes. */
+export function fakeScribe(overrides: Partial<ScribeApi> = {}) {
+  type Api = ScribeApi;
+  type Status = ScribeStatus;
+  type Audio = MeetingAudio;
+  const calls: string[] = [];
+  const levelHandlers: Array<(l: Levels) => void> = [];
+  const changedHandlers: Array<(id: string) => void> = [];
+  const audio: Record<string, Audio | null> = {};
+  let status: Status = {
+    support: { recording: true, system_audio: true, note: null },
+    live: null,
+  };
+  let settings: ScribeSettings = {
+    mic_device: null,
+    capture_system: true,
+    consent_reminder: true,
+  };
+  const api: Api = {
+    status: async () => status,
+    devices: async () => [{ id: "mic-1", name: "Desk mic", is_default: true }],
+    settings: async () => settings,
+    saveSettings: async (next) => {
+      calls.push(`save:${next.mic_device ?? ""}:${next.capture_system}`);
+      settings = next;
+      return next;
+    },
+    start: async (meetingId) => {
+      calls.push(`start:${meetingId}`);
+      status = {
+        ...status,
+        live: {
+          meeting_id: meetingId,
+          started_at: Date.now(),
+          mic: "Desk mic",
+          system: "Speakers",
+        },
+      };
+      audio[meetingId] = {
+        state: "recording",
+        started_at: Date.now(),
+        duration_ms: 0,
+        bytes: 44,
+        tracks: [],
+        warnings: [],
+      };
+      return status;
+    },
+    stop: async () => {
+      const id = status.live?.meeting_id;
+      calls.push(`stop:${id}`);
+      status = { ...status, live: null };
+      if (id) {
+        audio[id] = {
+          state: "encoding",
+          started_at: 0,
+          duration_ms: 65_000,
+          bytes: 2_000_000,
+          tracks: [
+            { track: "mic", path: `meeting-audio/${id}/mic` },
+            { track: "system", path: `meeting-audio/${id}/system` },
+          ],
+          warnings: [],
+        };
+      }
+      return status;
+    },
+    audio: async (meetingId) => audio[meetingId] ?? null,
+    recover: async (meetingId, keep) => {
+      calls.push(`recover:${meetingId}:${keep}`);
+      audio[meetingId] = keep
+        ? {
+            state: "ready",
+            started_at: 0,
+            duration_ms: 30_000,
+            bytes: 100_000,
+            tracks: [{ track: "mic", path: `meeting-audio/${meetingId}/mic` }],
+            warnings: ["The recording was interrupted; what was recorded was kept."],
+          }
+        : null;
+    },
+    purge: async (meetingId) => {
+      calls.push(`purge:${meetingId}`);
+      audio[meetingId] = null;
+    },
+    usage: async () =>
+      Object.entries(audio)
+        .filter((e): e is [string, Audio] => e[1] !== null)
+        .map(([meeting_id, a]) => ({ meeting_id, bytes: a.bytes, duration_ms: a.duration_ms })),
+    url: (path) => `tm://localhost/${path}`,
+    onLevels: async (handler) => {
+      levelHandlers.push(handler);
+      return () => undefined;
+    },
+    onChanged: async (handler) => {
+      changedHandlers.push(handler);
+      return () => undefined;
+    },
+    ...overrides,
+  };
+  return {
+    api,
+    calls,
+    audio,
+    setStatus: (s: Status) => {
+      status = s;
+    },
+    emitLevels: (l: Levels) => {
+      for (const h of levelHandlers) h(l);
+    },
+    emitChanged: (id: string) => {
+      for (const h of changedHandlers) h(id);
+    },
+  };
 }

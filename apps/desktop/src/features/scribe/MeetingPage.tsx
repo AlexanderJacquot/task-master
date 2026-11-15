@@ -35,6 +35,7 @@ import { AttachmentList } from "../task-detail/AttachmentList";
 import { DescriptionEditor } from "../task-detail/DescriptionEditor";
 import { TaskPicker } from "../task-detail/TaskPicker";
 import { useMeetingAttachments, useMeetingFiles } from "../task-detail/useTaskFiles";
+import { RecordPanel } from "./Recording";
 
 /** Date, start and end of the meeting. Moving the date or the start keeps its length. */
 function WhenFields({
@@ -344,6 +345,7 @@ function MeetingEditor({ meeting }: { meeting: Meeting }) {
           <LinkFields meeting={meeting} change={change} />
         </div>
       </div>
+      <RecordPanel meeting={meeting} />
       <section aria-label="Participants" className="pl-10">
         <SectionLabel className="mb-1.5 block">Participants</SectionLabel>
         <ParticipantsField
@@ -371,10 +373,6 @@ function MeetingEditor({ meeting }: { meeting: Meeting }) {
           change([{ notes: text ? `${text}\n\n${markdown}` : markdown }]);
         }}
       />
-      <p className="pl-10 text-[12.5px] text-ink-3">
-        Recording and transcription come later; for now Scribe keeps the meeting, its people, notes
-        and files.
-      </p>
     </div>
   );
 }

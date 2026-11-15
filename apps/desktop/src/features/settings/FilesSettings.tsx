@@ -25,6 +25,7 @@ import {
 import { settingsApi } from "../../lib/settingsApi";
 import { deleteAttachmentsOfFiles } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
+import { MeetingAudioList } from "./ScribeSettings";
 import { Section } from "./SettingsPage";
 
 const ROW_HEIGHT = 56;
@@ -528,6 +529,9 @@ export function FilesSettings() {
           {error}
         </p>
       )}
+      <Section title="Meeting audio" hint="Scribe recordings, kept on this device only.">
+        <MeetingAudioList />
+      </Section>
     </>
   );
 }

@@ -158,6 +158,30 @@ export const commands = {
 	 *  UI then hides what needs git). Off the main thread: it starts git up to three times.
 	 */
 	projectGit: (projectId: string) => typedError<GitInfo_Serialize | null, CommandError>(__TAURI_INVOKE("project_git", { projectId })),
+	/**  What recording can do here, and the recording in progress. */
+	scribeStatus: () => typedError<ScribeStatus_Serialize, CommandError>(__TAURI_INVOKE("scribe_status")),
+	/**  Microphones to choose from. */
+	scribeDevices: () => typedError<AudioDevice[], CommandError>(__TAURI_INVOKE("scribe_devices")),
+	scribeSettings: () => typedError<ScribeSettings_Serialize, CommandError>(__TAURI_INVOKE("scribe_settings")),
+	setScribeSettings: (settings: ScribeSettings_Deserialize) => typedError<ScribeSettings_Serialize, CommandError>(__TAURI_INVOKE("set_scribe_settings", { settings })),
+	/**
+	 *  Starts recording the meeting with the saved microphone and system-sound settings.
+	 *  The meeting starts now and has no end until the recording stops.
+	 */
+	scribeStart: (meetingId: string) => typedError<ScribeStatus_Serialize, CommandError>(__TAURI_INVOKE("scribe_start", { meetingId })),
+	/**  Stops the recording in progress and waits until its files are complete. */
+	scribeStop: () => typedError<ScribeStatus_Serialize, CommandError>(__TAURI_INVOKE("scribe_stop")),
+	/**  The meeting's audio on this device; `None` when it has none here. */
+	scribeAudio: (meetingId: string) => typedError<MeetingAudio | null, CommandError>(__TAURI_INVOKE("scribe_audio", { meetingId })),
+	/**
+	 *  After an interrupted recording: `keep` finishes it with what reached the disk (the
+	 *  meeting ends where the audio ends); otherwise the audio is deleted.
+	 */
+	scribeRecover: (meetingId: string, keep: boolean) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_recover", { meetingId, keep })),
+	/**  Deletes the meeting's audio from this device (the transcript, when any, stays). */
+	scribePurgeAudio: (meetingId: string) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_purge_audio", { meetingId })),
+	/**  Meeting audio kept on this device, largest first. */
+	scribeAudioUsage: () => typedError<AudioUsage[], CommandError>(__TAURI_INVOKE("scribe_audio_usage")),
 };
 
 /** Events */
@@ -165,6 +189,8 @@ export const events = {
 	agentActivity: makeEvent<AgentActivity_Serialize, AgentActivity_Deserialize>("agent-activity"),
 	calendarSynced: makeEvent<CalendarSynced_Serialize, CalendarSynced_Deserialize>("calendar-synced"),
 	captureOpened: makeEvent<CaptureOpened, CaptureOpened>("capture-opened"),
+	scribeChanged: makeEvent<ScribeChanged, ScribeChanged>("scribe-changed"),
+	scribeLevels: makeEvent<ScribeLevels_Serialize, ScribeLevels_Deserialize>("scribe-levels"),
 	storeChanged: makeEvent<StoreChanged, StoreChanged>("store-changed"),
 	syncChanged: makeEvent<SyncChanged_Serialize, SyncChanged_Deserialize>("sync-changed"),
 };
@@ -497,6 +523,38 @@ export type Attachment_Serialize = {
 	deleted_at: number | null,
 };
 
+/**  An input device the user can pick. */
+export type AudioDevice = {
+	/**  Stable id to pass back to `scribe_start`. */
+	id: string,
+	name: string,
+	is_default: boolean,
+};
+
+/**  Where a meeting's audio stands on this device. */
+export type AudioState = "recording" | 
+/**
+ *  Recording stopped without finishing (the app or the computer stopped): keep or
+ *  discard.
+ */
+"interrupted" | 
+/**  Being compressed after recording; playable already. */
+"encoding" | "ready";
+
+export type AudioTrack = {
+	/**  `mic` or `system`. */
+	track: string,
+	/**  Path for the `tm:` protocol: `meeting-audio/<meeting id>/<track>`. */
+	path: string,
+};
+
+/**  Size of one meeting's audio (Settings → Files). */
+export type AudioUsage = {
+	meeting_id: string,
+	bytes: number,
+	duration_ms: number,
+};
+
 /**  How a server authenticates requests. */
 export type AuthMode = 
 /**  Anyone who reaches the server (a private network). */
@@ -684,6 +742,29 @@ export type Capture = Capture_Serialize | Capture_Deserialize;
 
 /**  Sent to the capture window each time it is shown, so it clears and focuses its input. */
 export type CaptureOpened = null;
+
+/**  What recording can do on this system. */
+export type CaptureSupport = CaptureSupport_Serialize | CaptureSupport_Deserialize;
+
+/**  What recording can do on this system. */
+export type CaptureSupport_Deserialize = {
+	/**  Microphone recording works here. */
+	recording: boolean,
+	/**  The computer's sound can be recorded too. */
+	system_audio: boolean,
+	/**  Why not, or what to know first (permissions). */
+	note?: string | null,
+};
+
+/**  What recording can do on this system. */
+export type CaptureSupport_Serialize = {
+	/**  Microphone recording works here. */
+	recording: boolean,
+	/**  The computer's sound can be recorded too. */
+	system_audio: boolean,
+	/**  Why not, or what to know first (permissions). */
+	note: string | null,
+};
 
 /**
  *  A parsed line with its names resolved, ready for the UI to preview and turn into
@@ -1179,11 +1260,43 @@ export type LineageSpec_Serialize = {
 	collapsed: LaneKeys_Serialize,
 };
 
+/**  The recording in progress. */
+export type LiveRecording = LiveRecording_Serialize | LiveRecording_Deserialize;
+
+/**  The recording in progress. */
+export type LiveRecording_Deserialize = {
+	meeting_id: string,
+	started_at: number,
+	mic: string,
+	/**  The output device recorded, when the computer's sound is. */
+	system?: string | null,
+};
+
+/**  The recording in progress. */
+export type LiveRecording_Serialize = {
+	meeting_id: string,
+	started_at: number,
+	mic: string,
+	/**  The output device recorded, when the computer's sound is. */
+	system: string | null,
+};
+
 /**
  *  A meeting (Scribe, ADR 025): on the calendar, optionally linked to a project, an epic
  *  and a task, with participants and notes. Its audio never enters the database.
  */
 export type Meeting = Meeting_Serialize | Meeting_Deserialize;
+
+/**  A meeting's audio on this device. */
+export type MeetingAudio = {
+	state: AudioState,
+	started_at: number,
+	/**  Recorded length (so far, while recording or interrupted). */
+	duration_ms: number,
+	bytes: number,
+	tracks: AudioTrack[],
+	warnings: string[],
+};
 
 export type MeetingChange = MeetingChange_Serialize | MeetingChange_Deserialize;
 
@@ -1721,6 +1834,70 @@ export type Schedule_Serialize = {
 	 *  announcements, focus and "Sync now".
 	 */
 	sync_minutes: number,
+};
+
+/**
+ *  A meeting's audio on this device changed: recording started or stopped, encoding
+ *  finished, audio kept, discarded or deleted. The UI reads `scribe_audio` again.
+ */
+export type ScribeChanged = {
+	meeting_id: string,
+};
+
+/**  Audio levels of the recording, about ten times a second. */
+export type ScribeLevels = ScribeLevels_Serialize | ScribeLevels_Deserialize;
+
+/**  Audio levels of the recording, about ten times a second. */
+export type ScribeLevels_Deserialize = {
+	meeting_id: string,
+	elapsed_ms: number,
+	/**  0 (silent) to 1. */
+	mic: number | null,
+	system?: number | null,
+};
+
+/**  Audio levels of the recording, about ten times a second. */
+export type ScribeLevels_Serialize = {
+	meeting_id: string,
+	elapsed_ms: number,
+	/**  0 (silent) to 1. */
+	mic: number | null,
+	system: number | null,
+};
+
+/**  Scribe settings of this device (Settings → Scribe). */
+export type ScribeSettings = ScribeSettings_Serialize | ScribeSettings_Deserialize;
+
+/**  Scribe settings of this device (Settings → Scribe). */
+export type ScribeSettings_Deserialize = {
+	/**  Microphone id from `scribe_devices`; the system default when `None`. */
+	mic_device?: string | null,
+	/**  Record the computer's sound too (everyone else on a call). */
+	capture_system?: boolean,
+	/**  Remind to tell participants they are recorded, when recording starts. */
+	consent_reminder?: boolean,
+};
+
+/**  Scribe settings of this device (Settings → Scribe). */
+export type ScribeSettings_Serialize = {
+	/**  Microphone id from `scribe_devices`; the system default when `None`. */
+	mic_device: string | null,
+	/**  Record the computer's sound too (everyone else on a call). */
+	capture_system: boolean,
+	/**  Remind to tell participants they are recorded, when recording starts. */
+	consent_reminder: boolean,
+};
+
+export type ScribeStatus = ScribeStatus_Serialize | ScribeStatus_Deserialize;
+
+export type ScribeStatus_Deserialize = {
+	support: CaptureSupport_Deserialize,
+	live?: LiveRecording_Deserialize | null,
+};
+
+export type ScribeStatus_Serialize = {
+	support: CaptureSupport_Serialize,
+	live: LiveRecording_Serialize | null,
 };
 
 /**  Where an [`AgentSession`] is. */

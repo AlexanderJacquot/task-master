@@ -227,6 +227,8 @@ pub struct AppConfig {
     pub schedule: Schedule,
     #[serde(default)]
     pub agents: AgentSettings,
+    #[serde(default)]
+    pub scribe: crate::scribe::ScribeSettings,
     /// A data folder chosen in settings; the OS app-data folder when `None`.
     #[serde(default)]
     pub data_dir: Option<PathBuf>,
@@ -463,6 +465,11 @@ mod tests {
                     ..SpendLimits::default()
                 },
                 ..AgentSettings::default()
+            },
+            scribe: crate::scribe::ScribeSettings {
+                mic_device: Some("wasapi:{0.0.1}".into()),
+                capture_system: false,
+                consent_reminder: true,
             },
             data_dir: Some(dir.join("data")),
             remote: Some(RemoteBackup {
