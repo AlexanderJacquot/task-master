@@ -606,7 +606,22 @@ pub fn host_env<'a>(
     else {
         return Vec::new();
     };
-    let inside = |entry: &str| entry == appdir || entry.starts_with(&format!("{appdir}/"));
+    // An instance restarted by the updater inherits the previous instance's variables, so
+    // path lists also hold entries of that earlier mount: the runtime mounts every image
+    // at `<tmp>/.mount_<id>`, so any sibling `.mount_` directory counts as inside too.
+    let mount_prefix = appdir
+        .rsplit_once('/')
+        .filter(|(_, name)| name.starts_with(".mount_"))
+        .map(|(parent, _)| format!("{parent}/.mount_"));
+    let under = |entry: &str, dir: &str| entry == dir || entry.starts_with(&format!("{dir}/"));
+    let inside = |entry: &str| {
+        under(entry, appdir)
+            || mount_prefix.as_deref().is_some_and(|prefix| {
+                entry
+                    .strip_prefix(prefix)
+                    .is_some_and(|rest| !rest.is_empty() && !rest.starts_with('/'))
+            })
+    };
     env.iter()
         .filter_map(|(name, value)| {
             if APPIMAGE_ONLY_VARS.contains(name) {
@@ -1102,8 +1117,8 @@ mod tests {
                 format!("{m}/usr/share:/usr/share:/usr/local/share"),
             ),
             ("HOME", "/home/alex".into()),
-            // A neighbour whose name only starts like the mount stays.
-            ("EDITOR", format!("{m}x/bin/vi")),
+            // Neighbours that only look like a mount stay.
+            ("EDITOR", "/tmp/.mountain/bin/vi".into()),
         ];
         let mut changes = host_env(env.iter().map(|(k, v)| (*k, v.as_str())));
         changes.sort();
@@ -1124,6 +1139,31 @@ mod tests {
                 removed("PYTHONHOME"),
                 removed("PYTHONPATH"),
                 set("XDG_DATA_DIRS", "/usr/share:/usr/local/share"),
+            ]
+        );
+        // Restarted by the updater: the new instance inherits the old mount's entries,
+        // which go too (kitty loaded the old image's cairo and died).
+        let old = "/tmp/.mount_task-mDMbkan";
+        let env = [
+            ("APPDIR", m.to_owned()),
+            (
+                "LD_LIBRARY_PATH",
+                format!("{m}/usr/lib/:{old}/usr/lib/:/opt/cuda/lib64"),
+            ),
+            (
+                "PYTHONPATH",
+                format!("{m}/usr/share/pyshared/:{old}/usr/share/pyshared/:"),
+            ),
+            ("OTHER", "/tmp/.mount_/x:/tmp/.mountain/bin".into()),
+        ];
+        let mut changes = host_env(env.iter().map(|(k, v)| (*k, v.as_str())));
+        changes.sort();
+        assert_eq!(
+            changes,
+            vec![
+                removed("APPDIR"),
+                set("LD_LIBRARY_PATH", "/opt/cuda/lib64"),
+                removed("PYTHONPATH"),
             ]
         );
         // Outside an AppImage, nothing changes.

@@ -4,6 +4,14 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Fix: kitty dies after an in-app update** (2026-11-16, uncommitted): after the updater
+restarts the AppImage, the new instance inherits the old one's `LD_LIBRARY_PATH`,
+`PYTHONPATH`, `PATH`, so they hold entries of two mounts; `host_env` only stripped the
+current `APPDIR`, so kitty loaded the old image's cairo (`undefined symbol:
+cairo_font_options_set_color_palette`). `host_env` now also strips entries under any
+sibling `<tmp>/.mount_*` directory. Test extended; desktop crate `cargo test --lib` and
+`cargo clippy --all-targets -D warnings` pass. Not verified in a release AppImage yet.
+
 **MCP: create projects and epics** (2026-11-13, on `files-page`, uncommitted): new tools
 `create_project` (name, optional `area_id`) and `create_epic` (name, `project_id`, else
 the session task's project unless `no_project`; description, target date). They are the
