@@ -131,7 +131,11 @@ export const CardFace = memo(function CardFace(p: Props) {
         <SessionChip taskId={task.id} className="max-w-36 shrink-0" />
         <span className="flex min-w-0 flex-1 gap-1 overflow-hidden">
           {tags.map((tag) => (
-            <Chip key={tag.id}>#{tag.name}</Chip>
+            <Chip key={tag.id} className="max-w-32 shrink-0 whitespace-nowrap">
+              <span className="truncate" title={`#${tag.name}`}>
+                #{tag.name}
+              </span>
+            </Chip>
           ))}
         </span>
         {stale && (

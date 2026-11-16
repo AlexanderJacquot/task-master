@@ -3,6 +3,7 @@ import { Dialog } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cx } from "../../components/ui";
 import { type PaletteItem, rankItems } from "../../lib/palette";
+import { categoryOf } from "../../lib/views";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
 import { NEW_TASK_INPUT_ID } from "../shell/useShortcuts";
@@ -25,6 +26,7 @@ export function CommandPalette({
   const navigate = useNavigate();
   const openTask = useOpenTask();
   const tasks = useStoreState((s) => s.tasks);
+  const statuses = useStoreState((s) => s.statuses);
   const projects = useStoreState((s) => s.projects);
   const epics = useStoreState((s) => s.epics);
   const tags = useStoreState((s) => s.tags);
@@ -172,9 +174,10 @@ export function CommandPalette({
         run: () => go("/tag/$tagId", { tagId: t.id }),
       });
     }
+    const statusById = Object.fromEntries(statuses.map((s) => [s.id, s]));
     for (const id of hits) {
       const t = tasks[id];
-      if (!t) continue;
+      if (!t || categoryOf(t, { statuses: statusById }) === "done") continue;
       list.push({
         key: `task:${id}`,
         group: "Tasks",
@@ -187,7 +190,7 @@ export function CommandPalette({
       });
     }
     return list;
-  }, [views, projects, epics, tags, hits, tasks, store, openTask, close, go]);
+  }, [views, projects, epics, tags, hits, tasks, statuses, store, openTask, close, go]);
 
   const results = useMemo(() => {
     const ranked = rankItems(items, query, {

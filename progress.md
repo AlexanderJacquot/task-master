@@ -4,6 +4,13 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.22.1** (2026-11-16, on `release/0.22.1`, then `main`; notes
+`docs/releases/0.22.1.md`): fixes from `homepage-infra-tile-order` (based on 840216c, the
+rest of that branch was already on `main`): `host_env` strips path entries under any
+sibling `<tmp>/.mount_*` (kitty crashed after an in-app update), the command palette skips
+done tasks (status lookup by id; the first version passed the statuses array and failed
+tsc), board tag chips truncate, sidebar groups indent. No migration.
+
 **MCP: everything the user can do** (2026-11-14, branch `mcp-full-parity`, not released;
 ADR 017 amended): audit of agents saying they "can't" create, delete or move tasks.
 (1) This device's `task-master-mcp.exe` was the 2026-11-12 build next to a 0.21.0 app:

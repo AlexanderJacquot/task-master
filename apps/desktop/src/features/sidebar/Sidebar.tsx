@@ -313,7 +313,7 @@ function Collapsible({
           </IconButton>
         )}
       </div>
-      {open && <div className="mt-0.5 flex flex-col gap-px">{children}</div>}
+      {open && <div className="mt-0.5 flex flex-col gap-px pl-2">{children}</div>}
     </section>
   );
 }
