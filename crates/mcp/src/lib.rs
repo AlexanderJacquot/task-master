@@ -7,7 +7,8 @@
 //!
 //! Rules: tasks an agent creates are `owner = agent`. An agent may change its own tasks
 //! freely, but of the user's tasks only the status, and only of the session's task and its
-//! subtasks. Notes and the session summary need a session.
+//! subtasks. Notes and the session summary need a session. Projects and epics have no
+//! owner: an agent may create them (they are the user's), but not change or delete them.
 
 mod calendar;
 mod lineage;
@@ -23,8 +24,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use taskmaster_core::{
     AgentSession, AgentSessionChange, AgentWorkflow, BlockOutcome, Command, Id, NewAgentNote,
-    NewTask, NewTimeBlock, Priority, SessionState, Snapshot, Status, StatusCategory, Store, Task,
-    TaskChange, TaskOwner, TimeBlockChange,
+    NewEpic, NewProject, NewTask, NewTimeBlock, Priority, SessionState, Snapshot, Status,
+    StatusCategory, Store, Task, TaskChange, TaskOwner, TimeBlockChange,
 };
 
 use calendar::Offset;
@@ -202,6 +203,33 @@ pub struct CreateTask {
     /// Ids of tasks that must be finished first.
     #[serde(default)]
     pub depends_on: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct CreateProject {
+    pub name: String,
+    /// The area (a top-level project) to put it in. Top level when absent.
+    #[serde(default)]
+    pub area_id: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct CreateEpic {
+    pub name: String,
+    /// The project it belongs to. Defaults to the session task's project; none without a
+    /// session.
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// Make an epic outside any project, even in a session. Ignored when `project_id` is
+    /// given.
+    #[serde(default)]
+    pub no_project: bool,
+    /// Markdown.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// A date, like `2026-12-31`.
+    #[serde(default)]
+    pub target_date: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -484,7 +512,10 @@ impl TaskServer {
         .to_string())
     }
 
-    #[tool(description = "Projects (with their areas) and epics, with their ids.")]
+    #[tool(
+        description = "Projects (with their areas) and epics (with their project), with their \
+                       ids. create_project and create_epic add new ones."
+    )]
     pub fn list_projects(&self) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;
         let mut out = String::from("Projects:\n");
@@ -504,14 +535,144 @@ impl TaskServer {
         }
         out.push_str("\nEpics:\n");
         for epic in &snapshot.epics {
+            let project = epic
+                .project_id
+                .as_deref()
+                .and_then(|id| names.get(id))
+                .map(|name| format!(", in {name}"))
+                .unwrap_or_default();
             out.push_str(&format!(
-                "- {} ({}, `{}`)\n",
+                "- {} ({}{project}, `{}`)\n",
                 epic.name,
                 epic.state.as_str(),
                 epic.id
             ));
         }
         Ok(out)
+    }
+
+    #[tool(
+        description = "Create a project for the user, optionally inside an area (a top-level \
+                       project; areas nest one level). It is the user's, in their sidebar: \
+                       create one only when asked or clearly needed, and say so. A project \
+                       with the same name in the same place is not duplicated: its id is \
+                       returned. Returns its id."
+    )]
+    pub fn create_project(&self, Parameters(p): Parameters<CreateProject>) -> ToolResult {
+        let name = p.name.trim();
+        if name.is_empty() {
+            return Err("the name cannot be empty".into());
+        }
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let area = p
+            .area_id
+            .as_deref()
+            .map(|id| {
+                snapshot
+                    .projects
+                    .iter()
+                    .find(|project| project.id == id && project.deleted_at.is_none())
+                    .ok_or_else(|| format!("area {id} not found"))
+            })
+            .transpose()?;
+        if let Some(existing) = snapshot.projects.iter().find(|project| {
+            project.deleted_at.is_none()
+                && project.parent_id == p.area_id
+                && project.name.trim().eq_ignore_ascii_case(name)
+        }) {
+            let archived = if existing.archived_at.is_some() {
+                " (archived)"
+            } else {
+                ""
+            };
+            return Ok(format!(
+                "Project {}{archived} already exists (`{}`); nothing created.",
+                existing.name, existing.id
+            ));
+        }
+        let id = taskmaster_core::new_id();
+        self.write(vec![Command::CreateProject {
+            project: NewProject {
+                id: Some(id.clone()),
+                name: name.to_owned(),
+                parent_id: p.area_id,
+                ..NewProject::default()
+            },
+        }])?;
+        let place = area
+            .map(|a| format!(" in area {}", a.name))
+            .unwrap_or_default();
+        Ok(format!("Created project {name}{place} (`{id}`)"))
+    }
+
+    #[tool(
+        description = "Create an epic (a goal that groups tasks) for the user. In a session \
+                       it goes in the session task's project unless project_id or no_project \
+                       is given. It is the user's: create one only when asked or clearly \
+                       needed, and say so. An epic with the same name in the same project is \
+                       not duplicated: its id is returned. Pass its id as epic_id to \
+                       create_task. Returns its id."
+    )]
+    pub fn create_epic(&self, Parameters(p): Parameters<CreateEpic>) -> ToolResult {
+        let name = p.name.trim();
+        if name.is_empty() {
+            return Err("the name cannot be empty".into());
+        }
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let project_id = match (p.project_id, p.no_project, &self.session) {
+            (Some(id), _, _) => Some(id),
+            (None, false, Some(session)) => snapshot
+                .tasks
+                .iter()
+                .find(|t| t.id == session.task_id)
+                .and_then(|t| t.project_id.clone()),
+            _ => None,
+        };
+        let project = project_id
+            .as_deref()
+            .map(|id| {
+                snapshot
+                    .projects
+                    .iter()
+                    .find(|project| project.id == id && project.deleted_at.is_none())
+                    .ok_or_else(|| format!("project {id} not found"))
+            })
+            .transpose()?;
+        if let Some(existing) = snapshot.epics.iter().find(|epic| {
+            epic.deleted_at.is_none()
+                && epic.project_id == project_id
+                && epic.name.trim().eq_ignore_ascii_case(name)
+        }) {
+            return Ok(format!(
+                "Epic {} ({}) already exists (`{}`); nothing created.",
+                existing.name,
+                existing.state.as_str(),
+                existing.id
+            ));
+        }
+        let description = p
+            .description
+            .map(|d| d.trim().to_owned())
+            .filter(|d| !d.is_empty());
+        let target_date = p
+            .target_date
+            .map(|d| d.trim().to_owned())
+            .filter(|d| !d.is_empty());
+        let id = taskmaster_core::new_id();
+        self.write(vec![Command::CreateEpic {
+            epic: NewEpic {
+                id: Some(id.clone()),
+                name: name.to_owned(),
+                project_id,
+                description,
+                target_date,
+                ..NewEpic::default()
+            },
+        }])?;
+        let place = project
+            .map(|p| format!(" in project {}", p.name))
+            .unwrap_or_default();
+        Ok(format!("Created epic {name}{place} (`{id}`)"))
     }
 
     #[tool(description = "Find tasks by words in their title or description, best first.")]
@@ -1030,7 +1191,8 @@ impl TaskServer {
                  when the user talks about their tasks, projects, plans or schedule: \
                  list_tasks, search and get_task read them (ids come from listings), \
                  and list_agent_sessions finds agent runs and failures. \
-                 list_projects gives projects and epics. Tasks you create are agent tasks: \
+                 list_projects gives projects and epics; create_project and create_epic \
+                 add new ones for the user when they ask. Tasks you create are agent tasks: \
                  kept apart from the user's own (they find them on the Agents page and can \
                  make them theirs), so say so when you create one. The user's own tasks \
                  are read-only here; suggest changes instead of making them.{VIEWS}"

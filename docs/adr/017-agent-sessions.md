@@ -192,6 +192,15 @@ in the same space without cluttering the user's views. Decided with the user:
   the scope rule: blocks only of agent tasks and the session's task tree; links only on a
   waiting task that is an agent task or in the session's task tree (the prerequisite can
   be any task), so `update_task` still never changes a user task's prerequisites.
+- Project and epic creation (2026-11-13): `create_project` (name, optional `area_id`;
+  the core refuses nesting deeper than one level) and `create_epic` (name, `project_id`,
+  else the session task's project unless `no_project`; `description`, `target_date`).
+  Projects and epics have no owner column, so what an agent creates is the user's at once
+  (no agent/me split as for tasks). To keep a retrying agent from cluttering the sidebar,
+  a live project with the same name (case-insensitive) under the same area, or an epic
+  with the same name in the same project, is returned instead of created. Agents cannot
+  change, archive or delete projects or epics. `list_projects` now names each epic's
+  project.
 - **Review.** Migration 0011 seeds a baseline status *Review* (fixed id
   `…000000000007`, category `in_progress`, rank `a3V` between Waiting and Done), unless the
   workflow already has a live status named Review; `core::review_status` finds the seeded

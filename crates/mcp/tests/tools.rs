@@ -152,6 +152,8 @@ async fn lists_its_tools_and_names_the_session_task() {
         [
             "add_note",
             "complete_session",
+            "create_epic",
+            "create_project",
             "create_task",
             "get_calendar",
             "get_lineage",
@@ -1011,6 +1013,137 @@ async fn the_lineage_shows_chains_and_links_in_scope() {
         find(&server_snapshot(&server), &task).dependency_ids,
         vec![step]
     );
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn projects_and_epics_can_be_created() {
+    let f = fixture();
+    let project = f.project.clone();
+    let server = TaskServer::new(f.store, Some(&f.session)).unwrap();
+    let client = connect(server.clone()).await;
+
+    // A project at the top level, then one inside it (an area).
+    let area = id_in(&ok(&client, "create_project", json!({ "name": "Home" })).await);
+    let created = ok(
+        &client,
+        "create_project",
+        json!({ "name": " Garden ", "area_id": area }),
+    )
+    .await;
+    assert!(created.contains("Garden in area Home"), "{created}");
+    let garden = id_in(&created);
+    // Areas nest one level; unknown ids and empty names are refused.
+    refused(
+        &client,
+        "create_project",
+        json!({ "name": "Beds", "area_id": garden }),
+    )
+    .await;
+    refused(
+        &client,
+        "create_project",
+        json!({ "name": "X", "area_id": new_id() }),
+    )
+    .await;
+    refused(&client, "create_project", json!({ "name": "  " })).await;
+    // The same name in the same place returns the existing project.
+    let again = ok(
+        &client,
+        "create_project",
+        json!({ "name": "garden", "area_id": area }),
+    )
+    .await;
+    assert!(again.contains("already exists"), "{again}");
+    assert_eq!(id_in(&again), garden);
+
+    // An epic defaults to the session task's project.
+    let created = ok(
+        &client,
+        "create_epic",
+        json!({ "name": "AI Integration", "description": "Agents", "target_date": "2026-12-31" }),
+    )
+    .await;
+    assert!(created.contains("in project task-master"), "{created}");
+    let epic = id_in(&created);
+    let loose = id_in(
+        &ok(
+            &client,
+            "create_epic",
+            json!({ "name": "Someday", "no_project": true }),
+        )
+        .await,
+    );
+    let in_garden = id_in(
+        &ok(
+            &client,
+            "create_epic",
+            json!({ "name": "Spring", "project_id": garden }),
+        )
+        .await,
+    );
+    let again = ok(&client, "create_epic", json!({ "name": "ai integration" })).await;
+    assert_eq!(id_in(&again), epic, "{again}");
+    refused(
+        &client,
+        "create_epic",
+        json!({ "name": "Bad date", "target_date": "soon" }),
+    )
+    .await;
+    refused(
+        &client,
+        "create_epic",
+        json!({ "name": "Nowhere", "project_id": new_id() }),
+    )
+    .await;
+
+    // A task can then go into the new epic.
+    ok(
+        &client,
+        "create_task",
+        json!({ "title": "Wire tools", "epic_id": epic }),
+    )
+    .await;
+
+    let snapshot = server_snapshot(&server);
+    let find_project = |id: &str| snapshot.projects.iter().find(|p| p.id == id).unwrap();
+    assert_eq!(find_project(&garden).name, "Garden");
+    assert_eq!(
+        find_project(&garden).parent_id.as_deref(),
+        Some(area.as_str())
+    );
+    assert_eq!(snapshot.projects.len(), 3);
+    let find_epic = |id: &str| snapshot.epics.iter().find(|e| e.id == id).unwrap();
+    assert_eq!(
+        find_epic(&epic).project_id.as_deref(),
+        Some(project.as_str())
+    );
+    assert_eq!(find_epic(&epic).description.as_deref(), Some("Agents"));
+    assert_eq!(find_epic(&epic).target_date.as_deref(), Some("2026-12-31"));
+    assert_eq!(find_epic(&loose).project_id, None);
+    assert_eq!(
+        find_epic(&in_garden).project_id.as_deref(),
+        Some(garden.as_str())
+    );
+    assert_eq!(snapshot.epics.len(), 3);
+    assert!(
+        snapshot
+            .tasks
+            .iter()
+            .any(|t| t.title == "Wire tools" && t.epic_id.as_deref() == Some(epic.as_str()))
+    );
+
+    let listed = ok(&client, "list_projects", json!({})).await;
+    assert!(listed.contains("Home / Garden"), "{listed}");
+    assert!(listed.contains("Spring (active, in Garden"), "{listed}");
+    client.cancel().await.unwrap();
+
+    // Without a session an epic has no project unless one is given.
+    let f = fixture();
+    let client = connect(TaskServer::new(f.store, None).unwrap()).await;
+    let created = ok(&client, "create_epic", json!({ "name": "Loose" })).await;
+    assert!(!created.contains("in project"), "{created}");
+    ok(&client, "create_project", json!({ "name": "Side" })).await;
     client.cancel().await.unwrap();
 }
 

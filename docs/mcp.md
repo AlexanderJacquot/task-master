@@ -80,6 +80,11 @@ What it may do, outside a Send to Claude session:
 - Create **agent tasks**: they stay out of your views, on the **Agents** page, where
   **Make it mine** turns one into your task. It can plan time and add links only for
   those.
+- Create **projects** (`create_project`, optionally inside an area) and **epics**
+  (`create_epic`, with a description and target date; in a session they go in the
+  session task's project unless told otherwise). Unlike agent tasks these are yours at
+  once and show in the sidebar. Asking twice for the same name in the same place returns
+  the existing one instead of a duplicate. It cannot rename, archive or delete them.
 - Your own tasks are read-only. Notes and session summaries need a session.
 
 Writes go through the same commands as the app: they appear in the open app at once,

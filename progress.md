@@ -4,6 +4,15 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**MCP: create projects and epics** (2026-11-13, on `files-page`, uncommitted): new tools
+`create_project` (name, optional `area_id`) and `create_epic` (name, `project_id`, else
+the session task's project unless `no_project`; description, target date). They are the
+user's at once (no owner column); the same name in the same place returns the existing
+one instead of a duplicate; no update/archive/delete for agents. `list_projects` names
+each epic's project. ADR 017 and docs/mcp.md updated; test
+`projects_and_epics_can_be_created`. `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo fmt --check`, `cargo test --workspace --locked` pass; no frontend change.
+
 **Pending-work integration** (2026-11-12): the Files page, Agents page updates,
 board selection/drag and reset work below were checked together before committing.
 `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`,
