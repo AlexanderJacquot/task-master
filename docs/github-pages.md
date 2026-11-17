@@ -7,18 +7,17 @@ submission or build dependency.
 
 The pages describe the current implementation: local tasks, the three Calendar scopes,
 optional server credential transfers, backups, retention, revocation and third-party
-hosting. Keep them consistent when those behaviors change. They identify Alexander
-Jacquot as maintainer and link to the GitHub profile and project issues for contact;
-no private email address has been inferred or published. The support email selected in
-Google Cloud still needs to be a real address you monitor.
+hosting. Keep them consistent when those behaviors change. They name the project's
+maintainer and link to the GitHub profile and project issues for contact. The support
+email selected in Google Cloud still needs to be a real address you monitor.
 
-## Publish on the GitHub mirror
+## Publish on GitHub
 
 1. In [the GitHub repository settings](https://github.com/AlexanderJacquot/task-master/settings/pages),
    open **Pages → Build and deployment → Source** and select **GitHub Actions**.
-2. Commit the `site/` directory and `.github/workflows/pages.yml` to `main` in the
-   source repository and push normally. The existing Forgejo-to-GitHub mirror carries
-   the files across. The **pages** workflow runs when those files change on `main`.
+2. Push the `site/` directory and `.github/workflows/pages.yml` to `main` (directly, or
+   through a push mirror, see docs/release.md). The **pages** workflow runs when those
+   files change on `main`.
 3. In GitHub **Actions → pages**, wait for the deployment to complete. If the workflow
    ran before Pages was enabled, rerun it or use **Run workflow** on `main`.
 4. Open all three URLs below without logging in, and check the policy links on the homepage.

@@ -600,9 +600,9 @@ function RemoteBackupForm({
   const r = config.remote;
   const [form, setForm] = useState<RemoteInput>({
     enabled: r?.enabled ?? false,
-    endpoint: r?.endpoint ?? "https://s3.solarnexus.space",
+    endpoint: r?.endpoint ?? "",
     bucket: r?.bucket ?? "task-master",
-    region: r?.region ?? "garage",
+    region: r?.region ?? "us-east-1",
     access_key: r?.access_key ?? "",
     secret_key: "",
     prefix: r?.prefix ?? "backups",
@@ -614,7 +614,13 @@ function RemoteBackupForm({
       <input
         type={type}
         value={String(form[key])}
-        placeholder={key === "secret_key" && r?.has_secret ? "stored (leave empty to keep)" : ""}
+        placeholder={
+          key === "secret_key" && r?.has_secret
+            ? "stored (leave empty to keep)"
+            : key === "endpoint"
+              ? "https://s3.example.com"
+              : ""
+        }
         onChange={(e) => setForm({ ...form, [key]: e.target.value })}
         className="w-80 rounded border border-neutral-300 bg-transparent px-1.5 py-0.5 dark:border-neutral-700"
       />
@@ -623,7 +629,7 @@ function RemoteBackupForm({
   return (
     <Section
       title="Remote backup"
-      hint="Uploads each daily backup to an S3-compatible bucket (Garage in the homelab) whenever it is reachable; off the network, it retries later. One-way: restore by importing or by copying a backup back."
+      hint="Uploads each daily backup to an S3-compatible bucket (AWS S3, Backblaze B2, Cloudflare R2, MinIO, Garage, ...) whenever it is reachable; otherwise it retries later. One-way: restore by importing or by copying a backup back."
     >
       <label className="flex items-center gap-2 text-sm">
         <input

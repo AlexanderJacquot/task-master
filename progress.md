@@ -4,6 +4,18 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Docs for the public** (2026-11-17, on `main`, uncommitted): user-facing docs made
+general instead of homelab-specific. `docs/server.md` rewritten (quick start, Compose,
+reverse proxy, generic OIDC with an Authelia example, updating); `docs/mcp.md` remote
+setup generic (`tasks.example.com`); `docs/backups.md` any S3 provider;
+`docs/release.md` and `docs/github-pages.md` treat the Forgejo mirror as the maintainer's
+setup; `docs/google-calendar.md` says the client is the user's own; README drops the
+Forgejo `@claude` review line and gains a Contributing section; `docs/plan.md` examples
+neutral. Settings → Remote backup no longer defaults to the maintainer's endpoint
+(empty, placeholder `https://s3.example.com`, region `us-east-1`) or says "homelab".
+ADRs, release notes and this log left as history. Not run here: `pnpm biome check`,
+`pnpm test` (needed approval in a background session).
+
 **Release 0.22.1** (2026-11-16, on `release/0.22.1`, then `main`; notes
 `docs/releases/0.22.1.md`): fixes from `homepage-infra-tile-order` (based on 840216c, the
 rest of that branch was already on `main`): `host_env` strips path entries under any

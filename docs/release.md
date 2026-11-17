@@ -1,22 +1,26 @@
 # Releases and installers
 
-Everything runs on GitHub, through a public push mirror of this Forgejo repo (ADR 010):
+This page is for maintainers. Everything runs on GitHub Actions (ADR 010):
 `.github/workflows/ci.yml` checks every push and builds a Linux `.deb`; `release.yml` builds
 the installers for all three OSes and the signed update files on version tags.
 
+The maintainer pushes to a private Forgejo instance that push-mirrors branches and tags to
+the public GitHub repository. Forgejo ignores `.github/workflows/` while
+`.forgejo/workflows/` exists, which is why its manual-only `ci.yml` stub stays. If you
+fork the project and work on GitHub directly, ignore the mirror and the `.forgejo/` folder.
+
 ## One-time setup (by hand)
 
-1. Create an empty GitHub repository, e.g. `task-master`. It must be **public**: installed
-   apps download updates from its releases without logging in (ADR 009).
-2. In Forgejo: repository → Settings → Repository → Mirror settings → *Push mirror*,
-   "Use SSH authentication", URL `ssh://git@github.com/<you>/task-master.git` (an https
-   URL makes Forgejo push over HTTPS and fail with "could not read Username"), sync on
-   push. Add the public key Forgejo shows as a GitHub deploy key with write access.
-
-Forgejo then forwards branches and tags. GitHub runs `.github/workflows/` (Forgejo ignores
-that folder while `.forgejo/workflows` exists, which is why its manual-only stub stays).
-
-3. Update signing (done 2026-11-05): `pnpm --filter desktop exec tauri signer generate -w
+1. The GitHub repository must be **public**: installed apps download updates from its
+   releases without logging in (ADR 009). A fork that publishes its own releases also
+   needs its own updater endpoint in `tauri.conf.json` → `plugins.updater.endpoints` and
+   its own signing key (step 3).
+2. When working from a Forgejo origin: repository → Settings → Repository → Mirror
+   settings → *Push mirror*, "Use SSH authentication", URL
+   `ssh://git@github.com/<you>/task-master.git` (an https URL makes Forgejo push over
+   HTTPS and fail with "could not read Username"), sync on push. Add the public key
+   Forgejo shows as a GitHub deploy key with write access.
+3. Update signing: `pnpm --filter desktop exec tauri signer generate -w
    ~/.tauri/task-master.key -p <password> --ci`, public key in `tauri.conf.json` →
    `plugins.updater.pubkey`, and the secrets:
    `gh secret set TAURI_SIGNING_PRIVATE_KEY -R AlexanderJacquot/task-master < ~/.tauri/task-master.key`
@@ -51,9 +55,9 @@ with the same checks as CI before tagging, including `cargo fmt --all -- --check
 failed its release build on that check alone and was never published).
 
 The same tag also publishes the sync server image (`server-image.yml`, ADR 016), with the
-same version as the app. Desktop and server must run the same database schema. After a
-release with migrations, update the homelab's `task-master` version (Renovate opens the
-bump) together with the desktops.
+same version as the app. Desktop and server must run the same database schema, so
+mention database migrations in the release notes: self-hosters then update their server
+together with their desktops.
 
 1. Bump `version` in `apps/desktop/src-tauri/tauri.conf.json`, the workspace `Cargo.toml`
    and `apps/desktop/package.json` on `main`. The version must grow: the app only offers

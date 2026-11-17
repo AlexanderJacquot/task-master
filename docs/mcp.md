@@ -153,81 +153,91 @@ creates agent tasks and plans time. Its writes sync to your computers like any e
 
 ### How sign-in works
 
-The server is an OAuth **resource server**; Authelia is the **authorization server**.
-You sign in to Authelia (with 2FA) once, on the device where you add the connector; Claude
-then holds tokens issued for this one purpose, never your password.
+The sync server is an OAuth **resource server**; your identity provider (the one from
+docs/server.md section 5) is the **authorization server**. You sign in to it once, on
+the device where you add the connector; Claude then holds tokens issued for this one
+purpose, never your password.
 
 1. Claude calls `/mcp` without a token. The server answers 401 with
-   `WWW-Authenticate: Bearer resource_metadata="https://tasks…/.well-known/oauth-protected-resource/mcp"`.
-2. That document names Authelia as the authorization server. Claude reads Authelia's
-   discovery document and sends you to its login page (authorization code + PKCE).
-3. Authelia sends Claude back a code at `https://claude.ai/api/mcp/auth_callback`; Claude
-   trades it for an **access token** (a JWT signed by Authelia, about an hour) and a
-   refresh token.
+   `WWW-Authenticate: Bearer resource_metadata="https://tasks.example.com/.well-known/oauth-protected-resource/mcp"`.
+2. That document names your identity provider as the authorization server. Claude reads
+   its discovery document and sends you to its login page (authorization code + PKCE).
+3. The provider sends Claude back a code at `https://claude.ai/api/mcp/auth_callback`;
+   Claude trades it for an **access token** (a signed JWT, typically valid for an hour)
+   and a refresh token.
 4. Every call carries `Authorization: Bearer <access token>`. The server checks, offline,
-   with Authelia's public keys: the signature, `typ: at+jwt` (an ID token is refused),
-   the issuer, the audience (this server's `/mcp` URL), the expiry, the client
+   with the provider's public keys: the signature, `typ: at+jwt` (an ID token is
+   refused), the issuer, the audience (this server's `/mcp` URL), the expiry, the client
    (`TM_MCP_OAUTH_CLIENTS`) and, when set, `TM_OIDC_ALLOWED_GROUPS`. Anything else gets
    401 again.
 
+So the provider must issue access tokens as JWTs in the RFC 9068 form (`typ: at+jwt`),
+with the `/mcp` URL as audience, to a client you register by hand (step 2 below).
+
 A server token with `api:write` (`token add claude-code --scope api:write`) also opens
-`/mcp`, for Claude Code on a computer without the app:
-`claude mcp add --transport http task-master https://tasks…/mcp --header "Authorization: Bearer tm_…"`.
+`/mcp`, for Claude Code on a computer without the app, and works with `TM_AUTH=token`:
+`claude mcp add --transport http task-master https://tasks.example.com/mcp --header "Authorization: Bearer tm_…"`.
 
-### Setup (homelab)
+### Setup
 
-1. **Server** (`services/task-master/.env.j2`): `TM_MCP=on`, with `TM_AUTH=oidc` and
-   `TM_PUBLIC_URL=https://tasks.solarnexus.space` already there. With
-   `TM_OIDC_ALLOWED_GROUPS` set, add `groups` to the access token (step 2).
-2. **Authelia client** (`identity_providers.oidc.clients`):
+The examples use `https://tasks.example.com` for the sync server and Authelia as the
+identity provider; adapt them to yours.
+
+1. **Server**: set `TM_MCP=on`, with `TM_AUTH=oidc` and
+   `TM_PUBLIC_URL=https://tasks.example.com`. With `TM_OIDC_ALLOWED_GROUPS` set, the
+   access token must carry `groups` too (step 2).
+2. **OAuth client for Claude**: a public client (no secret, PKCE S256), redirect URI
+   `https://claude.ai/api/mcp/auth_callback`, audience `https://tasks.example.com/mcp`,
+   JWT access tokens. Its client ID must be listed in `TM_MCP_OAUTH_CLIENTS` (default
+   `task-master-claude`). With Authelia, under `identity_providers.oidc`:
 
    ```yaml
-         # Claude connector (claude.ai, mobile): public client, PKCE. ADR 024.
-         - client_id: task-master-claude
-           client_name: Claude (task-master)
-           public: true
-           token_endpoint_auth_method: none
-           authorization_policy: two_factor
-           require_pkce: true
-           pkce_challenge_method: S256
-           consent_mode: pre-configured
-           pre_configured_consent_duration: 1M
-           redirect_uris: ["https://claude.ai/api/mcp/auth_callback"]
-           scopes: [openid, profile, groups, offline_access]
-           response_types: [code]
-           grant_types: [authorization_code, refresh_token]
-           audience: ["https://tasks.solarnexus.space/mcp"]
-           requested_audience_mode: implicit
-           access_token_signed_response_alg: RS256
-           claims_policy: task-master-claude
+   clients:
+     # Claude connector (claude.ai, mobile): public client, PKCE. ADR 024.
+     - client_id: task-master-claude
+       client_name: Claude (task-master)
+       public: true
+       token_endpoint_auth_method: none
+       authorization_policy: two_factor
+       require_pkce: true
+       pkce_challenge_method: S256
+       redirect_uris: ["https://claude.ai/api/mcp/auth_callback"]
+       scopes: [openid, profile, groups, offline_access]
+       response_types: [code]
+       grant_types: [authorization_code, refresh_token]
+       audience: ["https://tasks.example.com/mcp"]
+       requested_audience_mode: implicit
+       access_token_signed_response_alg: RS256
+       claims_policy: task-master-claude
+   claims_policies:
+     task-master-claude:
+       access_token: [groups]   # only needed with TM_OIDC_ALLOWED_GROUPS
    ```
 
-   and under `claims_policies`: `task-master-claude: { access_token: [groups] }` (only
-   needed with allowed groups).
-3. **Route**: `exposure: public` for `task-master` (rate limit, security headers,
-   `geoblock-fr`). Claude calls from Anthropic's US range `160.79.104.0/21` (check
-   <https://platform.claude.com/docs/en/api/ip-addresses> for the current list), both
-   `/mcp` and Authelia, so `geoblock-fr` lists it in `allowedIPAddresses`. The whole
-   host is public: every data route needs a token (ADR 024).
+3. **Reachability**: Claude calls from Anthropic's cloud, so `/mcp` and your identity
+   provider's discovery, authorization and token endpoints must be reachable from the
+   internet over HTTPS. If you filter by IP address or country, allow Anthropic's ranges
+   (<https://platform.claude.com/docs/en/api/ip-addresses>). Every data route of the
+   server needs a token, so exposing it is fine as long as `TM_AUTH` is not `none`
+   (ADR 024).
 4. **Claude**: Settings → Connectors → Add custom connector. URL
-   `https://tasks.solarnexus.space/mcp`; Advanced settings → OAuth: "Use your own OAuth
-   client", client ID `task-master-claude`, no secret. Connect, sign in to Authelia.
+   `https://tasks.example.com/mcp`; Advanced settings → OAuth: "Use your own OAuth
+   client", client ID `task-master-claude`, no secret. Connect, and sign in to your
+   identity provider.
 
-Check from outside the LAN: `curl -i -X POST https://tasks.solarnexus.space/mcp` gives
+Check from outside your network: `curl -i -X POST https://tasks.example.com/mcp` gives
 401 with the `WWW-Authenticate` header, and
-`curl https://tasks.solarnexus.space/.well-known/oauth-protected-resource/mcp` the JSON.
+`curl https://tasks.example.com/.well-known/oauth-protected-resource/mcp` the JSON.
 When Claude cannot connect, the server logs why it refused a token
 (`docker logs task-master | grep mcp:`), e.g. a missing `groups` claim or another
 audience.
 
-To cut Claude off: remove the connector in Claude, or remove the client from Authelia
-(refreshes then fail); an access token already issued works until its expiry (about an
-hour).
+To cut Claude off: remove the connector in Claude, or remove the client from your
+identity provider (refreshes then fail); an access token already issued works until its
+expiry.
 
 ## Later
 
-- Let Claude create tasks that are yours, not agent tasks (an opt-in flag), for "add a
-  task for…" requests. A rule change to ADR 017, to decide first.
 - Settings → Agents: show this computer's `claude mcp add` line with its binary path, to
   copy.
 - A Claude Code plugin (a marketplace in a git repository with `.mcp.json` and a skill) to

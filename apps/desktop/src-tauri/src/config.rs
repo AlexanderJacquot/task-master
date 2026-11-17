@@ -5,14 +5,14 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// An S3-compatible bucket (Garage in the homelab) that receives the daily backups.
+/// An S3-compatible bucket that receives the daily backups.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteBackup {
     pub enabled: bool,
-    /// e.g. `https://s3.solarnexus.space` (path-style requests).
+    /// e.g. `https://s3.example.com` (path-style requests).
     pub endpoint: String,
     pub bucket: String,
-    /// Garage's default region is `garage`.
+    /// e.g. `us-east-1`; Garage's default region is `garage`.
     pub region: String,
     pub access_key: String,
     pub secret_key: String,
