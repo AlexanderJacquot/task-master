@@ -24,6 +24,7 @@ import {
   withDate,
   withTime,
 } from "../../lib/meetings";
+import { createPlayerControl } from "../../lib/transcript";
 import type { Meeting, MeetingChange } from "../../lib/types";
 import { deleteMeeting, updateMeeting } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
@@ -35,6 +36,8 @@ import { AttachmentList } from "../task-detail/AttachmentList";
 import { DescriptionEditor } from "../task-detail/DescriptionEditor";
 import { TaskPicker } from "../task-detail/TaskPicker";
 import { useMeetingAttachments, useMeetingFiles } from "../task-detail/useTaskFiles";
+import { RecordPanel } from "./Recording";
+import { TranscriptPanel } from "./TranscriptPanel";
 
 /** Date, start and end of the meeting. Moving the date or the start keeps its length. */
 function WhenFields({
@@ -286,8 +289,9 @@ export function ParticipantsField({
   );
 }
 
-function MeetingEditor({ meeting }: { meeting: Meeting }) {
+function MeetingEditor({ meeting, line }: { meeting: Meeting; line?: string }) {
   const store = useTaskStore();
+  const control = useMemo(createPlayerControl, []);
   const now = useNow();
   const files = useMeetingFiles(meeting.id);
   const attachments = useMeetingAttachments(meeting.id);
@@ -344,6 +348,8 @@ function MeetingEditor({ meeting }: { meeting: Meeting }) {
           <LinkFields meeting={meeting} change={change} />
         </div>
       </div>
+      <RecordPanel meeting={meeting} control={control} />
+      <TranscriptPanel meeting={meeting} control={control} {...(line && { line })} />
       <section aria-label="Participants" className="pl-10">
         <SectionLabel className="mb-1.5 block">Participants</SectionLabel>
         <ParticipantsField
@@ -371,15 +377,11 @@ function MeetingEditor({ meeting }: { meeting: Meeting }) {
           change([{ notes: text ? `${text}\n\n${markdown}` : markdown }]);
         }}
       />
-      <p className="pl-10 text-[12.5px] text-ink-3">
-        Recording and transcription come later; for now Scribe keeps the meeting, its people, notes
-        and files.
-      </p>
     </div>
   );
 }
 
-export function MeetingPage({ meetingId }: { meetingId: string }) {
+export function MeetingPage({ meetingId, line }: { meetingId: string; line?: string }) {
   const store = useTaskStore();
   const navigate = useNavigate();
   const meeting = useStoreState((s) => s.meetings[meetingId]);
@@ -433,7 +435,7 @@ export function MeetingPage({ meetingId }: { meetingId: string }) {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
         <article className="tex-sheet mx-auto max-w-[820px] rounded-xl border border-line bg-raised px-10 py-11 shadow-xl shadow-black/10 sm:px-14 clean:border-transparent clean:pt-4 clean:shadow-none">
-          <MeetingEditor key={meeting.id} meeting={meeting} />
+          <MeetingEditor key={meeting.id} meeting={meeting} {...(line && { line })} />
         </article>
       </div>
     </div>

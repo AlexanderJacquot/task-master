@@ -31,7 +31,8 @@
   },
   "bundle": {
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "entitlements": "entitlements.plist"
     }
   }
 }

@@ -43,6 +43,7 @@ async function setup(
         agent_sessions: [],
         agent_notes: [],
         meetings: [],
+        transcript_segments: [],
       };
     },
     undo: async () => null,

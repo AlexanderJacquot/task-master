@@ -15,7 +15,7 @@ use crate::files::FileStore;
 use crate::history::{self, History};
 use crate::model::{
     AgentNote, AgentRuntime, AgentSession, Attachment, Epic, Id, Meeting, Project, ProjectFolder,
-    SessionState, Snapshot, Status, Tag, Task, TimeBlock, View,
+    SessionState, Snapshot, Status, Tag, Task, TimeBlock, TranscriptSegment, View,
 };
 use crate::ops::{Batch, EntityKind};
 use crate::sync::{self, Merged, OpsPage, SyncOp};
@@ -40,6 +40,9 @@ pub struct Changes {
     pub agent_sessions: Vec<AgentSession>,
     pub agent_notes: Vec<AgentNote>,
     pub meetings: Vec<Meeting>,
+    /// Transcript segments written (Scribe): not in the snapshot, read per meeting.
+    #[serde(default)]
+    pub transcript_segments: Vec<TranscriptSegment>,
 }
 
 impl Changes {
@@ -355,6 +358,17 @@ impl Store {
     /// One meeting, deleted ones included.
     pub fn meeting(&self, id: &str) -> Result<Meeting> {
         query::meeting(&self.conn, id)
+    }
+
+    /// A meeting's transcript, in time order (Scribe; not part of the snapshot).
+    pub fn transcript(&self, meeting_id: &str) -> Result<Vec<TranscriptSegment>> {
+        query::meeting(&self.conn, meeting_id)?;
+        query::transcript(&self.conn, meeting_id)
+    }
+
+    /// Transcript lines of live meetings matching every word of `text`, best first.
+    pub fn search_transcripts(&self, text: &str, limit: u32) -> Result<Vec<query::TranscriptHit>> {
+        query::search_transcripts(&self.conn, text, limit)
     }
 
     /// Live meetings by start; with `link` (`("project" | "epic" | "task", id)`), only
@@ -829,6 +843,9 @@ fn load_changes(
             }
             EntityKind::AgentNote => changes.agent_notes.push(query::agent_note(conn, id)?),
             EntityKind::Meeting => changes.meetings.push(query::meeting(conn, id)?),
+            EntityKind::TranscriptSegment => {
+                changes.transcript_segments.push(query::segment(conn, id)?);
+            }
         }
     }
     Ok(changes)

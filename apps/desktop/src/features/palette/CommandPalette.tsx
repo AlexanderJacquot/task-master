@@ -3,6 +3,8 @@ import { Dialog } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cx } from "../../components/ui";
 import { type PaletteItem, rankItems } from "../../lib/palette";
+import { plainSnippet, speakerLabel } from "../../lib/transcript";
+import type { TranscriptHit } from "../../lib/types";
 import { categoryOf } from "../../lib/views";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
@@ -11,8 +13,8 @@ import { NEW_TASK_INPUT_ID } from "../shell/useShortcuts";
 type Runnable = PaletteItem & { run(): void };
 
 /**
- * Ctrl+K: jump to any view, project, epic, tag or task (full-text search over titles and
- * descriptions), or run an action. Arrow keys move, Enter runs, Escape closes.
+ * Ctrl+K: jump to any view, project, epic, tag, task (full-text search over titles and
+ * descriptions), meeting or transcript line, or run an action. Arrow keys move, Enter runs, Escape closes.
  */
 export function CommandPalette({
   open,
@@ -31,8 +33,10 @@ export function CommandPalette({
   const epics = useStoreState((s) => s.epics);
   const tags = useStoreState((s) => s.tags);
   const views = useStoreState((s) => s.views);
+  const meetings = useStoreState((s) => s.meetings);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<string[]>([]);
+  const [lines, setLines] = useState<TranscriptHit[]>([]);
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
 
@@ -41,6 +45,7 @@ export function CommandPalette({
     const text = query.trim();
     if (text.length < 2) {
       setHits([]);
+      setLines([]);
       return;
     }
     let live = true;
@@ -49,6 +54,10 @@ export function CommandPalette({
         .search(text, 20)
         .then((ids) => live && setHits(ids))
         .catch(() => live && setHits([]));
+      api
+        .searchTranscripts?.(text, 6)
+        .then((found) => live && setLines(found))
+        .catch(() => live && setLines([]));
     }, 80);
     return () => {
       live = false;
@@ -189,16 +198,54 @@ export function CommandPalette({
         },
       });
     }
+    for (const m of Object.values(meetings)) {
+      list.push({
+        key: `meeting:${m.id}`,
+        group: "Meetings",
+        label: m.title || "Untitled meeting",
+        hint: new Date(m.started_at).toLocaleDateString(),
+        keywords: m.participants.join(" "),
+        run: () => go("/meeting/$meetingId", { meetingId: m.id }),
+      });
+    }
+    for (const hit of lines) {
+      const m = meetings[hit.meeting_id];
+      if (!m) continue;
+      list.push({
+        key: `line:${hit.segment_id}`,
+        group: "Transcripts",
+        label: `${speakerLabel(hit.speaker, m.speakers)}: ${plainSnippet(hit.snippet)}`,
+        hint: m.title,
+        run: () => go("/meeting/$meetingId", { meetingId: m.id }, { line: hit.segment_id }),
+      });
+    }
     return list;
-  }, [views, projects, epics, tags, hits, tasks, statuses, store, openTask, close, go]);
+  }, [
+    views,
+    projects,
+    epics,
+    tags,
+    hits,
+    tasks,
+    statuses,
+    meetings,
+    lines,
+    store,
+    openTask,
+    close,
+    go,
+  ]);
 
   const results = useMemo(() => {
     const ranked = rankItems(items, query, {
-      searchHits: new Set(hits.map((id) => `task:${id}`)),
+      searchHits: new Set([
+        ...hits.map((id) => `task:${id}`),
+        ...lines.map((l) => `line:${l.segment_id}`),
+      ]),
     });
     const byKey = new Map(items.map((i) => [i.key, i]));
     return ranked.map((r) => byKey.get(r.key) as Runnable);
-  }, [items, query, hits]);
+  }, [items, query, hits, lines]);
 
   const current = Math.min(active, Math.max(results.length - 1, 0));
   useEffect(() => {

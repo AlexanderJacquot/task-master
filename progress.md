@@ -4,6 +4,61 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.23.0** (2026-11-18, on `main`; notes `docs/releases/0.23.0.md`): M19
+(recording) and M20 (transcription) merged with 0.22.2's macOS ad-hoc signing. Since that
+signs with the hardened runtime, `src-tauri/entitlements.plist` adds
+`com.apple.security.device.audio-input` (else macOS denies the microphone without asking),
+and `release.yml` checks it is signed in. Schema 16: update the sync server with the app.
+
+**M20 Scribe: transcription and speakers** (2026-11-18, branch `m20-scribe-transcribe`,
+released in 0.23.0 with M19; ADR 025 and ADR 026 "M20 notes"): recordings are transcribed
+on the device and checked by hand. Core: migration 16 (`transcript_segments` + FTS,
+`meetings.speakers`), commands `SetTranscript` (one batch, state `review`),
+`UpdateSegment`, `SplitSegment`, `DeleteSegment`, `ReassignSpeaker`, `UpdateMeeting
+speaker_name`; reads `meeting_transcript`, `search_transcripts`; sync and export carry
+them. Shell `src-tauri/src/scribe/`: `models.rs` (pinned downloads, resume, SHA-256),
+`engine.rs` (whisper-rs 0.16 with our own Silero VAD: whisper.cpp ignores its VAD option
+under `whisper_full_with_state`; sherpa-onnx 2.0.1 static diarization), `merge.rs` (words +
+turns → segments, echo removal, speaker changes snapped to sentence ends), `pipeline.rs`
+(cached steps), `transcribe.rs` (IPC, queue worker, resume, hourly expiry),
+`retention.rs`. UI: transcription row and audio expiry notice under the player,
+`features/scribe/TranscriptPanel.tsx` (virtualized lines, play from a line, follow
+playback, speaker menu, name / "Same voice as…", correct, split, delete, Validate / Check
+again), Settings → Scribe → Transcription (models, language, auto-transcribe, days kept),
+Ctrl+K meetings and transcript lines (`/meeting/$id?line=`). Tests: core
+`tests/transcripts.rs` (7); scribe `merge` (6), `engine` (2), `models` (5), `retention`;
+`lib/transcript.test.ts` (6), `features/scribe/transcript.test.tsx` (6), palette.
+Tried for real in WSL with the `tiny` model on synthesized speech (two voices + mic): right
+speaker on every line, starts within 0.2 s. Not tried on Windows/macOS hardware (the
+`native` CI job builds and tests there), nor in the running app. Schema 16: update the sync
+server with the app. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo test --workspace --locked`, `pnpm biome ci .`, `pnpm typecheck`,
+`pnpm test` (539 passed, 2 skipped) pass.
+
+**M19 Scribe: recording** (2026-11-15, branch `m19-scribe-capture`; ADR 025 "M19 notes",
+ADR 026 "M19 spike"): the meeting page records the microphone and the computer's sound
+(Windows WASAPI loopback, macOS 14.6+ CoreAudio process tap, both through cpal 0.18.2;
+Linux says recording is unsupported). `src-tauri/src/scribe/`: `capture.rs` (cpal, streams
+on their own thread; stub off Windows/macOS), `audio.rs` (mixdown, windowed-sinc resampler
+to 16 kHz, levels), `recorder.rs` (two aligned tracks, silence across gaps, first chunk at
+its time), `wav.rs` (header rewritten every second, `repair` after a crash), `opus.rs` (Ogg
+Opus via opus-rs =0.1.42 + ogg 0.9.2, 24 kb/s), `files.rs` (folder layout,
+`recording.json`, byte ranges), `mod.rs` (IPC: `scribe_status/devices/settings/
+set_scribe_settings/start/stop/audio/recover/purge_audio/audio_usage`, events
+`ScribeLevels`, `ScribeChanged`; `tm://localhost/meeting-audio/<id>/<track>` with ranges;
+resume on start, clean stop on quit). UI: `lib/scribe.ts` (own store and `ScribeApi`),
+`features/scribe/Recording.tsx` (recording bar on every page, meeting page panel: Record,
+live levels and consent reminder, Keep/Discard after an interruption, a two-track player,
+Delete audio), Settings → Scribe (microphone, computer's sound, reminder, audio list) and
+the audio list in Settings → Files; quitting while recording asks. `Info.plist` usage
+strings for macOS. CI: new `native` job lints and tests the desktop crate on Windows and
+macOS. Tests: scribe `audio` (5), `wav` (3), `opus` (2), `recorder` (3), `files` (3),
+config roundtrip; `lib/scribe.test.ts` (3), `features/scribe/recording.test.tsx` (4).
+The capture code was checked with clippy for `x86_64-pc-windows-msvc` and
+`aarch64-apple-darwin` from WSL (a scratch crate including the real files); never run on a
+real device: WSL has no audio. `cargo fmt --check`, `cargo clippy --workspace --all-targets
+-- -D warnings`, `cargo test --workspace --locked`, `pnpm biome ci .`, `pnpm typecheck`,
+`pnpm test` (526 passed, 2 skipped) pass.
 **Release 0.22.2** (2026-11-18, on `main`; notes `docs/releases/0.22.2.md`): the macOS
 work below (ad-hoc signing, capture panel, file drops, flush title bar) and devenv. No
 migration. `release.yml`'s release body was still 0.21.0's text; now 0.22.2's.
@@ -2072,11 +2127,12 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
-- Scribe (meetings, docs/meetings-plan.md, ADR 025/026): M18 built; M19 (recording),
-  M20 (transcription, speakers; migration 16 for segments), M21 (summary) to do. After
-  it: a synced contacts list replacing free-text participant names (task `01a1d747…`),
-  live captions, Linux capture, voice profiles. Smaller: palette search over meetings,
-  recurring meetings.
+- Scribe (meetings, docs/meetings-plan.md, ADR 025/026): M18–M20 built; M21 (summary,
+  action items, MCP transcript search) to do. After it: a synced contacts list replacing
+  free-text participant names (task `01a1d747…`), live captions, Linux capture, voice
+  profiles, recurring meetings. Check on real Windows/macOS hardware: transcription speed
+  with `large-v3-turbo`, Metal, the release builds of whisper.cpp and sherpa-onnx (x86_64
+  macOS is cross-built on an arm64 runner).
 - Git, on top of `project_git` (ADR 017): record the release (tag + commits, commit,
   branch) an agent session started and ended on, as new `agent_sessions` columns (a
   migration, synced); stamp a task with the release it was finished on; a "create PR"

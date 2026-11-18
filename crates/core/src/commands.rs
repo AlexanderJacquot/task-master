@@ -162,6 +162,34 @@ pub enum Command {
     DeleteMeeting {
         id: Id,
     },
+    /// Replaces a meeting's transcript (Scribe, M20): its live segments are removed and
+    /// these written, the speaker names cleared, `transcribed_at` set and the meeting moved
+    /// to `review`. One batch, so one undo.
+    SetTranscript {
+        meeting_id: Id,
+        segments: Vec<NewSegment>,
+    },
+    /// Corrects a transcript segment.
+    UpdateSegment {
+        id: Id,
+        changes: Vec<SegmentChange>,
+    },
+    /// Cuts a segment in two at a character of its text (`at`, counted in characters);
+    /// the time is shared in proportion. The second part gets `new_id`.
+    SplitSegment {
+        id: Id,
+        at: u32,
+        new_id: Option<Id>,
+    },
+    DeleteSegment {
+        id: Id,
+    },
+    /// Gives every segment of speaker `from` to `to` (one voice found as two).
+    ReassignSpeaker {
+        meeting_id: Id,
+        from: String,
+        to: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -459,6 +487,37 @@ pub enum MeetingChange {
     Participants(Vec<String>),
     Notes(String),
     Summary(Option<String>),
+    /// Names a transcript speaker key (`"s1"`), or clears its name with `None`.
+    SpeakerName {
+        speaker: String,
+        name: Option<String>,
+    },
+}
+
+/// Longest transcript a meeting may have, in segments.
+pub const MAX_SEGMENTS: usize = 20_000;
+/// Longest segment text.
+const MAX_SEGMENT_CHARS: usize = 10_000;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewSegment {
+    #[serde(default)]
+    pub id: Option<Id>,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    /// `"me"` or `"s1"`, `"s2"`, …
+    pub speaker: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SegmentChange {
+    /// Marks the segment edited.
+    Text(String),
+    Speaker(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -514,6 +573,18 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
         Command::CreateMeeting { meeting } => create_meeting(b, meeting),
         Command::UpdateMeeting { id, changes } => update_meeting(b, &id, changes),
         Command::DeleteMeeting { id } => delete_meeting(b, &id),
+        Command::SetTranscript {
+            meeting_id,
+            segments,
+        } => set_transcript(b, &meeting_id, segments),
+        Command::UpdateSegment { id, changes } => update_segment(b, &id, changes),
+        Command::SplitSegment { id, at, new_id } => split_segment(b, &id, at, new_id),
+        Command::DeleteSegment { id } => delete_segment(b, &id),
+        Command::ReassignSpeaker {
+            meeting_id,
+            from,
+            to,
+        } => reassign_speaker(b, &meeting_id, &from, &to),
     }
 }
 
@@ -1824,6 +1895,23 @@ fn update_meeting(b: &mut Batch<'_, '_>, id: &str, changes: Vec<MeetingChange>) 
             }
             MeetingChange::Notes(n) => ("notes", json!(n)),
             MeetingChange::Summary(s) => ("summary", json!(trimmed(s))),
+            MeetingChange::SpeakerName { speaker, name } => {
+                check_speaker(&speaker)?;
+                let mut names = match patch.get("speakers").and_then(Value::as_str) {
+                    Some(current) => serde_json::from_str(current).unwrap_or_default(),
+                    None => meeting.speakers.clone(),
+                };
+                match trimmed(name) {
+                    Some(name) if name.chars().count() > MAX_PARTICIPANT_CHARS => {
+                        return Err(Error::invalid(format!(
+                            "a speaker name has at most {MAX_PARTICIPANT_CHARS} characters"
+                        )));
+                    }
+                    Some(name) => names.insert(speaker, name),
+                    None => names.remove(&speaker),
+                };
+                ("speakers", json!(serde_json::to_string(&names)?))
+            }
         };
         patch.insert(key.into(), value);
     }
@@ -1853,6 +1941,204 @@ fn live_meeting(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Meeting> {
         return Err(Error::not_found("meeting", id));
     }
     Ok(meeting)
+}
+
+// ---------------------------------------------------------------------------------------
+// Transcripts (Scribe, M20)
+
+/// `"me"`, or `"s"` and a number.
+fn check_speaker(key: &str) -> Result<()> {
+    let numbered = key
+        .strip_prefix('s')
+        .is_some_and(|n| !n.is_empty() && n.len() <= 4 && n.bytes().all(|c| c.is_ascii_digit()));
+    if key == "me" || numbered {
+        Ok(())
+    } else {
+        Err(Error::invalid(format!(
+            "speaker '{key}' is not \"me\" or \"s1\", \"s2\", …"
+        )))
+    }
+}
+
+fn check_segment_text(text: &str) -> Result<String> {
+    let text = text.trim();
+    if text.chars().count() > MAX_SEGMENT_CHARS {
+        return Err(Error::invalid(format!(
+            "a transcript segment has at most {MAX_SEGMENT_CHARS} characters"
+        )));
+    }
+    Ok(text.to_owned())
+}
+
+fn live_segment(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::TranscriptSegment> {
+    let segment = query::segment(b.tx, id)?;
+    if segment.deleted_at.is_some() {
+        return Err(Error::not_found("transcript segment", id));
+    }
+    live_meeting(b, &segment.meeting_id)?;
+    Ok(segment)
+}
+
+fn set_transcript(
+    b: &mut Batch<'_, '_>,
+    meeting_id: &str,
+    segments: Vec<NewSegment>,
+) -> Result<()> {
+    live_meeting(b, meeting_id)?;
+    if segments.len() > MAX_SEGMENTS {
+        return Err(Error::invalid(format!(
+            "a transcript has at most {MAX_SEGMENTS} segments"
+        )));
+    }
+    for old in query::transcript(b.tx, meeting_id)? {
+        b.apply(Change::new(
+            Entity::TranscriptSegment,
+            &old.id,
+            OpKind::Delete,
+            json!({ "deleted_at": b.now, "updated_at": b.now }),
+        ))?;
+    }
+    for n in segments {
+        let id = client_id(n.id)?;
+        check_speaker(&n.speaker)?;
+        if n.start_ms < 0 || n.end_ms < n.start_ms {
+            return Err(Error::invalid("a segment must end after it starts"));
+        }
+        let text = check_segment_text(&n.text)?;
+        if text.is_empty() {
+            continue;
+        }
+        b.apply(Change::new(
+            Entity::TranscriptSegment,
+            &id,
+            OpKind::Create,
+            json!({
+                "meeting_id": meeting_id,
+                "start_ms": n.start_ms,
+                "end_ms": n.end_ms,
+                "speaker": n.speaker,
+                "text": text,
+                "edited": 0,
+                "created_at": b.now,
+                "updated_at": b.now,
+                "deleted_at": null,
+            }),
+        ))?;
+    }
+    b.apply(Change::new(
+        Entity::Meeting,
+        meeting_id,
+        OpKind::Update,
+        json!({
+            "state": MeetingState::Review.as_str(),
+            "transcribed_at": b.now,
+            "validated_at": null,
+            "speakers": "{}",
+            "updated_at": b.now,
+        }),
+    ))
+}
+
+fn update_segment(b: &mut Batch<'_, '_>, id: &str, changes: Vec<SegmentChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_segment needs at least one change"));
+    }
+    live_segment(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        match change {
+            SegmentChange::Text(text) => {
+                let text = check_segment_text(&text)?;
+                if text.is_empty() {
+                    return Err(Error::invalid(
+                        "a segment cannot be empty; delete it instead",
+                    ));
+                }
+                patch.insert("text".into(), json!(text));
+                patch.insert("edited".into(), json!(1));
+            }
+            SegmentChange::Speaker(speaker) => {
+                check_speaker(&speaker)?;
+                patch.insert("speaker".into(), json!(speaker));
+            }
+        }
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn split_segment(b: &mut Batch<'_, '_>, id: &str, at: u32, new_id: Option<Id>) -> Result<()> {
+    let segment = live_segment(b, id)?;
+    let chars: Vec<char> = segment.text.chars().collect();
+    let at = at as usize;
+    let first: String = chars[..at.min(chars.len())].iter().collect();
+    let second: String = chars[at.min(chars.len())..].iter().collect();
+    let (first, second) = (first.trim(), second.trim());
+    if first.is_empty() || second.is_empty() {
+        return Err(Error::invalid(
+            "split a segment between two words, not at its start or end",
+        ));
+    }
+    let new_id = client_id(new_id)?;
+    let span = segment.end_ms - segment.start_ms;
+    let cut = segment.start_ms + span * at as i64 / chars.len().max(1) as i64;
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        id,
+        OpKind::Update,
+        json!({ "text": first, "end_ms": cut, "edited": 1, "updated_at": b.now }),
+    ))?;
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        &new_id,
+        OpKind::Create,
+        json!({
+            "meeting_id": segment.meeting_id,
+            "start_ms": cut,
+            "end_ms": segment.end_ms,
+            "speaker": segment.speaker,
+            "text": second,
+            "edited": 1,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn delete_segment(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_segment(b, id)?;
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+fn reassign_speaker(b: &mut Batch<'_, '_>, meeting_id: &str, from: &str, to: &str) -> Result<()> {
+    live_meeting(b, meeting_id)?;
+    check_speaker(from)?;
+    check_speaker(to)?;
+    if from == to {
+        return Ok(());
+    }
+    for segment in query::transcript(b.tx, meeting_id)? {
+        if segment.speaker == from {
+            b.apply(Change::new(
+                Entity::TranscriptSegment,
+                &segment.id,
+                OpKind::Update,
+                json!({ "speaker": to, "updated_at": b.now }),
+            ))?;
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------

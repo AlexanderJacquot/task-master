@@ -52,6 +52,7 @@ pub enum EntityKind {
     AgentSession,
     AgentNote,
     Meeting,
+    TranscriptSegment,
 }
 
 /// What an op targets. `TaskTag` rows are links: `entity_id` is the task, the patch holds
@@ -70,6 +71,7 @@ pub(crate) enum Entity {
     AgentSession,
     AgentNote,
     Meeting,
+    TranscriptSegment,
 }
 
 impl Entity {
@@ -87,6 +89,7 @@ impl Entity {
             Self::Attachment => "attachment",
             Self::TimeBlock => "time_block",
             Self::Meeting => "meeting",
+            Self::TranscriptSegment => "transcript_segment",
         }
     }
 
@@ -104,6 +107,7 @@ impl Entity {
             "agent_session" => Self::AgentSession,
             "agent_note" => Self::AgentNote,
             "meeting" => Self::Meeting,
+            "transcript_segment" => Self::TranscriptSegment,
             other => return Err(Error::invalid(format!("unknown op entity '{other}'"))),
         })
     }
@@ -122,6 +126,7 @@ impl Entity {
             Self::AgentSession => "agent_sessions",
             Self::AgentNote => "agent_notes",
             Self::Meeting => "meetings",
+            Self::TranscriptSegment => "transcript_segments",
         }
     }
 
@@ -270,6 +275,19 @@ impl Entity {
                 "summary",
                 "transcribed_at",
                 "validated_at",
+                "speakers",
+                "created_at",
+                "updated_at",
+                "deleted_at",
+            ],
+            Self::TranscriptSegment => &[
+                "id",
+                "meeting_id",
+                "start_ms",
+                "end_ms",
+                "speaker",
+                "text",
+                "edited",
                 "created_at",
                 "updated_at",
                 "deleted_at",
@@ -290,6 +308,7 @@ impl Entity {
             Self::AgentSession => EntityKind::AgentSession,
             Self::AgentNote => EntityKind::AgentNote,
             Self::Meeting => EntityKind::Meeting,
+            Self::TranscriptSegment => EntityKind::TranscriptSegment,
         }
     }
 }

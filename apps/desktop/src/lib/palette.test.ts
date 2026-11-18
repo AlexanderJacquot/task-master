@@ -39,4 +39,14 @@ describe("palette", () => {
     expect(rankItems(items, "photo booth", { searchHits: new Set(["t1"]) })).toHaveLength(1);
     expect(rankItems(items, "photo booth")).toHaveLength(0);
   });
+
+  it("lists meetings after tasks, and transcript lines found by search last", () => {
+    const items = [
+      item("line:l1", "Transcripts", "Ada: the budget is ready"),
+      item("m1", "Meetings", "Budget review"),
+      item("t1", "Tasks", "Budget"),
+    ];
+    const ranked = rankItems(items, "budget", { searchHits: new Set(["t1", "line:l1"]) });
+    expect(ranked.map((r) => r.key)).toEqual(["t1", "m1", "line:l1"]);
+  });
 });

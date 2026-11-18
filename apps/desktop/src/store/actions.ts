@@ -14,6 +14,7 @@ import {
   runToBlocks,
   timerOf,
 } from "../lib/timer";
+import { applySegmentChanges, splitSegment } from "../lib/transcript";
 import type {
   AgentSession,
   Attachment,
@@ -28,6 +29,7 @@ import type {
   Priority,
   Project,
   ProjectChange,
+  SegmentChange,
   Status,
   StatusChange,
   StoredUpload,
@@ -1397,6 +1399,7 @@ export async function createMeeting(
     summary: null,
     transcribed_at: null,
     validated_at: input.state === "validated" ? now : null,
+    speakers: {},
     created_at: now,
     updated_at: now,
     deleted_at: null,
@@ -1442,4 +1445,58 @@ export function deleteMeeting(store: TaskStore, id: string) {
   return s.mutate([{ type: "delete_meeting", id }], {
     remove: { meetings: [id], attachments: files },
   });
+}
+
+// ---------------------------------------------------------------------------------------
+// Transcripts (Scribe, M20)
+
+/** Corrects a line's text or speaker. */
+export function updateSegment(store: TaskStore, id: string, changes: SegmentChange[]) {
+  const s = store.getState();
+  const seg = s.transcript_segments[id];
+  if (!seg || !changes.length) return Promise.resolve(null);
+  const next = applySegmentChanges(seg, changes, Date.now());
+  return s.mutate([{ type: "update_segment", id, changes }], {
+    upsert: { transcript_segments: [next] },
+  });
+}
+
+/** Cuts a line in two at character `at` (between two words). */
+export function splitTranscriptSegment(store: TaskStore, id: string, at: number) {
+  const s = store.getState();
+  const seg = s.transcript_segments[id];
+  if (!seg) return Promise.resolve(null);
+  const now = Date.now();
+  const newId = uuidv7(now);
+  const parts = splitSegment(seg, at, newId, now);
+  if (!parts) return Promise.resolve(null);
+  return s.mutate([{ type: "split_segment", id, at, new_id: newId }], {
+    upsert: { transcript_segments: parts },
+  });
+}
+
+export function deleteSegment(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.transcript_segments[id]) return Promise.resolve(null);
+  return s.mutate([{ type: "delete_segment", id }], { remove: { transcript_segments: [id] } });
+}
+
+/** One voice found as two: every line of `from` goes to `to`. */
+export function reassignSpeaker(store: TaskStore, meetingId: string, from: string, to: string) {
+  const s = store.getState();
+  if (from === to) return Promise.resolve(null);
+  const now = Date.now();
+  const moved = Object.values(s.transcript_segments)
+    .filter((seg) => seg.meeting_id === meetingId && seg.speaker === from)
+    .map((seg) => ({ ...seg, speaker: to, updated_at: now }));
+  return s.mutate([{ type: "reassign_speaker", meeting_id: meetingId, from, to }], {
+    upsert: { transcript_segments: moved },
+  });
+}
+
+/** Names a voice for the whole meeting (a blank name clears it). */
+export function nameSpeaker(store: TaskStore, meetingId: string, speaker: string, name: string) {
+  return updateMeeting(store, meetingId, [
+    { speaker_name: { speaker, name: name.trim() || null } },
+  ]);
 }

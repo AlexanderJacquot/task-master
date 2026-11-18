@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::model::{
     AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, Epic, EpicState, Id, Meeting,
     MeetingState, Priority, Project, ProjectFolder, SessionState, Snapshot, Status, StatusCategory,
-    Tag, Task, TaskOwner, TimeBlock, View,
+    Tag, Task, TaskOwner, TimeBlock, TranscriptSegment, View,
 };
 
 const TASK_COLS: &str = "id, project_id, epic_id, parent_id, status_id, title, description, \
@@ -27,7 +27,10 @@ const ATTACHMENT_COLS: &str =
 
 const MEETING_COLS: &str = "id, title, started_at, ended_at, project_id, epic_id, task_id, \
     state, participants, notes, summary, transcribed_at, validated_at, created_at, updated_at, \
-    deleted_at";
+    deleted_at, speakers";
+
+const SEGMENT_COLS: &str =
+    "id, meeting_id, start_ms, end_ms, speaker, text, edited, created_at, updated_at, deleted_at";
 
 const TIME_BLOCK_COLS: &str =
     "id, task_id, start_at, end_at, outcome, created_at, updated_at, deleted_at";
@@ -173,7 +176,100 @@ fn meeting_row(r: &Row<'_>) -> rusqlite::Result<Meeting> {
         created_at: r.get(13)?,
         updated_at: r.get(14)?,
         deleted_at: r.get(15)?,
+        speakers: {
+            let speakers: String = r.get(16)?;
+            serde_json::from_str(&speakers).map_err(|_| bad_value(16, speakers))?
+        },
     })
+}
+
+fn segment_row(r: &Row<'_>) -> rusqlite::Result<TranscriptSegment> {
+    Ok(TranscriptSegment {
+        id: r.get(0)?,
+        meeting_id: r.get(1)?,
+        start_ms: r.get(2)?,
+        end_ms: r.get(3)?,
+        speaker: r.get(4)?,
+        text: r.get(5)?,
+        edited: r.get(6)?,
+        created_at: r.get(7)?,
+        updated_at: r.get(8)?,
+        deleted_at: r.get(9)?,
+    })
+}
+
+/// One transcript segment, deleted ones included.
+pub(crate) fn segment(conn: &Connection, id: &str) -> Result<TranscriptSegment> {
+    conn.query_row(
+        &format!("SELECT {SEGMENT_COLS} FROM transcript_segments WHERE id = ?1"),
+        [id],
+        segment_row,
+    )
+    .optional()?
+    .ok_or_else(|| Error::not_found("transcript segment", id))
+}
+
+/// A meeting's live transcript, in time order.
+pub(crate) fn transcript(conn: &Connection, meeting_id: &str) -> Result<Vec<TranscriptSegment>> {
+    query(
+        conn,
+        &format!(
+            "SELECT {SEGMENT_COLS} FROM transcript_segments
+             WHERE meeting_id = ?1 AND deleted_at IS NULL
+             ORDER BY start_ms, id"
+        ),
+        &[&meeting_id],
+        segment_row,
+    )
+}
+
+/// A transcript line matching a search.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct TranscriptHit {
+    pub meeting_id: Id,
+    pub segment_id: Id,
+    pub start_ms: i64,
+    pub speaker: String,
+    /// The segment's text with the matches between `[` and `]`, shortened around them.
+    pub snippet: String,
+}
+
+/// Transcript lines of live meetings matching every word of `text`, best first.
+pub(crate) fn search_transcripts(
+    conn: &Connection,
+    text: &str,
+    limit: u32,
+) -> Result<Vec<TranscriptHit>> {
+    let terms: Vec<String> = text
+        .split_whitespace()
+        .map(|word| format!("\"{}\"*", word.replace('"', "\"\"")))
+        .collect();
+    if terms.is_empty() {
+        return Ok(Vec::new());
+    }
+    let fts_query = terms.join(" ");
+    query(
+        conn,
+        "SELECT s.meeting_id, s.id, s.start_ms, s.speaker,
+                snippet(transcript_fts, 0, '[', ']', '…', 16)
+         FROM transcript_fts
+         JOIN transcript_segments s ON s.rowid = transcript_fts.rowid
+         JOIN meetings m ON m.id = s.meeting_id
+         WHERE transcript_fts MATCH ?1 AND s.deleted_at IS NULL AND m.deleted_at IS NULL
+         ORDER BY bm25(transcript_fts), m.started_at DESC, s.start_ms
+         LIMIT ?2",
+        &[&fts_query, &limit],
+        |r| {
+            Ok(TranscriptHit {
+                meeting_id: r.get(0)?,
+                segment_id: r.get(1)?,
+                start_ms: r.get(2)?,
+                speaker: r.get(3)?,
+                snippet: r.get(4)?,
+            })
+        },
+    )
 }
 
 fn time_block_row(r: &Row<'_>) -> rusqlite::Result<TimeBlock> {
