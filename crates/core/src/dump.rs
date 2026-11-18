@@ -35,6 +35,7 @@ pub(crate) const TABLES: &[&str] = &[
     "time_blocks",
     "agent_sessions",
     "agent_notes",
+    "terminal_sessions",
     "ops",
 ];
 

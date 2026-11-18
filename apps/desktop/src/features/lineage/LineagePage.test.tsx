@@ -44,6 +44,7 @@ async function setup(
         agent_notes: [],
         meetings: [],
         transcript_segments: [],
+        terminal_sessions: [],
       };
     },
     undo: async () => null,

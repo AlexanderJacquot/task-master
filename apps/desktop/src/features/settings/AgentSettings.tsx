@@ -212,6 +212,17 @@ export function AgentSettings() {
         Off: an agent can only move its own task and that task's subtasks between statuses. Takes
         effect for sessions started or resumed from now on.
       </p>
+      <Row label="Terminal">
+        <Checkbox
+          checked={draft.import_terminal_sessions}
+          onChange={() => edit({ import_terminal_sessions: !draft.import_terminal_sessions })}
+          label="Count sessions I run in a terminal"
+        />
+        <span className="text-xs text-ink-3">
+          Reads Claude Code's transcripts where agents run every 5 minutes, for the Agents page's
+          cost and time
+        </span>
+      </Row>
       <div className="flex items-start gap-2 text-xs">
         <span className="w-26 shrink-0 pt-1.5 text-ink-3">Directive</span>
         <textarea

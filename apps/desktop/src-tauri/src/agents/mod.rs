@@ -11,6 +11,7 @@ pub mod git;
 pub mod launch;
 pub mod plan;
 pub mod stream;
+pub mod terminal;
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};

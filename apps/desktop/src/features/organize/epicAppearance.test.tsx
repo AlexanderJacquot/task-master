@@ -30,6 +30,7 @@ async function renderEpic(p: Epic) {
         agent_notes: [],
         meetings: [],
         transcript_segments: [],
+        terminal_sessions: [],
         statuses: [],
       } as Changes;
     },

@@ -1349,6 +1349,48 @@ export function removeAgentSession(store: TaskStore, id: string) {
   });
 }
 
+/**
+ * Files a terminal session (M21) under a project and, optionally, one of its tasks; `null`
+ * for no project. A task outside the project is let go.
+ */
+export function setTerminalSessionProject(
+  store: TaskStore,
+  id: string,
+  projectId: string | null,
+  taskId: string | null = null,
+) {
+  const s = store.getState();
+  const session = s.terminal_sessions[id];
+  if (!session) return Promise.resolve(null);
+  const task = taskId ? s.tasks[taskId] : undefined;
+  const keepTask = task && (task.project_id ?? null) === projectId ? task.id : null;
+  return s.mutate(
+    [
+      {
+        type: "update_terminal_session",
+        id,
+        changes: [{ project_id: projectId }, { task_id: keepTask }],
+      },
+    ],
+    {
+      upsert: {
+        terminal_sessions: [
+          { ...session, project_id: projectId, task_id: keepTask, updated_at: Date.now() },
+        ],
+      },
+    },
+  );
+}
+
+/** Leaves a terminal session out of the totals; reading its transcript again does not add it back. */
+export function removeTerminalSession(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.terminal_sessions[id]) return Promise.resolve(null);
+  return s.mutate([{ type: "delete_terminal_session", id }], {
+    remove: { terminal_sessions: [id] },
+  });
+}
+
 /** Takes a block off the calendar (the task stays). */
 export function deleteBlock(store: TaskStore, id: string) {
   const s = store.getState();

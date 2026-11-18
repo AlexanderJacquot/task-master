@@ -16,6 +16,7 @@ import type {
   Status,
   Tag,
   Task,
+  TerminalSession,
   TimeBlock,
   TranscriptSegment,
   View,
@@ -42,6 +43,8 @@ export interface Entities {
   meetings: ById<Meeting>;
   /** Transcript segments of the meetings opened so far (not in the snapshot). */
   transcript_segments: ById<TranscriptSegment>;
+  /** Claude Code sessions run in a terminal, read from their transcripts (M21). */
+  terminal_sessions: ById<TerminalSession>;
 }
 
 /** Local edits shown before the core confirms them. */
@@ -58,6 +61,7 @@ export interface Optimistic {
     agent_sessions?: AgentSession[];
     meetings?: Meeting[];
     transcript_segments?: TranscriptSegment[];
+    terminal_sessions?: TerminalSession[];
   };
   remove?: {
     tasks?: string[];
@@ -71,6 +75,7 @@ export interface Optimistic {
     agent_sessions?: string[];
     meetings?: string[];
     transcript_segments?: string[];
+    terminal_sessions?: string[];
   };
 }
 
@@ -109,7 +114,8 @@ type Kind =
   | "time_blocks"
   | "agent_sessions"
   | "meetings"
-  | "transcript_segments";
+  | "transcript_segments"
+  | "terminal_sessions";
 const KINDS: Kind[] = [
   "tasks",
   "projects",
@@ -122,6 +128,7 @@ const KINDS: Kind[] = [
   "agent_sessions",
   "meetings",
   "transcript_segments",
+  "terminal_sessions",
 ];
 
 /** Statuses are kept as an array in workflow order; every other kind as a map by id. */
@@ -154,6 +161,7 @@ function fromSnapshot(snapshot: Snapshot): Omit<Entities, "transcript_segments">
     time_blocks: byId(snapshot.time_blocks),
     agent_sessions: byId(snapshot.agent_sessions),
     meetings: byId(snapshot.meetings),
+    terminal_sessions: byId(snapshot.terminal_sessions ?? []),
   };
 }
 
@@ -252,6 +260,7 @@ export function createTaskStore(api: Api): TaskStore {
       agent_sessions: {},
       meetings: {},
       transcript_segments: {},
+      terminal_sessions: {},
       agentActivity: {},
       ready: false,
       loadError: null,

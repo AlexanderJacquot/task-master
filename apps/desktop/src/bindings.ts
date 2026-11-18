@@ -162,6 +162,8 @@ export const commands = {
 	 *  UI then hides what needs git). Off the main thread: it starts git up to three times.
 	 */
 	projectGit: (projectId: string) => typedError<GitInfo_Serialize | null, CommandError>(__TAURI_INVOKE("project_git", { projectId })),
+	/**  Reads the terminal sessions now ("Import now" on the Agents page). */
+	scanTerminalSessions: () => typedError<TerminalScan, CommandError>(__TAURI_INVOKE("scan_terminal_sessions")),
 	/**  What recording can do here, and the recording in progress. */
 	scribeStatus: () => typedError<ScribeStatus_Serialize, CommandError>(__TAURI_INVOKE("scribe_status")),
 	/**  Microphones to choose from. */
@@ -426,6 +428,11 @@ export type AgentSettings_Deserialize = {
 	 *  "Send to agent" asks before going over one.
 	 */
 	limits?: SpendLimits_Deserialize,
+	/**
+	 *  Read the Claude Code sessions run in a terminal (their transcripts, where agents
+	 *  run) so their cost and time count on the Agents page (M21, ADR 028).
+	 */
+	import_terminal_sessions?: boolean,
 };
 
 /**  How this device runs Claude Code for agent sessions (ADR 017). */
@@ -466,6 +473,11 @@ export type AgentSettings_Serialize = {
 	 *  "Send to agent" asks before going over one.
 	 */
 	limits: SpendLimits_Serialize,
+	/**
+	 *  Read the Claude Code sessions run in a terminal (their transcripts, where agents
+	 *  run) so their cost and time count on the Agents page (M21, ADR 028).
+	 */
+	import_terminal_sessions: boolean,
 };
 
 /**  What "Send to agent" sends. */
@@ -851,6 +863,7 @@ export type Changes_Deserialize = {
 	meetings: Meeting_Deserialize[],
 	/**  Transcript segments written (Scribe): not in the snapshot, read per meeting. */
 	transcript_segments?: TranscriptSegment_Deserialize[],
+	terminal_sessions?: TerminalSession_Deserialize[],
 };
 
 /**
@@ -874,6 +887,7 @@ export type Changes_Serialize = {
 	meetings: Meeting_Serialize[],
 	/**  Transcript segments written (Scribe): not in the snapshot, read per meeting. */
 	transcript_segments: TranscriptSegment_Serialize[],
+	terminal_sessions: TerminalSession_Serialize[],
 };
 
 /**  Claude Code as found with these settings (not saved). */
@@ -959,7 +973,21 @@ export type Command_Deserialize = { type: "create_task"; task: NewTask_Deseriali
  */
 { type: "split_segment"; id: string; at: number; new_id?: string | null } | { type: "delete_segment"; id: string } | 
 /**  Gives every segment of speaker `from` to `to` (one voice found as two). */
-{ type: "reassign_speaker"; meeting_id: string; from: string; to: string };
+{ type: "reassign_speaker"; meeting_id: string; from: string; to: string } | 
+/**
+ *  Records Claude Code sessions run in a terminal, as read from their transcripts on
+ *  this device (M21, ADR 028): new ones are added with the project whose folder holds
+ *  them, known ones updated; the app's own runs and sessions the user removed are
+ *  skipped. Usually sent with [`crate::Store::execute_without_undo`].
+ */
+{ type: "record_terminal_sessions"; sessions: TerminalSessionRecord_Deserialize[] } | 
+/**  Sets a terminal session's project or task by hand. */
+{ type: "update_terminal_session"; id: string; changes: TerminalSessionChange_Deserialize[] } | 
+/**
+ *  Removes a terminal session from the totals; reading its transcript again does not
+ *  bring it back.
+ */
+{ type: "delete_terminal_session"; id: string };
 
 /**  A user action. Several commands sent together form one undoable batch. */
 export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize } | { type: "update_task"; id: string; changes: TaskChange_Serialize[] } | 
@@ -1027,7 +1055,21 @@ export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize }
  */
 { type: "split_segment"; id: string; at: number; new_id: string | null } | { type: "delete_segment"; id: string } | 
 /**  Gives every segment of speaker `from` to `to` (one voice found as two). */
-{ type: "reassign_speaker"; meeting_id: string; from: string; to: string };
+{ type: "reassign_speaker"; meeting_id: string; from: string; to: string } | 
+/**
+ *  Records Claude Code sessions run in a terminal, as read from their transcripts on
+ *  this device (M21, ADR 028): new ones are added with the project whose folder holds
+ *  them, known ones updated; the app's own runs and sessions the user removed are
+ *  skipped. Usually sent with [`crate::Store::execute_without_undo`].
+ */
+{ type: "record_terminal_sessions"; sessions: TerminalSessionRecord_Serialize[] } | 
+/**  Sets a terminal session's project or task by hand. */
+{ type: "update_terminal_session"; id: string; changes: TerminalSessionChange_Serialize[] } | 
+/**
+ *  Removes a terminal session from the totals; reading its transcript again does not
+ *  bring it back.
+ */
+{ type: "delete_terminal_session"; id: string };
 
 /**  What the settings screen shows: never the secret itself. */
 export type ConfigView = ConfigView_Serialize | ConfigView_Deserialize;
@@ -1073,7 +1115,7 @@ export type DueFilter =
 "none";
 
 /**  Kinds of entity front ends get back in [`crate::Changes`] and events. */
-export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block" | "agent_session" | "agent_note" | "meeting" | "transcript_segment";
+export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block" | "agent_session" | "agent_note" | "meeting" | "transcript_segment" | "terminal_session";
 
 export type EntityRef = {
 	kind: EntityKind,
@@ -2175,6 +2217,8 @@ export type Snapshot_Deserialize = {
 	agent_sessions: AgentSession_Deserialize[],
 	/**  Live meetings, by start. */
 	meetings: Meeting_Deserialize[],
+	/**  Live terminal sessions, every device's, by start. */
+	terminal_sessions?: TerminalSession_Deserialize[],
 };
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
@@ -2193,6 +2237,8 @@ export type Snapshot_Serialize = {
 	agent_sessions: AgentSession_Serialize[],
 	/**  Live meetings, by start. */
 	meetings: Meeting_Serialize[],
+	/**  Live terminal sessions, every device's, by start. */
+	terminal_sessions: TerminalSession_Serialize[],
 };
 
 export type SortBy = 
@@ -2485,6 +2531,131 @@ export type Task_Serialize = {
 	created_at: number,
 	updated_at: number,
 	completed_at: number | null,
+	deleted_at: number | null,
+};
+
+/**  What one scan did. */
+export type TerminalScan = {
+	/**  Transcripts read (new or changed since the last scan). */
+	read: number,
+	/**  Sessions added or updated. */
+	recorded: number,
+};
+
+/**
+ *  A Claude Code session run in a terminal, outside the app (M21, ADR 028), read from the
+ *  transcript Claude Code keeps. Counted with [`AgentSession`]s on the Agents page.
+ */
+export type TerminalSession = TerminalSession_Serialize | TerminalSession_Deserialize;
+
+export type TerminalSessionChange = TerminalSessionChange_Serialize | TerminalSessionChange_Deserialize;
+
+export type TerminalSessionChange_Deserialize = 
+/**  `None` for no project. Folders do not fill it in again once set by hand. */
+({ project_id?: string | null }) & { task_id?: never } | ({ task_id?: string | null }) & { project_id?: never };
+
+export type TerminalSessionChange_Serialize = 
+/**  `None` for no project. Folders do not fill it in again once set by hand. */
+({ project_id: string | null }) & { task_id?: never } | ({ task_id: string | null }) & { project_id?: never };
+
+/**  A terminal session as its transcript reads now. Recording it again updates the row. */
+export type TerminalSessionRecord = TerminalSessionRecord_Serialize | TerminalSessionRecord_Deserialize;
+
+/**  A terminal session as its transcript reads now. Recording it again updates the row. */
+export type TerminalSessionRecord_Deserialize = {
+	/**  Used when the session is new; a fresh one when `None`. */
+	id?: string | null,
+	claude_session_id: string,
+	folder: string,
+	title?: string | null,
+	model?: string | null,
+	started_at: number,
+	ended_at: number,
+	cost_usd_micros?: number | null,
+	duration_ms?: number | null,
+	turns?: number | null,
+};
+
+/**  A terminal session as its transcript reads now. Recording it again updates the row. */
+export type TerminalSessionRecord_Serialize = {
+	/**  Used when the session is new; a fresh one when `None`. */
+	id: string | null,
+	claude_session_id: string,
+	folder: string,
+	title: string | null,
+	model: string | null,
+	started_at: number,
+	ended_at: number,
+	cost_usd_micros: number | null,
+	duration_ms: number | null,
+	turns: number | null,
+};
+
+/**
+ *  A Claude Code session run in a terminal, outside the app (M21, ADR 028), read from the
+ *  transcript Claude Code keeps. Counted with [`AgentSession`]s on the Agents page.
+ */
+export type TerminalSession_Deserialize = {
+	id: string,
+	/**  Claude Code's session id (the transcript's file name). */
+	claude_session_id: string,
+	/**  The device whose transcript it is; only that device records it. */
+	device_id: string,
+	/**  Working directory, as Claude Code saw it. */
+	folder: string,
+	/**  From the folder (the project whose folder holds it), or set by hand. */
+	project_id?: string | null,
+	/**  Set by hand. */
+	task_id?: string | null,
+	/**  Claude Code's title for the conversation. */
+	title?: string | null,
+	/**  The model that wrote most of it. */
+	model?: string | null,
+	started_at: number,
+	/**  The last message so far. */
+	ended_at: number,
+	/**  Claude Code's own total, in millionths of a dollar; `None` when it recorded none. */
+	cost_usd_micros?: number | null,
+	/**  Time Claude worked (its turns), in ms, not the time the session sat open. */
+	duration_ms?: number | null,
+	/**  Requests to the model. */
+	turns?: number | null,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**
+ *  A Claude Code session run in a terminal, outside the app (M21, ADR 028), read from the
+ *  transcript Claude Code keeps. Counted with [`AgentSession`]s on the Agents page.
+ */
+export type TerminalSession_Serialize = {
+	id: string,
+	/**  Claude Code's session id (the transcript's file name). */
+	claude_session_id: string,
+	/**  The device whose transcript it is; only that device records it. */
+	device_id: string,
+	/**  Working directory, as Claude Code saw it. */
+	folder: string,
+	/**  From the folder (the project whose folder holds it), or set by hand. */
+	project_id: string | null,
+	/**  Set by hand. */
+	task_id: string | null,
+	/**  Claude Code's title for the conversation. */
+	title: string | null,
+	/**  The model that wrote most of it. */
+	model: string | null,
+	started_at: number,
+	/**  The last message so far. */
+	ended_at: number,
+	/**  Claude Code's own total, in millionths of a dollar; `None` when it recorded none. */
+	cost_usd_micros: number | null,
+	/**  Time Claude worked (its turns), in ms, not the time the session sat open. */
+	duration_ms: number | null,
+	/**  Requests to the model. */
+	turns: number | null,
+	created_at: number,
+	updated_at: number,
 	deleted_at: number | null,
 };
 

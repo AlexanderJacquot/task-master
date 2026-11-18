@@ -665,6 +665,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             agents::project_folders,
             agents::set_project_folder,
             agents::project_git,
+            agents::terminal::scan_terminal_sessions,
             scribe::scribe_status,
             scribe::scribe_devices,
             scribe::scribe_settings,
@@ -817,6 +818,8 @@ pub fn run() {
 
             // Finished terminal sessions close even across a restart (ADR 017).
             agents::watch_terminals(app.handle());
+            // Claude Code sessions run outside the app count too (M21, ADR 028).
+            agents::terminal::run(app.handle());
 
             // Interrupted recordings are repaired for "keep", cut-short encodings and
             // transcriptions resume; audio past its retention is deleted every hour.

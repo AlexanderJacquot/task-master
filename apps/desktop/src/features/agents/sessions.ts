@@ -44,15 +44,15 @@ export function sortedSessions(sessions: Record<string, AgentSession>): AgentSes
   );
 }
 
-export interface SessionDay {
+export interface SessionDay<T = AgentSession> {
   /** Local calendar date the sessions started on, `YYYY-MM-DD`. */
   day: string;
-  sessions: AgentSession[];
+  sessions: T[];
 }
 
 /** Sessions (sorted newest first) split by the local day they started on. */
-export function sessionsByDay(sessions: AgentSession[]): SessionDay[] {
-  const days: SessionDay[] = [];
+export function sessionsByDay<T extends { started_at: number }>(sessions: T[]): SessionDay<T>[] {
+  const days: SessionDay<T>[] = [];
   for (const s of sessions) {
     const day = isoDate(new Date(s.started_at));
     const last = days[days.length - 1];

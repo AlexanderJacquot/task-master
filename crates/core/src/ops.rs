@@ -53,6 +53,7 @@ pub enum EntityKind {
     AgentNote,
     Meeting,
     TranscriptSegment,
+    TerminalSession,
 }
 
 /// What an op targets. `TaskTag` rows are links: `entity_id` is the task, the patch holds
@@ -72,6 +73,7 @@ pub(crate) enum Entity {
     AgentNote,
     Meeting,
     TranscriptSegment,
+    TerminalSession,
 }
 
 impl Entity {
@@ -90,6 +92,7 @@ impl Entity {
             Self::TimeBlock => "time_block",
             Self::Meeting => "meeting",
             Self::TranscriptSegment => "transcript_segment",
+            Self::TerminalSession => "terminal_session",
         }
     }
 
@@ -108,6 +111,7 @@ impl Entity {
             "agent_note" => Self::AgentNote,
             "meeting" => Self::Meeting,
             "transcript_segment" => Self::TranscriptSegment,
+            "terminal_session" => Self::TerminalSession,
             other => return Err(Error::invalid(format!("unknown op entity '{other}'"))),
         })
     }
@@ -127,6 +131,7 @@ impl Entity {
             Self::AgentNote => "agent_notes",
             Self::Meeting => "meetings",
             Self::TranscriptSegment => "transcript_segments",
+            Self::TerminalSession => "terminal_sessions",
         }
     }
 
@@ -292,6 +297,24 @@ impl Entity {
                 "updated_at",
                 "deleted_at",
             ],
+            Self::TerminalSession => &[
+                "id",
+                "claude_session_id",
+                "device_id",
+                "folder",
+                "project_id",
+                "task_id",
+                "title",
+                "model",
+                "started_at",
+                "ended_at",
+                "cost_usd_micros",
+                "duration_ms",
+                "turns",
+                "created_at",
+                "updated_at",
+                "deleted_at",
+            ],
         }
     }
 
@@ -309,6 +332,7 @@ impl Entity {
             Self::AgentNote => EntityKind::AgentNote,
             Self::Meeting => EntityKind::Meeting,
             Self::TranscriptSegment => EntityKind::TranscriptSegment,
+            Self::TerminalSession => EntityKind::TerminalSession,
         }
     }
 }

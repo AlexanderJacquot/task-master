@@ -16,7 +16,7 @@ import {
   PERMISSION_MODES,
   recentFolders,
 } from "./sessions";
-import { limitStatuses, PERIOD_LABEL } from "./usage";
+import { countedSessions, limitStatuses, PERIOD_LABEL } from "./usage";
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -39,6 +39,7 @@ export function sessionChanges(session: AgentSession): Changes {
     agent_notes: [],
     meetings: [],
     transcript_segments: [],
+    terminal_sessions: [],
   };
 }
 
@@ -55,6 +56,8 @@ export function SendToAgentDialog({
   const store = useTaskStore();
   const sessions = useStoreState((s) => s.agent_sessions);
   const projects = useStoreState((s) => s.projects);
+  const terminalSessions = useStoreState((s) => s.terminal_sessions);
+  const tasks = useStoreState((s) => s.tasks);
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
   const [folder, setFolder] = useState("");
@@ -96,7 +99,13 @@ export function SendToAgentDialog({
   if (!api) return null;
   const recents = settings ? recentFolders(sessions, settings.runtime) : [];
   const projectFolder = folders.find((f) => f.project_id === task.project_id)?.path;
-  const limits = limitStatuses(Object.values(sessions), settings?.limits, Date.now());
+  const counted = countedSessions(
+    Object.values(sessions),
+    Object.values(terminalSessions),
+    tasks,
+    projects,
+  );
+  const limits = limitStatuses(counted, settings?.limits, Date.now());
   const spent = limits.filter((l) => l.over);
   const needsConfirm =
     (mode === "bypassPermissions" && !confirmAll) || (spent.length > 0 && !confirmOver);

@@ -40,6 +40,7 @@ export function fakeAgents(
     directive: null,
     edit_user_tasks: true,
     limits: { day_usd_micros: null, week_usd_micros: null, month_usd_micros: null },
+    import_terminal_sessions: true,
     ...opts.settings,
   };
   let folders = opts.folders ?? [];
@@ -83,6 +84,10 @@ export function fakeAgents(
       calls.push("plan usage");
       if (opts.planUsage instanceof Error) throw opts.planUsage;
       return opts.planUsage ?? { plan: null, windows: [], fetched_at: 1 };
+    },
+    scanTerminal: async () => {
+      calls.push("scan terminal");
+      return { read: 0, recorded: 0 };
     },
     distros: async () => [],
     folders: async () => folders,

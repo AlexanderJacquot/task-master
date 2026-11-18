@@ -4,6 +4,30 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**M21 Terminal sessions** (2026-11-18, branch `m21-terminal-usage`; ADR 028): Claude Code
+sessions run in a terminal, outside the app, now count on the Agents page with the app's
+own agent sessions. Core: migration 17 (`terminal_sessions`, synced and exported),
+`RecordTerminalSessions` (upsert by Claude session id; the app's own runs and removed
+rows skipped; project from this device's project folders, filled in later for a folder
+that gains one unless set by hand), `UpdateTerminalSession` (project, task),
+`DeleteTerminalSession`; `folder_project`. Shell `agents/terminal.rs`: reads
+`<config>/projects/*/*.jsonl` where agents run (WSL through `wslpath -w`), only changed
+files (`terminal-sessions.json` in the data folder), 15 s after start and every 5 min, or
+on demand (IPC `scan_terminal_sessions`). Setting `import_terminal_sessions` (on). Cost is
+Claude Code's own `cost-state` total, time the sum of `turn_duration`. UI: `usage.ts`
+counts both kinds through `Counted`; Agents page "Sessions" filter (all / sent from tasks
+/ run in a terminal), terminal rows in Recent sessions with a project picker and remove,
+"read them now"; spend limits count terminal spend too (Send to agent included); "Inbox"
+is "No project" in the filter and breakdown. Settings → Agents → Terminal. Tests: core
+`tests/terminal_sessions.rs` (7) and `folder_project`; shell `agents::terminal` (5, plus
+an ignored `real_transcripts` that reads this machine's: 219 sessions, $513.53, the same
+as summing `cost-state` directly, 3.7 s in debug); `usage.test.ts`, `agents.test.tsx`
+(terminal sessions). Not tried in the running app nor with WSL from Windows. Schema 17:
+update the sync server with the app. `cargo fmt`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo test --workspace --locked` (with
+`WHISPER_DONT_GENERATE_BINDINGS=1`, see Later), `pnpm biome ci .`, typecheck, `pnpm test`
+(545 passed, 2 skipped) pass.
+
 **Release 0.23.2** (2026-11-18, on `main`; notes `docs/releases/0.23.2.md`): 0.23.1's
 macOS builds failed: tauri-cli builds for macOS 10.13 by default (MACOSX_DEPLOYMENT_TARGET)
 and whisper.cpp needs `std::filesystem` (10.15). `tauri.macos.conf.json` sets
@@ -2145,6 +2169,15 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- Terminal sessions (ADR 028): show them in the MCP (`list_agent_sessions` or their own
+  tool), and on the task page when one is filed under a task.
+- Local Linux/WSL builds of the desktop crate fail without libclang: since 9a84fec the
+  `.cargo/config.toml` comment says whisper-rs-sys falls back to its shipped bindings
+  where libclang is missing, but bindgen panics first ("Unable to find libclang"). Set
+  `WHISPER_DONT_GENERATE_BINDINGS=1` for Linux only (or add libclang to devenv). Check
+  the Linux CI job too.
+- Milestone numbers: the Scribe plan's next step was also called M21 (summary, action
+  items); it becomes M22.
 - Scribe (meetings, docs/meetings-plan.md, ADR 025/026): M18–M20 built; M21 (summary,
   action items, MCP transcript search) to do. After it: a synced contacts list replacing
   free-text participant names (task `01a1d747…`), live captions, Linux capture, voice

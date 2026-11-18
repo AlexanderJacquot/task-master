@@ -2,20 +2,32 @@
 // limits in Settings → Agents. Pure functions of the sessions; periods are local calendar
 // days, weeks (from Monday) and months.
 //
-// A session's cost and working time are running totals over its runs, so the whole
-// session counts in the period it was last active (`updated_at`); a session continued
-// over several days lands on its latest day. Costs arrive when a run ends.
+// Two kinds of session count: the app's own agent sessions, and the Claude Code sessions
+// run in a terminal, read from their transcripts (M21, ADR 028). Both become a `Counted`.
+//
+// A session's cost and working time are running totals, so the whole session counts in
+// the period it was last active; a session continued over several days lands on its
+// latest day. An agent session's cost arrives when a run ends.
 
-import type { AgentSession, SpendLimits, Task } from "../../lib/types";
+import type { AgentSession, SpendLimits, Task, TerminalSession } from "../../lib/types";
 
 export type Period = "day" | "week" | "month";
 export type PeriodFilter = Period | "all";
+/** Where sessions come from: the app (Send to agent) or a terminal. */
+export type Source = "app" | "terminal";
+export type SourceFilter = Source | "all";
 
 export const PERIOD_LABEL: Record<PeriodFilter, string> = {
   day: "Today",
   week: "This week",
   month: "This month",
   all: "All time",
+};
+
+export const SOURCE_LABEL: Record<SourceFilter, string> = {
+  all: "All sessions",
+  app: "Sent from tasks",
+  terminal: "Run in a terminal",
 };
 
 /** Where `period` began, local time, as Unix ms; `null` for all time. */
@@ -35,21 +47,77 @@ export function sessionProject(session: AgentSession, tasks: Record<string, Task
   return task.project_id ?? "inbox";
 }
 
+/**
+ * A terminal session's project id, `"inbox"` for none, `""` for a deleted project.
+ * `projects` holds the live ones.
+ */
+export function terminalProject(
+  session: TerminalSession,
+  projects: Record<string, unknown>,
+): string {
+  if (!session.project_id) return "inbox";
+  return projects[session.project_id] ? session.project_id : "";
+}
+
+/** A session as the totals see it. */
+export interface Counted {
+  id: string;
+  source: Source;
+  /** As `sessionProject` gives it. */
+  project: string;
+  /** When it was last active. */
+  at: number;
+  costMicros: number;
+  durationMs: number;
+  turns: number;
+}
+
+/** Every session that counts, the app's and the terminal's. */
+export function countedSessions(
+  agentSessions: AgentSession[],
+  terminalSessions: TerminalSession[],
+  tasks: Record<string, Task>,
+  projects: Record<string, unknown>,
+): Counted[] {
+  return [
+    ...agentSessions.map(
+      (s): Counted => ({
+        id: s.id,
+        source: "app",
+        project: sessionProject(s, tasks),
+        at: s.updated_at,
+        costMicros: s.cost_usd_micros ?? 0,
+        durationMs: s.duration_ms ?? 0,
+        turns: s.turns ?? 0,
+      }),
+    ),
+    ...terminalSessions.map(
+      (s): Counted => ({
+        id: s.id,
+        source: "terminal",
+        project: terminalProject(s, projects),
+        at: s.ended_at,
+        costMicros: s.cost_usd_micros ?? 0,
+        durationMs: s.duration_ms ?? 0,
+        turns: s.turns ?? 0,
+      }),
+    ),
+  ];
+}
+
 export interface UsageFilter {
   /** A project id, `"inbox"` (no project), or `""` for all. */
   project: string;
   period: PeriodFilter;
+  /** All when absent. */
+  source?: SourceFilter;
 }
 
-export function inFilter(
-  session: AgentSession,
-  tasks: Record<string, Task>,
-  filter: UsageFilter,
-  now: number,
-): boolean {
-  if (filter.project && sessionProject(session, tasks) !== filter.project) return false;
+export function inFilter(session: Counted, filter: UsageFilter, now: number): boolean {
+  if (filter.project && session.project !== filter.project) return false;
+  if (filter.source && filter.source !== "all" && session.source !== filter.source) return false;
   const since = periodStart(filter.period, now);
-  return since === null || session.updated_at >= since;
+  return since === null || session.at >= since;
 }
 
 export interface Usage {
@@ -63,28 +131,22 @@ export interface Usage {
 
 export const NO_USAGE: Usage = { costMicros: 0, durationMs: 0, sessions: 0, turns: 0 };
 
-export function usageOf(sessions: AgentSession[]): Usage {
+export function usageOf(sessions: Counted[]): Usage {
   return sessions.reduce<Usage>(
     (u, s) => ({
-      costMicros: u.costMicros + (s.cost_usd_micros ?? 0),
-      durationMs: u.durationMs + (s.duration_ms ?? 0),
+      costMicros: u.costMicros + s.costMicros,
+      durationMs: u.durationMs + s.durationMs,
       sessions: u.sessions + 1,
-      turns: u.turns + (s.turns ?? 0),
+      turns: u.turns + s.turns,
     }),
     NO_USAGE,
   );
 }
 
-/** Usage per project (`sessionProject` keys), most expensive first. */
-export function usageByProject(
-  sessions: AgentSession[],
-  tasks: Record<string, Task>,
-): Array<{ project: string; usage: Usage }> {
-  const groups = new Map<string, AgentSession[]>();
-  for (const s of sessions) {
-    const key = sessionProject(s, tasks);
-    groups.set(key, [...(groups.get(key) ?? []), s]);
-  }
+/** Usage per project (`Counted.project` keys), most expensive first. */
+export function usageByProject(sessions: Counted[]): Array<{ project: string; usage: Usage }> {
+  const groups = new Map<string, Counted[]>();
+  for (const s of sessions) groups.set(s.project, [...(groups.get(s.project) ?? []), s]);
   return [...groups.entries()]
     .map(([project, list]) => ({ project, usage: usageOf(list) }))
     .sort(
@@ -110,9 +172,12 @@ const LIMIT_FIELD: Record<Period, keyof SpendLimits> = {
   month: "month_usd_micros",
 };
 
-/** Each limit that is set, against what every session (all projects) spent in its period. */
+/**
+ * Each limit that is set, against what every session (all projects, the terminal's too)
+ * spent in its period.
+ */
 export function limitStatuses(
-  sessions: AgentSession[],
+  sessions: Counted[],
   limits: SpendLimits | null | undefined,
   now: number,
 ): LimitStatus[] {
@@ -122,7 +187,7 @@ export function limitStatuses(
     const limitMicros = limits[LIMIT_FIELD[period]];
     if (!limitMicros || limitMicros <= 0) continue;
     const since = periodStart(period, now) ?? 0;
-    const spentMicros = usageOf(sessions.filter((s) => s.updated_at >= since)).costMicros;
+    const spentMicros = usageOf(sessions.filter((s) => s.at >= since)).costMicros;
     const leftMicros = limitMicros - spentMicros;
     out.push({ period, limitMicros, spentMicros, leftMicros, over: leftMicros <= 0 });
   }

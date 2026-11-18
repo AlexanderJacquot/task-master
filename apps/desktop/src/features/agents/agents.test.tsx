@@ -8,7 +8,14 @@ import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore } from "../../store/store";
 import { fakeAgents } from "../../test/fakeAgents";
-import { agentSession, fakeParse, project, snapshot, task } from "../../test/fixtures";
+import {
+  agentSession,
+  fakeParse,
+  project,
+  snapshot,
+  task,
+  terminalSession,
+} from "../../test/fixtures";
 import { pickOption } from "../../test/select";
 import { RESUME_MESSAGE } from "./sessions";
 
@@ -26,6 +33,7 @@ const none = (): Changes => ({
   agent_notes: [],
   meetings: [],
   transcript_segments: [],
+  terminal_sessions: [],
   statuses: [],
 });
 
@@ -368,6 +376,71 @@ it("totals cost and agent time by project and period, and shows what limits leav
   expect(within(recent).getByText("Old run")).toBeTruthy();
   // The limits count every project, whatever the filter.
   expect(limits.textContent).toContain("$6.00 left");
+});
+
+it("counts sessions run in a terminal, filed under a project by hand", async () => {
+  const app = project({ id: "p1", name: "App" });
+  const site = project({ id: "p2", name: "Site" });
+  const a = task({ title: "Fix the login", project_id: app.id });
+  const now = Date.now();
+  const fromTask = agentSession({
+    task_id: a.id,
+    updated_at: now,
+    started_at: now - 60_000,
+    cost_usd_micros: 1_000_000,
+    summary: "Login fixed",
+  });
+  const fromTerminal = terminalSession({
+    title: "Redesign the header",
+    project_id: app.id,
+    started_at: now - 30_000,
+    ended_at: now,
+    cost_usd_micros: 2_500_000,
+    duration_ms: 20 * 60_000,
+  });
+  const { agents, executed } = await renderAt(
+    "/agents",
+    {
+      tasks: [a],
+      projects: [app, site],
+      agent_sessions: [fromTask],
+      terminal_sessions: [fromTerminal],
+    },
+    { settings: { limits: { ...NO_LIMITS, day_usd_micros: 3_000_000 } } },
+  );
+
+  const usage = await screen.findByRole("region", { name: "Usage" });
+  expect(usage.textContent).toContain("$3.50");
+  const recent = screen.getByRole("region", { name: "Recent sessions" });
+  expect(within(recent).getByText("Redesign the header")).toBeTruthy();
+  // A terminal session's spend counts against the limits too.
+  const limits = screen.getByRole("region", { name: "Spend limits" });
+  await waitFor(() => expect(limits.textContent).toContain("Over by $0.50"));
+
+  await pickOption("Sessions", "Run in a terminal");
+  await waitFor(() => expect(usage.textContent).toContain("$2.50"));
+  expect(within(recent).queryByText("Login fixed")).toBeNull();
+
+  await pickOption("Project of “Redesign the header”", "Site");
+  await waitFor(() =>
+    expect(executed.at(-1)).toEqual([
+      {
+        type: "update_terminal_session",
+        id: fromTerminal.id,
+        changes: [{ project_id: site.id }, { task_id: null }],
+      },
+    ]),
+  );
+
+  fireEvent.click(within(usage).getByRole("button", { name: "read them now" }));
+  await waitFor(() => expect(usage.textContent).toContain("Nothing new."));
+  expect(agents.calls).toContain("scan terminal");
+
+  fireEvent.click(
+    within(recent).getByRole("button", { name: "Leave “Redesign the header” out of the totals" }),
+  );
+  await waitFor(() => expect(within(recent).queryByText("Redesign the header")).toBeNull());
+  expect(executed.at(-1)).toEqual([{ type: "delete_terminal_session", id: fromTerminal.id }]);
 });
 
 it("shows the Claude plan's 5-hour and weekly usage, and why it cannot", async () => {

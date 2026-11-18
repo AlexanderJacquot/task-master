@@ -90,6 +90,10 @@ pub struct AgentSettings {
     /// "Send to agent" asks before going over one.
     #[serde(default)]
     pub limits: SpendLimits,
+    /// Read the Claude Code sessions run in a terminal (their transcripts, where agents
+    /// run) so their cost and time count on the Agents page (M21, ADR 028).
+    #[serde(default = "default_true")]
+    pub import_terminal_sessions: bool,
 }
 
 /// Spend limits in millionths of a dollar, over all devices' sessions; none when `None`.
@@ -142,6 +146,7 @@ impl Default for AgentSettings {
             directive: None,
             edit_user_tasks: true,
             limits: SpendLimits::default(),
+            import_terminal_sessions: true,
         }
     }
 }

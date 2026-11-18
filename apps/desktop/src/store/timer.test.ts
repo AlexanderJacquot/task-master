@@ -31,6 +31,7 @@ function setup(tasks: Task[]) {
         agent_notes: [],
         meetings: [],
         transcript_segments: [],
+        terminal_sessions: [],
         statuses: [],
       } as Changes);
     },

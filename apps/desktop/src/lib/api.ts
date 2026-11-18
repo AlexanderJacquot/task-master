@@ -24,6 +24,7 @@ import type {
   Snapshot,
   StoredUpload,
   SyncStatus,
+  TerminalScan,
   TranscriptHit,
   TranscriptSegment,
 } from "./types";
@@ -94,6 +95,8 @@ export interface AgentsApi {
   detect(settings: AgentSettings): Promise<ClaudeCheck>;
   /** The Claude plan's 5-hour and weekly usage, read with Claude Code's sign-in. */
   planUsage(): Promise<PlanUsage>;
+  /** Reads the Claude Code sessions run in a terminal now (their new transcripts). */
+  scanTerminal(): Promise<TerminalScan>;
   /** Installed WSL distributions (empty outside Windows). */
   distros(): Promise<string[]>;
   folders(): Promise<ProjectFolder[]>;
@@ -124,6 +127,7 @@ export const tauriAgents: AgentsApi = {
   saveSettings: (settings) => unwrap(commands.setAgentSettings(settings)),
   detect: (settings) => unwrap(commands.detectClaude(settings)),
   planUsage: () => unwrap(commands.claudePlanUsage()),
+  scanTerminal: () => unwrap(commands.scanTerminalSessions()),
   distros: () => commands.listWslDistros(),
   folders: () => unwrap(commands.projectFolders()),
   setFolder: (projectId, path) => unwrap(commands.setProjectFolder(projectId, path)),
