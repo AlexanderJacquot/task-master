@@ -95,9 +95,11 @@ jobs:
           rustup show active-toolchain || rustup toolchain install
           if [ "$RUNNER_OS" = macOS ]; then rustup target add x86_64-apple-darwin; fi
 
+      # v2: caches from before MACOSX_DEPLOYMENT_TARGET recompile sherpa-onnx-sys without
+      # its build script, whose downloaded libraries rust-cache does not keep.
       - uses: swatinem/rust-cache@v2.9.2
         with:
-          key: native-${{ matrix.platform }}
+          key: native-v2-${{ matrix.platform }}
 
       # `generate_context!` wants the frontend folder; the UI itself is not needed here.
       - name: Frontend placeholder
