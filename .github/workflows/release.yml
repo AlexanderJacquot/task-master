@@ -91,9 +91,9 @@ jobs:
           releaseBody: |
             Scribe records meetings on Windows and macOS (your microphone and the computer's sound) and transcribes them on this device, with the voices told apart: name them, correct the lines, click a time to hear it, then Validate. Settings → Scribe downloads a transcription model once. Audio stays on the device and is deleted some days after the transcript is validated.
 
-            Database schema 16: update desktops and the sync server together. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.23.0.
+            Database schema 16: update desktops and the sync server together. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.23.1.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.23.0/docs/releases/0.23.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.23.1/docs/releases/0.23.1.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

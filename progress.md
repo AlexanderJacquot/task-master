@@ -4,7 +4,19 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**Release 0.23.0** (2026-11-18, on `main`; notes `docs/releases/0.23.0.md`): M19
+**Release 0.23.1** (2026-11-18, on `main`; notes `docs/releases/0.23.1.md`): 0.23.0 was
+tagged but never published: its `native` Windows check failed compiling whisper-rs-sys,
+whose shipped bindings are Linux-shaped. The `native` job had never run on Windows (M19
+was not pushed), and three more things surfaced: (1) `.cargo/config.toml` no longer forces
+the shipped bindings (bindgen with libclang on the Windows/macOS runners, fallback to them
+elsewhere); (2) whisper.cpp is built with the static C runtime like sherpa-onnx
+(`CMAKE_POLICY_DEFAULT_CMP0091=NEW`, `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`, else
+LNK2038); (3) `build.rs` embeds the Common Controls 6 manifest dependency in every
+executable through the linker instead of tauri-build's app-only resource (test
+executables died with STATUS_ENTRYPOINT_NOT_FOUND); (4) the busy-port test runs on Linux
+only (ADR 027). Otherwise the same as 0.23.0:
+
+**Release 0.23.0**: M19
 (recording) and M20 (transcription) merged with 0.22.2's macOS ad-hoc signing. Since that
 signs with the hardened runtime, `src-tauri/entitlements.plist` adds
 `com.apple.security.device.audio-input` (else macOS denies the microphone without asking),

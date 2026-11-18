@@ -731,8 +731,12 @@ mod tests {
     }
 
     #[test]
-    // macOS lets a second socket bind a port another one listens on (ADR 027).
-    #[cfg_attr(target_os = "macos", ignore = "port reuse differs on macOS")]
+    // The stand-in for a reserved port (a connected socket's own port) only refuses a
+    // listener on Linux; macOS and Windows let one bind there (ADR 027).
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "a connected socket's port is not busy here"
+    )]
     fn a_busy_port_nobody_answers_on_is_skipped_at_once() {
         // A connected socket's own port: bound, but nothing listens there, like a port
         // Windows reserved for WSL.

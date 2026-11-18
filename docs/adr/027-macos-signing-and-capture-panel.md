@@ -76,5 +76,5 @@ release-only behaviour on CI builds. `pnpm dev` works.
   `canBecomeKeyWindow`, `canBecomeMainWindow`, a `sendEvent:` override for
   drag-by-background, unused by the capture window), re-check this crate.
 - `server_sync::tests::a_busy_port_nobody_answers_on_is_skipped_at_once` fails on macOS
-  (port reuse differs from Linux and Windows). Since 0.23.0 it is ignored on macOS, where
-  the `native` CI job runs the desktop tests.
+  (port reuse differs from Linux and Windows). Since 0.23.1 it runs on Linux only (Windows
+  lets a listener bind there too), as the `native` CI job runs the desktop tests on both.
