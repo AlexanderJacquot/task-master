@@ -569,6 +569,10 @@ fn show_capture(app: &AppHandle) {
         let _ = window.set_size(tauri::LogicalSize::new(CAPTURE_SIZE.0, CAPTURE_SIZE.1));
         let _ = window.center();
         let _ = window.show();
+        // On macOS the window is a non-activating panel (`taskmaster_macos_panel`): `show`
+        // already makes it key, and `set_focus` would activate the app, which pulls the
+        // user off a full-screen app's Space onto the main window's.
+        #[cfg(not(target_os = "macos"))]
         let _ = window.set_focus();
         let _ = CaptureOpened.emit_to(app, CAPTURE_WINDOW);
     }
@@ -701,6 +705,13 @@ pub fn run() {
             // global hotkeys. `n` inside the app still captures.
             if let Err(err) = app.global_shortcut().register(capture_shortcut()) {
                 eprintln!("quick capture hotkey unavailable: {err}");
+            }
+            // Over full-screen apps and on every Space (ADR 027).
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window(CAPTURE_WINDOW)
+                && let Err(err) = taskmaster_macos_panel::make_panel(&window)
+            {
+                eprintln!("quick capture panel unavailable: {err}");
             }
 
             let config_path = app.path().app_config_dir()?.join(CONFIG_FILE);
@@ -852,6 +863,26 @@ mod tests {
         let mut windows = read("tauri.linux.conf.json")["app"]["windows"].clone();
         let main = windows[0].as_object_mut().unwrap();
         assert_eq!(main.remove("decorations"), Some(serde_json::json!(false)));
+        assert_eq!(windows, base);
+    }
+
+    /// Same for `tauri.macos.conf.json`: the main window keeps its frame but draws its
+    /// content under an overlay title bar, with the traffic lights on the app's own strip.
+    #[test]
+    fn macos_config_only_overlays_the_main_title_bar() {
+        let read = |name: &str| -> serde_json::Value {
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/").to_owned() + name;
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        let base = read("tauri.conf.json")["app"]["windows"].clone();
+        let mut windows = read("tauri.macos.conf.json")["app"]["windows"].clone();
+        let main = windows[0].as_object_mut().unwrap();
+        assert_eq!(
+            main.remove("titleBarStyle"),
+            Some(serde_json::json!("Overlay"))
+        );
+        assert_eq!(main.remove("hiddenTitle"), Some(serde_json::json!(true)));
+        assert!(main.remove("trafficLightPosition").is_some());
         assert_eq!(windows, base);
     }
 

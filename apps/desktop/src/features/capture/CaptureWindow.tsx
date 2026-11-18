@@ -5,6 +5,7 @@ import { DeleteIcon as Trash2, CloseIcon as X } from "../../components/TaskIcons
 import { Button, IconButton } from "../../components/ui";
 import { deleteTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { useFileDrop } from "../shell/useFileDrop";
 import { OpenTaskContext } from "../shell/useOpenTask";
 import { isEditable } from "../shell/useShortcuts";
 import { TaskEditor } from "../task-detail/TaskDetail";
@@ -69,6 +70,9 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
   const editingRef = useRef(editing);
   editingRef.current = editing;
   const task = useStoreState((s) => (editing ? s.tasks[editing] : undefined));
+  // Files dragged from the OS onto the editor's attachments and description. The main
+  // window's shell mounts this too; each window listens to its own webview.
+  useFileDrop();
 
   const hide = () =>
     void controls.hide().then(() => {

@@ -5,7 +5,9 @@
 # tag to Forgejo; the push mirror forwards it here and this builds and publishes the release.
 # Installed apps update from it (ADR 009): update bundles are signed with the key in the
 # TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) secrets and listed in latest.json. The installers
-# themselves are not code-signed (Windows SmartScreen and macOS Gatekeeper warn once).
+# themselves are not code-signed with a vendor certificate (Windows SmartScreen and macOS
+# Gatekeeper warn once). macOS bundles are ad-hoc signed (`tauri.macos.conf.json`, ADR 027)
+# so Apple Silicon does not call them damaged; a Developer ID comes later.
 
 name: release
 
@@ -87,11 +89,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Agents can edit your own tasks through the MCP tools (title, description, priority, prerequisites, status), without closing the task they were sent. Settings → Agents → Let agents edit my tasks turns it off.
+            macOS fixes: the downloaded app opens (ad-hoc signed bundle; the first open still needs Privacy & Security → Open Anyway), quick capture shows over full-screen apps and on every Space, files can be dropped into quick capture, drops land under the pointer on Retina screens, and the window's top is flush with the app's colors.
 
-            No database change (schema 14): syncs with 0.17.1 desktops and servers. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.21.0.
+            No database change (schema 15): syncs with 0.22.x desktops and servers. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.22.2.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.21.0/docs/releases/0.21.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.22.2/docs/releases/0.22.2.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.
@@ -99,6 +101,15 @@ jobs:
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }} --config src-tauri/tauri.updater.conf.json --config src-tauri/tauri.sidecar.conf.json
+
+      # The whole bundle, sidecar included, must carry one valid ad-hoc signature: a broken
+      # seal is what makes Gatekeeper call a downloaded app "damaged" (ADR 027).
+      - name: Check the macOS signature
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          app="target/${{ matrix.target }}/release/bundle/macos/task-master.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -q 'Signature=adhoc'
 
   # Arch Linux package task-master-bin (ADR 018), after the release is published: a failure
   # here leaves the installers and in-app updates untouched. Until the AUR_SSH_PRIVATE_KEY

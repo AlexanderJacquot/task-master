@@ -101,7 +101,8 @@ export function Layout() {
     [openNewTask],
   );
 
-  // Windows and Linux: the frameless main window draws its own title bar (ADR 012).
+  // The main window draws its own title bar strip (ADR 012): frameless on Windows and
+  // Linux, under an overlay title bar on macOS.
   const titleBarStyle = useMemo(customTitleBarStyle, []);
   const windowControls = useMemo(
     () => (titleBarStyle ? tauriWindowControls() : null),

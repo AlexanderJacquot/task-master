@@ -129,6 +129,10 @@ sudo apt install build-essential curl file pkg-config libssl-dev \
   libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
+With [devenv](https://devenv.sh) (Nix), `devenv shell` (or direnv, through `.envrc`)
+provides the pinned Rust toolchain, Node and pnpm instead, and keeps their caches in
+`.devenv/` inside the checkout. On Linux it also brings the WebKitGTK libraries.
+
 Then:
 
 ```sh

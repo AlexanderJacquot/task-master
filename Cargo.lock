@@ -4711,7 +4711,7 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "taskmaster-client"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.3.4",
@@ -4725,7 +4725,7 @@ dependencies = [
 
 [[package]]
 name = "taskmaster-core"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "insta",
  "rusqlite",
@@ -4740,7 +4740,7 @@ dependencies = [
 
 [[package]]
 name = "taskmaster-desktop"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "base64 0.23.1",
  "getrandom 0.3.4",
@@ -4752,6 +4752,7 @@ dependencies = [
  "specta-typescript",
  "taskmaster-client",
  "taskmaster-core",
+ "taskmaster-macos-panel",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -4765,8 +4766,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "taskmaster-macos-panel"
+version = "0.22.2"
+dependencies = [
+ "objc2",
+ "objc2-app-kit",
+ "tauri",
+]
+
+[[package]]
 name = "taskmaster-mcp"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "base64 0.23.1",
  "rmcp",
@@ -4779,7 +4789,7 @@ dependencies = [
 
 [[package]]
 name = "taskmaster-server"
-version = "0.22.1"
+version = "0.22.2"
 dependencies = [
  "axum",
  "futures-util",

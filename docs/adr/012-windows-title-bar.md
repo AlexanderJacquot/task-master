@@ -63,3 +63,19 @@ on close hover, minimize / maximize / close on the right, the KDE and GNOME defa
 Known limits on Linux: the compositor draws no shadow and no rounded corners for a
 frameless window, the window menu (Alt+Space or right-click on the bar) and the user's
 button order and theme from system settings are not followed.
+
+## Amendment (2026-11-18): macOS too
+
+macOS kept its native title bar: a grey strip above the app, unlike Windows and Linux.
+`tauri.macos.conf.json` (which also holds the ad-hoc signing of ADR 027) now gives the main
+window the native **overlay** title bar: `titleBarStyle: "Overlay"`, `hiddenTitle`, and
+`trafficLightPosition` `{14, 14}`, which centers the lights on the 32 px strip. The frame,
+shadow, rounded corners, resize edges and traffic lights stay native, and the webview fills
+the window. The third shell test guards the window list against drift, like the other two.
+
+`titleBarStyleFor` returns `macos` for a Macintosh user agent, and `TitleBar` then draws the
+same drag strip with no buttons of its own (the traffic lights sit on its left). Two macOS
+cases: the folded sidebar (60 px) is narrower than the lights, so over it the strip is all
+canvas rather than have the lights straddle the rail's edge; and in full screen, where macOS
+hides the title bar, the strip goes too (`isFullscreen`, checked on resize). Checked on a
+debug build with the sidebar open and folded; full screen only in unit tests.

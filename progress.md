@@ -4,6 +4,46 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.22.2** (2026-11-18, on `main`; notes `docs/releases/0.22.2.md`): the macOS
+work below (ad-hoc signing, capture panel, file drops, flush title bar) and devenv. No
+migration. `release.yml`'s release body was still 0.21.0's text; now 0.22.2's.
+
+**macOS: ad-hoc signing, capture over full-screen apps, devenv** (2026-11-18, on `main`,
+uncommitted; ADR 027). (1) `src-tauri/tauri.macos.conf.json` ad-hoc signs the bundle
+(`signingIdentity: "-"`, sidecar included), so downloads are no longer "damaged";
+Gatekeeper still asks once (Privacy & Security → Open Anyway). `release.yml` checks the
+signature after each macOS build. Developer ID + notarization: backlog task in task-master
+(project Task Master, epic Development). (2) Quick capture on macOS is a non-activating
+`NSPanel` (status level, all Spaces, full-screen auxiliary), shown with `show()` only (no
+`set_focus`, which activated the app and switched Spaces). The class swap needs unsafe
+code, so it lives in the new workspace crate `crates/macos-panel`
+(`taskmaster-macos-panel`, own lints: unsafe allowed, undocumented unsafe denied; deps
+`objc2` 0.6 / `objc2-app-kit` 0.3, already in the tree). (3) `devenv.nix` / `devenv.yaml` /
+`.envrc`: Rust 1.99.1, Node 24, pnpm via corepack, caches in `.devenv/state` (README).
+Checks run on macOS through devenv: `cargo fmt --check`, `cargo clippy --workspace
+--all-targets -D warnings`, `pnpm biome check`, `pnpm typecheck`, `pnpm test` (519 passed)
+pass; `cargo test --workspace` passes except
+`server_sync::tests::a_busy_port_nobody_answers_on_is_skipped_at_once`, which fails on
+macOS only (port reuse; untouched, CI is Linux). Tried here: a local `--bundles app`
+build is ad-hoc signed with the sidecar and passes the CI signature check (it does not
+launch: built in devenv it links Nix's libiconv, refused under the hardened runtime);
+`pnpm tauri dev` starts with the panel in place (the first version panicked on objc2's
+equal-size assertion; the panel class now mirrors tao's one ivar). Tried by hand
+(dev build): capture shows over a full-screen app and takes the keyboard without leaving
+its Space; the file picker from the capture editor works. (4) Files dragged from the OS:
+the capture window never mounted `useFileDrop` (drops there did nothing on any OS), and on
+macOS wry reports drag positions in points while Tauri calls them physical, so dividing by
+the Retina ratio put every drop at half its place (main window too). `CaptureWindow` now
+mounts the hook; `dropPointToCss` keeps macOS points as they are
+(`useFileDrop.test.ts`). Drag and drop into the capture editor tried by hand: works. (5) macOS title bar flush like
+Windows and Linux (ADR 012 amendment): overlay title bar in `tauri.macos.conf.json`
+(window list repeated, shell test `macos_config_only_overlays_the_main_title_bar`),
+`TitleBar` variant `macos` (no buttons, all canvas over the folded sidebar, hidden in full
+screen). Screenshotted on a debug bundle (computer use): flush, lights centred, sidebar open
+and folded. Full screen not tried live. Tip: a dev binary from `tauri dev` has no bundle, so
+computer use cannot see it; `pnpm tauri build --debug --bundles app` with
+`hardenedRuntime: false` (devenv libiconv) gives one it can drive.
+
 **Docs for the public** (2026-11-17, on `main`, uncommitted): user-facing docs made
 general instead of homelab-specific. `docs/server.md` rewritten (quick start, Compose,
 reverse proxy, generic OIDC with an Authelia example, updating); `docs/mcp.md` remote

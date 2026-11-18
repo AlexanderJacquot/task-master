@@ -1,0 +1,10 @@
+# Development shell for this repository only (https://devenv.sh). `devenv shell`, or
+# direnv with `.envrc`, puts the pinned Rust toolchain, Node and pnpm on PATH.
+inputs:
+  nixpkgs:
+    url: github:cachix/devenv-nixpkgs/rolling
+  rust-overlay:
+    url: github:oxalica/rust-overlay
+    inputs:
+      nixpkgs:
+        follows: nixpkgs

@@ -1,8 +1,10 @@
-// The app's own title bar on Windows and Linux (ADR 012). The main window has no system
-// frame there (`tauri.windows.conf.json`, `tauri.linux.conf.json`), so this strip continues
-// the sidebar and canvas colors to the top edge, drags the window (double-click maximizes,
+// The app's own title bar (ADR 012). On Windows and Linux the main window has no system
+// frame (`tauri.windows.conf.json`, `tauri.linux.conf.json`), so this strip continues the
+// sidebar and canvas colors to the top edge, drags the window (double-click maximizes,
 // snapping still works) and draws the minimize / maximize / close buttons in the system's
-// style. macOS keeps its native title bar and renders nothing here.
+// style. On macOS the window keeps its frame with an overlay title bar
+// (`tauri.macos.conf.json`): the strip is the same, and the native traffic lights sit on
+// it, so it draws no buttons.
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
@@ -14,6 +16,7 @@ export interface WindowControls {
   toggleMaximize(): Promise<void>;
   close(): Promise<void>;
   isMaximized(): Promise<boolean>;
+  isFullscreen(): Promise<boolean>;
   /** Calls `handler` whenever the window is resized (maximize and restore included). */
   onResized(handler: () => void): Promise<() => void>;
 }
@@ -25,34 +28,42 @@ export const tauriWindowControls = (): WindowControls => {
     toggleMaximize: () => win.toggleMaximize(),
     close: () => win.close(),
     isMaximized: () => win.isMaximized(),
+    isFullscreen: () => win.isFullscreen(),
     onResized: (handler) => win.onResized(() => handler()),
   };
 };
 
-/** Which buttons the strip draws: Windows' square ones or Linux desktops' round ones. */
-export type TitleBarStyle = "windows" | "linux";
+/**
+ * Which buttons the strip draws: Windows' square ones, Linux desktops' round ones, or none
+ * on macOS, where the native traffic lights sit on the strip.
+ */
+export type TitleBarStyle = "windows" | "linux" | "macos";
 
-/** The style for a user agent; null where the window keeps its system frame (macOS). */
+/** The style for a user agent; null where the window keeps its system title bar. */
 export function titleBarStyleFor(userAgent: string): TitleBarStyle | null {
   if (userAgent.includes("Windows")) return "windows";
   if (userAgent.includes("Linux") && !userAgent.includes("Android")) return "linux";
+  if (userAgent.includes("Macintosh")) return "macos";
   return null;
 }
 
-/** The title bar style of this window: set in the desktop app's frameless main window. */
+/** The title bar style of this window: set in the desktop app's main window. */
 export function customTitleBarStyle(): TitleBarStyle | null {
   if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) return null;
   if (getCurrentWindow().label !== "main") return null;
   return titleBarStyleFor(navigator.userAgent);
 }
 
-/** True in the Windows and Linux desktop app, where the main window is frameless. */
+/** True in the desktop app's main window, which draws its own title bar strip. */
 export function usesCustomTitleBar(): boolean {
   return customTitleBarStyle() !== null;
 }
 
 /** Height of the strip; the layout leaves this much room at the top. */
 export const TITLE_BAR_HEIGHT = 32;
+
+/** Room the macOS traffic lights take at the strip's left (`trafficLightPosition` + 3 lights). */
+const TRAFFIC_LIGHTS_WIDTH = 80;
 
 // Segoe Fluent Icons (Windows 11) / Segoe MDL2 Assets (Windows 10) glyphs, so the buttons
 // look like every other app's.
@@ -155,16 +166,24 @@ export function TitleBar({
   variant?: TitleBarStyle;
 }) {
   const [maximized, setMaximized] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const [focused, setFocused] = useState(true);
 
   useEffect(() => {
     let live = true;
     let stop: (() => void) | undefined;
-    const refresh = () =>
+    const refresh = () => {
       void controls.isMaximized().then(
         (m) => live && setMaximized(m),
         () => {},
       );
+      // macOS full screen hides the traffic lights and the title bar: so does the strip.
+      if (variant === "macos")
+        void controls.isFullscreen().then(
+          (f) => live && setFullscreen(f),
+          () => {},
+        );
+    };
     refresh();
     controls.onResized(refresh).then(
       (unlisten) => {
@@ -183,7 +202,15 @@ export function TitleBar({
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("blur", onBlur);
     };
-  }, [controls]);
+  }, [controls, variant]);
+
+  if (fullscreen) return null;
+  // The folded sidebar (60 px) is narrower than the traffic lights: rather than have them
+  // straddle its edge, the strip is all canvas there, as in native apps.
+  const sidebarPart =
+    variant === "macos" && typeof sidebarWidth === "number" && sidebarWidth < TRAFFIC_LIGHTS_WIDTH
+      ? 0
+      : sidebarWidth;
 
   return (
     <header
@@ -194,13 +221,15 @@ export function TitleBar({
       )}
       style={{ height: TITLE_BAR_HEIGHT }}
     >
-      {sidebarWidth !== 0 && (
+      {sidebarPart !== 0 && (
         <div
           className="tex-sidebar shrink-0 border-r border-line bg-sidebar"
-          style={{ width: sidebarWidth }}
+          style={{ width: sidebarPart }}
         />
       )}
-      {variant === "linux" ? (
+      {variant === "macos" ? (
+        <div className="min-w-0 flex-1" />
+      ) : variant === "linux" ? (
         <div className="flex min-w-0 flex-1 items-stretch justify-end gap-1.5 pr-2">
           <LinuxButton label="Minimize" icon="minimize" onClick={() => void controls.minimize()} />
           <LinuxButton

@@ -39,5 +39,10 @@ tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
 specta-typescript = "=0.0.13"
 serde = { version = "1", features = ["derive"] }
 
+# Quick capture over full-screen apps: the capture window becomes a non-activating NSPanel
+# (ADR 027). The unsafe AppKit calls live in that crate; this one stays free of unsafe code.
+[target.'cfg(target_os = "macos")'.dependencies]
+taskmaster-macos-panel = { path = "../../../crates/macos-panel" }
+
 [lints]
 workspace = true

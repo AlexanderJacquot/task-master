@@ -50,7 +50,7 @@ fork the project and work on GitHub directly, ignore the mirror and the `.forgej
 
 ## Cutting a release
 
-For v0.22.1, use [the release notes](releases/0.22.1.md). Validate the integrated branch
+For v0.22.2, use [the release notes](releases/0.22.2.md). Validate the integrated branch
 with the same checks as CI before tagging, including `cargo fmt --all -- --check` (v0.16.0
 failed its release build on that check alone and was never published).
 
@@ -63,11 +63,11 @@ together with their desktops.
    and `apps/desktop/package.json` on `main`. The version must grow: the app only offers
    a release newer than itself. Regenerate `Cargo.lock` with `cargo check` so workspace
    package versions match.
-2. `git tag -a v0.22.1 -m … && git push origin v0.22.1`. The mirror forwards the tag to GitHub.
+2. `git tag -a v0.22.2 -m … && git push origin v0.22.2`. The mirror forwards the tag to GitHub.
 3. The tag push starts the *release* workflow on GitHub (it did for v0.2.0 and v0.3.0;
    check `gh run list -R AlexanderJacquot/task-master -L 3`). Only if no run appears,
    start it by hand: `gh workflow run release.yml -R AlexanderJacquot/task-master --ref
-   v0.22.1`. Do not do both: two runs publish to the same release.
+   v0.22.2`. Do not do both: two runs publish to the same release.
 4. On GitHub, the *release* workflow builds Linux (.deb, .AppImage, .rpm), Windows
    (.msi, setup .exe) and macOS (arm64 and x86_64 .dmg), plus signed update bundles and
    `latest.json`, and **publishes** the release (about 30–40 minutes on a cold cache).
@@ -79,5 +79,13 @@ together with their desktops.
    Check for updates. Check that `latest.json` in the release lists `windows-x86_64`,
    `darwin-aarch64`, `darwin-x86_64` and `linux-x86_64`; re-run a failed job otherwise.
 
-Installers are not code-signed: Windows SmartScreen and macOS Gatekeeper warn on the first
-manual install (macOS: right-click → Open). Updates themselves are signed and verified.
+Installers are not signed with a vendor certificate: Windows SmartScreen and macOS
+Gatekeeper warn on the first manual install. Updates themselves are signed and verified.
+
+macOS bundles are **ad-hoc signed** (`tauri.macos.conf.json`, `signingIdentity: "-"`,
+ADR 027), and the release job checks the signature of each `.app`, sidecar included. That
+stops Apple Silicon from calling a downloaded app "damaged". Gatekeeper still blocks
+the first open: open the app once, then System Settings → Privacy & Security → *Open
+Anyway* (or `xattr -dr com.apple.quarantine /Applications/task-master.app`). In-app
+updates are not quarantined and open without asking. A Developer ID certificate and
+notarization would remove the warning; see ADR 027.
