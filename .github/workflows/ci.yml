@@ -83,12 +83,17 @@ jobs:
     runs-on: ${{ matrix.platform }}
     env:
       CARGO_TERM_COLOR: always
+      # What tauri-cli builds the release for (`minimumSystemVersion`): whisper.cpp needs
+      # 10.15. Ignored on Windows.
+      MACOSX_DEPLOYMENT_TARGET: "10.15"
     steps:
       - uses: actions/checkout@v6.1.0
 
       - name: Rust toolchain
         shell: bash
-        run: rustup show active-toolchain || rustup toolchain install
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          if [ "$RUNNER_OS" = macOS ]; then rustup target add x86_64-apple-darwin; fi
 
       - uses: swatinem/rust-cache@v2.9.2
         with:
@@ -104,3 +109,8 @@ jobs:
 
       - name: Rust tests (desktop)
         run: cargo test -p taskmaster-desktop --locked
+
+      # The Intel release is cross-built on this Arm runner: build its native code too.
+      - name: Rust check (desktop, Intel macOS)
+        if: runner.os == 'macOS'
+        run: cargo check -p taskmaster-desktop --locked --target x86_64-apple-darwin

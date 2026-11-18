@@ -66,9 +66,12 @@ crates for this are in the tree yet.
   notarize**. Both are dependencies on Windows and macOS and dev-dependencies elsewhere, so
   Linux CI lints and tests the engines while Linux releases ship without them
   (`scribe_status.transcription` is false there). `.cargo/config.toml` sets
-  `WHISPER_DONT_GENERATE_BINDINGS` (no libclang), a portable AVX2 baseline instead of
-  `-march=native`, and `+crt-static` on Windows (sherpa-onnx's Windows libraries use /MT).
-  GitHub's runners already have cmake; no workflow change was needed.
+  a portable AVX2 baseline instead of `-march=native`, and `+crt-static` on Windows
+  (sherpa-onnx's Windows libraries use /MT).
+  GitHub's runners already have cmake; no workflow change was needed. whisper.cpp uses
+  `std::filesystem`, so the macOS app needs 10.15 or later (`minimumSystemVersion`, 0.23.2).
+  On Windows it is built with the static C runtime (`CMAKE_MSVC_RUNTIME_LIBRARY`) and its
+  bindings are generated with libclang (0.23.1).
 - **Models.** `models.rs` pins URL, size and SHA-256 of whisper `large-v3-turbo` (1.6 GB)
   and `small` (488 MB) from `ggerganov/whisper.cpp`, and of the support files fetched with
   the first one: pyannote segmentation 3.0 and WeSpeaker ResNet34 (sherpa-onnx exports)

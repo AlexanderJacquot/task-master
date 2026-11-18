@@ -4,6 +4,12 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.23.2** (2026-11-18, on `main`; notes `docs/releases/0.23.2.md`): 0.23.1's
+macOS builds failed: tauri-cli builds for macOS 10.13 by default (MACOSX_DEPLOYMENT_TARGET)
+and whisper.cpp needs `std::filesystem` (10.15). `tauri.macos.conf.json` sets
+`minimumSystemVersion` 10.15. The `native` CI job cannot catch this (plain cargo, no
+deployment target). 0.23.1 shipped to Windows and Linux only.
+
 **Release 0.23.1** (2026-11-18, on `main`; notes `docs/releases/0.23.1.md`): 0.23.0 was
 tagged but never published: its `native` Windows check failed compiling whisper-rs-sys,
 whose shipped bindings are Linux-shaped. The `native` job had never run on Windows (M19
