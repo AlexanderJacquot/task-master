@@ -23,6 +23,7 @@ mod query;
 pub mod rank;
 mod store;
 mod sync;
+mod terminal;
 
 pub use agent_workflow::{AgentWorkflow, IN_PROGRESS_STATUS_ID};
 pub use clock::{new_id, now_ms, utc_date};
@@ -44,8 +45,8 @@ pub use model::{
     EpicState, FILTER_NONE, GroupBy, Id, IsoDate, LaneKeys, LanePositions, Layout, LineageArrange,
     LineageCompletion, LineageSpec, Meeting, MeetingState, Priority, Project, ProjectFolder,
     REVIEW_STATUS_ID, SessionState, Snapshot, SortBy, Status, StatusCategory, Swimlane, Tag, Task,
-    TaskOwner, TimeBlock, Timestamp, TranscriptSegment, VIEW_SPEC_VERSION, View, ViewFilter,
-    ViewScope, ViewSpec, review_status,
+    TaskOwner, TerminalSession, TimeBlock, Timestamp, TranscriptSegment, VIEW_SPEC_VERSION, View,
+    ViewFilter, ViewScope, ViewSpec, review_status,
 };
 pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};
@@ -55,6 +56,7 @@ pub use sync::{
     AuthMode, BlobList, IssuedToken, Merged, OidcExchange, OpsPage, PullPage, PushRequest,
     PushResult, ServerInfo, SyncOp,
 };
+pub use terminal::{TerminalSessionChange, TerminalSessionRecord, folder_project};
 
 /// Crate version, reported to adapters for diagnostics.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

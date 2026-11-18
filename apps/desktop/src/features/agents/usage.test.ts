@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { agentSession, task } from "../../test/fixtures";
+import { agentSession, task, terminalSession } from "../../test/fixtures";
 import {
+  countedSessions,
   dollarsText,
   formatReset,
   inFilter,
@@ -9,6 +10,7 @@ import {
   periodStart,
   planTone,
   sessionProject,
+  terminalProject,
   usageByProject,
   usageOf,
 } from "./usage";
@@ -56,41 +58,67 @@ describe("usage", () => {
     cost_usd_micros: 9_000_000,
   });
   const gone = agentSession({ task_id: "deleted", updated_at: at(2026, 11, 10) });
-  const all = [today, monday, lastMonth, gone];
+  // Run in a terminal: counted when it was last active (`ended_at`).
+  const site = terminalSession({
+    project_id: "p1",
+    ended_at: at(2026, 11, 11, 9),
+    cost_usd_micros: 250_000,
+    duration_ms: 30_000,
+    turns: 3,
+  });
+  const loose2 = terminalSession({ project_id: null, ended_at: at(2026, 10, 2) });
+  const orphan = terminalSession({ project_id: "gone", ended_at: at(2026, 11, 10) });
+  const projects = { p1: {} };
+  const all = countedSessions(
+    [today, monday, lastMonth, gone],
+    [site, loose2, orphan],
+    tasks,
+    projects,
+  );
+  const ids = (list: { id: string }[]) => list.map((s) => s.id);
 
-  it("knows each session's project, the inbox, or a deleted task", () => {
+  it("knows each session's project, the inbox, or a deleted task or project", () => {
     expect(sessionProject(today, tasks)).toBe("p1");
     expect(sessionProject(monday, tasks)).toBe("inbox");
     expect(sessionProject(gone, tasks)).toBe("");
+    expect(terminalProject(site, projects)).toBe("p1");
+    expect(terminalProject(loose2, projects)).toBe("inbox");
+    expect(terminalProject(orphan, projects)).toBe("");
   });
 
-  it("filters by project and by when a session was last active", () => {
-    const pick = (project: string, period: "day" | "week" | "month" | "all") =>
-      all.filter((s) => inFilter(s, tasks, { project, period }, NOW)).map((s) => s.id);
-    expect(pick("", "day")).toEqual([today.id]);
-    expect(pick("", "week")).toEqual([today.id, monday.id, gone.id]);
-    expect(pick("p1", "all")).toEqual([today.id, lastMonth.id]);
-    expect(pick("inbox", "month")).toEqual([monday.id]);
+  it("filters by project, source, and when a session was last active", () => {
+    const pick = (
+      project: string,
+      period: "day" | "week" | "month" | "all",
+      source: "all" | "app" | "terminal" = "all",
+    ) => ids(all.filter((s) => inFilter(s, { project, period, source }, NOW)));
+    expect(pick("", "day")).toEqual([today.id, site.id]);
+    expect(pick("", "day", "app")).toEqual([today.id]);
+    expect(pick("", "week", "terminal")).toEqual([site.id, orphan.id]);
+    expect(pick("", "week")).toEqual([today.id, monday.id, gone.id, site.id, orphan.id]);
+    expect(pick("p1", "all")).toEqual([today.id, lastMonth.id, site.id]);
+    expect(pick("inbox", "all")).toEqual([monday.id, loose2.id]);
   });
 
   it("adds up cost, agent time, sessions and turns, counting missing ones as zero", () => {
-    expect(usageOf([today, monday, gone])).toEqual({
-      costMicros: 2_000_000,
-      durationMs: 180_000,
-      sessions: 3,
-      turns: 6,
+    const some = all.filter((s) => [today.id, monday.id, gone.id, site.id].includes(s.id));
+    expect(usageOf(some)).toEqual({
+      costMicros: 2_250_000,
+      durationMs: 210_000,
+      sessions: 4,
+      turns: 9,
     });
   });
 
   it("breaks usage down by project, most expensive first", () => {
-    expect(usageByProject(all, tasks).map((r) => [r.project, r.usage.costMicros])).toEqual([
-      ["p1", 10_500_000],
+    expect(usageByProject(all).map((r) => [r.project, r.usage.costMicros])).toEqual([
+      ["p1", 10_750_000],
       ["inbox", 500_000],
       ["", 0],
     ]);
   });
 
-  it("shows each set limit against all projects' spend in its period", () => {
+  it("shows each set limit against all projects' spend in its period, terminal too", () => {
     const limits = {
       day_usd_micros: 1_000_000,
       week_usd_micros: null,
@@ -100,15 +128,15 @@ describe("usage", () => {
       {
         period: "day",
         limitMicros: 1_000_000,
-        spentMicros: 1_500_000,
-        leftMicros: -500_000,
+        spentMicros: 1_750_000,
+        leftMicros: -750_000,
         over: true,
       },
       {
         period: "month",
         limitMicros: 5_000_000,
-        spentMicros: 2_000_000,
-        leftMicros: 3_000_000,
+        spentMicros: 2_250_000,
+        leftMicros: 2_750_000,
         over: false,
       },
     ]);

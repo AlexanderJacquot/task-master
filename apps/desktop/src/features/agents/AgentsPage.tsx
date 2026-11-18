@@ -2,17 +2,31 @@
 // sign-in, refreshed every 5 minutes while open); what agents cost and how long they
 // worked, against the spend limits;
 // what they are doing and did; and the agents' own tasks, kept apart from the user's views.
-// Filtered by project and period. Lists are capped (50 sessions, 100 tasks), so none is
+// Claude Code sessions run in a terminal count too (M21, ADR 028): read from their
+// transcripts, filed under a project by folder or by hand. Filtered by project, period and
+// where sessions come from. Lists are capped (50 sessions, 100 tasks), so none is
 // virtualized.
 
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AgentsIcon as Bot, StopIcon } from "../../components/TaskIcons";
+import { AgentsIcon as Bot, CloseIcon, StopIcon } from "../../components/TaskIcons";
 import { cx, FOCUS, IconButton, SectionLabel, Select, TaskCheck } from "../../components/ui";
 import { formatAgo, isoDate } from "../../lib/dates";
-import type { AgentSession, PlanUsage, Project, SpendLimits, Task } from "../../lib/types";
+import type {
+  AgentSession,
+  PlanUsage,
+  Project,
+  SpendLimits,
+  Task,
+  TerminalSession,
+} from "../../lib/types";
 import { isOpen } from "../../lib/views";
-import { adoptTask, toggleDone } from "../../store/actions";
+import {
+  adoptTask,
+  removeTerminalSession,
+  setTerminalSessionProject,
+  toggleDone,
+} from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { useNow } from "../calendar/TimeGrid";
 import { EpicMark } from "../organize/EpicMark";
@@ -30,6 +44,7 @@ import {
   sortedSessions,
 } from "./sessions";
 import {
+  countedSessions,
   formatReset,
   inFilter,
   type LimitStatus,
@@ -37,6 +52,8 @@ import {
   PERIOD_LABEL,
   type PeriodFilter,
   planTone,
+  SOURCE_LABEL,
+  type SourceFilter,
   sessionProject,
   type UsageFilter,
   usageByProject,
@@ -47,15 +64,23 @@ const MAX_SESSIONS = 50;
 const MAX_TASKS = 100;
 const FILTER_KEY = "task-master.agents.filter";
 const panel = "rounded-xl border border-line bg-raised p-4";
+/** The project filter's name for sessions without a project. */
+const NO_PROJECT = "No project";
+
+/** A finished session in the Recent list: the app's own, or one run in a terminal. */
+type Recent =
+  | { kind: "app"; session: AgentSession; started_at: number }
+  | { kind: "terminal"; session: TerminalSession; started_at: number };
 
 function loadFilter(): UsageFilter {
   try {
     const saved = JSON.parse(localStorage.getItem(FILTER_KEY) ?? "{}") as Partial<UsageFilter>;
     const period =
       saved.period && Object.hasOwn(PERIOD_LABEL, saved.period) ? saved.period : "month";
-    return { project: typeof saved.project === "string" ? saved.project : "", period };
+    const source = saved.source && Object.hasOwn(SOURCE_LABEL, saved.source) ? saved.source : "all";
+    return { project: typeof saved.project === "string" ? saved.project : "", period, source };
   } catch {
-    return { project: "", period: "month" };
+    return { project: "", period: "month", source: "all" };
   }
 }
 
@@ -79,6 +104,7 @@ function useLimits(): SpendLimits | null {
 
 export function AgentsPage() {
   const sessions = useStoreState((s) => s.agent_sessions);
+  const terminal = useStoreState((s) => s.terminal_sessions);
   const tasks = useStoreState((s) => s.tasks);
   const projects = useStoreState((s) => s.projects);
   const statuses = useStoreState((s) => s.statuses);
@@ -104,17 +130,28 @@ export function AgentsPage() {
     .sort((a, b) => a.name.localeCompare(b.name));
   // A focused project that was deleted falls back to all.
   const project = filter.project === "inbox" || projects[filter.project] ? filter.project : "";
-  const view = { ...filter, project };
+  const source = filter.source ?? "all";
+  const view = { ...filter, project, source };
 
   const all = sortedSessions(sessions);
+  const everything = countedSessions(all, Object.values(terminal), tasks, projects);
+  const counted = everything.filter((c) => inFilter(c, view, now));
+  const countedIds = new Set(counted.map((c) => c.id));
+  const showApp = source !== "terminal";
   const inProject = all.filter((s) => !project || sessionProject(s, tasks) === project);
-  const active = inProject.filter(isActive);
-  const ended = inProject.filter((s) => !isActive(s) && inFilter(s, tasks, view, now));
+  const active = showApp ? inProject.filter(isActive) : [];
+  const ended: Recent[] = [
+    ...all
+      .filter((s) => !isActive(s) && countedIds.has(s.id))
+      .map((session): Recent => ({ kind: "app", session, started_at: session.started_at })),
+    ...Object.values(terminal)
+      .filter((t) => countedIds.has(t.id))
+      .map((session): Recent => ({ kind: "terminal", session, started_at: session.started_at })),
+  ].sort((a, b) => b.started_at - a.started_at);
   const recent = ended.slice(0, MAX_SESSIONS);
-  const counted = all.filter((s) => inFilter(s, tasks, view, now));
   const usage = usageOf(counted);
-  const byProject = project ? [] : usageByProject(counted, tasks);
-  const meters = limitStatuses(all, limits, now);
+  const byProject = project ? [] : usageByProject(counted);
+  const meters = limitStatuses(everything, limits, now);
 
   // Agent tasks under the user's task they belong to (the nearest non-agent ancestor).
   const { groups, totalTasks } = useMemo(() => {
@@ -167,9 +204,21 @@ export function AgentsPage() {
               onValueChange={(p) => setFilter({ project: p })}
               options={[
                 { value: "", label: "All projects" },
-                { value: "inbox", label: "Inbox" },
+                { value: "inbox", label: NO_PROJECT },
                 ...projectOptions.map((p) => ({ value: p.id, label: p.name })),
               ]}
+            />
+          </div>
+          <div className="text-xs text-ink-3">
+            Sessions
+            <Select
+              aria-label="Sessions"
+              value={source}
+              onValueChange={(s) => setFilter({ source: s as SourceFilter })}
+              options={(Object.keys(SOURCE_LABEL) as SourceFilter[]).map((s) => ({
+                value: s,
+                label: SOURCE_LABEL[s],
+              }))}
             />
           </div>
           <div className="text-xs text-ink-3">
@@ -212,8 +261,9 @@ export function AgentsPage() {
         </div>
         <p className="text-xs text-ink-3">
           {PERIOD_LABEL[view.period]}
-          {project && `, ${project === "inbox" ? "Inbox" : projects[project]?.name}`}. A session
-          counts when it was last active; its cost arrives when a run ends.
+          {project && `, ${project === "inbox" ? NO_PROJECT : projects[project]?.name}`}
+          {source !== "all" && `, ${SOURCE_LABEL[source].toLowerCase()}`}. A session counts when it
+          was last active; its cost arrives when a run ends. <ScanTerminal />
         </p>
       </section>
 
@@ -249,7 +299,9 @@ export function AgentsPage() {
         ) : (
           sessionsByDay(recent).map(({ day, sessions: list }) => {
             const label = formatDayHeading(day, isoDate(new Date(now)));
-            const spent = formatCost(usageOf(list).costMicros);
+            const spent = formatCost(
+              list.reduce((sum, item) => sum + (item.session.cost_usd_micros ?? 0), 0),
+            );
             return (
               <div key={day} className="flex flex-col gap-1">
                 <h3 className="mt-1 flex items-center gap-3 px-2 text-xs text-ink-3">
@@ -261,15 +313,19 @@ export function AgentsPage() {
                   </span>
                 </h3>
                 <ul aria-label={label} className="flex flex-col gap-1">
-                  {list.map((s) => (
-                    <SessionRow
-                      key={s.id}
-                      session={s}
-                      task={tasks[s.task_id]}
-                      showProject={!project}
-                      timeOfDay
-                    />
-                  ))}
+                  {list.map((item) =>
+                    item.kind === "app" ? (
+                      <SessionRow
+                        key={item.session.id}
+                        session={item.session}
+                        task={tasks[item.session.task_id]}
+                        showProject={!project}
+                        timeOfDay
+                      />
+                    ) : (
+                      <TerminalRow key={item.session.id} session={item.session} />
+                    ),
+                  )}
                 </ul>
               </div>
             );
@@ -277,7 +333,8 @@ export function AgentsPage() {
         )}
         {ended.length > MAX_SESSIONS && (
           <p className="text-xs text-ink-3">
-            The latest {MAX_SESSIONS} of {ended.length}; older ones stay on their tasks.
+            The latest {MAX_SESSIONS} of {ended.length}; older ones stay on their tasks, and the
+            totals above count them all.
           </p>
         )}
       </section>
@@ -493,7 +550,11 @@ function ProjectBreakdown({
 }) {
   const max = Math.max(1, ...rows.map((r) => r.usage.costMicros));
   const name = (id: string) =>
-    id === "inbox" ? "Inbox" : id ? (projects[id]?.name ?? "A deleted project") : "Deleted tasks";
+    id === "inbox"
+      ? NO_PROJECT
+      : id
+        ? (projects[id]?.name ?? "A deleted project")
+        : "Deleted tasks and projects";
   return (
     <section aria-label="By project" className="mb-7 flex flex-col gap-2">
       <SectionLabel>By project</SectionLabel>
@@ -645,6 +706,116 @@ function SessionRow({
           <StopIcon size={14} />
         </IconButton>
       )}
+    </li>
+  );
+}
+
+/** Reads the terminal sessions now, instead of waiting for the next scan (every 5 min). */
+function ScanTerminal() {
+  const api = useApi().agents;
+  const [state, setState] = useState<{ busy: boolean; note: string | null }>({
+    busy: false,
+    note: null,
+  });
+  if (!api) return null;
+  const scan = async () => {
+    setState({ busy: true, note: null });
+    try {
+      const r = await api.scanTerminal();
+      setState({
+        busy: false,
+        note: r.recorded
+          ? `${r.recorded} ${r.recorded === 1 ? "session" : "sessions"} updated.`
+          : "Nothing new.",
+      });
+    } catch (e) {
+      setState({ busy: false, note: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  return (
+    <>
+      Sessions run in a terminal are read from Claude Code's transcripts{" "}
+      <button
+        type="button"
+        disabled={state.busy}
+        onClick={() => void scan()}
+        className={`rounded text-accent enabled:hover:underline disabled:opacity-60 ${FOCUS}`}
+      >
+        {state.busy ? "reading…" : "read them now"}
+      </button>
+      .{state.note && ` ${state.note}`}
+    </>
+  );
+}
+
+/**
+ * A Claude Code session run in a terminal: its title, a project to file it under (from
+ * its folder until changed here), and what it cost.
+ */
+function TerminalRow({ session }: { session: TerminalSession }) {
+  const store = useTaskStore();
+  const openTask = useOpenTask();
+  const projects = useStoreState((s) => s.projects);
+  const tasks = useStoreState((s) => s.tasks);
+  const task = session.task_id ? tasks[session.task_id] : undefined;
+  const options = [
+    { value: "", label: NO_PROJECT },
+    ...Object.values(projects)
+      .filter((p) => !p.deleted_at)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((p) => ({ value: p.id, label: p.name })),
+  ];
+  const started = new Date(session.started_at).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const cost = formatCost(session.cost_usd_micros);
+  const worked = session.duration_ms ? formatDuration(session.duration_ms) : null;
+  const title = session.title ?? "Untitled session";
+  return (
+    <li className="group flex items-center gap-3 rounded-lg px-2 py-1.5 text-[13px] hover:bg-hover">
+      <span className="w-24 shrink-0 rounded-md bg-hover px-1.5 text-center text-[12px] leading-5 text-ink-2">
+        Terminal
+      </span>
+      <span className="w-64 shrink-0 truncate text-ink" title={title}>
+        {title}
+      </span>
+      <span className="w-52 shrink-0 text-xs">
+        <Select
+          aria-label={`Project of “${title}”`}
+          value={session.project_id && projects[session.project_id] ? session.project_id : ""}
+          onValueChange={(p) =>
+            void setTerminalSessionProject(store, session.id, p || null, session.task_id)
+          }
+          options={options}
+        />
+      </span>
+      <span className="min-w-0 flex-1 truncate text-ink-3">
+        {task ? (
+          <button
+            type="button"
+            onClick={() => openTask(task.id)}
+            className="truncate hover:underline"
+            title={task.title}
+          >
+            {task.title}
+          </button>
+        ) : (
+          (session.model ?? "")
+        )}
+      </span>
+      <span className="shrink-0 text-xs text-ink-3 tabular-nums" title={session.folder}>
+        {folderName(session.folder)} · {started}
+        {worked && ` · ${worked}`}
+        {cost && ` · ${cost}`}
+      </span>
+      <IconButton
+        label={`Leave “${title}” out of the totals`}
+        onClick={() => void removeTerminalSession(store, session.id)}
+        className="opacity-0 group-hover:opacity-100 focus:opacity-100"
+      >
+        <CloseIcon size={14} />
+      </IconButton>
     </li>
   );
 }

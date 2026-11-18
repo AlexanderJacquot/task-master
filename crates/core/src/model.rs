@@ -451,6 +451,40 @@ impl AgentRuntime {
     }
 }
 
+/// A Claude Code session run in a terminal, outside the app (M21, ADR 028), read from the
+/// transcript Claude Code keeps. Counted with [`AgentSession`]s on the Agents page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct TerminalSession {
+    pub id: Id,
+    /// Claude Code's session id (the transcript's file name).
+    pub claude_session_id: String,
+    /// The device whose transcript it is; only that device records it.
+    pub device_id: String,
+    /// Working directory, as Claude Code saw it.
+    pub folder: String,
+    /// From the folder (the project whose folder holds it), or set by hand.
+    pub project_id: Option<Id>,
+    /// Set by hand.
+    pub task_id: Option<Id>,
+    /// Claude Code's title for the conversation.
+    pub title: Option<String>,
+    /// The model that wrote most of it.
+    pub model: Option<String>,
+    pub started_at: Timestamp,
+    /// The last message so far.
+    pub ended_at: Timestamp,
+    /// Claude Code's own total, in millionths of a dollar; `None` when it recorded none.
+    pub cost_usd_micros: Option<i64>,
+    /// Time Claude worked (its turns), in ms, not the time the session sat open.
+    pub duration_ms: Option<i64>,
+    /// Requests to the model.
+    pub turns: Option<i64>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
 /// Where an [`AgentSession`] is.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -801,4 +835,7 @@ pub struct Snapshot {
     pub agent_sessions: Vec<AgentSession>,
     /// Live meetings, by start.
     pub meetings: Vec<Meeting>,
+    /// Live terminal sessions, every device's, by start.
+    #[serde(default)]
+    pub terminal_sessions: Vec<TerminalSession>,
 }

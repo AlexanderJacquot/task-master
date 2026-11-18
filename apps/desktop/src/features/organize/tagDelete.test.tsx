@@ -41,6 +41,7 @@ async function renderAt(path: string) {
         agent_notes: [],
         meetings: [],
         transcript_segments: [],
+        terminal_sessions: [],
         statuses: [],
       } as Changes;
     },

@@ -40,6 +40,7 @@ const empty: Changes = {
   agent_notes: [],
   meetings: [],
   transcript_segments: [],
+  terminal_sessions: [],
 };
 const api: Api = {
   snapshot: async () => snap,

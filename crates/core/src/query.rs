@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::model::{
     AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, Epic, EpicState, Id, Meeting,
     MeetingState, Priority, Project, ProjectFolder, SessionState, Snapshot, Status, StatusCategory,
-    Tag, Task, TaskOwner, TimeBlock, TranscriptSegment, View,
+    Tag, Task, TaskOwner, TerminalSession, TimeBlock, TranscriptSegment, View,
 };
 
 const TASK_COLS: &str = "id, project_id, epic_id, parent_id, status_id, title, description, \
@@ -323,6 +323,73 @@ fn note_row(r: &Row<'_>) -> rusqlite::Result<AgentNote> {
         updated_at: r.get(5)?,
         deleted_at: r.get(6)?,
     })
+}
+
+const TERMINAL_COLS: &str = "id, claude_session_id, device_id, folder, project_id, task_id, \
+    title, model, started_at, ended_at, cost_usd_micros, duration_ms, turns, created_at, \
+    updated_at, deleted_at";
+
+fn terminal_row(r: &Row<'_>) -> rusqlite::Result<TerminalSession> {
+    Ok(TerminalSession {
+        id: r.get(0)?,
+        claude_session_id: r.get(1)?,
+        device_id: r.get(2)?,
+        folder: r.get(3)?,
+        project_id: r.get(4)?,
+        task_id: r.get(5)?,
+        title: r.get(6)?,
+        model: r.get(7)?,
+        started_at: r.get(8)?,
+        ended_at: r.get(9)?,
+        cost_usd_micros: r.get(10)?,
+        duration_ms: r.get(11)?,
+        turns: r.get(12)?,
+        created_at: r.get(13)?,
+        updated_at: r.get(14)?,
+        deleted_at: r.get(15)?,
+    })
+}
+
+/// Any terminal session, including soft-deleted ones.
+pub(crate) fn terminal_session(conn: &Connection, id: &str) -> Result<TerminalSession> {
+    conn.query_row(
+        &format!("SELECT {TERMINAL_COLS} FROM terminal_sessions WHERE id = ?1"),
+        [id],
+        terminal_row,
+    )
+    .optional()?
+    .ok_or_else(|| Error::not_found("terminal session", id))
+}
+
+/// The terminal session recorded for a Claude Code session, deleted or not (the oldest
+/// row, should two devices have recorded it).
+pub(crate) fn terminal_session_by_claude_id(
+    conn: &Connection,
+    claude_session_id: &str,
+) -> Result<Option<TerminalSession>> {
+    Ok(conn
+        .query_row(
+            &format!(
+                "SELECT {TERMINAL_COLS} FROM terminal_sessions WHERE claude_session_id = ?1
+                 ORDER BY created_at, id LIMIT 1"
+            ),
+            [claude_session_id],
+            terminal_row,
+        )
+        .optional()?)
+}
+
+/// Live terminal sessions, by start.
+pub(crate) fn terminal_sessions(conn: &Connection) -> Result<Vec<TerminalSession>> {
+    query(
+        conn,
+        &format!(
+            "SELECT {TERMINAL_COLS} FROM terminal_sessions WHERE deleted_at IS NULL
+             ORDER BY started_at, id"
+        ),
+        &[],
+        terminal_row,
+    )
 }
 
 /// Any agent session, including soft-deleted ones.
@@ -651,6 +718,7 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
             session_row,
         )?,
         meetings: meetings(conn, None)?,
+        terminal_sessions: terminal_sessions(conn)?,
     })
 }
 

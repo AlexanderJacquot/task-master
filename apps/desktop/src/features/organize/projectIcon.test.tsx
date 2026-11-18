@@ -30,6 +30,7 @@ async function renderProject(p: Project) {
         agent_notes: [],
         meetings: [],
         transcript_segments: [],
+        terminal_sessions: [],
         statuses: [],
       } as Changes;
     },

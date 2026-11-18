@@ -17,6 +17,7 @@ import type {
   Snapshot,
   Status,
   Task,
+  TerminalSession,
   TimeBlock,
 } from "../lib/types";
 
@@ -212,6 +213,30 @@ export function agentSession(overrides: Partial<AgentSession> = {}): AgentSessio
   };
 }
 
+/** A Claude Code session run in a terminal (M21), without a project unless given one. */
+export function terminalSession(overrides: Partial<TerminalSession> = {}): TerminalSession {
+  counter += 1;
+  return {
+    id: `ts${counter}`,
+    claude_session_id: `tc${counter}`,
+    device_id: "this-device",
+    folder: "/home/me/code/site",
+    project_id: null,
+    task_id: null,
+    title: `Terminal session ${counter}`,
+    model: "claude-opus-5-5",
+    started_at: 1_000 + counter,
+    ended_at: 61_000 + counter,
+    cost_usd_micros: null,
+    duration_ms: null,
+    turns: null,
+    created_at: counter,
+    updated_at: counter,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
 /** A held meeting of one hour, 2026-11-05 10:00 local unless overridden. */
 export function meeting(overrides: Partial<Meeting> = {}): Meeting {
   counter += 1;
@@ -250,6 +275,7 @@ export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     time_blocks: [],
     agent_sessions: [],
     meetings: [],
+    terminal_sessions: [],
     ...overrides,
   };
 }

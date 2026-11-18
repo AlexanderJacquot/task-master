@@ -28,6 +28,7 @@ const MIGRATIONS: &[M<'static>] = &[
     M::up(include_str!("../migrations/0014_block_missed.sql")),
     M::up(include_str!("../migrations/0015_meetings.sql")),
     M::up(include_str!("../migrations/0016_transcripts.sql")),
+    M::up(include_str!("../migrations/0017_terminal_sessions.sql")),
 ];
 
 pub(crate) fn migrations() -> Migrations<'static> {

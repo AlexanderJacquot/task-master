@@ -190,6 +190,23 @@ pub enum Command {
         from: String,
         to: String,
     },
+    /// Records Claude Code sessions run in a terminal, as read from their transcripts on
+    /// this device (M21, ADR 028): new ones are added with the project whose folder holds
+    /// them, known ones updated; the app's own runs and sessions the user removed are
+    /// skipped. Usually sent with [`crate::Store::execute_without_undo`].
+    RecordTerminalSessions {
+        sessions: Vec<crate::terminal::TerminalSessionRecord>,
+    },
+    /// Sets a terminal session's project or task by hand.
+    UpdateTerminalSession {
+        id: Id,
+        changes: Vec<crate::terminal::TerminalSessionChange>,
+    },
+    /// Removes a terminal session from the totals; reading its transcript again does not
+    /// bring it back.
+    DeleteTerminalSession {
+        id: Id,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -585,6 +602,9 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
             from,
             to,
         } => reassign_speaker(b, &meeting_id, &from, &to),
+        Command::RecordTerminalSessions { sessions } => crate::terminal::record(b, sessions),
+        Command::UpdateTerminalSession { id, changes } => crate::terminal::update(b, &id, changes),
+        Command::DeleteTerminalSession { id } => crate::terminal::delete(b, &id),
     }
 }
 
