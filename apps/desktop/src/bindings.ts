@@ -309,9 +309,19 @@ export type AgentSession = AgentSession_Serialize | AgentSession_Deserialize;
 
 export type AgentSessionChange = AgentSessionChange_Serialize | AgentSessionChange_Deserialize;
 
-export type AgentSessionChange_Deserialize = ({ state: SessionState }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; summary?: never; turns?: never } | ({ summary?: string | null }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros?: number | null }) & { duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ turns?: number | null }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never } | ({ duration_ms?: number | null }) & { cost_usd_micros?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ error?: string | null }) & { cost_usd_micros?: never; duration_ms?: never; state?: never; summary?: never; turns?: never };
+export type AgentSessionChange_Deserialize = ({ state: SessionState }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; summary?: never; turns?: never } | ({ summary?: string | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros?: number | null }) & { claude_session_id?: never; duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ turns?: number | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never } | ({ duration_ms?: number | null }) & { claude_session_id?: never; cost_usd_micros?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ error?: string | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; state?: never; summary?: never; turns?: never } | 
+/**
+ *  The conversation's own id, once known: a session opened in the desktop app gets
+ *  one there, not from the app (M22).
+ */
+({ claude_session_id: string }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never };
 
-export type AgentSessionChange_Serialize = ({ state: SessionState }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; summary?: never; turns?: never } | ({ summary: string | null }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros: number | null }) & { duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ turns: number | null }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never } | ({ duration_ms: number | null }) & { cost_usd_micros?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ error: string | null }) & { cost_usd_micros?: never; duration_ms?: never; state?: never; summary?: never; turns?: never };
+export type AgentSessionChange_Serialize = ({ state: SessionState }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; summary?: never; turns?: never } | ({ summary: string | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros: number | null }) & { claude_session_id?: never; duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ turns: number | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never } | ({ duration_ms: number | null }) & { claude_session_id?: never; cost_usd_micros?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ error: string | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; state?: never; summary?: never; turns?: never } | 
+/**
+ *  The conversation's own id, once known: a session opened in the desktop app gets
+ *  one there, not from the app (M22).
+ */
+({ claude_session_id: string }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never };
 
 /**  A Claude Code run started from a task (docs/adr/017). */
 export type AgentSession_Deserialize = {
@@ -494,6 +504,8 @@ export type AgentStart_Deserialize = {
 	model?: string | null,
 	/**  Extra instructions; may be empty. */
 	prompt: string,
+	/**  In the background (the default) or in the Claude desktop app. */
+	surface?: AgentSurface,
 };
 
 /**  What "Send to agent" sends. */
@@ -507,7 +519,16 @@ export type AgentStart_Serialize = {
 	model: string | null,
 	/**  Extra instructions; may be empty. */
 	prompt: string,
+	/**  In the background (the default) or in the Claude desktop app. */
+	surface: AgentSurface,
 };
+
+/**  Where a session started from a task runs. */
+export type AgentSurface = 
+/**  Headless, followed by the app. */
+"background" | 
+/**  A new Code session in the Claude desktop app, which the user sends (ADR 029). */
+"desktop";
 
 /**
  *  A file attached to a task or a meeting (exactly one of the two). The content is stored
@@ -2196,7 +2217,14 @@ export type SessionState = "running" |
  *  Continued by hand in a terminal (`claude --resume`), outside the app's control. Ends
  *  when the agent records its summary, the terminal closes, or the user marks it done.
  */
-"terminal";
+"terminal" | 
+/**
+ *  Opened in the Claude desktop app (M22, ADR 029): a conversation the app cannot
+ *  follow. Ends when the agent records its summary or the user marks it done. Any
+ *  device may record its notes and summary (the claude.ai connector runs on the sync
+ *  server).
+ */
+"desktop";
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
 export type Snapshot = Snapshot_Serialize | Snapshot_Deserialize;

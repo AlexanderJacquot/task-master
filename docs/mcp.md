@@ -90,7 +90,8 @@ What it may do, outside a Send to Claude session:
   `rename_attachment`, `remove_attachment`); remove ended agent sessions
   (`remove_agent_session`). Settings → Agents → **Let agents edit my tasks** turns all
   of this off (deletes included); the remote MCP on the sync server always may. Notes and
-  session summaries need a session.
+  session summaries need a session: the server's own, or one opened in the Claude desktop
+  app, named with `session_id` (its first message gives it; ADR 029).
 - Every write reports a `change_id`; `undo` reverts that change (refused when the same
   things changed since). With editing off it still undoes the agent's own changes.
 - Not available: board columns and saved views (Settings), and app preferences.

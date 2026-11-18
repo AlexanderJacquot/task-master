@@ -53,6 +53,16 @@ On a task (side panel or page), the **Claude** section → **Send to Claude**:
 **Start**. The task's card and row get a chip with what Claude is doing ("Editing
 store.rs", "Running `cargo test`"), and the **Agents** page in the sidebar lists it.
 
+**Run → In the Claude desktop app** (macOS and Windows, with agents on this computer, not
+WSL; ADR 029): **Open in Claude** opens a new Code session in the Claude desktop app, in
+the folder, with the task and the app's rules typed in. You press send, and pick the
+permissions and model there. The session shows **In desktop app** until Claude records
+its summary or you click **Mark done**. Its notes and summary reach the task only if the
+desktop app has task-master's MCP (the claude.ai connector, or the local server added by
+hand): the prompt gives Claude the session id to pass. Its cost and time come from its
+transcript (Agents page, every 5 minutes) once Claude has used a task-master tool from
+the local server, which records the conversation's id. The choice is remembered.
+
 ## 3. Follow and continue
 
 The task's **Claude** section has one card per session: state, folder, duration, cost and

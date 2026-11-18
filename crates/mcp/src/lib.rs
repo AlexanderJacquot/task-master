@@ -159,6 +159,56 @@ impl TaskServer {
         })
     }
 
+    /// The session a note or summary goes to: this server's, or (for a server started
+    /// without one, as in the Claude desktop app, ADR 029) the one named by `given`, which
+    /// must be open in the desktop app.
+    fn target_session(&self, given: Option<&str>) -> Result<AgentSession, String> {
+        let given = given.map(str::trim).filter(|g| !g.is_empty());
+        if let Some(session) = &self.session {
+            return match given {
+                Some(id) if id != session.id => Err(format!(
+                    "this server records session {}, not {id}; leave session_id out",
+                    session.id
+                )),
+                _ => Ok(session.clone()),
+            };
+        }
+        let id = given.ok_or_else(|| {
+            "this MCP server was started without a session: pass the session_id given in              your opening message"
+                .to_owned()
+        })?;
+        let session = self
+            .with_store(|s| s.agent_session(id))
+            .map_err(|_| format!("agent session {id} not found"))?;
+        if session.deleted_at.is_some() {
+            return Err(format!("agent session {id} not found"));
+        }
+        if session.state != SessionState::Desktop {
+            return Err(format!(
+                "agent session {id} is not open in the Claude desktop app ({}); only those \
+                 are named with session_id",
+                session.state.as_str()
+            ));
+        }
+        Ok(session)
+    }
+
+    /// For a session opened in the desktop app, the conversation's own id, which Claude
+    /// Code gives the servers it starts: recorded so the app can resume it and read its
+    /// cost (ADR 029). Only the stdio server runs inside Claude Code.
+    fn conversation_id(&self, session: &AgentSession) -> Vec<AgentSessionChange> {
+        if !self.local_files || session.state != SessionState::Desktop {
+            return Vec::new();
+        }
+        std::env::var("CLAUDE_CODE_SESSION_ID")
+            .ok()
+            .map(|id| id.trim().to_owned())
+            .filter(|id| uuid_like(id) && *id != session.claude_session_id)
+            .map(AgentSessionChange::ClaudeSessionId)
+            .into_iter()
+            .collect()
+    }
+
     fn write(&self, commands: Vec<Command>) -> Result<taskmaster_core::Changes, String> {
         let changes = self.with_store(|s| s.execute_without_undo(commands))?;
         self.wrote(&changes);
@@ -457,6 +507,10 @@ pub struct UpdateTask {
 pub struct AddNote {
     /// One progress line or short paragraph: what was done, found or decided.
     pub body: String,
+    /// The agent session to record it on: given in the opening message of a session opened
+    /// in the Claude desktop app. Not needed when this server was started for a session.
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -468,6 +522,10 @@ pub struct CompleteSession {
     /// marked done first.
     #[serde(default)]
     pub left_open: Vec<String>,
+    /// The agent session to record it on: given in the opening message of a session opened
+    /// in the Claude desktop app. Not needed when this server was started for a session.
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
@@ -1198,14 +1256,22 @@ impl TaskServer {
                        decided. Short; the user reads these to follow along."
     )]
     pub fn add_note(&self, Parameters(p): Parameters<AddNote>) -> ToolResult {
-        let session = self.session()?;
-        self.write(vec![Command::AddAgentNote {
+        let session = self.target_session(p.session_id.as_deref())?;
+        let mut commands = vec![Command::AddAgentNote {
             note: NewAgentNote {
                 id: None,
                 session_id: session.id.clone(),
                 body: p.body,
             },
-        }])?;
+        }];
+        let bind = self.conversation_id(&session);
+        if !bind.is_empty() {
+            commands.push(Command::UpdateAgentSession {
+                id: session.id.clone(),
+                changes: bind,
+            });
+        }
+        self.write(commands)?;
         Ok("Noted.".into())
     }
 
@@ -1219,7 +1285,7 @@ impl TaskServer {
                        refused."
     )]
     pub fn complete_session(&self, Parameters(p): Parameters<CompleteSession>) -> ToolResult {
-        let session = self.session()?;
+        let session = &self.target_session(p.session_id.as_deref())?;
         if p.summary.trim().is_empty() {
             return Err("the summary cannot be empty".into());
         }
@@ -1257,7 +1323,8 @@ impl TaskServer {
         // A headless run is ended by the app when Claude exits. Any other session (resumed
         // in a terminal, or still going after the app quit) ends here, or nothing would.
         let state = self.with_store(|s| s.agent_session(&session.id))?.state;
-        let mut changes = vec![AgentSessionChange::Summary(Some(p.summary))];
+        let mut changes = self.conversation_id(session);
+        changes.push(AgentSessionChange::Summary(Some(p.summary)));
         if state != SessionState::Running {
             changes.push(AgentSessionChange::State(SessionState::Done));
         }
@@ -1595,7 +1662,9 @@ impl TaskServer {
                  and create_epic add them when the user asks (they are the user's at once). \
                  Tasks you create are agent tasks unless you pass owner me: kept apart from \
                  the user's own (they find them on the Agents page and can make them theirs), \
-                 so say so when you create one. {edit}{VIEWS}"
+                 so say so when you create one. {edit}{VIEWS} A session opened in the Claude \
+                 desktop app from task-master names its session_id in its first message; \
+                 the note and summary tools take it."
             );
         };
         let mut text = format!(
@@ -1729,6 +1798,18 @@ fn list_limit(limit: Option<u32>) -> u32 {
 }
 
 /// Keep session listings compact while preserving the reason for a failed run.
+/// A UUID as Claude Code writes session ids (8-4-4-4-12 hex).
+fn uuid_like(id: &str) -> bool {
+    id.len() == 36
+        && id.char_indices().all(|(i, c)| {
+            if matches!(i, 8 | 13 | 18 | 23) {
+                c == '-'
+            } else {
+                c.is_ascii_hexdigit()
+            }
+        })
+}
+
 fn short_session_text(value: &str) -> String {
     const MAX_CHARS: usize = 400;
     let clean = value.split_whitespace().collect::<Vec<_>>().join(" ");

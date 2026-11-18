@@ -240,6 +240,9 @@ pub enum AgentSessionChange {
     Turns(Option<i64>),
     DurationMs(Option<i64>),
     Error(Option<String>),
+    /// The conversation's own id, once known: a session opened in the desktop app gets
+    /// one there, not from the app (M22).
+    ClaudeSessionId(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2271,6 +2274,10 @@ fn update_agent_session(
                 ("duration_ms", json!(d))
             }
             AgentSessionChange::Error(e) => ("error", json!(trimmed(e))),
+            AgentSessionChange::ClaudeSessionId(c) => {
+                crate::clock::check_id(&c)?;
+                ("claude_session_id", json!(c))
+            }
         };
         patch.insert(key.into(), value);
     }
@@ -2341,13 +2348,14 @@ fn add_agent_note(b: &mut Batch<'_, '_>, n: NewAgentNote) -> Result<()> {
     touch_task(b, &session.task_id)
 }
 
-/// A live session started by this device (only its device runs and updates it).
+/// A live session started by this device (only its device runs and updates it). A
+/// session in the desktop app has no process to own: any device may record it.
 fn own_session(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::AgentSession> {
     let session = query::agent_session(b.tx, id)?;
     if session.deleted_at.is_some() {
         return Err(Error::not_found("agent session", id));
     }
-    if session.device_id != b.device_id() {
+    if session.device_id != b.device_id() && session.state != SessionState::Desktop {
         return Err(Error::invalid(
             "this session runs on another device; only that device can change it",
         ));

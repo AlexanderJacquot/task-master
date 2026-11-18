@@ -11,9 +11,17 @@ import type {
   Task,
 } from "../../lib/types";
 
-/** Still going: a headless run, or a conversation continued in a terminal. */
+/** Still going: a headless run, or a conversation in a terminal or the desktop app. */
 export function isActive(session: AgentSession): boolean {
-  return session.state === "running" || session.state === "terminal";
+  return session.state === "running" || session.state === "terminal" || session.state === "desktop";
+}
+
+/**
+ * Whether a session can open in the Claude desktop app (ADR 029): macOS or Windows, with
+ * agents running on this computer (not in WSL). `userAgent` is the WebView's.
+ */
+export function desktopAppPossible(runtime: AgentRuntime, userAgent: string): boolean {
+  return runtime === "native" && /Macintosh|Mac OS X|Windows/.test(userAgent);
 }
 
 /** The follow-up the Resume button sends to an interrupted session. */
@@ -124,6 +132,7 @@ export const STATE_LABEL: Record<SessionState, string> = {
   cancelled: "Stopped",
   interrupted: "Interrupted",
   terminal: "In terminal",
+  desktop: "In desktop app",
 };
 
 /** Models offered when sending to an agent; the values are Claude Code `--model` aliases. */

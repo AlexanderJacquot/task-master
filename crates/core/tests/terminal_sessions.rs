@@ -284,3 +284,121 @@ fn terminal_sessions_sync_and_export() {
     target.import(&file).unwrap();
     assert_eq!(target.snapshot().unwrap().terminal_sessions, vec![row]);
 }
+
+fn desktop_session(s: &mut Store) -> AgentSession {
+    let task = s
+        .execute(Command::CreateTask {
+            task: NewTask {
+                title: "Redesign".into(),
+                ..NewTask::default()
+            },
+        })
+        .unwrap()
+        .tasks
+        .remove(0);
+    let session = s
+        .execute_without_undo(vec![Command::CreateAgentSession {
+            session: NewAgentSession {
+                id: None,
+                task_id: task.id,
+                claude_session_id: new_id(),
+                folder: "/work".into(),
+                runtime: AgentRuntime::Native,
+                permission_mode: "acceptEdits".into(),
+                model: None,
+                prompt: String::new(),
+            },
+        }])
+        .unwrap()
+        .agent_sessions
+        .remove(0);
+    s.execute_without_undo(vec![Command::UpdateAgentSession {
+        id: session.id,
+        changes: vec![AgentSessionChange::State(SessionState::Desktop)],
+    }])
+    .unwrap()
+    .agent_sessions
+    .remove(0)
+}
+
+#[test]
+fn a_desktop_session_takes_its_conversation_id_and_any_device_records_it() {
+    let (mut a, mut server) = (store(), store());
+    let session = desktop_session(&mut a);
+    assert!(session.state.is_active());
+    sync(&mut a, &mut server);
+
+    // The claude.ai connector writes from the sync server, another device.
+    let desktop_id = new_id();
+    server
+        .execute_without_undo(vec![
+            Command::AddAgentNote {
+                note: NewAgentNote {
+                    id: None,
+                    session_id: session.id.clone(),
+                    body: "Header drafted".into(),
+                },
+            },
+            Command::UpdateAgentSession {
+                id: session.id.clone(),
+                changes: vec![
+                    AgentSessionChange::ClaudeSessionId(desktop_id.clone()),
+                    AgentSessionChange::Summary(Some("Done".into())),
+                    AgentSessionChange::State(SessionState::Done),
+                ],
+            },
+        ])
+        .unwrap();
+    sync(&mut a, &mut server);
+    let after = a.agent_session(&session.id).unwrap();
+    assert_eq!(after.state, SessionState::Done);
+    assert_eq!(after.claude_session_id, desktop_id);
+    assert!(after.ended_at.is_some());
+
+    // Once ended, it is the starting device's again.
+    let refused = server.execute_without_undo(vec![Command::UpdateAgentSession {
+        id: session.id,
+        changes: vec![AgentSessionChange::Summary(None)],
+    }]);
+    assert!(matches!(refused, Err(Error::Invalid(_))));
+    let bad = a.execute_without_undo(vec![Command::UpdateAgentSession {
+        id: after.id,
+        changes: vec![AgentSessionChange::ClaudeSessionId("nope".into())],
+    }]);
+    assert!(matches!(bad, Err(Error::Invalid(_))));
+}
+
+#[test]
+fn a_desktop_session_gets_its_cost_from_the_transcript_but_a_reported_cost_stays() {
+    let mut s = store();
+    let session = desktop_session(&mut s);
+    let changes = record(
+        &mut s,
+        vec![transcript(&session.claude_session_id, "/work")],
+    );
+    assert!(changes.terminal_sessions.is_empty());
+    let filled = &changes.agent_sessions[0];
+    assert_eq!(filled.cost_usd_micros, Some(1_250_000));
+    assert_eq!(filled.duration_ms, Some(40_000));
+    assert_eq!(filled.turns, Some(12));
+
+    // A headless run that reported its cost keeps it.
+    let run = s
+        .execute_without_undo(vec![Command::UpdateAgentSession {
+            id: session.id.clone(),
+            changes: vec![AgentSessionChange::State(SessionState::Done)],
+        }])
+        .unwrap()
+        .agent_sessions
+        .remove(0);
+    let later = TerminalSessionRecord {
+        cost_usd_micros: Some(9_000_000),
+        ..transcript(&run.claude_session_id, "/work")
+    };
+    assert!(record(&mut s, vec![later]).is_empty());
+    assert_eq!(
+        s.agent_session(&run.id).unwrap().cost_usd_micros,
+        Some(1_250_000)
+    );
+    assert!(s.snapshot().unwrap().terminal_sessions.is_empty());
+}

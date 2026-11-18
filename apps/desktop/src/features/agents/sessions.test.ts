@@ -3,6 +3,7 @@ import type { AgentSession, ProjectFolder } from "../../lib/types";
 import { agentSession, project, task } from "../../test/fixtures";
 import {
   defaultFolder,
+  desktopAppPossible,
   folderName,
   formatCost,
   formatDayHeading,
@@ -115,5 +116,17 @@ describe("formatting", () => {
     expect(folderName("/home/me/code/app/")).toBe("app");
     expect(folderName("C:\\Users\\me\\task-master")).toBe("task-master");
     expect(folderName("\\\\wsl.localhost\\Ubuntu\\home\\me\\x")).toBe("x");
+  });
+});
+
+describe("the Claude desktop app", () => {
+  it("is offered on macOS and Windows when agents run on this computer", () => {
+    const mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15";
+    const win = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+    const linux = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15";
+    expect(desktopAppPossible("native", mac)).toBe(true);
+    expect(desktopAppPossible("native", win)).toBe(true);
+    expect(desktopAppPossible("wsl", win)).toBe(false);
+    expect(desktopAppPossible("native", linux)).toBe(false);
   });
 });

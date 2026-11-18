@@ -14,6 +14,7 @@ export const STATE_TONE: Record<SessionState, string> = {
   cancelled: "bg-hover text-ink-3",
   interrupted: "bg-amber-600/12 text-amber-800 dark:bg-amber-400/12 dark:text-amber-200",
   terminal: "bg-accent/12 text-accent",
+  desktop: "bg-accent/12 text-accent",
 };
 
 export function SessionChip({ taskId, className }: { taskId: string; className?: string }) {

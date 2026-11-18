@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { Api } from "../../lib/api";
 import type { Changes, Command, Epic, Snapshot } from "../../lib/types";
 import { createAppRouter } from "../../router";
@@ -103,6 +103,7 @@ it("sends a task to the agent from its page and follows the run", async () => {
       model: null,
       permission_mode: "acceptEdits",
       prompt: "Keep the API as is",
+      surface: "background",
     },
   ]);
   // The folder becomes the project's on this device, since it had none.
@@ -121,6 +122,37 @@ it("sends a task to the agent from its page and follows the run", async () => {
   await waitFor(() => expect(agents.calls).toContain(`terminal ${session?.id}`));
   fireEvent.click(within(card).getByRole("button", { name: "Stop" }));
   await waitFor(() => expect(agents.calls).toContain(`cancel ${session?.id}`));
+});
+
+it("opens a session in the Claude desktop app on macOS and Windows, and ends it by hand", async () => {
+  vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+  );
+  const t = task({ title: "Redesign the header" });
+  const { agents } = await renderAt(`/task/${t.id}`, { tasks: [t] });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Send to agent" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Browse…" }));
+  await pickOption("Run", "In the Claude desktop app");
+  // Permissions and model are the desktop app's.
+  expect(within(dialog).queryByRole("combobox", { name: "Permissions" })).toBeNull();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Open in Claude" }));
+
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(agents.started[0]?.surface).toBe("desktop");
+  const card = await screen.findByTestId("session-card");
+  expect(within(card).getByText("In desktop app")).toBeTruthy();
+  expect(within(card).queryByRole("button", { name: "Open in terminal" })).toBeNull();
+  fireEvent.click(within(card).getByRole("button", { name: "Mark done" }));
+  await waitFor(() => expect(within(card).getByText("Done")).toBeTruthy());
+
+  // Remembered for next time.
+  fireEvent.click(screen.getByRole("button", { name: "Send to agent" }));
+  expect((await screen.findByRole("combobox", { name: "Run" })).textContent).toContain(
+    "In the Claude desktop app",
+  );
+  vi.restoreAllMocks();
 });
 
 it("prefills the task's last folder and asks before running everything", async () => {
