@@ -11,6 +11,12 @@ GGML_AVX = "ON"
 GGML_AVX2 = "ON"
 GGML_FMA = "ON"
 GGML_F16C = "ON"
+# Windows: whisper.cpp must use the static C runtime (/MT) like sherpa-onnx and the Rust
+# code (`+crt-static` below), or the link fails (LNK2038). Its CMakeLists asks for CMake
+# 3.5, which leaves CMP0091 unset and its default /MD flags winning; whisper-rs-sys passes
+# CMAKE_* variables to cmake. MSVC-only: ignored elsewhere.
+CMAKE_POLICY_DEFAULT_CMP0091 = "NEW"
+CMAKE_MSVC_RUNTIME_LIBRARY = "MultiThreaded"
 
 # sherpa-onnx's Windows libraries use the static C runtime (/MT): build everything with it.
 [target.x86_64-pc-windows-msvc]
