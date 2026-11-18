@@ -100,9 +100,14 @@ const scribeRoute = createRoute({
 const meetingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "meeting/$meetingId",
+  // ?line=<segment id> opens on a transcript line (a search result).
+  validateSearch: (search: Record<string, unknown>): { line?: string } => ({
+    ...(typeof search.line === "string" && { line: search.line }),
+  }),
   component: function MeetingView() {
     const { meetingId } = meetingRoute.useParams();
-    return <MeetingPage key={meetingId} meetingId={meetingId} />;
+    const { line } = meetingRoute.useSearch();
+    return <MeetingPage key={meetingId} meetingId={meetingId} {...(line && { line })} />;
   },
 });
 

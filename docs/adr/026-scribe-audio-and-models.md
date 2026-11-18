@@ -1,7 +1,7 @@
 # ADR 026: Scribe audio capture and speech models
 
 Date: 2026-11-14 · Status: accepted; capture and storage settled by the M19 spike
-(2026-11-15, below), speech models by M20
+(2026-11-15, below), speech models by M20 (2026-11-18, below)
 
 ## Context
 
@@ -55,4 +55,40 @@ crates for this are in the tree yet.
 - **No `unsafe`** in the app: the FFI is inside cpal.
 - CI gets a `native` job (Windows, macOS) that lints and tests the desktop crate, because
   the capture code compiles nowhere else before a release tag.
+
+## M20 notes (2026-11-18)
+
+- **Crates.** `whisper-rs` 0.16.0 (whisper.cpp built from source by cmake; `metal` on
+  macOS, CPU on Windows) and `sherpa-onnx` 2.0.1 with `static` (prebuilt sherpa-onnx and
+  onnxruntime static libraries, downloaded by its build script): **no dylib to bundle or
+  notarize**. Both are dependencies on Windows and macOS and dev-dependencies elsewhere, so
+  Linux CI lints and tests the engines while Linux releases ship without them
+  (`scribe_status.transcription` is false there). `.cargo/config.toml` sets
+  `WHISPER_DONT_GENERATE_BINDINGS` (no libclang), a portable AVX2 baseline instead of
+  `-march=native`, and `+crt-static` on Windows (sherpa-onnx's Windows libraries use /MT).
+  GitHub's runners already have cmake; no workflow change was needed.
+- **Models.** `models.rs` pins URL, size and SHA-256 of whisper `large-v3-turbo` (1.6 GB)
+  and `small` (488 MB) from `ggerganov/whisper.cpp`, and of the support files fetched with
+  the first one: pyannote segmentation 3.0 and WeSpeaker ResNet34 (sherpa-onnx exports)
+  and Silero VAD v6.2.0 (`ggml-org/whisper-vad`), 33 MB together. Pins checked against
+  Hugging Face's LFS metadata on 2026-11-18. Files live in the app's local data folder
+  (`scribe-models/`), download as `.part` and resume with a `Range` request.
+- **Voice detection is ours, not whisper.cpp's.** whisper.cpp applies its `vad` option
+  only in `whisper_full`, not in `whisper_full_with_state`, which whisper-rs calls: the
+  option is silently ignored. `engine.rs` runs Silero (`WhisperVadContext`) itself, copies
+  the stretches of speech one after the other with 300 ms of silence between them
+  (`condense`), transcribes that, and maps each word back exactly (`to_track`). A word
+  whisper stretches over a pause is kept to the stretch it overlaps most.
+- **Speakers.** Diarization on the computer's sound only, clustering threshold 0.4 (errs
+  toward one voice found as two: one "same voice as" merge to fix). `merge.rs` gives each
+  word the voice whose turn overlaps it most, then moves a change of voice that falls
+  within two words of a sentence end to that end (whisper's times are least sure at pauses,
+  people rarely hand over mid-sentence). Echo of the others in the microphone (no
+  headphones) is dropped when most of a microphone segment's words were said on the
+  computer's sound at the same time.
+- **Tried on real speech** (WSL, Linux build of the engines, `tiny` model): two synthesized
+  voices on the computer's sound and one on the microphone, 33 s + 40 s, transcribed in 5 s
+  of CPU; every line had the right speaker and started within 0.2 s of the truth
+  (`pipeline.rs` ignored test `real_models_transcribe_a_recording`). Not run on Windows or
+  macOS hardware, nor with Metal.
 

@@ -151,6 +151,27 @@ fn search(state: State<'_, AppState>, text: String, limit: u32) -> CommandResult
     with_store(&state, |s| s.search(&text, limit))
 }
 
+/// A meeting's transcript, in time order (Scribe; not part of the snapshot).
+#[tauri::command]
+#[specta::specta]
+fn meeting_transcript(
+    state: State<'_, AppState>,
+    meeting_id: Id,
+) -> CommandResult<Vec<taskmaster_core::TranscriptSegment>> {
+    with_store(&state, |s| s.transcript(&meeting_id))
+}
+
+/// Transcript lines of live meetings matching every word of `text`, best first.
+#[tauri::command]
+#[specta::specta]
+fn search_transcripts(
+    state: State<'_, AppState>,
+    text: String,
+    limit: u32,
+) -> CommandResult<Vec<taskmaster_core::TranscriptHit>> {
+    with_store(&state, |s| s.search_transcripts(&text, limit))
+}
+
 /// A task's change history, newest first (read from the ops log).
 #[tauri::command]
 #[specta::specta]
@@ -591,6 +612,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             undo,
             redo,
             search,
+            meeting_transcript,
+            search_transcripts,
             task_activity,
             parse_capture,
             get_config,
@@ -647,7 +670,13 @@ fn specta_builder() -> Builder<tauri::Wry> {
             scribe::scribe_audio,
             scribe::scribe_recover,
             scribe::scribe_purge_audio,
-            scribe::scribe_audio_usage
+            scribe::scribe_audio_usage,
+            scribe::transcribe::scribe_models,
+            scribe::transcribe::scribe_download_model,
+            scribe::transcribe::scribe_cancel_download,
+            scribe::transcribe::scribe_delete_model,
+            scribe::transcribe::scribe_process,
+            scribe::transcribe::scribe_cancel_process
         ])
         .events(collect_events![
             StoreChanged,
@@ -656,7 +685,9 @@ fn specta_builder() -> Builder<tauri::Wry> {
             server_sync::SyncChanged,
             agents::AgentActivity,
             scribe::ScribeLevels,
-            scribe::ScribeChanged
+            scribe::ScribeChanged,
+            scribe::transcribe::ScribeProgress,
+            scribe::transcribe::ScribeModelProgress
         ])
         // Timestamps (Unix ms) and op sequence numbers stay far below 2^53.
         .dangerously_cast_bigints_to_number()
@@ -776,8 +807,17 @@ pub fn run() {
             // Finished terminal sessions close even across a restart (ADR 017).
             agents::watch_terminals(app.handle());
 
-            // Interrupted recordings are repaired for "keep", cut-short encodings resume.
+            // Interrupted recordings are repaired for "keep", cut-short encodings and
+            // transcriptions resume; audio past its retention is deleted every hour.
             scribe::resume(app.handle());
+            let handle = app.handle().clone();
+            std::thread::Builder::new()
+                .name("scribe-transcribe".into())
+                .spawn(move || scribe::transcribe::worker(handle))?;
+            let handle = app.handle().clone();
+            std::thread::Builder::new()
+                .name("scribe-expiry".into())
+                .spawn(move || scribe::transcribe::expiry_loop(handle))?;
 
             // Local tools share this database but have their own SQLite connection.
             let handle = app.handle().clone();

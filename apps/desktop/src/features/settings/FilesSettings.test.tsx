@@ -65,6 +65,7 @@ it("shows storage and warns about description links before deleting attachments 
         agent_sessions: [],
         agent_notes: [],
         meetings: [],
+        transcript_segments: [],
         statuses: [],
       } satisfies Changes;
     },

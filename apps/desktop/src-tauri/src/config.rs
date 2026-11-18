@@ -469,7 +469,9 @@ mod tests {
             scribe: crate::scribe::ScribeSettings {
                 mic_device: Some("wasapi:{0.0.1}".into()),
                 capture_system: false,
-                consent_reminder: true,
+                model: Some("small".into()),
+                retention_days: 3,
+                ..crate::scribe::ScribeSettings::default()
             },
             data_dir: Some(dir.join("data")),
             remote: Some(RemoteBackup {

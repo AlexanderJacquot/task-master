@@ -14,6 +14,10 @@ export const commands = {
 	redo: () => typedError<Changes_Serialize | null, CommandError>(__TAURI_INVOKE("redo")),
 	/**  Live task ids matching every word of `text`, best first. */
 	search: (text: string, limit: number) => typedError<string[], CommandError>(__TAURI_INVOKE("search", { text, limit })),
+	/**  A meeting's transcript, in time order (Scribe; not part of the snapshot). */
+	meetingTranscript: (meetingId: string) => typedError<TranscriptSegment_Serialize[], CommandError>(__TAURI_INVOKE("meeting_transcript", { meetingId })),
+	/**  Transcript lines of live meetings matching every word of `text`, best first. */
+	searchTranscripts: (text: string, limit: number) => typedError<TranscriptHit[], CommandError>(__TAURI_INVOKE("search_transcripts", { text, limit })),
 	/**  A task's change history, newest first (read from the ops log). */
 	taskActivity: (taskId: string, limit: number) => typedError<Activity_Serialize[], CommandError>(__TAURI_INVOKE("task_activity", { taskId, limit })),
 	/**
@@ -35,7 +39,7 @@ export const commands = {
 	/**  Writes every user table to a JSON file, and the attachment files to a folder beside it. */
 	exportTo: (path: string) => typedError<null, CommandError>(__TAURI_INVOKE("export_to", { path })),
 	/**  Replaces all data with an export file, after saving a backup of the current data. */
-	importFrom: (path: string) => typedError<ImportSummary, CommandError>(__TAURI_INVOKE("import_from", { path })),
+	importFrom: (path: string) => typedError<ImportSummary_Serialize, CommandError>(__TAURI_INVOKE("import_from", { path })),
 	/**
 	 *  Moves the data to `path` (or back to the OS default when `None`) and restarts. An
 	 *  existing database there is used as is; otherwise the current one is copied over.
@@ -172,7 +176,7 @@ export const commands = {
 	/**  Stops the recording in progress and waits until its files are complete. */
 	scribeStop: () => typedError<ScribeStatus_Serialize, CommandError>(__TAURI_INVOKE("scribe_stop")),
 	/**  The meeting's audio on this device; `None` when it has none here. */
-	scribeAudio: (meetingId: string) => typedError<MeetingAudio | null, CommandError>(__TAURI_INVOKE("scribe_audio", { meetingId })),
+	scribeAudio: (meetingId: string) => typedError<MeetingAudio_Serialize | null, CommandError>(__TAURI_INVOKE("scribe_audio", { meetingId })),
 	/**
 	 *  After an interrupted recording: `keep` finishes it with what reached the disk (the
 	 *  meeting ends where the audio ends); otherwise the audio is deleted.
@@ -182,6 +186,22 @@ export const commands = {
 	scribePurgeAudio: (meetingId: string) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_purge_audio", { meetingId })),
 	/**  Meeting audio kept on this device, largest first. */
 	scribeAudioUsage: () => typedError<AudioUsage[], CommandError>(__TAURI_INVOKE("scribe_audio_usage")),
+	scribeModels: () => typedError<ModelInfo_Serialize[], CommandError>(__TAURI_INVOKE("scribe_models")),
+	/**
+	 *  Downloads a model (and the speaker models the first time) in the background; progress
+	 *  comes as `ScribeModelProgress`. The first model installed becomes the active one.
+	 */
+	scribeDownloadModel: (model: string) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_download_model", { model })),
+	/**  Stops the download in progress; what was fetched is kept for the next attempt. */
+	scribeCancelDownload: () => typedError<null, CommandError>(__TAURI_INVOKE("scribe_cancel_download")),
+	scribeDeleteModel: (model: string) => typedError<ModelInfo_Serialize[], CommandError>(__TAURI_INVOKE("scribe_delete_model", { model })),
+	/**
+	 *  Queues a meeting's transcription (or a new one, replacing the transcript). Needs a
+	 *  finished recording on this device and an installed model.
+	 */
+	scribeProcess: (meetingId: string) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_process", { meetingId })),
+	/**  Stops a queued or running transcription; the meeting goes back to where it was. */
+	scribeCancelProcess: (meetingId: string) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_cancel_process", { meetingId })),
 };
 
 /** Events */
@@ -191,6 +211,8 @@ export const events = {
 	captureOpened: makeEvent<CaptureOpened, CaptureOpened>("capture-opened"),
 	scribeChanged: makeEvent<ScribeChanged, ScribeChanged>("scribe-changed"),
 	scribeLevels: makeEvent<ScribeLevels_Serialize, ScribeLevels_Deserialize>("scribe-levels"),
+	scribeModelProgress: makeEvent<ScribeModelProgress_Serialize, ScribeModelProgress_Deserialize>("scribe-model-progress"),
+	scribeProgress: makeEvent<ScribeProgress, ScribeProgress>("scribe-progress"),
 	storeChanged: makeEvent<StoreChanged, StoreChanged>("store-changed"),
 	syncChanged: makeEvent<SyncChanged_Serialize, SyncChanged_Deserialize>("sync-changed"),
 };
@@ -827,6 +849,8 @@ export type Changes_Deserialize = {
 	agent_sessions: AgentSession_Deserialize[],
 	agent_notes: AgentNote_Deserialize[],
 	meetings: Meeting_Deserialize[],
+	/**  Transcript segments written (Scribe): not in the snapshot, read per meeting. */
+	transcript_segments?: TranscriptSegment_Deserialize[],
 };
 
 /**
@@ -848,6 +872,8 @@ export type Changes_Serialize = {
 	agent_sessions: AgentSession_Serialize[],
 	agent_notes: AgentNote_Serialize[],
 	meetings: Meeting_Serialize[],
+	/**  Transcript segments written (Scribe): not in the snapshot, read per meeting. */
+	transcript_segments: TranscriptSegment_Serialize[],
 };
 
 /**  Claude Code as found with these settings (not saved). */
@@ -918,7 +944,22 @@ export type Command_Deserialize = { type: "create_task"; task: NewTask_Deseriali
 /**  Edits a meeting. The result must still end after it starts. */
 { type: "update_meeting"; id: string; changes: MeetingChange_Deserialize[] } | 
 /**  Removes a meeting; its attachments are hidden with it, and undo brings both back. */
-{ type: "delete_meeting"; id: string };
+{ type: "delete_meeting"; id: string } | 
+/**
+ *  Replaces a meeting's transcript (Scribe, M20): its live segments are removed and
+ *  these written, the speaker names cleared, `transcribed_at` set and the meeting moved
+ *  to `review`. One batch, so one undo.
+ */
+{ type: "set_transcript"; meeting_id: string; segments: NewSegment_Deserialize[] } | 
+/**  Corrects a transcript segment. */
+{ type: "update_segment"; id: string; changes: SegmentChange[] } | 
+/**
+ *  Cuts a segment in two at a character of its text (`at`, counted in characters);
+ *  the time is shared in proportion. The second part gets `new_id`.
+ */
+{ type: "split_segment"; id: string; at: number; new_id?: string | null } | { type: "delete_segment"; id: string } | 
+/**  Gives every segment of speaker `from` to `to` (one voice found as two). */
+{ type: "reassign_speaker"; meeting_id: string; from: string; to: string };
 
 /**  A user action. Several commands sent together form one undoable batch. */
 export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize } | { type: "update_task"; id: string; changes: TaskChange_Serialize[] } | 
@@ -971,7 +1012,22 @@ export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize }
 /**  Edits a meeting. The result must still end after it starts. */
 { type: "update_meeting"; id: string; changes: MeetingChange_Serialize[] } | 
 /**  Removes a meeting; its attachments are hidden with it, and undo brings both back. */
-{ type: "delete_meeting"; id: string };
+{ type: "delete_meeting"; id: string } | 
+/**
+ *  Replaces a meeting's transcript (Scribe, M20): its live segments are removed and
+ *  these written, the speaker names cleared, `transcribed_at` set and the meeting moved
+ *  to `review`. One batch, so one undo.
+ */
+{ type: "set_transcript"; meeting_id: string; segments: NewSegment_Serialize[] } | 
+/**  Corrects a transcript segment. */
+{ type: "update_segment"; id: string; changes: SegmentChange[] } | 
+/**
+ *  Cuts a segment in two at a character of its text (`at`, counted in characters);
+ *  the time is shared in proportion. The second part gets `new_id`.
+ */
+{ type: "split_segment"; id: string; at: number; new_id: string | null } | { type: "delete_segment"; id: string } | 
+/**  Gives every segment of speaker `from` to `to` (one voice found as two). */
+{ type: "reassign_speaker"; meeting_id: string; from: string; to: string };
 
 /**  What the settings screen shows: never the secret itself. */
 export type ConfigView = ConfigView_Serialize | ConfigView_Deserialize;
@@ -1017,7 +1073,7 @@ export type DueFilter =
 "none";
 
 /**  Kinds of entity front ends get back in [`crate::Changes`] and events. */
-export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block" | "agent_session" | "agent_note" | "meeting";
+export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block" | "agent_session" | "agent_note" | "meeting" | "transcript_segment";
 
 export type EntityRef = {
 	kind: EntityKind,
@@ -1160,7 +1216,10 @@ export type GitInfo_Serialize = {
 export type GroupBy = "status" | "project" | "epic" | "priority" | "due";
 
 /**  What an import replaced, for the UI to report. */
-export type ImportSummary = {
+export type ImportSummary = ImportSummary_Serialize | ImportSummary_Deserialize;
+
+/**  What an import replaced, for the UI to report. */
+export type ImportSummary_Deserialize = {
 	tasks: number,
 	projects: number,
 	epics: number,
@@ -1169,8 +1228,47 @@ export type ImportSummary = {
 	attachments: number,
 	time_blocks: number,
 	meetings: number,
+	transcript_segments?: number,
 	/**  Attachments whose file was not found (an export copied without its folder). */
 	missing_files: number,
+};
+
+/**  What an import replaced, for the UI to report. */
+export type ImportSummary_Serialize = {
+	tasks: number,
+	projects: number,
+	epics: number,
+	tags: number,
+	views: number,
+	attachments: number,
+	time_blocks: number,
+	meetings: number,
+	transcript_segments: number,
+	/**  Attachments whose file was not found (an export copied without its folder). */
+	missing_files: number,
+};
+
+export type JobState = 
+/**  Waiting for another transcription, a recording or the compression to finish. */
+"queued" | "running" | "failed";
+
+/**  A meeting's transcription on this device, when one is queued, running or failed. */
+export type JobView = JobView_Serialize | JobView_Deserialize;
+
+/**  A meeting's transcription on this device, when one is queued, running or failed. */
+export type JobView_Deserialize = {
+	state: JobState,
+	step?: Step | null,
+	fraction: number | null,
+	error?: string | null,
+};
+
+/**  A meeting's transcription on this device, when one is queued, running or failed. */
+export type JobView_Serialize = {
+	state: JobState,
+	step: Step | null,
+	fraction: number | null,
+	error: string | null,
 };
 
 /**  How a device starts syncing. */
@@ -1288,7 +1386,10 @@ export type LiveRecording_Serialize = {
 export type Meeting = Meeting_Serialize | Meeting_Deserialize;
 
 /**  A meeting's audio on this device. */
-export type MeetingAudio = {
+export type MeetingAudio = MeetingAudio_Serialize | MeetingAudio_Deserialize;
+
+/**  A meeting's audio on this device. */
+export type MeetingAudio_Deserialize = {
 	state: AudioState,
 	started_at: number,
 	/**  Recorded length (so far, while recording or interrupted). */
@@ -1296,17 +1397,46 @@ export type MeetingAudio = {
 	bytes: number,
 	tracks: AudioTrack[],
 	warnings: string[],
+	/**  A transcription queued, running or failed. */
+	job?: JobView_Deserialize | null,
+	/**  When the audio will be deleted (retention setting); `None` while it is kept. */
+	purge_at?: number | null,
+};
+
+/**  A meeting's audio on this device. */
+export type MeetingAudio_Serialize = {
+	state: AudioState,
+	started_at: number,
+	/**  Recorded length (so far, while recording or interrupted). */
+	duration_ms: number,
+	bytes: number,
+	tracks: AudioTrack[],
+	warnings: string[],
+	/**  A transcription queued, running or failed. */
+	job: JobView_Serialize | null,
+	/**  When the audio will be deleted (retention setting); `None` while it is kept. */
+	purge_at: number | null,
 };
 
 export type MeetingChange = MeetingChange_Serialize | MeetingChange_Deserialize;
 
-export type MeetingChange_Deserialize = ({ title: string }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never } | ({ started_at: number }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ ended_at?: number | null }) & { epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ project_id?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ epic_id?: string | null }) & { ended_at?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ task_id?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; title?: never } | 
+export type MeetingChange_Deserialize = ({ title: string }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never } | ({ started_at: number }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ ended_at?: number | null }) & { epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ project_id?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ epic_id?: string | null }) & { ended_at?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ task_id?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; title?: never } | 
 /**  Entering `validated` records when; leaving it clears that. */
-({ state: MeetingState }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; summary?: never; task_id?: never; title?: never } | ({ participants: string[] }) & { ended_at?: never; epic_id?: never; notes?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ notes: string }) & { ended_at?: never; epic_id?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ summary?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; task_id?: never; title?: never };
+({ state: MeetingState }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; summary?: never; task_id?: never; title?: never } | ({ participants: string[] }) & { ended_at?: never; epic_id?: never; notes?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ notes: string }) & { ended_at?: never; epic_id?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ summary?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; task_id?: never; title?: never } | 
+/**  Names a transcript speaker key (`"s1"`), or clears its name with `None`. */
+({ speaker_name: {
+	speaker: string,
+	name?: string | null,
+} }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never };
 
-export type MeetingChange_Serialize = ({ title: string }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never } | ({ started_at: number }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ ended_at: number | null }) & { epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ project_id: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ epic_id: string | null }) & { ended_at?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ task_id: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; title?: never } | 
+export type MeetingChange_Serialize = ({ title: string }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never } | ({ started_at: number }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ ended_at: number | null }) & { epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ project_id: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ epic_id: string | null }) & { ended_at?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ task_id: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; title?: never } | 
 /**  Entering `validated` records when; leaving it clears that. */
-({ state: MeetingState }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; summary?: never; task_id?: never; title?: never } | ({ participants: string[] }) & { ended_at?: never; epic_id?: never; notes?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ notes: string }) & { ended_at?: never; epic_id?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ summary: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; task_id?: never; title?: never };
+({ state: MeetingState }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; summary?: never; task_id?: never; title?: never } | ({ participants: string[] }) & { ended_at?: never; epic_id?: never; notes?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ notes: string }) & { ended_at?: never; epic_id?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ summary: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; task_id?: never; title?: never } | 
+/**  Names a transcript speaker key (`"s1"`), or clears its name with `None`. */
+({ speaker_name: {
+	speaker: string,
+	name: string | null,
+} }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never };
 
 /**
  *  Where a [`Meeting`] is in its life (ADR 025). Only `scheduled` and `held` are set by
@@ -1348,6 +1478,11 @@ export type Meeting_Deserialize = {
 	summary?: string | null,
 	transcribed_at?: number | null,
 	validated_at?: number | null,
+	/**
+	 *  Names given to the transcript's speaker keys (`"s1"` → `"Ada"`); a key without a
+	 *  name shows as "Speaker 1", and `"me"` as "Me".
+	 */
+	speakers?: { [key in string]: string },
 	created_at: number,
 	updated_at: number,
 	deleted_at?: number | null,
@@ -1375,9 +1510,43 @@ export type Meeting_Serialize = {
 	summary: string | null,
 	transcribed_at: number | null,
 	validated_at: number | null,
+	/**
+	 *  Names given to the transcript's speaker keys (`"s1"` → `"Ada"`); a key without a
+	 *  name shows as "Speaker 1", and `"me"` as "Me".
+	 */
+	speakers: { [key in string]: string },
 	created_at: number,
 	updated_at: number,
 	deleted_at: number | null,
+};
+
+/**  A transcription model as Settings shows it. */
+export type ModelInfo = ModelInfo_Serialize | ModelInfo_Deserialize;
+
+/**  A transcription model as Settings shows it. */
+export type ModelInfo_Deserialize = {
+	id: string,
+	label: string,
+	description: string,
+	/**  Download size, with the speaker models when they are not here yet. */
+	download_bytes: number,
+	installed: boolean,
+	active: boolean,
+	/**  Bytes downloaded so far while a download runs. */
+	downloading?: number | null,
+};
+
+/**  A transcription model as Settings shows it. */
+export type ModelInfo_Serialize = {
+	id: string,
+	label: string,
+	description: string,
+	/**  Download size, with the speaker models when they are not here yet. */
+	download_bytes: number,
+	installed: boolean,
+	active: boolean,
+	/**  Bytes downloaded so far while a download runs. */
+	downloading: number | null,
 };
 
 /**  A name from the line and the live entity it matched, if any. */
@@ -1563,6 +1732,26 @@ export type NewProject_Serialize = {
 	color: string | null,
 	icon: string | null,
 	rank: string | null,
+};
+
+export type NewSegment = NewSegment_Serialize | NewSegment_Deserialize;
+
+export type NewSegment_Deserialize = {
+	id?: string | null,
+	start_ms: number,
+	end_ms: number,
+	/**  `"me"` or `"s1"`, `"s2"`, … */
+	speaker: string,
+	text: string,
+};
+
+export type NewSegment_Serialize = {
+	id: string | null,
+	start_ms: number,
+	end_ms: number,
+	/**  `"me"` or `"s1"`, `"s2"`, … */
+	speaker: string,
+	text: string,
 };
 
 export type NewStatus = NewStatus_Serialize | NewStatus_Deserialize;
@@ -1865,6 +2054,35 @@ export type ScribeLevels_Serialize = {
 	system: number | null,
 };
 
+/**  A model download's progress; `finished` with `error: None` when it is installed. */
+export type ScribeModelProgress = ScribeModelProgress_Serialize | ScribeModelProgress_Deserialize;
+
+/**  A model download's progress; `finished` with `error: None` when it is installed. */
+export type ScribeModelProgress_Deserialize = {
+	model: string,
+	done: number,
+	total: number,
+	finished: boolean,
+	error?: string | null,
+};
+
+/**  A model download's progress; `finished` with `error: None` when it is installed. */
+export type ScribeModelProgress_Serialize = {
+	model: string,
+	done: number,
+	total: number,
+	finished: boolean,
+	error: string | null,
+};
+
+/**  A transcription's progress, a few times a second while it runs. */
+export type ScribeProgress = {
+	meeting_id: string,
+	step: Step,
+	/**  0 to 1, over all steps. */
+	fraction: number | null,
+};
+
 /**  Scribe settings of this device (Settings → Scribe). */
 export type ScribeSettings = ScribeSettings_Serialize | ScribeSettings_Deserialize;
 
@@ -1876,6 +2094,14 @@ export type ScribeSettings_Deserialize = {
 	capture_system?: boolean,
 	/**  Remind to tell participants they are recorded, when recording starts. */
 	consent_reminder?: boolean,
+	/**  The transcription model used (`models::WHISPER` id); the first one downloaded. */
+	model?: string | null,
+	/**  Language spoken in meetings (`en`, `fr`, …); detected per track when `None`. */
+	language?: string | null,
+	/**  Transcribe as soon as a recording stops (when a model is installed). */
+	auto_transcribe?: boolean,
+	/**  Days audio is kept after the transcript is validated (or made, if never validated). */
+	retention_days?: number,
 };
 
 /**  Scribe settings of this device (Settings → Scribe). */
@@ -1886,19 +2112,35 @@ export type ScribeSettings_Serialize = {
 	capture_system: boolean,
 	/**  Remind to tell participants they are recorded, when recording starts. */
 	consent_reminder: boolean,
+	/**  The transcription model used (`models::WHISPER` id); the first one downloaded. */
+	model: string | null,
+	/**  Language spoken in meetings (`en`, `fr`, …); detected per track when `None`. */
+	language: string | null,
+	/**  Transcribe as soon as a recording stops (when a model is installed). */
+	auto_transcribe: boolean,
+	/**  Days audio is kept after the transcript is validated (or made, if never validated). */
+	retention_days: number,
 };
 
 export type ScribeStatus = ScribeStatus_Serialize | ScribeStatus_Deserialize;
 
 export type ScribeStatus_Deserialize = {
 	support: CaptureSupport_Deserialize,
+	/**  Transcription can run on this system. */
+	transcription: boolean,
 	live?: LiveRecording_Deserialize | null,
 };
 
 export type ScribeStatus_Serialize = {
 	support: CaptureSupport_Serialize,
+	/**  Transcription can run on this system. */
+	transcription: boolean,
 	live: LiveRecording_Serialize | null,
 };
+
+export type SegmentChange = 
+/**  Marks the segment edited. */
+({ text: string }) & { speaker?: never } | ({ speaker: string }) & { text?: never };
 
 /**  Where an [`AgentSession`] is. */
 export type SessionState = "running" | 
@@ -2028,6 +2270,13 @@ export type Status_Serialize = {
 	updated_at: number,
 	deleted_at: number | null,
 };
+
+/**  Where a run is, for the progress bar. */
+export type Step = 
+/**  Your microphone. */
+"mic" | 
+/**  The computer's sound. */
+"system" | "speakers" | "merge";
 
 /**  Emitted after every committed batch, whoever wrote it. */
 export type StoreChanged = Changed;
@@ -2265,6 +2514,66 @@ export type TimeBlock_Serialize = {
 	/**  After `start_at`. */
 	end_at: number,
 	outcome: BlockOutcome,
+	created_at: number,
+	updated_at: number,
+	deleted_at: number | null,
+};
+
+/**  A transcript line matching a search. */
+export type TranscriptHit = {
+	meeting_id: string,
+	segment_id: string,
+	start_ms: number,
+	speaker: string,
+	/**  The segment's text with the matches between `[` and `]`, shortened around them. */
+	snippet: string,
+};
+
+/**
+ *  One stretch of a meeting's transcript (Scribe, M20): who spoke from when to when, and
+ *  what they said. Times count from the start of the recording.
+ */
+export type TranscriptSegment = TranscriptSegment_Serialize | TranscriptSegment_Deserialize;
+
+/**
+ *  One stretch of a meeting's transcript (Scribe, M20): who spoke from when to when, and
+ *  what they said. Times count from the start of the recording.
+ */
+export type TranscriptSegment_Deserialize = {
+	id: string,
+	meeting_id: string,
+	start_ms: number,
+	end_ms: number,
+	/**
+	 *  `"me"` (this device's microphone) or `"s1"`, `"s2"`, … (voices on the computer's
+	 *  sound).
+	 */
+	speaker: string,
+	text: string,
+	/**  The user corrected the text. */
+	edited: boolean,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**
+ *  One stretch of a meeting's transcript (Scribe, M20): who spoke from when to when, and
+ *  what they said. Times count from the start of the recording.
+ */
+export type TranscriptSegment_Serialize = {
+	id: string,
+	meeting_id: string,
+	start_ms: number,
+	end_ms: number,
+	/**
+	 *  `"me"` (this device's microphone) or `"s1"`, `"s2"`, … (voices on the computer's
+	 *  sound).
+	 */
+	speaker: string,
+	text: string,
+	/**  The user corrected the text. */
+	edited: boolean,
 	created_at: number,
 	updated_at: number,
 	deleted_at: number | null,

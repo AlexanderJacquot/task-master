@@ -1,13 +1,16 @@
-// Settings → Scribe (ADR 025): which microphone records, whether the computer's sound is
-// recorded too, the consent reminder, and the meeting audio kept on this device.
+// Settings → Scribe (ADR 025, ADR 026): which microphone records, whether the computer's
+// sound is recorded too, the consent reminder, the transcription models (download, pick,
+// delete), and the meeting audio kept on this device.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Button, Select } from "../../components/ui";
 import { formatSize } from "../../lib/attachments";
 import {
   type AudioDevice,
   type AudioUsage,
   formatClock,
+  type ModelInfo,
+  type ModelProgress,
   type ScribeSettings as Settings,
   useScribe,
   useScribeApi,
@@ -68,9 +71,123 @@ export function MeetingAudioList() {
   );
 }
 
+const LANGUAGES = [
+  { value: "", label: "Detect it" },
+  { value: "en", label: "English" },
+  { value: "fr", label: "French" },
+  { value: "de", label: "German" },
+  { value: "es", label: "Spanish" },
+  { value: "it", label: "Italian" },
+  { value: "nl", label: "Dutch" },
+  { value: "pt", label: "Portuguese" },
+];
+
+/** The transcription models: download (resumable), use, delete. */
+export function ModelList({ onActive }: { onActive(id: string): Promise<unknown> }) {
+  const api = useScribeApi();
+  const [models, setModels] = useState<ModelInfo[] | null>(null);
+  const [progress, setProgress] = useState<ModelProgress | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const reload = useCallback(() => {
+    api?.models().then(setModels, (e) => setError(message(e)));
+  }, [api]);
+  useEffect(() => {
+    if (!api) return;
+    reload();
+    let stop: (() => void) | null = null;
+    let gone = false;
+    void api
+      .onModelProgress((p) => {
+        if (p.finished) {
+          setProgress(null);
+          if (p.error) setError(`The download stopped: ${p.error}. Download again to resume.`);
+          reload();
+        } else setProgress(p);
+      })
+      .then((unlisten) => {
+        if (gone) unlisten();
+        else stop = unlisten;
+      });
+    return () => {
+      gone = true;
+      stop?.();
+    };
+  }, [api, reload]);
+  if (!api || !models) return null;
+  const run = (work: Promise<unknown>) => {
+    setError(null);
+    work.then(reload, (e) => setError(message(e)));
+  };
+  const downloading = models.find((m) => m.downloading !== null)?.id ?? progress?.model ?? null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <ul aria-label="Transcription models" className="flex flex-col gap-2">
+        {models.map((m) => {
+          const here = downloading === m.id;
+          const done = progress?.model === m.id ? progress.done : (m.downloading ?? 0);
+          const total = progress?.model === m.id ? progress.total : m.download_bytes;
+          return (
+            <li key={m.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-2">
+                  {m.label}
+                  {m.active && (
+                    <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[11.5px] text-accent">
+                      In use
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-ink-3">{m.description}</p>
+              </div>
+              {here ? (
+                <>
+                  <progress
+                    aria-label={`Downloading ${m.label}`}
+                    max={Math.max(total, 1)}
+                    value={done}
+                    className="h-1.5 w-32 accent-accent"
+                  />
+                  <span className="text-xs text-ink-3 tabular-nums">
+                    {formatSize(done)} / {formatSize(total)}
+                  </span>
+                  <Button size="sm" variant="ghost" onClick={() => run(api.cancelDownload())}>
+                    Stop
+                  </Button>
+                </>
+              ) : m.installed ? (
+                <>
+                  {!m.active && (
+                    <Button size="sm" onClick={() => run(onActive(m.id))}>
+                      Use
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => run(api.deleteModel(m.id))}>
+                    Delete
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  disabled={downloading !== null}
+                  onClick={() => run(api.downloadModel(m.id))}
+                >
+                  Download ({formatSize(m.download_bytes)})
+                </Button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </div>
+  );
+}
+
 export function ScribeSettings() {
   const api = useScribeApi();
   const support = useScribe((s) => s.support);
+  const transcription = useScribe((s) => s.transcription);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [devices, setDevices] = useState<AudioDevice[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -155,6 +272,61 @@ export function ScribeSettings() {
           Remind me to tell participants they are being recorded
         </label>
         {error && <p className="text-xs text-danger">{error}</p>}
+      </Section>
+      <Section
+        title="Transcription"
+        hint="Recordings are transcribed on this device: nothing is sent anywhere. Models are downloaded once; the first one downloaded is used."
+      >
+        {!transcription ? (
+          <p className="text-sm text-ink-3">Transcription runs on Windows and macOS.</p>
+        ) : (
+          <>
+            <ModelList onActive={(model) => save({ ...settings, model })} />
+            <div className="flex items-center gap-2 text-sm">
+              Language spoken
+              <Select
+                aria-label="Language spoken"
+                value={settings.language ?? ""}
+                onValueChange={(language) => void save({ ...settings, language: language || null })}
+                options={
+                  settings.language && !LANGUAGES.some((l) => l.value === settings.language)
+                    ? [...LANGUAGES, { value: settings.language, label: settings.language }]
+                    : LANGUAGES
+                }
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={settings.auto_transcribe}
+                onChange={() =>
+                  void save({ ...settings, auto_transcribe: !settings.auto_transcribe })
+                }
+                className="size-4 accent-accent"
+              />
+              Transcribe meetings as soon as the recording stops
+            </label>
+          </>
+        )}
+        <label className="flex items-center gap-2 text-sm">
+          Keep the audio
+          <input
+            type="number"
+            aria-label="Days the audio is kept"
+            min={1}
+            max={365}
+            defaultValue={settings.retention_days}
+            key={settings.retention_days}
+            onBlur={(e) => {
+              const days = Math.round(Number(e.currentTarget.value));
+              if (days >= 1 && days <= 365 && days !== settings.retention_days)
+                void save({ ...settings, retention_days: days });
+              else e.currentTarget.value = String(settings.retention_days);
+            }}
+            className="w-16 rounded-lg border border-line-strong bg-raised px-2 py-1 text-ink focus:border-accent focus:outline-none"
+          />
+          days after the transcript is checked (or made, when it never is)
+        </label>
       </Section>
       <Section title="Meeting audio" hint="Recordings kept on this device.">
         <MeetingAudioList />

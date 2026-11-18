@@ -44,9 +44,23 @@ opus-rs = "=0.1.42"
 ogg = "0.9.2"
 
 # Microphone and system-sound capture (ADR 026): WASAPI loopback on Windows, a CoreAudio
-# process tap on macOS. Linux builds without it (no recording there yet).
+# process tap on macOS. Speaker separation: sherpa-onnx, linked statically from its
+# prebuilt libraries. Linux builds without them (no recording there yet).
 [target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
 cpal = "0.18.2"
+sherpa-onnx = { version = "2.0.1", default-features = false, features = ["static"] }
+
+# Transcription: whisper.cpp, built from source (cmake); Metal on macOS, CPU on Windows.
+# Build options for portable CPU code are in `.cargo/config.toml`.
+[target.'cfg(target_os = "windows")'.dependencies]
+whisper-rs = "0.16.0"
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.16.0", features = ["metal"] }
+
+# Linux tests and lint still build the speech engines (`scribe/engine.rs`).
+[target.'cfg(not(any(target_os = "windows", target_os = "macos")))'.dev-dependencies]
+whisper-rs = "0.16.0"
+sherpa-onnx = { version = "2.0.1", default-features = false, features = ["static"] }
 
 [lints]
 workspace = true

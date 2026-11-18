@@ -15,8 +15,10 @@ import {
   events,
   type LiveRecording_Serialize,
   type MeetingAudio,
+  type ModelInfo_Serialize,
   type ScribeSettings_Serialize,
   type ScribeStatus_Serialize,
+  type Step,
 } from "../bindings";
 import { ApiError } from "./api";
 import type { CommandError } from "./types";
@@ -25,7 +27,22 @@ export type CaptureSupport = CaptureSupport_Serialize;
 export type LiveRecording = LiveRecording_Serialize;
 export type ScribeSettings = ScribeSettings_Serialize;
 export type ScribeStatus = ScribeStatus_Serialize;
-export type { AudioDevice, AudioUsage, MeetingAudio };
+export type ModelInfo = ModelInfo_Serialize;
+export type { AudioDevice, AudioUsage, MeetingAudio, Step };
+
+export interface Progress {
+  meetingId: string;
+  step: Step;
+  fraction: number;
+}
+
+export interface ModelProgress {
+  model: string;
+  done: number;
+  total: number;
+  finished: boolean;
+  error: string | null;
+}
 
 export interface Levels {
   meetingId: string;
@@ -54,6 +71,17 @@ export interface ScribeApi {
   url(path: string): string;
   onLevels(handler: (levels: Levels) => void): Promise<() => void>;
   onChanged(handler: (meetingId: string) => void): Promise<() => void>;
+  /** Transcription models (M20). */
+  models(): Promise<ModelInfo[]>;
+  /** Starts a download in the background; progress comes through `onModelProgress`. */
+  downloadModel(id: string): Promise<void>;
+  cancelDownload(): Promise<void>;
+  deleteModel(id: string): Promise<ModelInfo[]>;
+  /** Queues the meeting's transcription (again, when it has one). */
+  process(meetingId: string): Promise<void>;
+  cancelProcess(meetingId: string): Promise<void>;
+  onProgress(handler: (progress: Progress) => void): Promise<() => void>;
+  onModelProgress(handler: (progress: ModelProgress) => void): Promise<() => void>;
 }
 
 type Result<T> = { status: "ok"; data: T } | { status: "error"; error: CommandError | string };
@@ -92,10 +120,46 @@ export const tauriScribe: ScribeApi = {
       }),
     ),
   onChanged: (handler) => events.scribeChanged.listen(({ payload }) => handler(payload.meeting_id)),
+  models: () => unwrap(commands.scribeModels()),
+  downloadModel: async (id) => {
+    await unwrap(commands.scribeDownloadModel(id));
+  },
+  cancelDownload: async () => {
+    await unwrap(commands.scribeCancelDownload());
+  },
+  deleteModel: (id) => unwrap(commands.scribeDeleteModel(id)),
+  process: async (meetingId) => {
+    await unwrap(commands.scribeProcess(meetingId));
+  },
+  cancelProcess: async (meetingId) => {
+    await unwrap(commands.scribeCancelProcess(meetingId));
+  },
+  onProgress: (handler) =>
+    events.scribeProgress.listen(({ payload }) =>
+      handler({
+        meetingId: payload.meeting_id,
+        step: payload.step,
+        fraction: payload.fraction ?? 0,
+      }),
+    ),
+  onModelProgress: (handler) =>
+    events.scribeModelProgress.listen(({ payload }) =>
+      handler({
+        model: payload.model,
+        done: payload.done,
+        total: payload.total,
+        finished: payload.finished,
+        error: payload.error ?? null,
+      }),
+    ),
 };
 
 export interface ScribeState {
   support: CaptureSupport | null;
+  /** Transcription runs on this system. */
+  transcription: boolean;
+  /** Running transcriptions, by meeting id. */
+  progress: Record<string, Progress>;
   live: LiveRecording | null;
   levels: Levels | null;
   /** By meeting id: its audio here, null for none, absent until read. */
@@ -110,6 +174,9 @@ export interface ScribeState {
   loadAudio(meetingId: string): Promise<void>;
   recover(meetingId: string, keep: boolean): Promise<void>;
   purge(meetingId: string): Promise<void>;
+  /** Queues a transcription (or a new one). */
+  process(meetingId: string): Promise<void>;
+  cancelProcess(meetingId: string): Promise<void>;
   dismissError(): void;
 }
 
@@ -125,6 +192,7 @@ export function createScribeStore(api: ScribeApi): ScribeStore {
       const status = await api.status();
       set({
         support: status.support,
+        transcription: status.transcription,
         live: status.live,
         levels: status.live ? get().levels : null,
       });
@@ -139,6 +207,8 @@ export function createScribeStore(api: ScribeApi): ScribeStore {
     };
     return {
       support: null,
+      transcription: false,
+      progress: {},
       live: null,
       levels: null,
       audio: {},
@@ -151,9 +221,19 @@ export function createScribeStore(api: ScribeApi): ScribeStore {
         });
         const stopChanged = await api.onChanged((meetingId) => {
           void refreshStatus().catch(() => undefined);
+          // A job that ended stops showing its progress.
+          set((s) => {
+            if (!(meetingId in s.progress)) return {};
+            const progress = { ...s.progress };
+            delete progress[meetingId];
+            return { progress };
+          });
           // Only meetings someone looked at are kept up to date.
           if (meetingId in get().audio) void loadAudio(meetingId);
         });
+        const stopProgress = await api.onProgress((p) =>
+          set((s) => ({ progress: { ...s.progress, [p.meetingId]: p } })),
+        );
         try {
           await refreshStatus();
         } catch (err) {
@@ -162,6 +242,7 @@ export function createScribeStore(api: ScribeApi): ScribeStore {
         return () => {
           stopLevels();
           stopChanged();
+          stopProgress();
         };
       },
 
@@ -210,6 +291,25 @@ export function createScribeStore(api: ScribeApi): ScribeStore {
         await loadAudio(meetingId);
       },
 
+      async process(meetingId) {
+        set({ error: null });
+        try {
+          await api.process(meetingId);
+        } catch (err) {
+          set({ error: message(err) });
+        }
+        await loadAudio(meetingId);
+      },
+
+      async cancelProcess(meetingId) {
+        try {
+          await api.cancelProcess(meetingId);
+        } catch (err) {
+          set({ error: message(err) });
+        }
+        await loadAudio(meetingId);
+      },
+
       dismissError: () => set({ error: null }),
     };
   });
@@ -220,6 +320,8 @@ export const ScribeProvider = ScribeContext.Provider;
 
 const EMPTY = createStore<ScribeState>(() => ({
   support: null,
+  transcription: false,
+  progress: {},
   live: null,
   levels: null,
   audio: {},
@@ -231,6 +333,8 @@ const EMPTY = createStore<ScribeState>(() => ({
   loadAudio: async () => undefined,
   recover: async () => undefined,
   purge: async () => undefined,
+  process: async () => undefined,
+  cancelProcess: async () => undefined,
   dismissError: () => undefined,
 }));
 

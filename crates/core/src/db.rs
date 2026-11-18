@@ -27,6 +27,7 @@ const MIGRATIONS: &[M<'static>] = &[
     )),
     M::up(include_str!("../migrations/0014_block_missed.sql")),
     M::up(include_str!("../migrations/0015_meetings.sql")),
+    M::up(include_str!("../migrations/0016_transcripts.sql")),
 ];
 
 pub(crate) fn migrations() -> Migrations<'static> {
@@ -237,6 +238,36 @@ mod tests {
             conn.execute(
                 "INSERT INTO attachments (id, hash, name, mime, size, created_at, updated_at)
                  VALUES ('b', 'h', 'y', 'text/plain', 1, 1, 1)",
+                [],
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn transcripts_migration_gives_meetings_no_speaker_names() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        configure(&conn).unwrap();
+        migrations().to_version(&mut conn, 15).unwrap();
+        conn.execute(
+            "INSERT INTO meetings (id, title, started_at, created_at, updated_at)
+             VALUES ('m', 'Old', 1, 1, 1)",
+            [],
+        )
+        .unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+        let speakers: String = conn
+            .query_row("SELECT speakers FROM meetings WHERE id = 'm'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(speakers, "{}");
+        // A segment needs its meeting.
+        assert!(
+            conn.execute(
+                "INSERT INTO transcript_segments
+                   (id, meeting_id, start_ms, end_ms, speaker, text, created_at, updated_at)
+                 VALUES ('s', 'nope', 0, 1, 'me', 'x', 1, 1)",
                 [],
             )
             .is_err()

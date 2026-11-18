@@ -4,6 +4,31 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**M20 Scribe: transcription and speakers** (2026-11-18, branch `m20-scribe-transcribe`,
+released in 0.23.0 with M19; ADR 025 and ADR 026 "M20 notes"): recordings are transcribed
+on the device and checked by hand. Core: migration 16 (`transcript_segments` + FTS,
+`meetings.speakers`), commands `SetTranscript` (one batch, state `review`),
+`UpdateSegment`, `SplitSegment`, `DeleteSegment`, `ReassignSpeaker`, `UpdateMeeting
+speaker_name`; reads `meeting_transcript`, `search_transcripts`; sync and export carry
+them. Shell `src-tauri/src/scribe/`: `models.rs` (pinned downloads, resume, SHA-256),
+`engine.rs` (whisper-rs 0.16 with our own Silero VAD: whisper.cpp ignores its VAD option
+under `whisper_full_with_state`; sherpa-onnx 2.0.1 static diarization), `merge.rs` (words +
+turns → segments, echo removal, speaker changes snapped to sentence ends), `pipeline.rs`
+(cached steps), `transcribe.rs` (IPC, queue worker, resume, hourly expiry),
+`retention.rs`. UI: transcription row and audio expiry notice under the player,
+`features/scribe/TranscriptPanel.tsx` (virtualized lines, play from a line, follow
+playback, speaker menu, name / "Same voice as…", correct, split, delete, Validate / Check
+again), Settings → Scribe → Transcription (models, language, auto-transcribe, days kept),
+Ctrl+K meetings and transcript lines (`/meeting/$id?line=`). Tests: core
+`tests/transcripts.rs` (7); scribe `merge` (6), `engine` (2), `models` (5), `retention`;
+`lib/transcript.test.ts` (6), `features/scribe/transcript.test.tsx` (6), palette.
+Tried for real in WSL with the `tiny` model on synthesized speech (two voices + mic): right
+speaker on every line, starts within 0.2 s. Not tried on Windows/macOS hardware (the
+`native` CI job builds and tests there), nor in the running app. Schema 16: update the sync
+server with the app. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo test --workspace --locked`, `pnpm biome ci .`, `pnpm typecheck`,
+`pnpm test` (539 passed, 2 skipped) pass.
+
 **M19 Scribe: recording** (2026-11-15, branch `m19-scribe-capture`; ADR 025 "M19 notes",
 ADR 026 "M19 spike"): the meeting page records the microphone and the computer's sound
 (Windows WASAPI loopback, macOS 14.6+ CoreAudio process tap, both through cpal 0.18.2;
@@ -2038,11 +2063,12 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
-- Scribe (meetings, docs/meetings-plan.md, ADR 025/026): M18 built; M19 (recording),
-  M20 (transcription, speakers; migration 16 for segments), M21 (summary) to do. After
-  it: a synced contacts list replacing free-text participant names (task `01a1d747…`),
-  live captions, Linux capture, voice profiles. Smaller: palette search over meetings,
-  recurring meetings.
+- Scribe (meetings, docs/meetings-plan.md, ADR 025/026): M18–M20 built; M21 (summary,
+  action items, MCP transcript search) to do. After it: a synced contacts list replacing
+  free-text participant names (task `01a1d747…`), live captions, Linux capture, voice
+  profiles, recurring meetings. Check on real Windows/macOS hardware: transcription speed
+  with `large-v3-turbo`, Metal, the release builds of whisper.cpp and sherpa-onnx (x86_64
+  macOS is cross-built on an arm64 runner).
 - Git, on top of `project_git` (ADR 017): record the release (tag + commits, commit,
   branch) an agent session started and ended on, as new `agent_sessions` columns (a
   migration, synced); stamp a task with the release it was finished on; a "create PR"

@@ -38,6 +38,7 @@ export function sessionChanges(session: AgentSession): Changes {
     agent_sessions: [session],
     agent_notes: [],
     meetings: [],
+    transcript_segments: [],
   };
 }
 

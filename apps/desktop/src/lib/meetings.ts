@@ -169,6 +169,14 @@ export function applyMeetingChanges(m: Meeting, changes: MeetingChange[], now: n
       next.participants = cleanParticipants(c.participants);
     else if ("notes" in c && c.notes !== undefined) next.notes = c.notes;
     else if ("summary" in c) next.summary = c.summary?.trim() || null;
+    else if ("speaker_name" in c && c.speaker_name) {
+      const { speaker, name } = c.speaker_name;
+      const speakers = { ...next.speakers };
+      const clean = name?.trim();
+      if (clean) speakers[speaker] = clean;
+      else delete speakers[speaker];
+      next.speakers = speakers;
+    }
   }
   return next;
 }

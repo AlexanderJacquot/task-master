@@ -19,6 +19,7 @@ const none = (): Changes => ({
   agent_sessions: [],
   agent_notes: [],
   meetings: [],
+  transcript_segments: [],
   statuses: [],
 });
 

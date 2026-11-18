@@ -34,6 +34,7 @@ function fakeApi(data: { tasks: Task[]; time_blocks: TimeBlock[] }, extra: Parti
         agent_sessions: [],
         agent_notes: [],
         meetings: [],
+        transcript_segments: [],
         statuses: [],
       } as Changes;
     },

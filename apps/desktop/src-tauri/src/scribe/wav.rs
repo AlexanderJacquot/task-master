@@ -165,7 +165,6 @@ impl WavReader {
     }
 
     /// Every remaining sample.
-    #[cfg(test)]
     pub fn read_all(mut self) -> io::Result<Vec<i16>> {
         let n = self.left as usize;
         self.read(n)

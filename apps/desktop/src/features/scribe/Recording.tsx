@@ -12,10 +12,12 @@ import {
   formatClock,
   type MeetingAudio,
   type ScribeSettings,
+  type Step,
   useScribe,
   useScribeApi,
   useScribeStore,
 } from "../../lib/scribe";
+import { type PlayerControl, purgeNotice } from "../../lib/transcript";
 import type { Meeting } from "../../lib/types";
 import { useStoreState } from "../../store/context";
 
@@ -109,9 +111,11 @@ export function RecordingBar() {
 export function TrackPlayer({
   audio,
   url,
+  control,
 }: {
   audio: MeetingAudio;
   url: (path: string) => string;
+  control?: PlayerControl;
 }) {
   const refs = useRef<Record<string, HTMLAudioElement | null>>({});
   const [playing, setPlaying] = useState(false);
@@ -141,11 +145,26 @@ export function TrackPlayer({
     for (const e of elements()) e.currentTime = seconds;
     setPosition(seconds);
   };
+  // The transcript plays a line from its start.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the elements are read through refs.
+  useEffect(() => {
+    if (!control) return;
+    return control.attach((ms) => {
+      const at = Math.max(0, ms / 1000);
+      for (const e of elements()) {
+        e.currentTime = at;
+        void e.play().catch(() => setPlaying(false));
+      }
+      setPosition(at);
+      setPlaying(true);
+    });
+  }, [control, tracks]);
   // Keeps the second track on the first one's clock.
   const onTime = () => {
     const [first, ...rest] = elements();
     if (!first) return;
     setPosition(first.currentTime);
+    control?.publish(first.currentTime * 1000);
     for (const e of rest) {
       if (Math.abs(e.currentTime - first.currentTime) > 0.15) e.currentTime = first.currentTime;
     }
@@ -203,8 +222,102 @@ export function TrackPlayer({
   );
 }
 
+const STEP_LABEL: Record<Step, string> = {
+  mic: "Transcribing your microphone",
+  system: "Transcribing the computer's sound",
+  speakers: "Telling the voices apart",
+  merge: "Putting the transcript together",
+};
+
+/** Transcription of a recorded meeting: start it, follow it, retry it. */
+function TranscribeRow({ meeting, audio }: { meeting: Meeting; audio: MeetingAudio }) {
+  const scribe = useScribeStore();
+  const available = useScribe((s) => s.transcription);
+  const live = useScribe((s) => s.progress[meeting.id]);
+  if (!scribe || !available || (audio.state !== "ready" && audio.state !== "encoding")) return null;
+  const actions = scribe.getState();
+  const job = audio.job;
+
+  if (job && job.state !== "failed") {
+    const step = live?.step ?? job.step;
+    const fraction = live?.fraction ?? job.fraction ?? 0;
+    const pct = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
+    return (
+      <div className="flex flex-wrap items-center gap-3 text-[12.5px] text-ink-2">
+        <span>
+          {job.state === "queued" && !live
+            ? "Waiting to be transcribed…"
+            : `${step ? STEP_LABEL[step] : "Transcribing"}…`}
+        </span>
+        <progress
+          aria-label="Transcription"
+          max={100}
+          value={pct}
+          className="h-1.5 w-40 overflow-hidden rounded-full accent-accent"
+        />
+        <span className="text-ink-3 tabular-nums">{pct}%</span>
+        <span className="flex-1" />
+        <Button size="sm" variant="ghost" onClick={() => void actions.cancelProcess(meeting.id)}>
+          Stop
+        </Button>
+      </div>
+    );
+  }
+  if (job?.state === "failed") {
+    return (
+      <div className="flex flex-wrap items-center gap-3 text-[12.5px]">
+        <span role="alert" className="text-danger">
+          The transcription failed{job.error ? `: ${job.error}` : "."}
+        </span>
+        <Button size="sm" onClick={() => void actions.process(meeting.id)}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+  const again = meeting.transcribed_at !== null;
+  return (
+    <div className="flex flex-wrap items-center gap-3 text-[12.5px] text-ink-3">
+      <Button
+        size="sm"
+        variant={again ? "ghost" : "primary"}
+        onClick={() => void actions.process(meeting.id)}
+      >
+        {again ? "Transcribe again" : "Transcribe"}
+      </Button>
+      {again
+        ? "Replaces the transcript and its corrections."
+        : "On this device, with the model chosen in Settings → Scribe."}
+    </div>
+  );
+}
+
+/** When the audio goes, once the transcript is made or checked. */
+function PurgeNote({ at }: { at: number | null }) {
+  const [now] = useState(() => Date.now());
+  const notice = purgeNotice(at, now);
+  if (!notice) return null;
+  const day = new Date(notice.at).toLocaleDateString(undefined, {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  return (
+    <p
+      className={cx(
+        "text-[12.5px]",
+        notice.soon ? "rounded-md bg-danger/10 px-2.5 py-1.5 text-danger" : "text-ink-3",
+      )}
+    >
+      {notice.at <= now
+        ? "The audio will be deleted shortly (Settings → Scribe sets how long it is kept)."
+        : `The audio will be deleted on ${day}; the transcript stays.`}
+    </p>
+  );
+}
+
 /** The meeting page's audio: record, the live recording, an interrupted one, playback. */
-export function RecordPanel({ meeting }: { meeting: Meeting }) {
+export function RecordPanel({ meeting, control }: { meeting: Meeting; control?: PlayerControl }) {
   const scribe = useScribeStore();
   const api = useScribeApi();
   const support = useScribe((s) => s.support);
@@ -279,7 +392,9 @@ export function RecordPanel({ meeting }: { meeting: Meeting }) {
   } else if (audio && audio.tracks.length > 0) {
     body = (
       <div className="flex flex-col gap-2">
-        <TrackPlayer audio={audio} url={urlOf} />
+        <TrackPlayer audio={audio} url={urlOf} control={control} />
+        <TranscribeRow meeting={meeting} audio={audio} />
+        <PurgeNote at={audio.purge_at ?? null} />
         <div className="flex flex-wrap items-center gap-3 text-[12.5px] text-ink-3">
           <span>
             {formatSize(audio.bytes)} on this device

@@ -23,6 +23,7 @@ const empty: Changes = {
   agent_sessions: [],
   agent_notes: [],
   meetings: [],
+  transcript_segments: [],
   statuses: [],
 };
 
@@ -134,6 +135,7 @@ describe("Recording", () => {
     const scribe = fakeScribe();
     scribe.setStatus({
       support: { recording: false, system_audio: false, note: "Not on this system." },
+      transcription: false,
       live: null,
     });
     const m = meeting();

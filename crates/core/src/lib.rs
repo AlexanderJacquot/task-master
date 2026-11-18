@@ -28,10 +28,10 @@ pub use agent_workflow::{AgentWorkflow, IN_PROGRESS_STATUS_ID};
 pub use clock::{new_id, now_ms, utc_date};
 pub use commands::{
     AgentSessionChange, AttachmentChange, Command, EpicChange, MAX_BLOCK_MS, MAX_NOTE_CHARS,
-    MAX_PARTICIPANTS, MAX_RANK_LEN, MeetingChange, NewAgentNote, NewAgentSession, NewAttachment,
-    NewEpic, NewMeeting, NewProject, NewStatus, NewTag, NewTask, NewTimeBlock, NewView,
-    PERMISSION_MODES, ProjectChange, StatusChange, TagChange, TaskChange, TimeBlockChange,
-    ViewChange,
+    MAX_PARTICIPANTS, MAX_RANK_LEN, MAX_SEGMENTS, MeetingChange, NewAgentNote, NewAgentSession,
+    NewAttachment, NewEpic, NewMeeting, NewProject, NewSegment, NewStatus, NewTag, NewTask,
+    NewTimeBlock, NewView, PERMISSION_MODES, ProjectChange, SegmentChange, StatusChange, TagChange,
+    TaskChange, TimeBlockChange, ViewChange,
 };
 pub use dump::{EXPORT_FORMAT, ExportFile, ImportSummary};
 pub use error::{Error, Result};
@@ -44,12 +44,12 @@ pub use model::{
     EpicState, FILTER_NONE, GroupBy, Id, IsoDate, LaneKeys, LanePositions, Layout, LineageArrange,
     LineageCompletion, LineageSpec, Meeting, MeetingState, Priority, Project, ProjectFolder,
     REVIEW_STATUS_ID, SessionState, Snapshot, SortBy, Status, StatusCategory, Swimlane, Tag, Task,
-    TaskOwner, TimeBlock, Timestamp, VIEW_SPEC_VERSION, View, ViewFilter, ViewScope, ViewSpec,
-    review_status,
+    TaskOwner, TimeBlock, Timestamp, TranscriptSegment, VIEW_SPEC_VERSION, View, ViewFilter,
+    ViewScope, ViewSpec, review_status,
 };
 pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};
-pub use query::{Activity, FieldChange};
+pub use query::{Activity, FieldChange, TranscriptHit};
 pub use store::{ATTACHMENTS_DIR, Changes, PurgeReport, Store, StoredFileInfo};
 pub use sync::{
     AuthMode, BlobList, IssuedToken, Merged, OidcExchange, OpsPage, PullPage, PushRequest,

@@ -101,6 +101,45 @@ Recording, as built (ADR 026 for the libraries):
   Settings → Scribe and Settings → Files list the audio on this device with its size.
 - **Quitting** asks first while recording; the recording is finished cleanly either way.
 
+## M20 notes (2026-11-18)
+
+Transcription, as built:
+
+- **Data.** Migration 16: `transcript_segments` (meeting, start/end from the recording's
+  start, speaker key `me` / `s1`, `s2`…, text, `edited`; soft delete, synced, with
+  `transcript_fts`) and `meetings.speakers`, a JSON object naming speaker keys (one meeting
+  field, so naming a voice is one update). No `meeting_speakers` table. Segments are not in
+  the snapshot: the UI reads a meeting's transcript (`meeting_transcript`) when it opens it
+  and re-reads it on changes. `search_transcripts` searches live meetings' lines.
+- **Commands.** `SetTranscript` replaces a meeting's transcript as one batch (one undo):
+  its live segments deleted, the new ones written, speaker names cleared, `transcribed_at`
+  set, state `review`. `UpdateSegment` (text marks it edited, or speaker), `SplitSegment`
+  (at a character, time shared in proportion, client id for the new half),
+  `DeleteSegment`, `ReassignSpeaker` (one voice found as two), `UpdateMeeting`
+  `speaker_name`. Validate is `UpdateMeeting state: validated`.
+- **IPC.** `scribe_models`, `scribe_download_model`, `scribe_cancel_download`,
+  `scribe_delete_model`, `scribe_process` (queue, or transcribe again from scratch),
+  `scribe_cancel_process`; events `ScribeProgress` (step and fraction) and
+  `ScribeModelProgress`. `scribe_audio` adds the job (queued, running, failed with its
+  error) and `purge_at`. Settings gain the active model, the language (detected when
+  unset), "transcribe when the recording stops" (on) and the retention days (10, 1–365).
+- **Jobs.** One at a time, never while recording, waiting for the compression. A job is
+  `transcript/job.json` beside the audio and each step's result is cached there (mic
+  words, system words, turns), so a quit or a failure resumes at the last finished step;
+  "Try again" resumes, "Transcribe again" starts over (and a model change too). Cancel
+  puts the meeting back in its previous state.
+- **Retention.** On start and hourly: a meeting's audio is deleted `retention_days` after
+  validation, or after the transcript was made when never validated, or after the meeting
+  was deleted (so undo still finds it). Never-transcribed audio is kept. The meeting page
+  says when, in red from two days before.
+- **UI.** Meeting page: Transcribe / progress / Stop / Try again under the player, then the
+  transcript (virtualized): speakers with a name field and "Same voice as…", each line's
+  time plays the recording from there and the playing line follows, the speaker menu
+  (or "Another voice"), click to correct, "Split here" at the cursor, delete; Validate /
+  Check again. Settings → Scribe → Transcription: models (download with progress, stop,
+  resume, use, delete), language, auto-transcribe, days the audio is kept. Ctrl+K lists
+  meetings and transcript lines (opens the meeting on the line, `?line=`).
+
 ## Consequences
 
 - Recording works on Windows and macOS only at first; Linux shows the meetings without

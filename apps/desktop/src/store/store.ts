@@ -17,6 +17,7 @@ import type {
   Tag,
   Task,
   TimeBlock,
+  TranscriptSegment,
   View,
 } from "../lib/types";
 
@@ -39,6 +40,8 @@ export interface Entities {
   agent_sessions: ById<AgentSession>;
   /** Live meetings (Scribe, ADR 025). */
   meetings: ById<Meeting>;
+  /** Transcript segments of the meetings opened so far (not in the snapshot). */
+  transcript_segments: ById<TranscriptSegment>;
 }
 
 /** Local edits shown before the core confirms them. */
@@ -54,6 +57,7 @@ export interface Optimistic {
     time_blocks?: TimeBlock[];
     agent_sessions?: AgentSession[];
     meetings?: Meeting[];
+    transcript_segments?: TranscriptSegment[];
   };
   remove?: {
     tasks?: string[];
@@ -66,6 +70,7 @@ export interface Optimistic {
     time_blocks?: string[];
     agent_sessions?: string[];
     meetings?: string[];
+    transcript_segments?: string[];
   };
 }
 
@@ -87,6 +92,8 @@ export interface TaskStoreState extends Entities {
   connect(): Promise<() => void>;
   /** Applies entities written outside `execute` (an agent session the shell recorded). */
   record(changes: Changes | null): void;
+  /** Reads a meeting's transcript; kept up to date from then on. */
+  loadTranscript(meetingId: string): Promise<void>;
 }
 
 export type TaskStore = StoreApi<TaskStoreState>;
@@ -101,7 +108,8 @@ type Kind =
   | "attachments"
   | "time_blocks"
   | "agent_sessions"
-  | "meetings";
+  | "meetings"
+  | "transcript_segments";
 const KINDS: Kind[] = [
   "tasks",
   "projects",
@@ -113,6 +121,7 @@ const KINDS: Kind[] = [
   "time_blocks",
   "agent_sessions",
   "meetings",
+  "transcript_segments",
 ];
 
 /** Statuses are kept as an array in workflow order; every other kind as a map by id. */
@@ -132,7 +141,8 @@ function byId<T extends { id: string }>(list: T[]): ById<T> {
   return Object.fromEntries(list.map((item) => [item.id, item]));
 }
 
-function fromSnapshot(snapshot: Snapshot): Entities {
+/** Everything but transcripts, which load per meeting. */
+function fromSnapshot(snapshot: Snapshot): Omit<Entities, "transcript_segments"> {
   return {
     tasks: byId(snapshot.tasks),
     projects: byId(snapshot.projects),
@@ -172,6 +182,8 @@ export function createTaskStore(api: Api): TaskStore {
   let queue: Promise<unknown> = Promise.resolve();
   const ownBatches = new Set<string>();
   const unseenBatches = new Set<string>();
+  // Meetings whose transcript was read: re-read when the data is.
+  const transcripts = new Set<string>();
 
   const store = createStore<TaskStoreState>()((set, get) => {
     const record = (changes: Changes | null) => {
@@ -210,6 +222,24 @@ export function createTaskStore(api: Api): TaskStore {
       });
     };
 
+    /** Replaces the cached segments of these meetings with the core's. */
+    const readTranscripts = async (meetingIds: string[]) => {
+      const read = api.transcript;
+      if (!read || meetingIds.length === 0) return;
+      const fetched = await Promise.all(
+        meetingIds.map(async (id) => [id, await read(id)] as const),
+      );
+      set((s) => {
+        const ids = new Set(meetingIds);
+        const map: ById<TranscriptSegment> = {};
+        for (const seg of Object.values(s.transcript_segments)) {
+          if (!ids.has(seg.meeting_id)) map[seg.id] = seg;
+        }
+        for (const [, list] of fetched) for (const seg of list) map[seg.id] = seg;
+        return { transcript_segments: map };
+      });
+    };
+
     return {
       tasks: {},
       projects: {},
@@ -221,6 +251,7 @@ export function createTaskStore(api: Api): TaskStore {
       time_blocks: {},
       agent_sessions: {},
       meetings: {},
+      transcript_segments: {},
       agentActivity: {},
       ready: false,
       loadError: null,
@@ -231,6 +262,8 @@ export function createTaskStore(api: Api): TaskStore {
         try {
           const snapshot = await api.snapshot();
           set({ ...fromSnapshot(snapshot), ready: true, loadError: null });
+          // Transcripts are not in the snapshot: read the open ones again.
+          await readTranscripts([...transcripts]).catch(() => undefined);
         } catch (err) {
           set({ loadError: message(err) });
         }
@@ -307,6 +340,15 @@ export function createTaskStore(api: Api): TaskStore {
         }),
 
       dismissError: () => set({ lastError: null }),
+
+      async loadTranscript(meetingId) {
+        transcripts.add(meetingId);
+        try {
+          await readTranscripts([meetingId]);
+        } catch (err) {
+          set({ lastError: message(err) });
+        }
+      },
 
       async connect() {
         const stopChanges = await api.onChanged((event) => {

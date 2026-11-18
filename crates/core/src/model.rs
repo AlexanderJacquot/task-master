@@ -393,6 +393,30 @@ pub struct Meeting {
     pub summary: Option<String>,
     pub transcribed_at: Option<Timestamp>,
     pub validated_at: Option<Timestamp>,
+    /// Names given to the transcript's speaker keys (`"s1"` → `"Ada"`); a key without a
+    /// name shows as "Speaker 1", and `"me"` as "Me".
+    #[serde(default)]
+    pub speakers: std::collections::BTreeMap<String, String>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
+/// One stretch of a meeting's transcript (Scribe, M20): who spoke from when to when, and
+/// what they said. Times count from the start of the recording.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct TranscriptSegment {
+    pub id: Id,
+    pub meeting_id: Id,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    /// `"me"` (this device's microphone) or `"s1"`, `"s2"`, … (voices on the computer's
+    /// sound).
+    pub speaker: String,
+    pub text: String,
+    /// The user corrected the text.
+    pub edited: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub deleted_at: Option<Timestamp>,

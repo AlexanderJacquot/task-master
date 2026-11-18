@@ -2,7 +2,8 @@
 
 Status: **accepted** 2026-11-14. M18 (meetings without audio) built 2026-11-14 on branch
 `worktree-m18-meetings`; M19 (recording) built 2026-11-15 on `m19-scribe-capture`;
-M20–M21 not started. Decisions recorded in ADR 025 (data, IPC,
+M20 (transcription) built 2026-11-18 on `m20-scribe-transcribe` (ADR 025 and 026 "M20
+notes"); M21 not started. Decisions recorded in ADR 025 (data, IPC,
 calendar, retention) and ADR 026 (audio and ML dependencies).
 
 ## 1. Goal

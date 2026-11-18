@@ -7,12 +7,21 @@
 //! (`ScribeLevels` events, ten a second) and flushes every second, so a crash keeps what
 //! was recorded: the next start finds the folder unfinished and the meeting page offers to
 //! keep or discard it.
+//!
+//! Transcription (M20, `transcribe.rs`): downloaded models, a queue run one meeting at a
+//! time, resumable per step, and the hourly expiry of audio (`retention.rs`).
 
 pub mod audio;
 pub mod capture;
+pub mod engine;
 pub mod files;
+pub mod merge;
+pub mod models;
 pub mod opus;
+pub mod pipeline;
 pub mod recorder;
+pub mod retention;
+pub mod transcribe;
 pub mod wav;
 
 use std::collections::HashSet;
@@ -53,6 +62,22 @@ pub struct ScribeSettings {
     /// Remind to tell participants they are recorded, when recording starts.
     #[serde(default = "yes")]
     pub consent_reminder: bool,
+    /// The transcription model used (`models::WHISPER` id); the first one downloaded.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// Language spoken in meetings (`en`, `fr`, …); detected per track when `None`.
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Transcribe as soon as a recording stops (when a model is installed).
+    #[serde(default = "yes")]
+    pub auto_transcribe: bool,
+    /// Days audio is kept after the transcript is validated (or made, if never validated).
+    #[serde(default = "default_retention")]
+    pub retention_days: u32,
+}
+
+fn default_retention() -> u32 {
+    retention::DEFAULT_DAYS
 }
 
 fn yes() -> bool {
@@ -65,6 +90,10 @@ impl Default for ScribeSettings {
             mic_device: None,
             capture_system: true,
             consent_reminder: true,
+            model: None,
+            language: None,
+            auto_transcribe: true,
+            retention_days: retention::DEFAULT_DAYS,
         }
     }
 }
@@ -99,6 +128,8 @@ pub struct LiveRecording {
 #[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct ScribeStatus {
     pub support: CaptureSupport,
+    /// Transcription can run on this system.
+    pub transcription: bool,
     pub live: Option<LiveRecording>,
 }
 
@@ -133,6 +164,10 @@ pub struct MeetingAudio {
     pub bytes: u32,
     pub tracks: Vec<AudioTrack>,
     pub warnings: Vec<String>,
+    /// A transcription queued, running or failed.
+    pub job: Option<transcribe::JobView>,
+    /// When the audio will be deleted (retention setting); `None` while it is kept.
+    pub purge_at: Option<Timestamp>,
 }
 
 /// Size of one meeting's audio (Settings → Files).
@@ -155,6 +190,8 @@ pub struct ScribeRuntime {
     live: Mutex<Option<Live>>,
     /// Meetings whose tracks are being encoded.
     encoding: Mutex<HashSet<Id>>,
+    /// Transcription queue and model downloads.
+    jobs: transcribe::Jobs,
 }
 
 impl ScribeRuntime {
@@ -224,6 +261,7 @@ pub fn scribe_status(state: State<'_, AppState>) -> CommandResult<ScribeStatus> 
         .map(|l| l.info.clone());
     Ok(ScribeStatus {
         support: capture::support(),
+        transcription: engine::AVAILABLE,
         live,
     })
 }
@@ -251,14 +289,27 @@ pub fn set_scribe_settings(
     settings: ScribeSettings,
 ) -> CommandResult<ScribeSettings> {
     let mut settings = settings;
-    settings.mic_device = settings
-        .mic_device
-        .map(|d| d.trim().to_owned())
-        .filter(|d| !d.is_empty());
+    let blank_to_none =
+        |v: Option<String>| v.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+    settings.mic_device = blank_to_none(settings.mic_device);
+    settings.language = blank_to_none(settings.language).map(|l| l.to_lowercase());
+    if let Some(model) = &settings.model
+        && models::whisper(model).is_none()
+    {
+        return Err(invalid(format!("unknown model '{model}'")));
+    }
+    if !(1..=365).contains(&settings.retention_days) {
+        return Err(invalid("audio is kept between 1 and 365 days"));
+    }
     let mut config = state
         .config
         .lock()
         .map_err(|_| internal("config lock poisoned"))?;
+    // The model is set by downloads (and the model list); a form that read the settings
+    // before a download finished must not clear it.
+    if settings.model.is_none() {
+        settings.model = config.scribe.model.clone();
+    }
     config.scribe = settings.clone();
     config
         .save(&state.config_path)
@@ -462,6 +513,7 @@ fn finish_recording(app: &AppHandle, dir: &Path, meta: &Meta) {
         *live = None;
     }
     encode_later(app, &meta.meeting_id);
+    transcribe::after_recording(app, &meta.meeting_id);
     changed(app, &meta.meeting_id);
 }
 
@@ -532,6 +584,9 @@ pub fn scribe_audio(
             path: format!("meeting-audio/{meeting_id}/{t}"),
         })
         .collect();
+    let purge_at = with_store_ref(&state, |s| s.meeting(&meeting_id))
+        .ok()
+        .and_then(|m| retention::purge_at(&m, settings_of(&state).retention_days));
     Ok(Some(MeetingAudio {
         state: audio_state,
         started_at: meta.started_at,
@@ -539,6 +594,8 @@ pub fn scribe_audio(
         bytes: files::size(&dir).min(u64::from(u32::MAX)) as u32,
         tracks,
         warnings: meta.warnings,
+        job: state.scribe.jobs.view(&dir, &meeting_id),
+        purge_at,
     }))
 }
 
@@ -681,6 +738,7 @@ fn encode_later(app: &AppHandle, meeting_id: &str) {
 /// At start: repairs the files of interrupted recordings (the meeting page offers to keep
 /// them) and finishes encodings a quit cut short.
 pub fn resume(app: &AppHandle) {
+    transcribe::resume(app);
     let state = app.state::<AppState>();
     for (dir, meta) in files::all(&state.data_dir) {
         if meta.finished {

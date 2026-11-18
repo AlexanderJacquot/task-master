@@ -1,0 +1,17 @@
+# Scribe's speech models (ADR 026, M20).
+[env]
+# whisper-rs-sys: use the bindings it ships for its bundled whisper.cpp (no libclang needed).
+WHISPER_DONT_GENERATE_BINDINGS = "1"
+# whisper.cpp for any user's CPU, not the build machine's: no -march=native, an AVX2
+# baseline on x86-64 (every Windows 11 PC has it). Ignored on Arm.
+GGML_NATIVE = "OFF"
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+GGML_FMA = "ON"
+GGML_F16C = "ON"
+
+# sherpa-onnx's Windows libraries use the static C runtime (/MT): build everything with it.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

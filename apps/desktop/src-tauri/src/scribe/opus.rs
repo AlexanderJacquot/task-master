@@ -110,7 +110,6 @@ pub fn encode_wav(wav: &Path, out: &Path, mut progress: impl FnMut(f32)) -> io::
 }
 
 /// Decodes an Ogg Opus track this module wrote back to 16 kHz samples.
-#[allow(dead_code)] // Transcription (M20) reads tracks with it.
 pub fn decode(path: &Path) -> io::Result<Vec<i16>> {
     let mut reader = PacketReader::new(BufReader::new(File::open(path)?));
     let head = reader

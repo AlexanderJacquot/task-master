@@ -24,6 +24,8 @@ import type {
   Snapshot,
   StoredUpload,
   SyncStatus,
+  TranscriptHit,
+  TranscriptSegment,
 } from "./types";
 
 /** A failure reported by the core (`invalid`, `not_found`, `internal`) or by Tauri itself. */
@@ -58,6 +60,10 @@ export interface Api {
   taskActivity(taskId: string, limit: number): Promise<Activity[]>;
   /** Reads a quick-capture line (read-only). `today` is the local date. */
   parseCapture(text: string, today: string): Promise<Capture>;
+  /** A meeting's transcript (Scribe); absent in tests that do not need it. */
+  transcript?(meetingId: string): Promise<TranscriptSegment[]>;
+  /** Transcript lines matching every word, best first. */
+  searchTranscripts?(text: string, limit: number): Promise<TranscriptHit[]>;
   onChanged(handler: (event: Changed) => void): Promise<() => void>;
   /** Attachments and links; absent where there is no file system (some tests). */
   files?: FilesApi;
@@ -234,6 +240,8 @@ export const tauriApi: Api = {
   search: (text, limit) => unwrap(commands.search(text, limit)),
   taskActivity: (taskId, limit) => unwrap(commands.taskActivity(taskId, limit)),
   parseCapture: (text, today) => unwrap(commands.parseCapture(text, today)),
+  transcript: (meetingId) => unwrap(commands.meetingTranscript(meetingId)),
+  searchTranscripts: (text, limit) => unwrap(commands.searchTranscripts(text, limit)),
   onChanged: (handler) => events.storeChanged.listen((event) => handler(event.payload)),
   files: tauriFiles,
   calendar: tauriCalendar,

@@ -1,4 +1,13 @@
-import type { Levels, MeetingAudio, ScribeApi, ScribeSettings, ScribeStatus } from "../lib/scribe";
+import type {
+  Levels,
+  MeetingAudio,
+  ModelInfo,
+  ModelProgress,
+  Progress,
+  ScribeApi,
+  ScribeSettings,
+  ScribeStatus,
+} from "../lib/scribe";
 import type {
   AgentSession,
   Attachment,
@@ -221,6 +230,7 @@ export function meeting(overrides: Partial<Meeting> = {}): Meeting {
     summary: null,
     transcribed_at: null,
     validated_at: null,
+    speakers: {},
     created_at: counter,
     updated_at: counter,
     deleted_at: null,
@@ -287,16 +297,43 @@ export function fakeScribe(overrides: Partial<ScribeApi> = {}) {
   type Audio = MeetingAudio;
   const calls: string[] = [];
   const levelHandlers: Array<(l: Levels) => void> = [];
+  const progressHandlers: Array<(p: Progress) => void> = [];
+  const modelHandlers: Array<(p: ModelProgress) => void> = [];
+  let models: ModelInfo[] = [
+    {
+      id: "large-v3-turbo",
+      label: "Accurate (large-v3-turbo)",
+      description: "Best results.",
+      download_bytes: 1_657_963_836,
+      installed: false,
+      active: false,
+      downloading: null,
+    },
+    {
+      id: "small",
+      label: "Fast (small)",
+      description: "Faster.",
+      download_bytes: 521_010_528,
+      installed: false,
+      active: false,
+      downloading: null,
+    },
+  ];
   const changedHandlers: Array<(id: string) => void> = [];
   const audio: Record<string, Audio | null> = {};
   let status: Status = {
     support: { recording: true, system_audio: true, note: null },
+    transcription: true,
     live: null,
   };
   let settings: ScribeSettings = {
     mic_device: null,
     capture_system: true,
     consent_reminder: true,
+    model: null,
+    language: null,
+    auto_transcribe: true,
+    retention_days: 10,
   };
   const api: Api = {
     status: async () => status,
@@ -325,6 +362,8 @@ export function fakeScribe(overrides: Partial<ScribeApi> = {}) {
         bytes: 44,
         tracks: [],
         warnings: [],
+        job: null,
+        purge_at: null,
       };
       return status;
     },
@@ -343,6 +382,8 @@ export function fakeScribe(overrides: Partial<ScribeApi> = {}) {
             { track: "system", path: `meeting-audio/${id}/system` },
           ],
           warnings: [],
+          job: null,
+          purge_at: null,
         };
       }
       return status;
@@ -358,6 +399,8 @@ export function fakeScribe(overrides: Partial<ScribeApi> = {}) {
             bytes: 100_000,
             tracks: [{ track: "mic", path: `meeting-audio/${meetingId}/mic` }],
             warnings: ["The recording was interrupted; what was recorded was kept."],
+            job: null,
+            purge_at: null,
           }
         : null;
     },
@@ -378,6 +421,42 @@ export function fakeScribe(overrides: Partial<ScribeApi> = {}) {
       changedHandlers.push(handler);
       return () => undefined;
     },
+    models: async () => models,
+    downloadModel: async (id) => {
+      calls.push(`download:${id}`);
+      models = models.map((m) => (m.id === id ? { ...m, downloading: 0 } : m));
+    },
+    cancelDownload: async () => {
+      calls.push("cancel-download");
+    },
+    deleteModel: async (id) => {
+      calls.push(`delete-model:${id}`);
+      models = models.map((m) => (m.id === id ? { ...m, installed: false, active: false } : m));
+      return models;
+    },
+    process: async (meetingId) => {
+      calls.push(`process:${meetingId}`);
+      const current = audio[meetingId];
+      if (current) {
+        audio[meetingId] = {
+          ...current,
+          job: { state: "queued", step: null, fraction: 0, error: null },
+        };
+      }
+    },
+    cancelProcess: async (meetingId) => {
+      calls.push(`cancel-process:${meetingId}`);
+      const current = audio[meetingId];
+      if (current) audio[meetingId] = { ...current, job: null };
+    },
+    onProgress: async (handler) => {
+      progressHandlers.push(handler);
+      return () => undefined;
+    },
+    onModelProgress: async (handler) => {
+      modelHandlers.push(handler);
+      return () => undefined;
+    },
     ...overrides,
   };
   return {
@@ -393,5 +472,15 @@ export function fakeScribe(overrides: Partial<ScribeApi> = {}) {
     emitChanged: (id: string) => {
       for (const h of changedHandlers) h(id);
     },
+    emitProgress: (p: Progress) => {
+      for (const h of progressHandlers) h(p);
+    },
+    emitModelProgress: (p: ModelProgress) => {
+      for (const h of modelHandlers) h(p);
+    },
+    setModels: (next: ModelInfo[]) => {
+      models = next;
+    },
+    models: () => models,
   };
 }
