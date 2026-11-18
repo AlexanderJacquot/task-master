@@ -66,8 +66,13 @@ fn state_label(state: SessionState) -> &'static str {
         SessionState::Cancelled => "Stopped",
         SessionState::Interrupted => "Interrupted",
         SessionState::Terminal => "In terminal",
+        SessionState::Desktop => "In desktop app",
     }
 }
+
+/// Refusal for a session still open in the Claude desktop app (ADR 029).
+const IN_DESKTOP: &str = "this session is open in the Claude desktop app: continue it there, \
+                          or mark it done first";
 
 /// Kept of a run's stderr, for the error message when it fails.
 const STDERR_TAIL: usize = 4000;
@@ -141,6 +146,103 @@ fn app_rules(task_title: &str, task_id: &str, done_status: &str) -> String {
          you work. If you need a decision, stop, say what you need in your final message and \
          in complete_session; the user will reply with a follow-up message.\n"
     )
+}
+
+/// The first message of a session opened in the Claude desktop app (ADR 029): no system
+/// prompt or MCP config can be passed there, so the rules come first, with the session id
+/// the task-master tools need. `brief` is `None` for the short form (the agent reads the
+/// task with get_task), used when the whole brief would make the link too long.
+pub fn desktop_prompt(
+    task_title: &str,
+    task_id: &str,
+    session_id: &str,
+    done_status: &str,
+    directive: Option<&str>,
+    brief: Option<&str>,
+    instructions: &str,
+) -> String {
+    let mut out = format!(
+        "You were started from task-master, the user's task manager, to work on the task \
+         \"{task_title}\" (id `{task_id}`), as its agent session `{session_id}`.\n\n\
+         Track your work with the task-master MCP tools as you go: create agent tasks for the \
+         steps you plan (they become subtasks of this task), move them to in_progress and \
+         done, add short notes for findings and decisions, and call complete_session with a \
+         summary (done, left, to check) before you finish. This conversation was not started \
+         with a session, so pass session_id `{session_id}` to add_note and complete_session. \
+         If this task has subtasks of its own (the user's), mark each one done with \
+         update_task as soon as you finish it; complete_session refuses while a subtask is \
+         open unless you list it in left_open. The app then moves this task to {done_status} \
+         for the user to check: do not mark it done yourself. If the task-master tools are \
+         not available here, say so and work from this message.\n"
+    );
+    if let Some(directive) = directive.map(str::trim).filter(|d| !d.is_empty()) {
+        out.push_str(&format!(
+            "\n# The user's standing instructions\n\nThe user set these for every agent \
+             session they start; follow them unless the task says otherwise.\n\n{directive}\n"
+        ));
+    }
+    match brief {
+        Some(brief) => {
+            out.push('\n');
+            out.push_str(&opening_prompt(brief, instructions));
+        }
+        None => {
+            let instructions = instructions.trim();
+            let ask = if instructions.is_empty() {
+                "Work on this task in the current folder."
+            } else {
+                instructions
+            };
+            out.push_str(&format!(
+                "\nStart by reading the task with get_task (task_id `{task_id}`).\n\n\
+                 ## What to do\n\n{ask}\n"
+            ));
+        }
+    }
+    out
+}
+
+/// The link that opens a new Code session in the Claude desktop app, in `folder`, with
+/// `prompt` typed in (the user sends it).
+pub fn desktop_link(prompt: &str, folder: &str) -> String {
+    format!(
+        "claude://code/new?q={}&folder={}",
+        percent_encode(prompt),
+        percent_encode(folder)
+    )
+}
+
+/// Every byte but the URL's unreserved characters as `%XX` (spaces as `%20`, not `+`).
+fn percent_encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() * 3);
+    for b in text.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// Longest link handed to the system: Windows truncates protocol launches near 2 KB.
+fn max_link(os: Os) -> usize {
+    match os {
+        Os::Windows => 2_000,
+        _ => 16_000,
+    }
+}
+
+/// Why sessions cannot open in the desktop app here, if they cannot.
+pub fn desktop_unavailable(os: Os, runtime: AgentRuntime) -> Option<&'static str> {
+    match (os, runtime) {
+        (Os::Linux, _) => Some("The Claude desktop app is for macOS and Windows"),
+        (_, AgentRuntime::Wsl) => Some(
+            "The Claude desktop app runs sessions on this computer, not in WSL; set the \
+             runtime to this computer in Settings → Agents, or run it in the background",
+        ),
+        _ => None,
+    }
 }
 
 /// `--mcp-config` content: our server for this session, and the status picked for agent
@@ -716,6 +818,20 @@ pub struct AgentStart {
     pub model: Option<String>,
     /// Extra instructions; may be empty.
     pub prompt: String,
+    /// In the background (the default) or in the Claude desktop app.
+    #[serde(default)]
+    pub surface: AgentSurface,
+}
+
+/// Where a session started from a task runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSurface {
+    /// Headless, followed by the app.
+    #[default]
+    Background,
+    /// A new Code session in the Claude desktop app, which the user sends (ADR 029).
+    Desktop,
 }
 
 /// Starts a session on a task. The session is recorded even when Claude Code cannot be
@@ -728,9 +844,15 @@ pub fn agent_start(
     input: AgentStart,
 ) -> CommandResult<AgentSession> {
     let settings = settings(&state)?;
+    if input.surface == AgentSurface::Desktop
+        && let Some(why) = desktop_unavailable(Os::current(), settings.runtime)
+    {
+        return Err(invalid(why));
+    }
     let folder = launch::to_runtime_path(&input.folder, settings.runtime);
     let permission_mode = input
         .permission_mode
+        .clone()
         .unwrap_or_else(|| settings.permission_mode.clone());
     let (brief, title, done_status) = with_store(&state, |s| {
         let snapshot = s.snapshot()?;
@@ -762,6 +884,18 @@ pub fn agent_start(
     })?
     .agent_sessions
     .remove(0);
+    if input.surface == AgentSurface::Desktop {
+        return open_in_desktop(
+            &app,
+            &state,
+            &settings,
+            session,
+            &title,
+            &done_status,
+            &brief,
+            &input,
+        );
+    }
     let prompt = opening_prompt(&brief, &input.prompt);
     let rules = session_rules(
         &title,
@@ -774,6 +908,51 @@ pub fn agent_start(
         return Err(invalid(message));
     }
     mark_started(&state, &settings, &input.task_id);
+    Ok(session)
+}
+
+/// Marks the session open in the desktop app and opens the link there (ADR 029).
+#[allow(clippy::too_many_arguments)]
+fn open_in_desktop(
+    app: &AppHandle,
+    state: &AppState,
+    settings: &AgentSettings,
+    session: AgentSession,
+    title: &str,
+    done_status: &str,
+    brief: &str,
+    input: &AgentStart,
+) -> CommandResult<AgentSession> {
+    let prompt = |brief: Option<&str>| {
+        desktop_prompt(
+            title,
+            &input.task_id,
+            &session.id,
+            done_status,
+            settings.directive.as_deref(),
+            brief,
+            &input.prompt,
+        )
+    };
+    let mut link = desktop_link(&prompt(Some(brief)), &session.folder);
+    if link.len() > max_link(Os::current()) {
+        link = desktop_link(&prompt(None), &session.folder);
+    }
+    let session = with_store(state, |s| {
+        s.execute_without_undo(vec![Command::UpdateAgentSession {
+            id: session.id.clone(),
+            changes: vec![AgentSessionChange::State(SessionState::Desktop)],
+        }])
+    })?
+    .agent_sessions
+    .remove(0);
+    use tauri_plugin_opener::OpenerExt;
+    if let Err(e) = app.opener().open_url(&link, None::<&str>) {
+        let message = format!("cannot open the Claude desktop app: {e}");
+        fail(state, &session.id, &message);
+        return Err(invalid(message));
+    }
+    mark_started(state, settings, &input.task_id);
     Ok(session)
 }
 
@@ -803,6 +982,9 @@ pub fn agent_send(
     }
     if is_live(&state, &session_id)? {
         return Err(invalid("the session is still running"));
+    }
+    if with_store(&state, |s| s.agent_session(&session_id))?.state == SessionState::Desktop {
+        return Err(invalid(IN_DESKTOP));
     }
     let session = with_store(&state, |s| {
         s.execute_without_undo(vec![Command::UpdateAgentSession {
@@ -884,6 +1066,9 @@ pub fn agent_open_terminal(
     })?;
     if session.device_id != device {
         return Err(invalid("this session ran on another device; open it there"));
+    }
+    if session.state == SessionState::Desktop {
+        return Err(invalid(IN_DESKTOP));
     }
     let os = Os::current();
     let default_terminal = match os {
@@ -2074,6 +2259,51 @@ mod tests {
         );
         drop(store);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_desktop_session_opens_with_its_rules_and_session_id() {
+        let full = desktop_prompt(
+            "Redesign the header",
+            "t1",
+            "s1",
+            "Review",
+            Some("Use British spelling."),
+            Some("# Task: Redesign the header\n"),
+            "Start with the logo",
+        );
+        assert!(full.contains("pass session_id `s1` to add_note and complete_session"));
+        assert!(full.contains("moves this task to Review"));
+        assert!(full.contains("Use British spelling."));
+        assert!(full.contains("# Task: Redesign the header"));
+        assert!(full.ends_with("## What to do\n\nStart with the logo\n"));
+        // The short form sends the agent to the task instead of carrying it.
+        let short = desktop_prompt("Redesign", "t1", "s1", "Review", None, None, "");
+        assert!(short.contains("get_task (task_id `t1`)"));
+        assert!(!short.contains("standing instructions"));
+        assert!(short.ends_with("Work on this task in the current folder.\n"));
+    }
+
+    #[test]
+    fn the_desktop_link_encodes_the_prompt_and_folder() {
+        assert_eq!(
+            desktop_link("Fix it: 100% & more\né", "/Users/me/my repo"),
+            "claude://code/new?q=Fix%20it%3A%20100%25%20%26%20more%0A%C3%A9\
+             &folder=%2FUsers%2Fme%2Fmy%20repo"
+        );
+        assert_eq!(
+            desktop_link("a", r"C:\Code\x"),
+            "claude://code/new?q=a&folder=C%3A%5CCode%5Cx"
+        );
+    }
+
+    #[test]
+    fn the_desktop_app_is_for_macos_and_windows_on_this_computer() {
+        assert!(desktop_unavailable(Os::Mac, AgentRuntime::Native).is_none());
+        assert!(desktop_unavailable(Os::Windows, AgentRuntime::Native).is_none());
+        assert!(desktop_unavailable(Os::Windows, AgentRuntime::Wsl).is_some());
+        assert!(desktop_unavailable(Os::Linux, AgentRuntime::Native).is_some());
+        assert!(max_link(Os::Windows) < max_link(Os::Mac));
     }
 
     #[test]

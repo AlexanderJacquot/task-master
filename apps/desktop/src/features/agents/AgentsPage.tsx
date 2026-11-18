@@ -648,7 +648,9 @@ function SessionRow({
     ? (activity ?? "Running on another device")
     : session.state === "terminal"
       ? (session.summary ?? "Continuing in a terminal")
-      : (session.summary ?? session.error ?? "");
+      : session.state === "desktop"
+        ? (session.summary ?? "Open in the Claude desktop app")
+        : (session.summary ?? session.error ?? "");
   return (
     <li className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-[13px] hover:bg-hover">
       <span

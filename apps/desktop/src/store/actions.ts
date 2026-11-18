@@ -1251,7 +1251,13 @@ export function agentTimerEnd(
 ): number | null {
   if (!timer?.session_id) return null;
   const session = sessions[timer.session_id];
-  if (!session || session.state === "running" || session.state === "terminal") return null;
+  if (
+    !session ||
+    session.state === "running" ||
+    session.state === "terminal" ||
+    session.state === "desktop"
+  )
+    return null;
   const end = session.ended_at ?? session.updated_at;
   return end >= timer.started_at ? end : null;
 }
@@ -1325,11 +1331,14 @@ export function adoptTask(store: TaskStore, id: string) {
   return updateTask(store, id, [{ owner: "me" }]);
 }
 
-/** Ends a session continued in a terminal that the app could not follow to its end. */
+/**
+ * Ends a session continued in a terminal, or opened in the desktop app, that the app could
+ * not follow to its end.
+ */
 export function markSessionDone(store: TaskStore, id: string) {
   const s = store.getState();
   const session = s.agent_sessions[id];
-  if (session?.state !== "terminal") return Promise.resolve(null);
+  if (session?.state !== "terminal" && session?.state !== "desktop") return Promise.resolve(null);
   const now = Date.now();
   return s.mutate([{ type: "update_agent_session", id, changes: [{ state: "done" }] }], {
     upsert: { agent_sessions: [{ ...session, state: "done", ended_at: now, updated_at: now }] },
@@ -1340,7 +1349,12 @@ export function markSessionDone(store: TaskStore, id: string) {
 export function removeAgentSession(store: TaskStore, id: string) {
   const s = store.getState();
   const session = s.agent_sessions[id];
-  if (!session || session.state === "running" || session.state === "terminal")
+  if (
+    !session ||
+    session.state === "running" ||
+    session.state === "terminal" ||
+    session.state === "desktop"
+  )
     return Promise.resolve(null);
   const task = s.tasks[session.task_id];
   return s.mutate([{ type: "delete_agent_session", id }], {

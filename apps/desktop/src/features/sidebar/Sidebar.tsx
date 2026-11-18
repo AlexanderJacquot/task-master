@@ -50,6 +50,7 @@ import { useUpdates } from "../../lib/updater";
 import { inView, isOpen, type ViewContext } from "../../lib/views";
 import { createEpic, createProject, deleteProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { isActive } from "../agents/sessions";
 import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import { PROJECT_COLORS } from "../organize/projectColors";
@@ -497,9 +498,7 @@ export function Sidebar({
   const views = useStoreState((s) => s.views);
   const statusList = useStoreState((s) => s.statuses);
   const runningAgents = useStoreState(
-    (s) =>
-      Object.values(s.agent_sessions).filter((a) => a.state === "running" || a.state === "terminal")
-        .length,
+    (s) => Object.values(s.agent_sessions).filter(isActive).length,
   );
   const [adding, setAdding] = useState<"project" | "epic" | null>(null);
   const [showArchived, setShowArchived] = useState(false);

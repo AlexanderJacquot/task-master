@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use taskmaster_core::{
     AttachmentChange, Command, EpicChange, EpicState, MAX_ATTACHMENT_BYTES, NewAttachment,
-    ProjectChange, SessionState, Snapshot, Tag, TagChange, TaskOwner,
+    ProjectChange, Snapshot, Tag, TagChange, TaskOwner,
 };
 
 use super::{TaskServer, ToolResult, change_line, find_task, non_empty, tag_key};
@@ -545,10 +545,7 @@ impl TaskServer {
         if self.session.as_ref().is_some_and(|s| s.id == session.id) {
             return Err("this is the session you are running in".into());
         }
-        if matches!(
-            session.state,
-            SessionState::Running | SessionState::Terminal
-        ) {
+        if session.state.is_active() {
             return Err(format!(
                 "session {} has not ended ({}); only ended sessions are removed",
                 session.id,

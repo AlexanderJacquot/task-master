@@ -86,6 +86,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
   const [now, setNow] = useState(Date.now());
   const running = session.state === "running";
   const inTerminal = session.state === "terminal";
+  const inDesktop = session.state === "desktop";
 
   // Notes change while it runs; reload them with the session.
   // biome-ignore lint/correctness/useExhaustiveDependencies: updated_at is the reload trigger (each note bumps it).
@@ -152,13 +153,15 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           {folderName(session.folder)} · {formatAgo(session.started_at, now)} · {duration}
           {cost && ` · ${cost}`}
         </button>
-        <IconButton
-          label={running ? "Continue in terminal (stops the background run)" : "Open in terminal"}
-          disabled={!!busy}
-          onClick={() => void act("terminal", () => api.openTerminal(session.id))}
-        >
-          <SquareTerminal size={14} />
-        </IconButton>
+        {!inDesktop && (
+          <IconButton
+            label={running ? "Continue in terminal (stops the background run)" : "Open in terminal"}
+            disabled={!!busy}
+            onClick={() => void act("terminal", () => api.openTerminal(session.id))}
+          >
+            <SquareTerminal size={14} />
+          </IconButton>
+        )}
         {session.state === "interrupted" && (
           <Button
             size="sm"
@@ -177,7 +180,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           >
             <StopIcon size={14} />
           </IconButton>
-        ) : inTerminal ? (
+        ) : inTerminal || inDesktop ? (
           <IconButton
             label="Mark done"
             disabled={!!busy}
@@ -207,6 +210,13 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           <SquareTerminal size={13} className="shrink-0" aria-hidden />
           Continuing in a terminal. When the agent records its summary, or you mark it done, the
           terminal closes a few seconds later.
+        </p>
+      )}
+      {inDesktop && (
+        <p role="status" className="flex items-center gap-1.5 text-accent">
+          <Bot size={13} className="shrink-0" aria-hidden />
+          Opened in the Claude desktop app: send the prompt there. It ends when the agent records
+          its summary, or when you mark it done.
         </p>
       )}
 
@@ -247,7 +257,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
             {session.turns !== null && `${session.turns} turns · `}
             {session.runtime === "wsl" ? "WSL" : "native"}
           </p>
-          {!running && !inTerminal && (
+          {!running && !inTerminal && !inDesktop && (
             <form
               className="flex gap-2"
               onSubmit={(e) => {

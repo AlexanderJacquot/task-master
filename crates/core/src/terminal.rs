@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::error::{Error, Result};
-use crate::model::{Id, ProjectFolder, Timestamp};
+use rusqlite::OptionalExtension;
+
+use crate::model::{AgentSession, Id, ProjectFolder, SessionState, Timestamp};
 use crate::ops::{Batch, Change, Entity, OpKind};
 use crate::query;
 
@@ -103,14 +105,10 @@ fn record_one(
             return Err(Error::invalid(format!("{name} cannot be negative")));
         }
     }
-    // The app's own runs have their agent session already.
-    let own: bool = b.tx.query_row(
-        "SELECT EXISTS (SELECT 1 FROM agent_sessions WHERE claude_session_id = ?1)",
-        [&r.claude_session_id],
-        |row| row.get(0),
-    )?;
-    if own {
-        return Ok(());
+    // The app's own runs have their agent session already. One opened in the desktop
+    // app, or that never reported a cost, takes its totals from the transcript (M22).
+    if let Some(session) = own_run(b, &r.claude_session_id)? {
+        return fill_own_run(b, &session, &r);
     }
     let title = clean(r.title);
     let model = clean(r.model);
@@ -181,6 +179,59 @@ fn record_one(
             ))
         }
     }
+}
+
+/// The live agent session that ran this Claude Code session, if the app started it.
+fn own_run(b: &Batch<'_, '_>, claude_session_id: &str) -> Result<Option<AgentSession>> {
+    let id: Option<Id> =
+        b.tx.query_row(
+            "SELECT id FROM agent_sessions WHERE claude_session_id = ?1 AND deleted_at IS NULL
+             ORDER BY created_at LIMIT 1",
+            [claude_session_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    id.map(|id| query::agent_session(b.tx, &id)).transpose()
+}
+
+/// Gives a session started from a task the transcript's cost, time and requests when the
+/// app has none of its own for it: a session in the desktop app, or one that ended without
+/// reporting a cost (never a run in progress). Only on the device that started it.
+fn fill_own_run(
+    b: &mut Batch<'_, '_>,
+    session: &AgentSession,
+    r: &TerminalSessionRecord,
+) -> Result<()> {
+    // A headless run adds its own cost when it ends: never before.
+    let from_transcript = session.state == SessionState::Desktop
+        || (!session.state.is_active() && session.cost_usd_micros.is_none());
+    if session.device_id != b.device_id() || !from_transcript || r.cost_usd_micros.is_none() {
+        return Ok(());
+    }
+    let mut patch = Map::new();
+    for (key, now, then) in [
+        (
+            "cost_usd_micros",
+            session.cost_usd_micros,
+            r.cost_usd_micros,
+        ),
+        ("duration_ms", session.duration_ms, r.duration_ms),
+        ("turns", session.turns, r.turns),
+    ] {
+        if then.is_some() && now != then {
+            patch.insert(key.into(), json!(then));
+        }
+    }
+    if patch.is_empty() {
+        return Ok(());
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::AgentSession,
+        &session.id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
 }
 
 /// Whether the session's project was ever changed with [`TerminalSessionChange`] (an op

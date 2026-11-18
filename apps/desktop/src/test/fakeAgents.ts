@@ -54,7 +54,7 @@ export function fakeAgents(
         permission_mode: input.permission_mode ?? settings.permission_mode,
         model: input.model ?? null,
         prompt: input.prompt,
-        state: "running",
+        state: input.surface === "desktop" ? "desktop" : "running",
         started_at: Date.now(),
         ended_at: null,
       });

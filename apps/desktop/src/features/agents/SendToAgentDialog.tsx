@@ -1,15 +1,23 @@
 // "Send to agent" (ADR 017): pick the folder and permissions, add instructions, and start
-// a background agent session on the task.
+// a background agent session on the task, or open one in the Claude desktop app (ADR 029).
 
 import { Dialog } from "radix-ui";
 import { useEffect, useState } from "react";
 import { Button, cx, INPUT, Select } from "../../components/ui";
-import type { AgentSession, AgentSettings, Changes, ProjectFolder, Task } from "../../lib/types";
+import type {
+  AgentSession,
+  AgentSettings,
+  AgentSurface,
+  Changes,
+  ProjectFolder,
+  Task,
+} from "../../lib/types";
 import { startTimer } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import {
   DEFAULT_MODEL,
   defaultFolder,
+  desktopAppPossible,
   folderName,
   formatCost,
   MODELS,
@@ -17,6 +25,16 @@ import {
   recentFolders,
 } from "./sessions";
 import { countedSessions, limitStatuses, PERIOD_LABEL } from "./usage";
+
+const SURFACE_KEY = "task-master.agents.surface";
+
+function loadSurface(): AgentSurface {
+  try {
+    return localStorage.getItem(SURFACE_KEY) === "desktop" ? "desktop" : "background";
+  } catch {
+    return "background";
+  }
+}
 
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -66,6 +84,7 @@ export function SendToAgentDialog({
   const [confirmAll, setConfirmAll] = useState(false);
   const [confirmOver, setConfirmOver] = useState(false);
   const [prompt, setPrompt] = useState("");
+  const [surfaceChoice, setSurfaceChoice] = useState<AgentSurface>(loadSurface);
   const [brief, setBrief] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,9 +126,21 @@ export function SendToAgentDialog({
   );
   const limits = limitStatuses(counted, settings?.limits, Date.now());
   const spent = limits.filter((l) => l.over);
+  const desktopPossible = !!settings && desktopAppPossible(settings.runtime, navigator.userAgent);
+  const surface: AgentSurface = desktopPossible ? surfaceChoice : "background";
+  const inDesktop = surface === "desktop";
   const needsConfirm =
-    (mode === "bypassPermissions" && !confirmAll) || (spent.length > 0 && !confirmOver);
+    (mode === "bypassPermissions" && !confirmAll && !inDesktop) ||
+    (spent.length > 0 && !confirmOver);
   const canStart = !!folder.trim() && !!settings && !busy && !needsConfirm;
+  const chooseSurface = (next: AgentSurface) => {
+    setSurfaceChoice(next);
+    try {
+      localStorage.setItem(SURFACE_KEY, next);
+    } catch {
+      // Not remembered; the choice still applies.
+    }
+  };
 
   const start = async () => {
     setBusy(true);
@@ -122,6 +153,7 @@ export function SendToAgentDialog({
         // The settings' own model (possibly a full name not in the list) stays as is.
         model: model === DEFAULT_MODEL ? null : model,
         prompt,
+        surface,
       });
       store.getState().record(sessionChanges(session));
       // The work timer runs while the agent works; it stops when the session ends.
@@ -203,50 +235,77 @@ export function SendToAgentDialog({
             </fieldset>
           )}
 
-          <div className="flex flex-col gap-1 text-xs">
-            <span className="text-ink-3">Agent may</span>
-            <Select
-              value={mode}
-              onValueChange={(value) => {
-                setMode(value);
-                setConfirmAll(false);
-              }}
-              aria-label="Permissions"
-              className="w-56"
-              options={PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label }))}
-            />
-            <span className="text-ink-3">
-              {PERMISSION_MODES.find((m) => m.value === mode)?.hint}
-            </span>
-            {mode === "bypassPermissions" && (
-              <label className="flex items-center gap-2 text-ink-2">
-                <input
-                  type="checkbox"
-                  checked={confirmAll}
-                  onChange={(e) => setConfirmAll(e.target.checked)}
-                  className="accent-accent"
-                />
-                I understand the agent will run commands without asking.
-              </label>
-            )}
-          </div>
+          {desktopPossible && (
+            <div className="flex flex-col gap-1 text-xs">
+              <span className="text-ink-3">Run</span>
+              <Select
+                value={surface}
+                onValueChange={(v) => chooseSurface(v as AgentSurface)}
+                aria-label="Run"
+                className="w-56"
+                options={[
+                  { value: "background", label: "In the background" },
+                  { value: "desktop", label: "In the Claude desktop app" },
+                ]}
+              />
+              {inDesktop && (
+                <span className="text-ink-3">
+                  Opens a new Code session there with the task typed in: you send it, and choose
+                  permissions and model there. Notes and the summary come back here through the
+                  task-master MCP if the desktop app has it.
+                </span>
+              )}
+            </div>
+          )}
 
-          <div className="flex flex-col gap-1 text-xs">
-            <span className="text-ink-3">Model</span>
-            <Select
-              value={model}
-              onValueChange={setModel}
-              aria-label="Model"
-              className="w-56"
-              options={[
-                {
-                  value: DEFAULT_MODEL,
-                  label: settings?.model ? `Default (${settings.model})` : "Default",
-                },
-                ...MODELS,
-              ]}
-            />
-          </div>
+          {!inDesktop && (
+            <>
+              <div className="flex flex-col gap-1 text-xs">
+                <span className="text-ink-3">Agent may</span>
+                <Select
+                  value={mode}
+                  onValueChange={(value) => {
+                    setMode(value);
+                    setConfirmAll(false);
+                  }}
+                  aria-label="Permissions"
+                  className="w-56"
+                  options={PERMISSION_MODES.map((m) => ({ value: m.value, label: m.label }))}
+                />
+                <span className="text-ink-3">
+                  {PERMISSION_MODES.find((m) => m.value === mode)?.hint}
+                </span>
+                {mode === "bypassPermissions" && (
+                  <label className="flex items-center gap-2 text-ink-2">
+                    <input
+                      type="checkbox"
+                      checked={confirmAll}
+                      onChange={(e) => setConfirmAll(e.target.checked)}
+                      className="accent-accent"
+                    />
+                    I understand the agent will run commands without asking.
+                  </label>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1 text-xs">
+                <span className="text-ink-3">Model</span>
+                <Select
+                  value={model}
+                  onValueChange={setModel}
+                  aria-label="Model"
+                  className="w-56"
+                  options={[
+                    {
+                      value: DEFAULT_MODEL,
+                      label: settings?.model ? `Default (${settings.model})` : "Default",
+                    },
+                    ...MODELS,
+                  ]}
+                />
+              </div>
+            </>
+          )}
 
           <label className="flex flex-col gap-1 text-xs">
             <span className="text-ink-3">Instructions (optional)</span>
@@ -298,7 +357,7 @@ export function SendToAgentDialog({
               Cancel
             </Button>
             <Button size="sm" variant="primary" disabled={!canStart} onClick={() => void start()}>
-              {busy ? "Starting…" : "Start"}
+              {busy ? "Starting…" : inDesktop ? "Open in Claude" : "Start"}
             </Button>
           </div>
         </Dialog.Content>

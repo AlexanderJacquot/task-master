@@ -4,6 +4,27 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**M22 Sessions in the Claude desktop app** (2026-11-19, branch `m22-desktop-app`; ADR
+029): "Send to agent" can open the task in the Claude desktop app
+(`claude://code/new?q=&folder=`) instead of running headless. Core: session state `desktop`
+(active; any device may record it while open), `AgentSessionChange::ClaudeSessionId`; the
+transcript import fills a desktop session's (or an ended costless session's) cost, time
+and requests, never a running headless one. MCP: `add_note`/`complete_session` take
+`session_id` when the server has none (desktop sessions only); the stdio server records
+`CLAUDE_CODE_SESSION_ID`; `remove_agent_session` uses `is_active`. Shell: `AgentSurface`
+on `AgentStart`, `desktop_prompt` (rules with the session id, then directive, brief and
+instructions; a short form with get_task past 2,000 characters on Windows, 16,000
+elsewhere), `desktop_link`, `desktop_unavailable` (Linux and WSL refused); follow-ups
+and Open in terminal refused while open there. UI: Run choice in Send to agent
+(remembered; permissions and model hidden), "In desktop app" with Mark done, sidebar
+count via `isActive`. Docs: agents.md, mcp.md. Tests: core (2), MCP (1), shell (3),
+`agents.test.tsx` and `sessions.test.ts`. Not tried with the real desktop app (needs
+macOS or Windows): whether it writes transcripts to `~/.claude/projects` and gives
+`CLAUDE_CODE_SESSION_ID` to MCP servers. No migration (ships with schema 17).
+`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
+--workspace --locked` (with `WHISPER_DONT_GENERATE_BINDINGS=1`), `pnpm biome ci .`,
+`pnpm typecheck`, `pnpm test` (547 passed, 2 skipped) pass.
+
 **M21 Terminal sessions** (2026-11-18, branch `m21-terminal-usage`; ADR 028): Claude Code
 sessions run in a terminal, outside the app, now count on the Agents page with the app's
 own agent sessions. Core: migration 17 (`terminal_sessions`, synced and exported),
@@ -2177,7 +2198,7 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
   `WHISPER_DONT_GENERATE_BINDINGS=1` for Linux only (or add libclang to devenv). Check
   the Linux CI job too.
 - Milestone numbers: the Scribe plan's next step was also called M21 (summary, action
-  items); it becomes M22.
+  items); it becomes M23 (M21 and M22 went to terminal and desktop app sessions).
 - Scribe (meetings, docs/meetings-plan.md, ADR 025/026): M18–M20 built; M21 (summary,
   action items, MCP transcript search) to do. After it: a synced contacts list replacing
   free-text participant names (task `01a1d747…`), live captions, Linux capture, voice

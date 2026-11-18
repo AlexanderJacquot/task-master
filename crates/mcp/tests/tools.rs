@@ -715,6 +715,57 @@ async fn notes_and_the_summary_land_on_the_session() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn a_server_without_a_session_records_a_desktop_session_named_by_id() {
+    let f = fixture();
+    let (task, session) = (f.task.clone(), f.session.clone());
+    let before = f.store.agent_session(&session).unwrap().claude_session_id;
+    // Running headless: not one a session-less server may name.
+    let server = TaskServer::new(f.store, None).unwrap();
+    let client = connect(server.clone()).await;
+    let message = refused(
+        &client,
+        "add_note",
+        json!({ "body": "Hi", "session_id": session }),
+    )
+    .await;
+    assert!(message.contains("desktop app"), "{message}");
+    let message = refused(&client, "add_note", json!({ "body": "Hi" })).await;
+    assert!(message.contains("session_id"), "{message}");
+
+    with_store(&server, |s| {
+        s.execute_without_undo(vec![Command::UpdateAgentSession {
+            id: session.clone(),
+            changes: vec![AgentSessionChange::State(SessionState::Desktop)],
+        }])
+    });
+    ok(
+        &client,
+        "add_note",
+        json!({ "body": "Header drafted", "session_id": session }),
+    )
+    .await;
+    ok(
+        &client,
+        "complete_session",
+        json!({ "summary": "Header redesigned.", "session_id": session }),
+    )
+    .await;
+    client.cancel().await.unwrap();
+
+    let (notes, stored) = with_store(&server, |s| {
+        Ok((s.agent_notes(&task, None, 10)?, s.agent_session(&session)?))
+    });
+    assert_eq!(notes[0].body, "Header drafted");
+    assert_eq!(stored.summary.as_deref(), Some("Header redesigned."));
+    assert_eq!(stored.state, SessionState::Done);
+    // Inside Claude Code (as when these tests run in it), the conversation's id is kept.
+    match std::env::var("CLAUDE_CODE_SESSION_ID") {
+        Ok(id) if id.len() == 36 => assert_eq!(stored.claude_session_id, id),
+        _ => assert_eq!(stored.claude_session_id, before),
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn completing_needs_every_subtask_done_or_left_open_on_purpose() {
     let mut f = fixture();
     let task = f.task.clone();

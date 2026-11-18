@@ -8,6 +8,7 @@ export type {
   AgentSession_Serialize as AgentSession,
   AgentSettings_Serialize as AgentSettings,
   AgentStart_Deserialize as AgentStart,
+  AgentSurface,
   Attachment_Serialize as Attachment,
   AttachmentChange,
   AuthMode,

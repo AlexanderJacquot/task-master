@@ -502,6 +502,11 @@ pub enum SessionState {
     /// Continued by hand in a terminal (`claude --resume`), outside the app's control. Ends
     /// when the agent records its summary, the terminal closes, or the user marks it done.
     Terminal,
+    /// Opened in the Claude desktop app (M22, ADR 029): a conversation the app cannot
+    /// follow. Ends when the agent records its summary or the user marks it done. Any
+    /// device may record its notes and summary (the claude.ai connector runs on the sync
+    /// server).
+    Desktop,
 }
 
 impl SessionState {
@@ -513,12 +518,14 @@ impl SessionState {
             Self::Cancelled => "cancelled",
             Self::Interrupted => "interrupted",
             Self::Terminal => "terminal",
+            Self::Desktop => "desktop",
         }
     }
 
-    /// Still going: a headless run of the app, or a conversation open in a terminal.
+    /// Still going: a headless run of the app, or a conversation open in a terminal or the
+    /// desktop app.
     pub fn is_active(self) -> bool {
-        matches!(self, Self::Running | Self::Terminal)
+        matches!(self, Self::Running | Self::Terminal | Self::Desktop)
     }
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -529,6 +536,7 @@ impl SessionState {
             "cancelled" => Self::Cancelled,
             "interrupted" => Self::Interrupted,
             "terminal" => Self::Terminal,
+            "desktop" => Self::Desktop,
             _ => return None,
         })
     }
