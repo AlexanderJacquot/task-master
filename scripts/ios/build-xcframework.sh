@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # macOS only: builds crates/mobile for the iPhone and the simulator and packages it,
-# with the generated header, as an XCFramework inside TaskMasterKit (ADR 022).
+# with the generated header, as an XCFramework inside TaskMasterKit (ADR 030).
 # Pass `sim` to build the simulator slice only (CI).
 set -euo pipefail
 cd "$(dirname "$0")/../.."

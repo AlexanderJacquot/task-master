@@ -1,6 +1,6 @@
 [package]
 name = "taskmaster-mobile"
-description = "The phone's interface to task-master (ADR 022): one App object over the core and the sync engine, exported to Swift with UniFFI."
+description = "The phone's interface to task-master (ADR 030): one App object over the core and the sync engine, exported to Swift with UniFFI."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

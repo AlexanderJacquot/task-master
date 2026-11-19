@@ -1,5 +1,5 @@
 // swift-tools-version: 6.0
-// The phone's logic without its views (ADR 022): screen models over the Rust core.
+// The phone's logic without its views (ADR 030): screen models over the Rust core.
 // Builds and tests on Linux against target/debug (scripts/ios/test-kit.sh); on Apple
 // platforms the Rust library comes from the XCFramework built by
 // scripts/ios/build-xcframework.sh.

@@ -328,7 +328,7 @@ pub enum Files {
     /// Everything this device lacks (the desktop).
     #[default]
     All,
-    /// Nothing: content is fetched when opened, with [`fetch_file`] (the phone, ADR 022).
+    /// Nothing: content is fetched when opened, with [`fetch_file`] (the phone, ADR 030).
     OnDemand,
 }
 

@@ -1,5 +1,5 @@
 # The Xcode project is generated from this file with XcodeGen and never edited or checked
-# in (ADR 022): `xcodegen generate --spec apps/ios/project.yml`.
+# in (ADR 030): `xcodegen generate --spec apps/ios/project.yml`.
 name: TaskMaster
 options:
   bundleIdPrefix: space.solarnexus

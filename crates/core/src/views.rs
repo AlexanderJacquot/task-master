@@ -1,5 +1,5 @@
 //! Views: the rows of a list and the cells of a board, as pure functions of a
-//! [`Snapshot`] and a [`ViewSpec`] (plan section 5, ADR 022).
+//! [`Snapshot`] and a [`ViewSpec`] (plan section 5, ADR 030).
 //!
 //! The desktop evaluates views in TypeScript (`apps/desktop/src/lib/views.ts` and
 //! `board.ts`); front ends without that code (the phone, later the API and the CLI) ask

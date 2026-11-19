@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds crates/mobile and generates its Swift bindings (ADR 022) into TaskMasterKit.
+# Builds crates/mobile and generates its Swift bindings (ADR 030) into TaskMasterKit.
 # The generated files are never edited by hand and are not checked in: they must match
 # the library they were generated from.
 set -euo pipefail

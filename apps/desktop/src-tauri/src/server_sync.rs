@@ -1,5 +1,5 @@
 //! Sync with a task-master server (M13, ADR 015, docs/server.md). The schedule and the
-//! account flow live in `taskmaster_client::engine`, shared with the phone (ADR 022);
+//! account flow live in `taskmaster_client::engine`, shared with the phone (ADR 030);
 //! this module is the desktop's side: the account in `config.json`, status events to the
 //! UI, the worker threads, the loopback OIDC redirect and the commands the UI uses.
 //!

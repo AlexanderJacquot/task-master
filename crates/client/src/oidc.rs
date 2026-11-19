@@ -1,6 +1,6 @@
 //! OpenID Connect sign-in for a task-master server in `oidc` mode (ADR 015):
 //! authorization code + PKCE as a public client. The shell owns the redirect: a loopback
-//! listener on the desktop (RFC 8252), a custom URL scheme on the phone (ADR 022). The
+//! listener on the desktop (RFC 8252), a custom URL scheme on the phone (ADR 030). The
 //! ID token this ends with is traded for a server token by [`crate::Client::oidc_exchange`].
 
 use std::time::Duration;

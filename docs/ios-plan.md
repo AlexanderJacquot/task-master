@@ -1,6 +1,6 @@
 # task-master for iPhone: preparation and development plan
 
-Date: 2026-11-10 · Status: agreed (decisions in section 9); architecture in ADR 022.
+Date: 2026-11-10 · Status: agreed (decisions in section 9); architecture in ADR 030.
 
 ## 1. Summary
 
@@ -143,7 +143,7 @@ light and dark; decide on Parchment later).
 ### 4.3 Toolchain and CI (me, milestone P1)
 
 1. `crates/mobile` with UniFFI; `unsafe_code` allowed in that crate only. New dependency,
-   so ADR 022 records it (alternatives: `swift-bridge`, a hand-written C ABI, Tauri 2
+   so ADR 030 records it (alternatives: `swift-bridge`, a hand-written C ABI, Tauri 2
    mobile).
 2. Swift toolchain on Linux (`swiftly`), `TaskMasterKit` package, `swift test` in
    `ci.yml` on the existing Linux job.
@@ -253,7 +253,7 @@ apps/ios/
   mockups/                     HTML mockups per screen group
 scripts/ios/                   build-xcframework.sh, generate-bindings.sh
 .github/workflows/ios.yml
-docs/adr/022-ios-app.md        after this plan is agreed
+docs/adr/030-ios-app.md        after this plan is agreed
 ```
 
 `CLAUDE.md` gains a short iOS section when P1 lands (generated bindings are never edited,

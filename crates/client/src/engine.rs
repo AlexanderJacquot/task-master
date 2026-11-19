@@ -1,4 +1,4 @@
-//! The sync schedule and account flow shared by every shell (ADR 015, ADR 022): the
+//! The sync schedule and account flow shared by every shell (ADR 015, ADR 030): the
 //! desktop's worker threads and the phone both drive an [`Engine`] and supply a [`Host`]
 //! for what differs between them (where the account is saved, how status reaches the UI).
 //!

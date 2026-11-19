@@ -4,7 +4,7 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**iPhone app** (plan agreed 2026-11-10; `docs/ios-plan.md`, ADR 022): a SwiftUI app over
+**iPhone app** (plan agreed 2026-11-10; `docs/ios-plan.md`, ADR 030): a SwiftUI app over
 the Rust core through UniFFI (`crates/mobile`), the phone as one more sync replica, iOS 26
 and later. Built from Linux with macOS CI runners (simulator, screenshots, videos); no
 Apple developer account and no Mac yet, so nothing runs on a real iPhone until one of the
@@ -83,7 +83,7 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ### P1 iOS walking skeleton, step 1: `crates/mobile` (2026-11-10, branch `p1-ios-walking-skeleton`, stacked on `p0-phone-core`)
 
-- `crates/mobile` (new workspace member, `uniffi` 0.32.2 pinned; ADR 022): one `App`
+- `crates/mobile` (new workspace member, `uniffi` 0.32.2 pinned; ADR 030): one `App`
   object for Swift. `open(dir, device_name)` (database, attachments and `account.json`
   in `dir`), `list(scope, day)` returning rows ready to draw, `capture` (the desktop's
   quick-capture syntax, new tags created in the same batch), `set_done`, `undo`, the sync

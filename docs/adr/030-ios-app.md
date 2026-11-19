@@ -1,4 +1,4 @@
-# ADR 022: iPhone app
+# ADR 030: iPhone app
 
 Date: 2026-11-10 · Status: accepted. Plan and milestones: `docs/ios-plan.md`.
 

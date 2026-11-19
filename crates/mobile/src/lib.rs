@@ -1,4 +1,4 @@
-//! The phone's interface to task-master (ADR 022, docs/ios-plan.md).
+//! The phone's interface to task-master (ADR 030, docs/ios-plan.md).
 //!
 //! One [`Core`] object owns the local database (a replica like any desktop, ADR 015) and
 //! the sync engine. Swift asks it for rows ready to draw and sends it edits; it never

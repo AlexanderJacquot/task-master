@@ -1,4 +1,4 @@
-# The iPhone app (ADR 022, docs/ios-plan.md). Runs on the public GitHub mirror like ci.yml.
+# The iPhone app (ADR 030, docs/ios-plan.md). Runs on the public GitHub mirror like ci.yml.
 #
 # - kit: TaskMasterKit (the app's logic without its views) tested on Linux.
 # - app: the app built for the simulator on macOS, then driven by its UI tests against a

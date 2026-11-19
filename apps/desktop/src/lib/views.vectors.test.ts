@@ -1,4 +1,4 @@
-// The Rust core evaluates views too (crates/core/src/views.rs, ADR 022). Both sides pass
+// The Rust core evaluates views too (crates/core/src/views.rs, ADR 030). Both sides pass
 // the same vectors; this side writes the expected rows:
 //   VITE_UPDATE_VECTORS=1 pnpm vitest run src/lib/views.vectors.test.ts
 //   pnpm biome format --write crates/core/test-vectors/views.json   (from the repo root)
