@@ -17,14 +17,13 @@ import { markSessionDone, removeAgentSession, startTimer } from "../../store/act
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { MarkdownView } from "../task-detail/MarkdownView";
 import { SendToAgentDialog } from "./SendToAgentDialog";
-import { STATE_TONE } from "./SessionChip";
+import { StateBadge } from "./SessionChip";
 import {
   folderName,
   formatCost,
   formatDuration,
   PERMISSION_MODES,
   RESUME_MESSAGE,
-  STATE_LABEL,
   sessionsOf,
 } from "./sessions";
 
@@ -140,9 +139,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
       className="flex flex-col gap-2 rounded-xl border border-line bg-raised/60 p-3 text-[13px]"
     >
       <div className="flex items-center gap-2">
-        <span className={cx("rounded-md px-1.5 text-[12px] leading-5", STATE_TONE[session.state])}>
-          {STATE_LABEL[session.state]}
-        </span>
+        <StateBadge session={session} onError={setError} />
         <button
           type="button"
           onClick={() => setOpen(!open)}
@@ -215,8 +212,8 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
       {inDesktop && (
         <p role="status" className="flex items-center gap-1.5 text-accent">
           <Bot size={13} className="shrink-0" aria-hidden />
-          Opened in the Claude desktop app: send the prompt there. It ends when the agent records
-          its summary, or when you mark it done.
+          Opened in the Claude desktop app: send the prompt there, and click In desktop app to go
+          back to it. It ends when the agent records its summary, or when you mark it done.
         </p>
       )}
 

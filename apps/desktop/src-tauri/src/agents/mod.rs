@@ -7,6 +7,7 @@
 //! the end of the run is written with `execute_without_undo`. Runs are children of the
 //! app: quitting stops them and marks them interrupted.
 
+pub mod desktop;
 pub mod git;
 pub mod launch;
 pub mod plan;
@@ -954,6 +955,53 @@ fn open_in_desktop(
     }
     mark_started(state, settings, &input.task_id);
     Ok(session)
+}
+
+/// Brings up the session's conversation in the Claude desktop app (ADR 029 amendment): the
+/// desktop session that runs its recorded conversation, else the one whose first prompt
+/// names the session. Async: it may read transcripts, off the UI thread.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn agent_open_desktop(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: Id,
+) -> CommandResult<()> {
+    if let Some(why) = desktop_unavailable(Os::current(), AgentRuntime::Native) {
+        return Err(invalid(why));
+    }
+    let (session, device) = with_store(&state, |s| {
+        Ok((s.agent_session(&session_id)?, s.device_id().to_owned()))
+    })?;
+    if session.device_id != device {
+        return Err(invalid(
+            "this session was opened in the Claude desktop app on another device; open it there",
+        ));
+    }
+    let root = desktop::sessions_dir()
+        .ok_or_else(|| invalid("cannot find the Claude desktop app's data"))?;
+    let found = desktop::find(&root, &[&session.claude_session_id]).or_else(|| {
+        let projects = terminal::local_projects_dir().ok()?;
+        let since = u64::try_from(session.started_at).unwrap_or(0);
+        let conversation =
+            desktop::conversation_naming(&terminal::transcripts(&projects), &session.id, since)?;
+        desktop::find(&root, &[&conversation])
+    });
+    let Some(found) = found else {
+        return Err(invalid(
+            "cannot find this conversation in the Claude desktop app: send its prompt there \
+             first (it may also have been deleted)",
+        ));
+    };
+    if found.archived {
+        return Err(invalid(
+            "this conversation is archived in the Claude desktop app: unarchive it there",
+        ));
+    }
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(desktop::continue_link(&found), None::<&str>)
+        .map_err(|e| invalid(format!("cannot open the Claude desktop app: {e}")))
 }
 
 fn fail(state: &AppState, id: &str, message: &str) {

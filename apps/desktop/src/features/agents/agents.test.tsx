@@ -142,8 +142,11 @@ it("opens a session in the Claude desktop app on macOS and Windows, and ends it 
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(agents.started[0]?.surface).toBe("desktop");
   const card = await screen.findByTestId("session-card");
-  expect(within(card).getByText("In desktop app")).toBeTruthy();
   expect(within(card).queryByRole("button", { name: "Open in terminal" })).toBeNull();
+  // The state brings the conversation back up in the desktop app.
+  fireEvent.click(within(card).getByRole("button", { name: "In desktop app" }));
+  const id = agents.calls.find((c) => c.startsWith("start "))?.slice("start ".length);
+  await waitFor(() => expect(agents.calls).toContain(`desktop ${id}`));
   fireEvent.click(within(card).getByRole("button", { name: "Mark done" }));
   await waitFor(() => expect(within(card).getByText("Done")).toBeTruthy());
 
@@ -153,6 +156,23 @@ it("opens a session in the Claude desktop app on macOS and Windows, and ends it 
     "In the Claude desktop app",
   );
   vi.restoreAllMocks();
+});
+
+it("says why a conversation cannot open in the desktop app, from the Agents page", async () => {
+  const t = task({ title: "Redesign the header" });
+  const open = agentSession({ task_id: t.id, state: "desktop", ended_at: null });
+  const { agents } = await renderAt(
+    "/agents",
+    { tasks: [t], agent_sessions: [open] },
+    { openDesktop: new Error("cannot find this conversation in the Claude desktop app") },
+  );
+
+  const live = await screen.findByRole("region", { name: "Active" });
+  fireEvent.click(within(live).getByRole("button", { name: "In desktop app" }));
+  expect((await within(live).findByRole("alert")).textContent).toContain(
+    "cannot find this conversation",
+  );
+  expect(agents.calls).toContain(`desktop ${open.id}`);
 });
 
 it("prefills the task's last folder and asks before running everything", async () => {

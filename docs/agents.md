@@ -64,7 +64,11 @@ transcript (Agents page, every 5 minutes) once Claude has used a task-master too
 the local server, which records the conversation's id; its cost too, once the desktop
 app has written it there, which it does only now and then. The first time a folder is
 opened there, the desktop app asks to trust it: send the prompt again after that. The
-choice is remembered.
+choice is remembered. Click **In desktop app** (on the task's session or the Agents page)
+to go back to the conversation there: the app finds the desktop app's session that runs
+it, by the conversation's id, or else by the transcript whose first prompt names the
+session. It cannot before the prompt is sent, for an archived conversation, or on
+another device.
 
 ## 3. Follow and continue
 

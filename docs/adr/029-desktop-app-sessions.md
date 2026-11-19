@@ -14,7 +14,7 @@ cannot:
 
 - pass a system prompt or an MCP config;
 - open an existing session (`claude://code/<id>` is reported as present but switched
-  off);
+  off; but see the second amendment);
 - send the prompt by itself.
 
 The desktop app exists for macOS and Windows only.
@@ -80,3 +80,28 @@ schema 17 (ADR 028), so no older app syncs with it.
   records claude's pid, so Mark done stops it like any other.
 - The desktop app asks to trust a folder it has not opened before; the first Send can
   end at that question, and the prompt must be sent again.
+
+## Amendment (2026-11-19): back to the conversation
+
+The desktop app (checked in 6.6395 on macOS) does open an existing Code session:
+`claude://code/continue?session=local_<id>`, the link behind its own "Continue Last
+Claude Code Session" action. It takes the desktop app's id, not the conversation's, and
+only works while deep links are on and the user is signed in; an archived session opens
+the Code home instead. The app keeps one record per session in
+`<app data>/claude-code-sessions/<account>/<org>/local_<id>.json` (`~/Library/Application
+Support/Claude` on macOS, `%APPDATA%\Claude` on Windows), with `cliSessionId` and
+`lastAssistantCliSessionId`: the conversation we record. (It also gives
+`CLAUDE_CODE_HOST_SESSION_ID=local_<id>` to the processes it starts.)
+
+- **Click "In desktop app"** (the session card and the Agents page) to bring the
+  conversation up. A new shell command, `agent_open_desktop(session_id)`, reads the
+  records for the session's conversation id. When none was recorded (the claude.ai
+  connector), it takes the transcript written since the session started whose first
+  lines carry the session id (the first message names it), and looks that conversation
+  up. It refuses on Linux, for a session of another device, when nothing is found (the
+  prompt not sent yet, or deleted there), and for an archived conversation, with a reason
+  shown on the card or row.
+- **Reading, not recording.** The local id is looked up each time, not stored: no schema
+  change, and nothing to sync for a path that only exists on one device. The records and
+  the link are the desktop app's own, not a documented API: a record that does not parse
+  is skipped, and a change there shows as "cannot find this conversation".

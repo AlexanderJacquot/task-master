@@ -32,14 +32,13 @@ import { useNow } from "../calendar/TimeGrid";
 import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import { useOpenTask } from "../shell/useOpenTask";
-import { STATE_TONE } from "./SessionChip";
+import { StateBadge } from "./SessionChip";
 import {
   folderName,
   formatCost,
   formatDayHeading,
   formatDuration,
   isActive,
-  STATE_LABEL,
   sessionsByDay,
   sortedSessions,
 } from "./sessions";
@@ -631,6 +630,7 @@ function SessionRow({
   const api = useApi().agents;
   const openTask = useOpenTask();
   const activity = useStoreState((s) => s.agentActivity[session.id]);
+  const [error, setError] = useState<string | null>(null);
   const projects = useStoreState((s) => s.projects);
   const epics = useStoreState((s) => s.epics);
   const project = task?.project_id ? projects[task.project_id] : undefined;
@@ -653,14 +653,7 @@ function SessionRow({
         : (session.summary ?? session.error ?? "");
   return (
     <li className="flex items-center gap-3 rounded-lg px-2 py-1.5 text-[13px] hover:bg-hover">
-      <span
-        className={cx(
-          "w-24 shrink-0 rounded-md px-1.5 text-center text-[12px] leading-5",
-          STATE_TONE[session.state],
-        )}
-      >
-        {STATE_LABEL[session.state]}
-      </span>
+      <StateBadge session={session} className="w-24 shrink-0 text-center" onError={setError} />
       <button
         type="button"
         onClick={() => openTask(session.task_id)}
@@ -695,9 +688,19 @@ function SessionRow({
           )}
         </span>
       )}
-      <span className="min-w-0 flex-1 truncate text-ink-3" title={detail}>
-        {detail.split("\n")[0]}
-      </span>
+      {error ? (
+        <span
+          role="alert"
+          className="min-w-0 flex-1 truncate text-red-700 dark:text-red-300"
+          title={error}
+        >
+          {error}
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-ink-3" title={detail}>
+          {detail.split("\n")[0]}
+        </span>
+      )}
       <span className="shrink-0 text-xs text-ink-3 tabular-nums" title={session.folder}>
         {folderName(session.folder)} · {started}
         {worked && ` · ${worked}`}
