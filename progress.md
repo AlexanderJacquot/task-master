@@ -4,6 +4,47 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Fixes from the macOS run** (2026-11-19, branch `macos-agent-fixes`; ADR 029 amendment,
+ADR 028 amended): (1) terminal watcher: `launcher_exit_closes_window` (never on macOS,
+where the child is `osascript`) and `probe_now` (claude's pid is checked on the tick a
+window looks closed), so a launcher that exits late never ends a session whose claude
+runs. (2) Desktop sessions: `fill_own_run` takes a transcript's turns and time without
+a cost; the reader's third time measure is each prompt's span (`is_prompt`, per
+`promptId`); the scan cache carries `READER` (2) so finished transcripts are read again.
+(3) Open in terminal on a session that was in the desktop app makes its `agents/<id>/`
+folder and MCP config, so its pid is recorded and Mark done stops claude. Tests: shell
+`a_late_launcher_never_ends_a_session_whose_claude_runs`,
+`a_desktop_transcript_without_totals_gets_the_time_of_its_turns`; core
+`a_desktop_transcript_without_a_cost_still_gives_its_turns_and_time`. Tried live on a
+debug bundle: Open in terminal with Terminal.app not running stays In terminal and Mark
+done stops claude (also for a desktop session); the desktop session got its time (57 s,
+no cost). docs/agents.md: time and turns, cost when written, the trust question. All
+checks pass: fmt, clippy, `cargo test --workspace` (328 passed, 8 ignored), biome,
+typecheck, `pnpm test` (547 passed, 2 skipped).
+
+**M21/M22 tried on macOS** (2026-11-19, on `main` at 1ee6a11, pulled from the GitHub
+mirror: the Forgejo host did not resolve). Checks: biome, typecheck, `pnpm test` (547
+passed, 2 skipped), clippy, `cargo test --workspace` (325 passed, 8 ignored; cmake from
+`nix shell nixpkgs#cmake`, devenv has none on macOS), `real_claude` and `real_transcripts`
+pass. Live, on a debug bundle with identifier `space.solarnexus.taskmaster.dev` (its own
+database): Check finds `~/.local/bin/claude` through the login shell; a background run,
+a follow-up, Open in terminal and Mark done (claude stopped) work; Run → In the Claude
+desktop app opens the link, the agent's note and summary arrive through the local server
+with `session_id`, and the conversation id is recorded. ADR 029's open questions: the
+desktop app writes transcripts to `~/.claude/projects` and gives `CLAUDE_CODE_SESSION_ID`
+(and `CLAUDE_CODE_ENTRYPOINT=claude-desktop`) to stdio MCP servers (a probe server). Found:
+(1) Open in terminal while Terminal.app is not running: `osascript` exits after
+`TERMINAL_LAUNCHER` (3 s), `run_watch` takes it for a closed window before probing the
+pid, marks the session done at once and stops watching, so that claude is never stopped.
+(2) The desktop app writes `cost-state` only now and then (none in the test session,
+none in 3 of 6 desktop transcripts here, one 85 min stale in another), and
+`fill_own_run` (core `terminal.rs`) skips a transcript without a cost, turns and time
+too: desktop sessions show no cost, time or turns. (3) The Folder field gets macOS Smart
+Dashes (`--` typed becomes an em dash); the bad path is kept in the recent folders. (4) The
+first Send in the desktop app for a folder it does not trust yet only asks for trust; the
+prompt had to be sent again. (5) A debug bundle opened from Finder panics (bindings
+export to `../src` from cwd `/`); run its binary from `apps/desktop/src-tauri`.
+
 **M22 Sessions in the Claude desktop app** (2026-11-19, branch `m22-desktop-app`; ADR
 029): "Send to agent" can open the task in the Claude desktop app
 (`claude://code/new?q=&folder=`) instead of running headless. Core: session state `desktop`
@@ -2190,6 +2231,10 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- From the macOS run (2026-11-19, see Current milestone): `spellcheck`/autocorrect off
+  and no smart punctuation on path inputs; add `cmake` to `devenv.nix` (whisper.cpp,
+  sherpa-onnx); a session with both the claude.ai connector and the local server has two
+  task-master tool sets (only the local one records the conversation id).
 - Terminal sessions (ADR 028): show them in the MCP (`list_agent_sessions` or their own
   tool), and on the task page when one is filed under a task.
 - Local Linux/WSL builds of the desktop crate fail without libclang: since 9a84fec the

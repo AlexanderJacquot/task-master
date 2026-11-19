@@ -1086,15 +1086,23 @@ pub fn agent_open_terminal(
     if was_live {
         stop_for_terminal(&state, &session.id)?;
     }
-    // The session's MCP config, up to date when it can be (the agent keeps its tools).
+    // The session's MCP config, up to date when it can be (the agent keeps its tools). A
+    // session sent to the desktop app has no folder yet: made here, so the terminal gets
+    // the session's tools and records claude's pid like any other.
     let config = state
         .data_dir
         .join("agents")
         .join(&session.id)
         .join("mcp.json");
-    if config.is_file()
-        && let Err(e) = write_mcp_config(&state, &settings, &session.id, session.runtime)
+    if let Some(dir) = config.parent()
+        && let Err(e) = std::fs::create_dir_all(dir)
     {
+        eprintln!(
+            "cannot make the folder of agent session {}: {e}",
+            session.id
+        );
+    }
+    if let Err(e) = write_mcp_config(&state, &settings, &session.id, session.runtime) {
         eprintln!(
             "cannot update the MCP config of agent session {}: {e}",
             session.id
@@ -1276,7 +1284,7 @@ enum Watch {
 }
 
 /// `state`: the session's (`None` once removed). `window_closed`: the terminal process the
-/// app started exited after [`TERMINAL_LAUNCHER`] (launchers exit at once and say nothing).
+/// app started exited in a way that says so ([`launcher_exit_closes_window`]).
 /// `claude`: whether the recorded pid still runs this session's claude, when known.
 fn watch_step(state: Option<SessionState>, window_closed: bool, claude: Option<bool>) -> Watch {
     let gone = claude == Some(false) || (claude.is_none() && window_closed);
@@ -1286,6 +1294,23 @@ fn watch_step(state: Option<SessionState>, window_closed: bool, claude: Option<b
         _ if gone => Watch::Stop,
         _ => Watch::Close,
     }
+}
+
+/// Whether the terminal process the app started, by exiting, says its window closed. Not
+/// when it exits at once (a launcher handing over), and never on macOS: there it is
+/// `osascript`, which returns once Terminal has the script, seconds later when Terminal
+/// had to start first, while claude runs on in the window.
+fn launcher_exit_closes_window(os: Os, quick: bool) -> bool {
+    !quick && os != Os::Mac
+}
+
+/// Whether to check claude's pid on this tick: periodically, and before acting on an end
+/// (the session left the terminal state, or its window looks closed), so a launcher that
+/// exits late never ends a session whose claude still runs.
+fn probe_now(current: Option<SessionState>, window_closed: bool, tick: u32) -> bool {
+    current != Some(SessionState::Terminal)
+        || window_closed
+        || tick.is_multiple_of(TERMINAL_PROBE_EVERY)
 }
 
 /// A terminal this app started for a session.
@@ -1467,7 +1492,7 @@ fn run_watch(state: &AppState, session: &AgentSession, mut child: Option<Termina
                 }
                 break;
             }
-            window_closed = !quick;
+            window_closed = launcher_exit_closes_window(os, quick);
             child = None;
         }
         let Ok(settings) = settings(state) else {
@@ -1478,8 +1503,7 @@ fn run_watch(state: &AppState, session: &AgentSession, mut child: Option<Termina
             .filter(|s| s.deleted_at.is_none())
             .map(|s| s.state);
         let pid = read_pid(&pid_file);
-        // Check the process when it matters: periodically, and before acting on an end.
-        if current != Some(SessionState::Terminal) || tick % TERMINAL_PROBE_EVERY == 0 {
+        if probe_now(current, window_closed, tick) {
             claude = pid.and_then(|pid| {
                 claude_alive(
                     &settings,
@@ -1956,6 +1980,28 @@ mod tests {
         // Nothing left running.
         assert_eq!(watch_step(Some(Done), false, Some(false)), Watch::Stop);
         assert_eq!(watch_step(Some(Done), true, None), Watch::Stop);
+    }
+
+    #[test]
+    fn a_late_launcher_never_ends_a_session_whose_claude_runs() {
+        use SessionState::{Done, Terminal};
+        // macOS: osascript returns late when Terminal had to start; the window is still
+        // there. Elsewhere a late exit is the window closing.
+        assert!(!launcher_exit_closes_window(Os::Mac, false));
+        assert!(!launcher_exit_closes_window(Os::Mac, true));
+        assert!(launcher_exit_closes_window(Os::Linux, false));
+        assert!(!launcher_exit_closes_window(Os::Linux, true));
+        assert!(launcher_exit_closes_window(Os::Windows, false));
+
+        // A window that looks closed is checked against claude's pid on that very tick
+        // (not only every TERMINAL_PROBE_EVERY), as is a session that left the terminal.
+        assert!(probe_now(Some(Terminal), true, 1));
+        assert!(!probe_now(Some(Terminal), false, 1));
+        assert!(probe_now(Some(Terminal), false, TERMINAL_PROBE_EVERY));
+        assert!(probe_now(Some(Done), false, 1));
+        assert!(probe_now(None, false, 1));
+        // So a launcher that exits late while claude runs keeps the session open.
+        assert_eq!(watch_step(Some(Terminal), true, Some(true)), Watch::Keep);
     }
 
     /// The real thing on this machine: the terminal script records the pid of what it

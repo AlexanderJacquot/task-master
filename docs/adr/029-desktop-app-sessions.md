@@ -62,6 +62,21 @@ schema 17 (ADR 028), so no older app syncs with it.
   instead, and the agent session has no cost.
 - The permission mode and model chosen in the dialog do not apply: the desktop app has
   its own. The dialog hides them.
-- Not checked on a real macOS or Windows desktop app: that it writes transcripts to
-  `~/.claude/projects` like the CLI, and that it gives `CLAUDE_CODE_SESSION_ID` to MCP
-  servers.
+- Checked on macOS (2026-11-19, desktop app 6.6395, Claude Code 2.1.326): it writes
+  transcripts to `~/.claude/projects` like the CLI, and gives `CLAUDE_CODE_SESSION_ID`
+  (with `CLAUDE_CODE_ENTRYPOINT=claude-desktop`) to the stdio MCP servers it starts. Not
+  yet on Windows.
+
+## Amendment (2026-11-19, after the macOS check)
+
+- The desktop app writes no `turn_duration` and a `cost-state` only now and then (often
+  none for a whole session). The importer therefore fills a session's turns and time
+  even without a cost (the cost follows with a later scan, if it ever appears), and the
+  transcript reader gives a third measure of time: each prompt to the last line before
+  the next (ADR 028 amendment). The scan cache records its reader version, so finished
+  transcripts are read once more after such a change.
+- **Open in terminal** on a session that was in the desktop app makes its
+  `agents/<id>/` folder (it has none): the terminal gets the session's MCP config and
+  records claude's pid, so Mark done stops it like any other.
+- The desktop app asks to trust a folder it has not opened before; the first Send can
+  end at that question, and the prompt must be sent again.

@@ -196,7 +196,10 @@ fn own_run(b: &Batch<'_, '_>, claude_session_id: &str) -> Result<Option<AgentSes
 
 /// Gives a session started from a task the transcript's cost, time and requests when the
 /// app has none of its own for it: a session in the desktop app, or one that ended without
-/// reporting a cost (never a run in progress). Only on the device that started it.
+/// reporting a cost (never a run in progress). Only on the device that started it. A
+/// transcript without a cost still gives what it has: the desktop app writes its cost
+/// only now and then, so its sessions would otherwise show nothing (ADR 029); the cost
+/// comes with a later scan once it is there.
 fn fill_own_run(
     b: &mut Batch<'_, '_>,
     session: &AgentSession,
@@ -205,7 +208,7 @@ fn fill_own_run(
     // A headless run adds its own cost when it ends: never before.
     let from_transcript = session.state == SessionState::Desktop
         || (!session.state.is_active() && session.cost_usd_micros.is_none());
-    if session.device_id != b.device_id() || !from_transcript || r.cost_usd_micros.is_none() {
+    if session.device_id != b.device_id() || !from_transcript {
         return Ok(());
     }
     let mut patch = Map::new();

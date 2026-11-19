@@ -60,7 +60,10 @@ debug build.
 
 **Claude Code's own numbers, no price list.** Cost is the sum of each process's last
 `totalCostUSD`, and is `None` without a `cost-state`. Working time is the sum of
-`turn_duration`, else API plus tool time. Requests are distinct `requestId`s outside
+`turn_duration`, else API plus tool time, else (amended 2026-11-19 for the desktop app's
+transcripts, which have neither) the sum of each prompt's span: from a prompt (a user
+line that is not a tool result, `isMeta` or a sidechain; one per `promptId`) to the last
+line before the next. Requests are distinct `requestId`s outside
 sidechains. The model is the one with the most output tokens.
 
 **One set of totals.** The Agents page counts both kinds of session through one shape

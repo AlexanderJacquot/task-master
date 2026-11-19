@@ -59,9 +59,12 @@ the folder, with the task and the app's rules typed in. You press send, and pick
 permissions and model there. The session shows **In desktop app** until Claude records
 its summary or you click **Mark done**. Its notes and summary reach the task only if the
 desktop app has task-master's MCP (the claude.ai connector, or the local server added by
-hand): the prompt gives Claude the session id to pass. Its cost and time come from its
+hand): the prompt gives Claude the session id to pass. Its time and turns come from its
 transcript (Agents page, every 5 minutes) once Claude has used a task-master tool from
-the local server, which records the conversation's id. The choice is remembered.
+the local server, which records the conversation's id; its cost too, once the desktop
+app has written it there, which it does only now and then. The first time a folder is
+opened there, the desktop app asks to trust it: send the prompt again after that. The
+choice is remembered.
 
 ## 3. Follow and continue
 

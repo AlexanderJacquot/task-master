@@ -402,3 +402,35 @@ fn a_desktop_session_gets_its_cost_from_the_transcript_but_a_reported_cost_stays
     );
     assert!(s.snapshot().unwrap().terminal_sessions.is_empty());
 }
+
+#[test]
+fn a_desktop_transcript_without_a_cost_still_gives_its_turns_and_time() {
+    // The desktop app writes its cost now and then: often not yet, or not at all.
+    let mut s = store();
+    let session = desktop_session(&mut s);
+    let early = TerminalSessionRecord {
+        cost_usd_micros: None,
+        ..transcript(&session.claude_session_id, "/work")
+    };
+    let changes = record(&mut s, vec![early]);
+    assert!(changes.terminal_sessions.is_empty());
+    let filled = &changes.agent_sessions[0];
+    assert_eq!(filled.cost_usd_micros, None);
+    assert_eq!(filled.duration_ms, Some(40_000));
+    assert_eq!(filled.turns, Some(12));
+
+    // Ended (the agent's summary) with no cost yet: the cost arrives with a later scan.
+    s.execute_without_undo(vec![Command::UpdateAgentSession {
+        id: session.id.clone(),
+        changes: vec![AgentSessionChange::State(SessionState::Done)],
+    }])
+    .unwrap();
+    let later = TerminalSessionRecord {
+        turns: Some(14),
+        ..transcript(&session.claude_session_id, "/work")
+    };
+    let changes = record(&mut s, vec![later]);
+    let filled = &changes.agent_sessions[0];
+    assert_eq!(filled.cost_usd_micros, Some(1_250_000));
+    assert_eq!(filled.turns, Some(14));
+}

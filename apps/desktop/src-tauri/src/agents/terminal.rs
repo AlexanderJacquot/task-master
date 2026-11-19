@@ -68,6 +68,11 @@ pub fn read(reader: impl BufRead) -> Option<Transcript> {
     let mut requests: HashSet<String> = HashSet::new();
     let mut replies = 0_i64;
     let mut turn_ms = 0_i64;
+    // Each prompt to the last line before the next: the time when the transcript has no
+    // other (the desktop app writes no turn_duration and seldom a cost-state).
+    let mut prompt: Option<String> = None;
+    let mut turn: Option<(i64, i64)> = None;
+    let mut prompted_ms = 0_i64;
     // By the process's start: a resumed session may start its totals again.
     let mut costs: Vec<(i64, CostState)> = Vec::new();
 
@@ -88,6 +93,19 @@ pub fn read(reader: impl BufRead) -> Option<Transcript> {
                 if let Some(at) = text("timestamp").and_then(parse_time) {
                     started_at = Some(started_at.map_or(at, |s: i64| s.min(at)));
                     ended_at = Some(ended_at.map_or(at, |e: i64| e.max(at)));
+                    if kind == "user" && is_prompt(&value) {
+                        let id = text("promptId").map(str::to_owned);
+                        if id.is_none() || id != prompt {
+                            if let Some((start, last)) = turn.take() {
+                                prompted_ms += (last - start).max(0);
+                            }
+                            turn = Some((at, at));
+                            prompt = id;
+                        }
+                    }
+                    if let Some((_, last)) = turn.as_mut() {
+                        *last = (*last).max(at);
+                    }
                 }
                 if kind == "assistant" {
                     let message = value.get("message");
@@ -156,12 +174,13 @@ pub fn read(reader: impl BufRead) -> Option<Transcript> {
         let usd: f64 = costs.iter().map(|(_, c)| c.cost_usd.max(0.0)).sum();
         (usd * 1_000_000.0).round() as i64
     });
-    let duration_ms = if turn_ms > 0 {
-        Some(turn_ms)
-    } else {
-        let worked: i64 = costs.iter().map(|(_, c)| c.api_ms + c.tool_ms).sum();
-        (worked > 0).then_some(worked)
-    };
+    if let Some((start, last)) = turn {
+        prompted_ms += (last - start).max(0);
+    }
+    let worked: i64 = costs.iter().map(|(_, c)| c.api_ms + c.tool_ms).sum();
+    let duration_ms = [turn_ms, worked, prompted_ms]
+        .into_iter()
+        .find(|ms| *ms > 0);
     let model = output_by_model
         .into_iter()
         .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(&a.0)))
@@ -176,6 +195,22 @@ pub fn read(reader: impl BufRead) -> Option<Transcript> {
         duration_ms,
         turns: requests.len() as i64,
     })
+}
+
+/// A message the user (or a notification) sent, which starts a turn: not a tool's result,
+/// a line Claude Code adds itself (`isMeta`) or a subagent's.
+fn is_prompt(line: &Value) -> bool {
+    let flag = |key: &str| line.get(key).and_then(Value::as_bool) == Some(true);
+    if flag("isMeta") || flag("isSidechain") {
+        return false;
+    }
+    match line.pointer("/message/content") {
+        Some(Value::String(_)) => true,
+        Some(Value::Array(items)) => !items
+            .iter()
+            .any(|i| i.get("type").and_then(Value::as_str) == Some("tool_result")),
+        _ => false,
+    }
 }
 
 /// `2026-11-15T21:39:58.080Z` (UTC, as Claude Code writes it) as Unix ms.
@@ -220,10 +255,17 @@ const CHUNK: usize = 100;
 /// How often the background scan runs.
 const INTERVAL: Duration = Duration::from_secs(5 * 60);
 
+/// What [`read`] takes from a transcript, as a number: a cache written by another one is
+/// read again. 2: the time of each prompt's turn when nothing else gives one.
+const READER: u32 = 2;
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Cache {
     /// Where the transcripts were read from: a new place starts again.
     root: String,
+    /// [`READER`] when written (0 before it existed).
+    #[serde(default)]
+    reader: u32,
     files: HashMap<String, (u64, u64)>,
 }
 
@@ -338,9 +380,10 @@ pub fn scan(state: &AppState) -> Result<TerminalScan, String> {
     let cache_path = state.data_dir.join(CACHE_FILE);
     let mut cache = load_cache(&cache_path);
     let root_text = root.display().to_string();
-    if cache.root != root_text {
+    if cache.root != root_text || cache.reader != READER {
         cache = Cache {
             root: root_text,
+            reader: READER,
             files: HashMap::new(),
         };
     }
@@ -484,6 +527,40 @@ mod tests {
         assert_eq!(t.title.as_deref(), Some("Mine"));
         assert_eq!(t.cost_usd_micros, None);
         assert_eq!(t.duration_ms, None);
+    }
+
+    #[test]
+    fn a_desktop_transcript_without_totals_gets_the_time_of_its_turns() {
+        // The desktop app's transcripts: no turn_duration, no cost-state yet.
+        let prompt = |at: &str, id: &str| {
+            serde_json::json!({"type": "user", "timestamp": at, "cwd": "/w", "promptId": id,
+                "isSidechain": false, "message": {"role": "user", "content": "go on"}})
+        };
+        let text = lines(&[
+            prompt("2026-11-19T09:15:00.000Z", "p1"),
+            // Lines Claude Code adds within the same prompt start nothing.
+            serde_json::json!({"type": "user", "timestamp": "2026-11-19T09:15:01.000Z",
+                "promptId": "p1", "isMeta": true, "message": {"content": "<system-reminder>"}}),
+            reply("2026-11-19T09:15:05.000Z", "claude-haiku-5-5", "r1", 10),
+            serde_json::json!({"type": "user", "timestamp": "2026-11-19T09:15:20.000Z",
+                "message": {"content": [{"type": "tool_result", "content": "ok"}]}}),
+            reply("2026-11-19T09:15:30.000Z", "claude-haiku-5-5", "r2", 10),
+            // The user came back ten minutes later: that wait is not work.
+            prompt("2026-11-19T09:25:30.000Z", "p2"),
+            reply("2026-11-19T09:25:40.000Z", "claude-haiku-5-5", "r3", 10),
+        ]);
+        let t = read(text.as_bytes()).unwrap();
+        assert_eq!(t.cost_usd_micros, None);
+        assert_eq!(t.duration_ms, Some(40_000));
+        assert_eq!(t.turns, 3);
+
+        // A cost-state's own times win over the prompts' when there is one.
+        let with_cost = format!(
+            "{text}\n{}",
+            serde_json::json!({"type": "cost-state", "startTime": 1, "totalCostUSD": 0.01,
+                "totalAPIDuration": 7_000, "totalToolDuration": 2_000})
+        );
+        assert_eq!(read(with_cost.as_bytes()).unwrap().duration_ms, Some(9_000));
     }
 
     #[test]
