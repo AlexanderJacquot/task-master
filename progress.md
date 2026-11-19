@@ -4,6 +4,10 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.24.0** (2026-11-19, on `main`; notes `docs/releases/0.24.0.md`): M21 terminal
+sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
+Schema 17: update the sync server with the app.
+
 **Fixes from the macOS run** (2026-11-19, branch `macos-agent-fixes`; ADR 029 amendment,
 ADR 028 amended): (1) terminal watcher: `launcher_exit_closes_window` (never on macOS,
 where the child is `osascript`) and `probe_now` (claude's pid is checked on the tick a
