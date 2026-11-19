@@ -1024,6 +1024,26 @@ describe("redesign", () => {
     expect(await screen.findByRole("dialog", { name: "New task in Beta" })).toBeTruthy();
   });
 
+  it("folds the sidebar's projects, remembers it, and unfolds them for New project", async () => {
+    await renderWith("/inbox", [project({ id: "pa", name: "Alpha" })]);
+    const nav = await screen.findByRole("navigation");
+    const header = within(nav).getByRole("button", { name: "Projects" });
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(header);
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(within(nav).queryByRole("link", { name: "Alpha" })).toBeNull();
+    expect(JSON.parse(localStorage.getItem("task-master.sidebar-sections") ?? "{}")).toEqual({
+      projects: false,
+    });
+
+    await renderWith("/inbox", [project({ id: "pa", name: "Alpha" })]);
+    const again = await screen.findByRole("navigation");
+    expect(within(again).queryByRole("link", { name: "Alpha" })).toBeNull();
+    fireEvent.click(within(again).getByRole("button", { name: "New project" }));
+    expect(within(again).getByRole("link", { name: "Alpha" })).toBeTruthy();
+    expect(within(again).getByPlaceholderText("Project name")).toBeTruthy();
+  });
+
   it("renames a project from the sidebar with a double-click", async () => {
     await renderWith("/inbox", [project({ id: "pa", name: "Alpha" })]);
     const nav = await screen.findByRole("navigation");

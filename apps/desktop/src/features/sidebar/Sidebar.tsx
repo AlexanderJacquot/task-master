@@ -257,6 +257,20 @@ function loadOpenSections(): Record<string, boolean> {
   }
 }
 
+/** Whether the sidebar section `id` is open, remembered per machine. */
+function useOpenSection(id: string, defaultOpen: boolean): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(() => loadOpenSections()[id] ?? defaultOpen);
+  const set = (next: boolean) => {
+    setOpen(next);
+    try {
+      localStorage.setItem(SECTIONS_KEY, JSON.stringify({ ...loadOpenSections(), [id]: next }));
+    } catch {
+      // Not remembered; fine.
+    }
+  };
+  return [open, set];
+}
+
 /** A collapsible sidebar section whose open state is remembered per machine. */
 function Collapsible({
   id,
@@ -275,16 +289,8 @@ function Collapsible({
   onAdd?: () => void;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(() => loadOpenSections()[id] ?? defaultOpen);
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    try {
-      localStorage.setItem(SECTIONS_KEY, JSON.stringify({ ...loadOpenSections(), [id]: next }));
-    } catch {
-      // Not remembered; fine.
-    }
-  };
+  const [open, setOpen] = useOpenSection(id, defaultOpen);
+  const toggle = () => setOpen(!open);
   return (
     <section className="mt-1">
       <div className="group/section flex items-center">
@@ -501,6 +507,7 @@ export function Sidebar({
     (s) => Object.values(s.agent_sessions).filter(isActive).length,
   );
   const [adding, setAdding] = useState<"project" | "epic" | null>(null);
+  const [projectsOpen, setProjectsOpen] = useOpenSection("projects", true);
   const [showArchived, setShowArchived] = useState(false);
   const order = useProjectOrder();
 
@@ -813,64 +820,82 @@ export function Sidebar({
         </div>
 
         <section className="mt-5">
-          <div className="group/section flex items-center justify-between px-2.5 pb-1.5">
-            <span className="flex items-center gap-2 font-display text-[14px] tracking-wide text-rubric clean:text-[13px] clean:font-medium! clean:text-ink-3">
+          <div className="group/section flex items-center justify-between pb-1.5">
+            <button
+              type="button"
+              aria-expanded={projectsOpen}
+              onClick={() => setProjectsOpen(!projectsOpen)}
+              className={cx(
+                "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-0.5 text-left font-display text-[14px] tracking-wide text-rubric hover:bg-hover clean:text-[13px] clean:font-medium! clean:text-ink-3",
+                FOCUS,
+              )}
+            >
+              {projectsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               <ProjectsIcon size={16} />
-              Projects
-            </span>
-            <IconButton label="New project" onClick={() => setAdding("project")} className="size-6">
+              <span className="flex-1">Projects</span>
+            </button>
+            <IconButton
+              label="New project"
+              onClick={() => {
+                setProjectsOpen(true);
+                setAdding("project");
+              }}
+              className="size-6"
+            >
               <Plus size={14} />
             </IconButton>
           </div>
-          <div className="flex flex-col gap-px pl-2">
-            <ProjectTree
-              nodes={areas}
-              renderProject={(p, children) => (
-                <ProjectRow
-                  project={p}
-                  count={projectCount(p.id, children)}
-                  shortcut={shortcutOf(p.id)}
+          {projectsOpen && (
+            <div className="flex flex-col gap-px pl-2">
+              <ProjectTree
+                nodes={areas}
+                renderProject={(p, children) => (
+                  <ProjectRow
+                    project={p}
+                    count={projectCount(p.id, children)}
+                    shortcut={shortcutOf(p.id)}
+                  />
+                )}
+              />
+              {adding === "project" && (
+                <InlineInput
+                  initial=""
+                  placeholder="Project name"
+                  autoFocus
+                  onCommit={(name) => {
+                    setAdding(null);
+                    void createProject(store, name);
+                  }}
+                  onCancel={() => setAdding(null)}
+                  className="mt-1"
                 />
               )}
-            />
-            {adding === "project" && (
-              <InlineInput
-                initial=""
-                placeholder="Project name"
-                autoFocus
-                onCommit={(name) => {
-                  setAdding(null);
-                  void createProject(store, name);
-                }}
-                onCancel={() => setAdding(null)}
-                className="mt-1"
-              />
-            )}
-            {!areas.length && adding !== "project" && (
-              <button
-                type="button"
-                onClick={() => setAdding("project")}
-                className="rounded-lg px-2.5 py-1 text-left text-[13px] text-ink-3 hover:bg-hover"
-              >
-                Create your first project
-              </button>
-            )}
-            {archived.length > 0 && (
-              <>
+              {!areas.length && adding !== "project" && (
                 <button
                   type="button"
-                  aria-expanded={showArchived}
-                  onClick={() => setShowArchived((v) => !v)}
-                  className="mt-1 flex items-center gap-1.5 px-2.5 py-0.5 text-left text-[12.5px] text-ink-3 hover:text-ink"
+                  onClick={() => setAdding("project")}
+                  className="rounded-lg px-2.5 py-1 text-left text-[13px] text-ink-3 hover:bg-hover"
                 >
-                  {showArchived ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  Archived ({archived.length})
+                  Create your first project
                 </button>
-                {showArchived &&
-                  archived.map((p) => <ProjectRow key={p.id} project={p} count={0} muted />)}
-              </>
-            )}
-          </div>
+              )}
+              {archived.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    aria-expanded={showArchived}
+                    onClick={() => setShowArchived((v) => !v)}
+                    className="mt-1 flex items-center gap-1.5 px-2.5 py-0.5 text-left text-[12.5px] text-ink-3 hover:text-ink"
+                  >
+                    {showArchived ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    Archived ({archived.length})
+                  </button>
+                  {showArchived &&
+                    archived.map((p) => <ProjectRow key={p.id} project={p} count={0} muted />)}
+                </>
+              )}
+            </div>
+          )}
         </section>
 
         <div className="mx-2 mt-4 mb-2 h-px bg-line" />

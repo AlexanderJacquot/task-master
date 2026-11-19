@@ -8,6 +8,15 @@ Running log for task-master. Read at the start of every session; update at the e
 sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
 Schema 17: update the sync server with the app.
 
+**Fold the sidebar's projects** (2026-11-19, on `main`): the Projects header
+is a fold toggle like Epics (open by default, remembered per machine as `projects` in
+`task-master.sidebar-sections`; `useOpenSection` is shared with `Collapsible`); New
+project unfolds it. Test: app `folds the sidebar's projects, remembers it, and unfolds
+them for New project`. Checks: biome, typecheck, `pnpm test` (548 passed, 2 skipped),
+clippy and `cargo test` without `taskmaster-desktop` (239 passed, 2 ignored): with
+`nix shell nixpkgs#cmake`, whisper-rs-sys's CMake setup failed here (`add_subdirectory
+given source "tests"`), so the shell crate was not built. Not yet seen in the running app.
+
 **Fixes from the macOS run** (2026-11-19, branch `macos-agent-fixes`; ADR 029 amendment,
 ADR 028 amended): (1) terminal watcher: `launcher_exit_closes_window` (never on macOS,
 where the child is `osascript`) and `probe_now` (claude's pid is checked on the tick a
