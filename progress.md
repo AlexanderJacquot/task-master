@@ -12,6 +12,15 @@ folders only from this device's sessions, devenv for agents. Schema 17, unchange
 sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
 Schema 17: update the sync server with the app.
 
+**Close a task when it is marked done** (2026-11-19, branch `close-on-done`): marking a
+task done in its side panel or full page (the check, the Status menu or the status pill)
+closes it: the panel closes, the full page goes back to its project or the Inbox.
+Reopening never closes. Settings → General → Finishing tasks turns it off, remembered on
+this computer (`lib/detailPrefs.ts`, on by default). The quick-capture window is
+unchanged. Test: `task-detail/closeOnDone.test.tsx` (3). Checks: biome, typecheck,
+`pnpm test` (551 passed; the 2 `DatePicker.test.tsx` failures also fail on `main` today,
+likely date-dependent). No Rust changes. Not yet tried in the running app.
+
 **Back to the desktop app's conversation** (2026-11-19, on `main` from branch `desktop-open-session`;
 ADR 029 second amendment): the "In desktop app" state (session card, Agents page) is a
 button. `agent_open_desktop` (shell `agents/desktop.rs`) finds the desktop app's session

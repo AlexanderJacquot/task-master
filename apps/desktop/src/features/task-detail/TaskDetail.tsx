@@ -22,6 +22,7 @@ import {
   TaskCheck,
 } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
+import { loadCloseOnDone } from "../../lib/detailPrefs";
 import { playSound } from "../../lib/sounds";
 import type { Task, TaskChange } from "../../lib/types";
 import { adoptTask, deleteTask, setParent, toggleDone, updateTask } from "../../store/actions";
@@ -93,11 +94,17 @@ export function TaskEditor({
   task,
   variant,
   focusDescription = false,
+  onDone,
 }: {
   task: Task;
   variant: Variant;
   /** Opens with the cursor in the description (a task just created). */
   focusDescription?: boolean;
+  /**
+   * Closes the task once the user marks it done here (its check or the status menu), when
+   * Settings → Finishing tasks asks for it. Unset: the task stays open.
+   */
+  onDone?: () => void;
 }) {
   const store = useTaskStore();
   const statuses = useStoreState((s) => s.statuses);
@@ -108,11 +115,19 @@ export function TaskEditor({
   const attachments = useTaskAttachments(task.id);
   const attachmentsById = useStoreState((s) => s.attachments);
   const today = isoDate();
-  const change = (changes: TaskChange[]) => void updateTask(store, task.id, changes);
   const pickedToday = task.today_on === today;
   const status = statuses.find((s) => s.id === task.status_id);
   const done = status?.category === "done" || status?.category === "cancelled";
   const page = variant === "page";
+  /** After a move to `statusId`: closes the task when that finished it. */
+  const closeIfFinished = (statusId: string | undefined) => {
+    const category = statuses.find((s) => s.id === statusId)?.category;
+    if (onDone && !done && category === "done" && loadCloseOnDone()) onDone();
+  };
+  const change = (changes: TaskChange[]) => {
+    void updateTask(store, task.id, changes);
+    for (const c of changes) if ("status_id" in c) closeIfFinished(c.status_id);
+  };
   const [descriptionFolded, setDescriptionFolded] = useDescriptionFolded(variant, focusDescription);
   const excerpt = descriptionFolded ? descriptionExcerpt(task.description) : "";
   const epicOptions = Object.values(epics).filter(
@@ -124,7 +139,11 @@ export function TaskEditor({
       <span className={page ? "mt-3.5" : "mt-1.5"}>
         <TaskCheck
           checked={done}
-          onChange={() => void toggleDone(store, task.id)}
+          onChange={() => {
+            void toggleDone(store, task.id);
+            // The optimistic write has already moved the task to its new status.
+            closeIfFinished(store.getState().tasks[task.id]?.status_id);
+          }}
           label={done ? "Reopen" : "Mark done"}
           color={status?.color ?? null}
           size={page ? "lg" : "md"}
@@ -524,7 +543,12 @@ export function TaskDetail({
         </IconButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
-        <TaskEditor task={task} variant="panel" focusDescription={focusDescription} />
+        <TaskEditor
+          task={task}
+          variant="panel"
+          focusDescription={focusDescription}
+          onDone={() => openTask(null)}
+        />
       </div>
     </aside>
   );
@@ -621,6 +645,7 @@ export function TaskPage({
             task={task}
             variant="page"
             focusDescription={focusDescription}
+            onDone={() => void navigate({ ...back, search: {} })}
           />
         </article>
       </div>
