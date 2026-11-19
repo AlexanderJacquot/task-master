@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo } from "react";
 import { DatePicker } from "../../components/DatePicker";
 import {
   ArrowLeftIcon as ArrowLeft,
@@ -22,15 +22,19 @@ import {
   TaskCheck,
 } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
+import { playSound } from "../../lib/sounds";
 import type { Task, TaskChange } from "../../lib/types";
 import { adoptTask, deleteTask, setParent, toggleDone, updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { SessionsPanel } from "../agents/SessionsPanel";
 import { ProjectMark } from "../organize/ProjectMark";
+import { MeetingsSection } from "../scribe/MeetingsSection";
 import { DROP_OVER_CLASS, useTaskDropTarget } from "../shell/taskDrop";
 import { useOpenTask } from "../shell/useOpenTask";
+import { TaskTimer } from "../timer/Timer";
 import { ActivityFeed } from "./ActivityFeed";
 import { AttachmentList } from "./AttachmentList";
+import { CopyIdButton } from "./CopyIdButton";
 import { DependencyList } from "./DependencyList";
 import { DescriptionEditor } from "./DescriptionEditor";
 import { parentCandidates } from "./hierarchy";
@@ -39,6 +43,7 @@ import { SubtaskList } from "./SubtaskList";
 import { TagPicker } from "./TagPicker";
 import { TaskPicker } from "./TaskPicker";
 import { TitleField } from "./TitleField";
+import { descriptionExcerpt, useDescriptionFolded } from "./useDescriptionFolded";
 import { useTaskAttachments, useTaskFiles } from "./useTaskFiles";
 
 type Variant = "panel" | "page";
@@ -108,6 +113,8 @@ export function TaskEditor({
   const status = statuses.find((s) => s.id === task.status_id);
   const done = status?.category === "done" || status?.category === "cancelled";
   const page = variant === "page";
+  const [descriptionFolded, setDescriptionFolded] = useDescriptionFolded(variant, focusDescription);
+  const excerpt = descriptionFolded ? descriptionExcerpt(task.description) : "";
   const epicOptions = Object.values(epics).filter(
     (e) => e.state === "active" || e.id === task.epic_id,
   );
@@ -164,7 +171,7 @@ export function TaskEditor({
   );
 
   const properties = page ? (
-    <div className="pl-10">
+    <div className="flex flex-col gap-3 pl-10">
       <PropertyPills
         task={task}
         today={today}
@@ -173,10 +180,39 @@ export function TaskEditor({
         epics={epicOptions}
         projects={projectOptions}
       />
+      <TaskTimer task={task} />
     </div>
   ) : (
     <div>
       <Field label="Status">{statusSelect("w-full")}</Field>
+      <Field label="Project">
+        <Select
+          value={task.project_id ?? ""}
+          onValueChange={(id) => change([{ project_id: id || null }])}
+          aria-label="Project"
+          className="w-full"
+          options={[
+            { value: "", label: "Inbox (no project)" },
+            ...projectOptions.map((p) => ({
+              value: p.id,
+              label: p.label.trim(),
+              icon: <ProjectMark project={p} />,
+            })),
+          ]}
+        />
+      </Field>
+      <Field label="Epic">
+        <Select
+          value={task.epic_id ?? ""}
+          onValueChange={(id) => change([{ epic_id: id || null }])}
+          aria-label="Epic"
+          className="w-full"
+          options={[
+            { value: "", label: "None" },
+            ...epicOptions.map((e) => ({ value: e.id, label: e.name })),
+          ]}
+        />
+      </Field>
       <Field label="Priority">
         <Select
           value={task.priority}
@@ -229,33 +265,8 @@ export function TaskEditor({
           className={fieldInput}
         />
       </Field>
-      <Field label="Project">
-        <Select
-          value={task.project_id ?? ""}
-          onValueChange={(id) => change([{ project_id: id || null }])}
-          aria-label="Project"
-          className="w-full"
-          options={[
-            { value: "", label: "Inbox (no project)" },
-            ...projectOptions.map((p) => ({
-              value: p.id,
-              label: p.label.trim(),
-              icon: <ProjectMark project={p} />,
-            })),
-          ]}
-        />
-      </Field>
-      <Field label="Epic">
-        <Select
-          value={task.epic_id ?? ""}
-          onValueChange={(id) => change([{ epic_id: id || null }])}
-          aria-label="Epic"
-          className="w-full"
-          options={[
-            { value: "", label: "None" },
-            ...epicOptions.map((e) => ({ value: e.id, label: e.name })),
-          ]}
-        />
+      <Field label="Time">
+        <TaskTimer task={task} />
       </Field>
       <Field label="Tags">
         <TagPicker task={task} />
@@ -326,20 +337,45 @@ export function TaskEditor({
         )}
       </div>
       <section aria-label="Description" className={page ? "pl-10" : undefined}>
-        {!page && <SectionLabel className="mb-1.5 block">Description</SectionLabel>}
-        <DescriptionEditor
-          value={task.description}
-          onSave={(description) => change([{ description }])}
-          size={variant}
-          attachments={attachmentsById}
-          actions={files.actions}
-          upload={files.uploader}
-          autoFocus={focusDescription}
-        />
+        <button
+          type="button"
+          aria-expanded={!descriptionFolded}
+          onClick={() => setDescriptionFolded(!descriptionFolded)}
+          title={descriptionFolded ? "Show the description" : "Fold the description"}
+          className={cx(
+            "group flex max-w-full items-center gap-1 text-left",
+            page ? "-ml-5 mb-1" : "-ml-1 mb-1.5",
+          )}
+        >
+          <ChevronRight
+            size={14}
+            aria-hidden
+            className={cx(
+              "shrink-0 text-ink-3 transition-transform group-hover:text-ink-2",
+              !descriptionFolded && "rotate-90",
+            )}
+          />
+          <SectionLabel>Description</SectionLabel>
+          {excerpt && (
+            <span className="ml-2 min-w-0 truncate text-[13px] text-ink-3">{excerpt}</span>
+          )}
+        </button>
+        {!descriptionFolded && (
+          <DescriptionEditor
+            value={task.description}
+            onSave={(description) => change([{ description }])}
+            size={variant}
+            attachments={attachmentsById}
+            actions={files.actions}
+            upload={files.uploader}
+            autoFocus={focusDescription}
+          />
+        )}
       </section>
       {/* The page follows the mockup: subtasks right under the text, files after. */}
       {page ? [subtasks, attachmentList] : [attachmentList, subtasks]}
       <DependencyList task={task} page={page} />
+      <MeetingsSection link={{ task: task.id }} page={page} />
       <SessionsPanel task={task} page={page} />
       {page ? (
         <details className="pl-10">
@@ -390,6 +426,23 @@ function DropZones({ taskId }: { taskId: string }) {
   );
 }
 
+let lastOpened = { id: "", at: 0 };
+
+/**
+ * Crumples a sheet when a task opens (paper sounds, parchment theme), but not for a task
+ * just created (it already scribbled). The same task opened again within half a second is
+ * one opening (React's dev double effects, the panel handing over to the full page).
+ */
+function useOpenSound(taskId: string, exists: boolean, justCreated: boolean) {
+  useEffect(() => {
+    if (!exists || justCreated) return;
+    const now = Date.now();
+    if (lastOpened.id === taskId && now - lastOpened.at < 500) return;
+    lastOpened = { id: taskId, at: now };
+    playSound("crumple");
+  }, [taskId, exists, justCreated]);
+}
+
 /** Right-hand panel for one task, opened with `?task=<id>`. Every field saves on change. */
 export function TaskDetail({
   taskId,
@@ -401,6 +454,7 @@ export function TaskDetail({
 }) {
   const store = useTaskStore();
   const task = useStoreState((s) => s.tasks[taskId]);
+  useOpenSound(taskId, !!task, focusDescription);
   const parent = useStoreState((s) => (task?.parent_id ? s.tasks[task.parent_id] : undefined));
   const openTask = useOpenTask();
   const navigate = useNavigate();
@@ -454,6 +508,7 @@ export function TaskDetail({
         >
           <Maximize2 size={13} /> Open
         </button>
+        <CopyIdButton taskId={task.id} />
         <IconButton
           label="Delete (Ctrl+Z to undo)"
           onClick={() => {
@@ -486,6 +541,7 @@ export function TaskPage({
   const store = useTaskStore();
   const navigate = useNavigate();
   const task = useStoreState((s) => s.tasks[taskId]);
+  useOpenSound(taskId, !!task, focusDescription);
   const project = useStoreState((s) =>
     task?.project_id ? s.projects[task.project_id] : undefined,
   );
@@ -546,6 +602,7 @@ export function TaskPage({
           </>
         )}
         <span className="flex-1" />
+        <CopyIdButton taskId={task.id} />
         <IconButton
           label="Delete (Ctrl+Z to undo)"
           onClick={() => {

@@ -272,34 +272,105 @@ impl Oidc {
             .ok_or_else(|| "the token is signed with a key the provider does not list".into())
     }
 
-    /// Verifies an ID token. Blocking (it may fetch the provider's keys).
-    pub fn verify(&self, id_token: &str) -> Result<Claims, String> {
+    /// Checks the signature (a key the provider lists, asymmetric algorithms only), the
+    /// issuer, `audience` and expiry, then the allowed groups. Blocking (it may fetch the
+    /// provider's keys).
+    fn decode<T: serde::de::DeserializeOwned + HasGroups>(
+        &self,
+        token: &str,
+        audience: &str,
+        check_header: impl FnOnce(&jsonwebtoken::Header) -> Result<(), String>,
+    ) -> Result<T, String> {
         let header =
-            jsonwebtoken::decode_header(id_token).map_err(|e| format!("not a valid token: {e}"))?;
+            jsonwebtoken::decode_header(token).map_err(|e| format!("not a valid token: {e}"))?;
         if !ALGORITHMS.contains(&header.alg) {
             return Err(format!(
                 "tokens signed with {:?} are not accepted",
                 header.alg
             ));
         }
+        check_header(&header)?;
         let jwk = self.key(header.kid.as_deref())?;
         let key = DecodingKey::from_jwk(&jwk).map_err(|e| format!("unusable key: {e}"))?;
         let mut validation = Validation::new(header.alg);
         validation.set_issuer(&[&self.issuer]);
-        validation.set_audience(&[&self.client_id]);
+        validation.set_audience(&[audience]);
         validation.set_required_spec_claims(&["exp", "iss", "aud", "sub"]);
-        let claims = jsonwebtoken::decode::<Claims>(id_token, &key, &validation)
+        let claims = jsonwebtoken::decode::<T>(token, &key, &validation)
             .map_err(|e| format!("sign-in refused: {e}"))?
             .claims;
         if !self.allowed_groups.is_empty()
             && !claims
-                .groups
+                .groups()
                 .iter()
                 .any(|g| self.allowed_groups.contains(g))
         {
             return Err("your account is not in a group allowed on this server".into());
         }
         Ok(claims)
+    }
+
+    /// Verifies an ID token (desktop sign-in). Blocking.
+    pub fn verify(&self, id_token: &str) -> Result<Claims, String> {
+        self.decode(id_token, &self.client_id, |_| Ok(()))
+    }
+
+    /// Verifies an OAuth access token for `resource` (the remote MCP, ADR 024): an RFC 9068
+    /// JWT (`typ: at+jwt`, so an ID token never passes) whose audience includes `resource`,
+    /// issued to one of `clients`. Blocking.
+    pub fn verify_access(
+        &self,
+        token: &str,
+        resource: &str,
+        clients: &[String],
+    ) -> Result<AccessClaims, String> {
+        let claims: AccessClaims = self.decode(token, resource, |header| {
+            let typ = header
+                .typ
+                .as_deref()
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if typ == "at+jwt" || typ == "application/at+jwt" {
+                Ok(())
+            } else {
+                Err("not an access token (typ must be at+jwt)".into())
+            }
+        })?;
+        if !clients.contains(&claims.client_id) {
+            return Err(format!(
+                "tokens issued to client '{}' are not accepted here",
+                claims.client_id
+            ));
+        }
+        Ok(claims)
+    }
+}
+
+/// Tokens whose `groups` claim the allowed groups are checked against.
+pub trait HasGroups {
+    fn groups(&self) -> &[String];
+}
+
+impl HasGroups for Claims {
+    fn groups(&self) -> &[String] {
+        &self.groups
+    }
+}
+
+/// Claims read from an RFC 9068 access token.
+#[derive(Debug, Clone, Deserialize)]
+pub struct AccessClaims {
+    pub sub: String,
+    pub client_id: String,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub groups: Vec<String>,
+}
+
+impl HasGroups for AccessClaims {
+    fn groups(&self) -> &[String] {
+        &self.groups
     }
 }
 

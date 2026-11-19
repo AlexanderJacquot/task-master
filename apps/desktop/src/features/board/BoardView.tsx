@@ -39,10 +39,12 @@ import {
 import {
   SpearsLeftIcon as ChevronsLeft,
   SpearsRightIcon as ChevronsRight,
+  AddIcon as Plus,
 } from "../../components/TaskIcons";
-import { cx, Dot } from "../../components/ui";
+import { cx, Dot, InlineInput } from "../../components/ui";
 import { adjacentStatus, type Board, type Card, type Column, type Lane } from "../../lib/board";
-import { moveCard } from "../../store/actions";
+import { type ClickMods, isSelectClick, modsOf } from "../../lib/selection";
+import { moveCards } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
 import { applyTaskDrop, finishTaskDrag, startTaskDrag, taskDropOver } from "../shell/taskDrop";
 import { CARD_SLOT, CardFace, type CardLookups } from "./BoardCard";
@@ -62,7 +64,13 @@ interface Props {
   /** Memoized by the caller so cards only re-render when their task changes. */
   lookups: CardLookups;
   selectedId: string | null;
+  /** The multi-selection; while it has tasks, they are marked instead of the open one. */
+  picked: ReadonlySet<string>;
   onOpen(id: string): void;
+  /** Ctrl/Shift+click on a card: adds it (or a range) to the multi-selection. */
+  onPick(id: string, mods: ClickMods): void;
+  /** A "+" by each swimlane's name adds a task to that lane (its project, epic or priority). */
+  onAdd?(lane: Lane, title: string): void;
 }
 
 type Cells = Record<string, string[]>;
@@ -91,12 +99,30 @@ function sameOrder(a: string[] | undefined, b: string[] | undefined): boolean {
 }
 
 /**
+ * The cards a drag of `id` takes along: when `id` is part of a multi-selection, every
+ * picked card on the board in board order (lane by lane, column by column); else null.
+ */
+export function dragGroup(cells: Cells, picked: ReadonlySet<string>, id: string): string[] | null {
+  if (picked.size < 2 || !picked.has(id)) return null;
+  const ids = Object.values(cells).flatMap((cell) => cell.filter((c) => picked.has(c)));
+  return ids.length > 1 ? ids : null;
+}
+
+/** The cells without the cards dragged along with `id` (they show again at the drop). */
+export function withoutOthers(cells: Cells, group: readonly string[], id: string): Cells {
+  const along = new Set(group.filter((other) => other !== id));
+  return Object.fromEntries(
+    Object.entries(cells).map(([key, ids]) => [key, ids.filter((other) => !along.has(other))]),
+  );
+}
+
+/**
  * Columns per status, optionally split into swimlanes. Cards drag within and between cells
  * (dnd-kit); a drop is one `move_task` with a rank between the new neighbours. A focused
  * card moves to the previous or next column with `Alt+←/→`. Columns can be collapsed to a
  * strip (still a drop target) and resized; a wide column lays its cards out side by side.
  */
-export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
+export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lookups }: Props) {
   const store = useTaskStore();
   const [available, setAvailable] = useState(0);
   const columns = useBoardColumns({
@@ -120,6 +146,10 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   // While dragging, cells are local so the card can visit other cells before the drop.
   const [dragCells, setDragCells] = useState<Cells | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Dragging a card of a multi-selection drags all of it: the picked cards in board order
+  // (lane by lane, column by column). The others leave their cells until the drop, where
+  // they land together around the dragged card. Null for a single card.
+  const [group, setGroup] = useState<string[] | null>(null);
   const cells = dragCells ?? boardCells;
 
   // Collapsed swimlanes show a strip of drop targets. Holding a dragged card over one for
@@ -158,6 +188,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   const endDrag = () => {
     setDragCells(null);
     setActiveId(null);
+    setGroup(null);
     setHoverLane(null);
     setSpringOpen(new Set());
   };
@@ -223,10 +254,10 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   );
 
   const drop = useCallback(
-    (id: string, cell: string, order: string[]) => {
+    (ids: string[], cell: string, order: string[]) => {
       const [laneKey, statusId] = cell.split(SEP) as [string, string];
-      void moveCard(store, {
-        id,
+      void moveCards(store, {
+        ids,
         statusId,
         order,
         laneChanges: lanesByKey.get(laneKey)?.changes ?? [],
@@ -236,12 +267,15 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   );
 
   const onDragStart = ({ active }: DragStartEvent) => {
+    const id = String(active.id);
+    const together = dragGroup(boardCells, picked, id);
     lastOverId.current = null;
     setOverlayWidth(active.rect.current.initial?.width ?? null);
-    setActiveId(String(active.id));
-    setDragCells(boardCells);
+    setActiveId(id);
+    setGroup(together);
+    setDragCells(together ? withoutOthers(boardCells, together, id) : boardCells);
     setDroppedOutside(false);
-    startTaskDrag(String(active.id));
+    startTaskDrag(id, together ?? []);
   };
 
   const onDragOver = ({ active, over }: DragOverEvent) => {
@@ -273,12 +307,14 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     const current = dragCells ?? boardCells;
     const opened = springOpen;
+    const together = group;
     const outside = finishTaskDrag();
     endDrag();
     const id = String(active.id);
+    const ids = together ?? [id];
     if (outside) {
       setDroppedOutside(true);
-      void applyTaskDrop(store, id, outside);
+      void applyTaskDrop(store, ids, outside);
       return;
     }
     if (!over) return;
@@ -290,15 +326,17 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
     if (oldIndex >= 0 && newIndex >= 0 && oldIndex !== newIndex) {
       order = arrayMove(order, oldIndex, newIndex);
     }
+    // The cards dragged along land around the dragged one, in board order.
+    if (together) order = order.flatMap((other) => (other === id ? together : [other]));
     // Dropped on a collapsed column or lane: on top, where it shows once it is expanded.
     const [toLane, toStatus] = to.split(SEP) as [string, string];
     const laneShut = laneCollapsed(toLane) && !opened.has(toLane);
     if (columns.isCollapsed(toStatus) || laneShut) {
-      order = [id, ...order.filter((other) => other !== id)];
+      order = [...ids, ...order.filter((other) => !ids.includes(other))];
     }
-    const origin = findCell(id, boardCells);
-    if (origin === to && sameOrder(order, boardCells[to])) return;
-    drop(id, to, order);
+    const unmoved = ids.every((other) => findCell(other, boardCells) === to);
+    if (unmoved && sameOrder(order, boardCells[to])) return;
+    drop(ids, to, order);
   };
 
   // Unmounted mid-drag (route change): stop tracking the pointer.
@@ -320,7 +358,7 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
       const target = adjacentStatus(board.columns, statusId, e.key === "ArrowLeft" ? -1 : 1);
       if (!target) return true;
       const to = `${laneKey}${SEP}${target}`;
-      drop(id, to, [id, ...(boardCells[to] ?? [])]);
+      drop([id], to, [id, ...(boardCells[to] ?? [])]);
       requestAnimationFrame(() => {
         document.querySelector<HTMLElement>(`[data-card-id="${id}"]`)?.focus();
       });
@@ -394,7 +432,9 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
             bounded={lanes}
             activeId={activeId}
             selectedId={selectedId}
+            picked={picked}
             onOpen={onOpen}
+            onPick={onPick}
             onCardKey={onCardKey}
             lookups={lookups}
           />
@@ -440,6 +480,14 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
                   collapsed={laneCollapsed(lane.key)}
                   count={laneCount(lane)}
                   onToggle={(collapsed) => collapsedLanes.setCollapsed(lane.key, collapsed)}
+                  onAdd={
+                    onAdd &&
+                    ((title: string) => {
+                      // Open a collapsed lane so the new card shows.
+                      if (laneCollapsed(lane.key)) collapsedLanes.setCollapsed(lane.key, false);
+                      onAdd(lane, title);
+                    })
+                  }
                 />
               )}
               {lanes && !laneOpen(lane.key) ? laneStrips(lane) : laneCells(lane)}
@@ -447,9 +495,22 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
           ))}
         </div>
       </div>
-      <DragOverlay dropAnimation={droppedOutside ? null : undefined}>
+      <DragOverlay dropAnimation={droppedOutside || group ? null : undefined}>
         {active && (
-          <div style={{ width: overlayWidth ?? undefined }}>
+          <div className="relative" style={{ width: overlayWidth ?? undefined }}>
+            {/* Several cards: a stack behind the dragged one, and how many there are. */}
+            {group && (
+              <>
+                <div
+                  aria-hidden
+                  className="absolute inset-0 translate-x-2 translate-y-2 rotate-2 rounded-[11px] border border-line bg-raised shadow-md shadow-black/20 clean:rounded-lg"
+                />
+                <div
+                  aria-hidden
+                  className="absolute inset-0 translate-x-1 translate-y-1 rotate-[1.5deg] rounded-[11px] border border-line bg-raised shadow-md shadow-black/20 clean:rounded-lg"
+                />
+              </>
+            )}
             <CardFace
               {...lookups}
               task={active.task}
@@ -457,6 +518,14 @@ export function BoardView({ board, selectedId, onOpen, lookups }: Props) {
               childDone={active.childDone}
               overlay
             />
+            {group && (
+              <span
+                data-testid="drag-count"
+                className="absolute -top-2 -right-2 z-10 min-w-6 rounded-full bg-accent px-1.5 py-0.5 text-center font-semibold text-[12px] text-accent-ink tabular-nums shadow-md"
+              >
+                {group.length}
+              </span>
+            )}
           </div>
         )}
       </DragOverlay>
@@ -653,40 +722,73 @@ function CollapsedCell({
   );
 }
 
-/** A swimlane's title; a click collapses the lane to a strip (with its count) or opens it. */
+/**
+ * A swimlane's title; a click collapses the lane to a strip (with its count) or opens it.
+ * The "+" beside it opens a title field: Enter adds a task to the lane and keeps the field
+ * for the next one; Escape or leaving the field closes it.
+ */
 function LaneHeader({
   lane,
   collapsed,
   count,
   onToggle,
+  onAdd,
 }: {
   lane: Lane;
   collapsed: boolean;
   count: number;
   onToggle(collapsed: boolean): void;
+  onAdd?(title: string): void;
 }) {
+  const [adding, setAdding] = useState(false);
   return (
-    <h2 className="px-7 pt-4 pb-1.5">
-      <button
-        type="button"
-        aria-expanded={!collapsed}
-        title={collapsed ? `Expand ${lane.label}` : `Collapse ${lane.label}`}
-        onClick={() => onToggle(!collapsed)}
-        className="flex items-center gap-2 rounded-md px-2 py-0.5 font-display text-[15px] tracking-wide text-rubric hover:bg-hover"
-      >
-        <ChevronsRight
-          size={14}
-          className={cx("text-ink-3 transition-transform", !collapsed && "rotate-90")}
-        />
-        {lane.color !== null && <Dot color={lane.color} />}
-        {lane.label}
-        {collapsed && (
-          <span className="font-sans text-[12.5px] tracking-normal text-ink-3 tabular-nums">
-            {count}
-          </span>
+    <div className="px-7 pt-4 pb-1.5">
+      <h2 className="group flex items-center gap-1">
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          title={collapsed ? `Expand ${lane.label}` : `Collapse ${lane.label}`}
+          onClick={() => onToggle(!collapsed)}
+          className="flex items-center gap-2 rounded-md px-2 py-0.5 font-display text-[15px] tracking-wide text-rubric hover:bg-hover"
+        >
+          <ChevronsRight
+            size={14}
+            className={cx("text-ink-3 transition-transform", !collapsed && "rotate-90")}
+          />
+          {lane.color !== null && <Dot color={lane.color} />}
+          {lane.label}
+          {collapsed && (
+            <span className="font-sans text-[12.5px] tracking-normal text-ink-3 tabular-nums">
+              {count}
+            </span>
+          )}
+        </button>
+        {onAdd && (
+          <button
+            type="button"
+            aria-label={`Add a task to ${lane.label}`}
+            title={`Add a task to ${lane.label}`}
+            onClick={() => setAdding(true)}
+            className="rounded-md p-1 text-ink-3 opacity-60 hover:bg-hover hover:text-ink hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
+          >
+            <Plus size={13} />
+          </button>
         )}
-      </button>
-    </h2>
+      </h2>
+      {adding && onAdd && (
+        <InlineInput
+          initial=""
+          clearOnCommit
+          autoFocus
+          placeholder={`New task in ${lane.label}…`}
+          className="mt-1 w-80"
+          onCommit={(title) => {
+            if (title.trim()) onAdd(title);
+          }}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+    </div>
   );
 }
 
@@ -737,7 +839,9 @@ interface CellProps {
   bounded: boolean;
   activeId: string | null;
   selectedId: string | null;
+  picked: ReadonlySet<string>;
   onOpen(id: string): void;
+  onPick(id: string, mods: ClickMods): void;
   onCardKey(e: KeyboardEvent, id: string): boolean;
   lookups: CardLookups;
 }
@@ -799,8 +903,10 @@ function BoardCell(p: CellProps) {
                     <SortableCard
                       card={card}
                       placeholder={card.task.id === p.activeId}
-                      selected={card.task.id === p.selectedId}
+                      selected={p.picked.size === 0 && card.task.id === p.selectedId}
+                      picked={p.picked.has(card.task.id)}
                       onOpen={p.onOpen}
+                      onPick={p.onPick}
                       onCardKey={p.onCardKey}
                       lookups={p.lookups}
                     />
@@ -819,14 +925,18 @@ const SortableCard = memo(function SortableCard({
   card,
   placeholder,
   selected,
+  picked,
   onOpen,
+  onPick,
   onCardKey,
   lookups,
 }: {
   card: Card;
   placeholder: boolean;
   selected: boolean;
+  picked: boolean;
   onOpen(id: string): void;
+  onPick(id: string, mods: ClickMods): void;
   onCardKey(e: KeyboardEvent, id: string): boolean;
   lookups: CardLookups;
 }) {
@@ -845,7 +955,13 @@ const SortableCard = memo(function SortableCard({
       aria-label={card.task.title}
       data-card-id={id}
       data-testid="board-card"
-      onClick={() => onOpen(id)}
+      aria-pressed={picked ? true : undefined}
+      // Shift+click would also select the page's text.
+      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+      onClick={(e) => {
+        if (isSelectClick(e)) onPick(id, modsOf(e));
+        else onOpen(id);
+      }}
       onKeyDown={(e) => {
         if (onCardKey(e, id)) return;
         if (e.key === "Enter" && !e.altKey) {
@@ -863,6 +979,7 @@ const SortableCard = memo(function SortableCard({
         childCount={card.childCount}
         childDone={card.childDone}
         selected={selected}
+        picked={picked}
         placeholder={placeholder}
       />
     </div>

@@ -17,11 +17,16 @@ import type {
   Command,
   CommandError,
   EventRange,
+  GitInfo,
   JoinMode,
+  PlanUsage,
   ProjectFolder,
   Snapshot,
   StoredUpload,
   SyncStatus,
+  TerminalScan,
+  TranscriptHit,
+  TranscriptSegment,
 } from "./types";
 
 /** A failure reported by the core (`invalid`, `not_found`, `internal`) or by Tauri itself. */
@@ -56,6 +61,10 @@ export interface Api {
   taskActivity(taskId: string, limit: number): Promise<Activity[]>;
   /** Reads a quick-capture line (read-only). `today` is the local date. */
   parseCapture(text: string, today: string): Promise<Capture>;
+  /** A meeting's transcript (Scribe); absent in tests that do not need it. */
+  transcript?(meetingId: string): Promise<TranscriptSegment[]>;
+  /** Transcript lines matching every word, best first. */
+  searchTranscripts?(text: string, limit: number): Promise<TranscriptHit[]>;
   onChanged(handler: (event: Changed) => void): Promise<() => void>;
   /** Attachments and links; absent where there is no file system (some tests). */
   files?: FilesApi;
@@ -75,6 +84,8 @@ export interface AgentsApi {
   send(sessionId: string, message: string): Promise<void>;
   cancel(sessionId: string): Promise<void>;
   openTerminal(sessionId: string): Promise<void>;
+  /** Brings up a session's conversation in the Claude desktop app (ADR 029). */
+  openDesktop(sessionId: string): Promise<void>;
   /** What running sessions are doing now. */
   live(): Promise<AgentActivity[]>;
   /** The opening context a session on this task would get. */
@@ -84,10 +95,18 @@ export interface AgentsApi {
   saveSettings(settings: AgentSettings): Promise<AgentSettings>;
   /** Checks Claude Code runs with these settings (not saved). */
   detect(settings: AgentSettings): Promise<ClaudeCheck>;
+  /** The Claude plan's 5-hour and weekly usage, read with Claude Code's sign-in. */
+  planUsage(): Promise<PlanUsage>;
+  /** Reads the Claude Code sessions run in a terminal now (their new transcripts). */
+  scanTerminal(): Promise<TerminalScan>;
   /** Installed WSL distributions (empty outside Windows). */
   distros(): Promise<string[]>;
+  /** This device's id: sessions with it ran here, so their folders exist here. */
+  device(): Promise<string>;
   folders(): Promise<ProjectFolder[]>;
   setFolder(projectId: string, path: string | null): Promise<ProjectFolder[]>;
+  /** Where the project folder's git repository stands; null when it is not one. */
+  projectGit(projectId: string): Promise<GitInfo | null>;
   /** Asks for a folder; null when cancelled. */
   pickFolder(): Promise<string | null>;
   /** Called with each activity update (`activity: null` when a run stopped). */
@@ -105,15 +124,22 @@ export const tauriAgents: AgentsApi = {
   openTerminal: async (sessionId) => {
     await unwrap(commands.agentOpenTerminal(sessionId));
   },
+  openDesktop: async (sessionId) => {
+    await unwrap(commands.agentOpenDesktop(sessionId));
+  },
   live: () => unwrap(commands.agentLive()),
   brief: (taskId) => unwrap(commands.agentBrief(taskId)),
   notes: (taskId, sessionId, limit) => unwrap(commands.agentNotes(taskId, sessionId, limit)),
   settings: () => unwrap(commands.agentSettings()),
   saveSettings: (settings) => unwrap(commands.setAgentSettings(settings)),
   detect: (settings) => unwrap(commands.detectClaude(settings)),
+  planUsage: () => unwrap(commands.claudePlanUsage()),
+  scanTerminal: () => unwrap(commands.scanTerminalSessions()),
   distros: () => commands.listWslDistros(),
+  device: () => unwrap(commands.agentDevice()),
   folders: () => unwrap(commands.projectFolders()),
   setFolder: (projectId, path) => unwrap(commands.setProjectFolder(projectId, path)),
+  projectGit: (projectId) => unwrap(commands.projectGit(projectId)),
   pickFolder: async () => {
     const picked = await open({ directory: true, multiple: false });
     return typeof picked === "string" ? picked : null;
@@ -226,6 +252,8 @@ export const tauriApi: Api = {
   search: (text, limit) => unwrap(commands.search(text, limit)),
   taskActivity: (taskId, limit) => unwrap(commands.taskActivity(taskId, limit)),
   parseCapture: (text, today) => unwrap(commands.parseCapture(text, today)),
+  transcript: (meetingId) => unwrap(commands.meetingTranscript(meetingId)),
+  searchTranscripts: (text, limit) => unwrap(commands.searchTranscripts(text, limit)),
   onChanged: (handler) => events.storeChanged.listen((event) => handler(event.payload)),
   files: tauriFiles,
   calendar: tauriCalendar,

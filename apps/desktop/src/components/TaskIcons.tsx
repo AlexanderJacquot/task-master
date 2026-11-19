@@ -43,6 +43,7 @@ import {
   Minus,
   MousePointer2,
   Network,
+  NotebookPen,
   Paperclip,
   Pencil,
   PencilLine,
@@ -147,6 +148,7 @@ const CLEAN: Record<IconName, LucideIcon> = {
   mullet: Star,
   close: X,
   check: Check,
+  scribe: NotebookPen,
 };
 
 // Lucide fills its 24-unit box edge to edge where the medieval glyphs are cropped larger,
@@ -317,3 +319,5 @@ export const MulletIcon = icon("mullet");
 export const CloseIcon = icon("close");
 /** Tick (done, selected). */
 export const CheckIcon = icon("check");
+/** Quill over a page (Scribe, meetings). */
+export const ScribeIcon = icon("scribe");

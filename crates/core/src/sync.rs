@@ -124,6 +124,16 @@ pub struct PullPage {
 }
 
 /// `POST /auth/oidc`: trade an ID token from the provider for a device token.
+/// `GET /blobs`: the attachment content the server holds, and what was purged (ADR 023).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct BlobList {
+    pub files: Vec<crate::files::FileEntry>,
+    /// Hashes purged from Settings → Files on some device: every device drops its copy
+    /// unless a live attachment there still uses it.
+    pub purged: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OidcExchange {
     pub id_token: String,

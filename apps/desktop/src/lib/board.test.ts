@@ -4,6 +4,8 @@ import {
   adjacentStatus,
   type BoardLookups,
   buildBoard,
+  type Lane,
+  laneFields,
   ranksForDrop,
   type Swimlane,
 } from "./board";
@@ -219,6 +221,30 @@ describe("ranksForDrop", () => {
     );
     expect(sorted).toEqual(order);
   });
+
+  it("gives several cards dropped together keys in order between the neighbours", () => {
+    const ranks = { a: "a0", b: "a1", x: "a5", y: "a6" };
+    const out = ranksForDrop(["a", "x", "y", "b"], ["x", "y"], ranks);
+    expect(Object.keys(out).sort()).toEqual(["x", "y"]);
+    expect("a0" < (out.x as string) && (out.x as string) < (out.y as string)).toBe(true);
+    expect((out.y as string) < "a1").toBe(true);
+  });
+
+  it("renumbers around several cards when the neighbours share a rank", () => {
+    const ranks = { a: "a1", b: "a1", x: "a0", y: "a9" };
+    const order = ["a", "x", "y", "b"];
+    const out = ranksForDrop(order, ["x", "y"], ranks);
+    const merged: Record<string, string> = { ...ranks, ...out };
+    const sorted = [...order].sort((p, q) =>
+      (merged[p] as string) < (merged[q] as string) ? -1 : 1,
+    );
+    expect(sorted).toEqual(order);
+  });
+
+  it("refuses cards that are not next to each other", () => {
+    const ranks = { a: "a0", x: "a1", y: "a2" };
+    expect(() => ranksForDrop(["x", "a", "y"], ["x", "y"], ranks)).toThrow();
+  });
 });
 
 describe("adjacentStatus", () => {
@@ -227,5 +253,26 @@ describe("adjacentStatus", () => {
     expect(adjacentStatus(board.columns, STATUS.todo, 1)).toBe(STATUS.inProgress);
     expect(adjacentStatus(board.columns, STATUS.backlog, -1)).toBeNull();
     expect(adjacentStatus(board.columns, STATUS.done, 1)).toBeNull();
+  });
+});
+
+describe("laneFields", () => {
+  const lane = (changes: Lane["changes"]): Lane => ({
+    key: "k",
+    label: "L",
+    color: null,
+    changes,
+    cells: {},
+  });
+
+  it("gives a new task the lane's epic, project or priority", () => {
+    expect(laneFields(lane([{ epic_id: "e1" }]))).toEqual({ epic_id: "e1" });
+    expect(laneFields(lane([{ epic_id: null }]))).toEqual({ epic_id: null });
+    expect(laneFields(lane([{ project_id: "p1" }]))).toEqual({ project_id: "p1" });
+    expect(laneFields(lane([{ priority: "high" }]))).toEqual({ priority: "high" });
+  });
+
+  it("gives nothing for the single lane of a board without swimlanes", () => {
+    expect(laneFields(lane([]))).toEqual({});
   });
 });

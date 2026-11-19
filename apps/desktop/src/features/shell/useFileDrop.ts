@@ -12,9 +12,24 @@ export interface FileDropDetail {
   paths: string[];
 }
 
-/** The drop target at a physical-pixel position, if any. */
-export function dropTargetAt(x: number, y: number, scale = window.devicePixelRatio || 1) {
-  const el = document.elementFromPoint(x / scale, y / scale);
+/**
+ * A drag position from Tauri in CSS pixels. Tauri calls it physical, and it is on Windows
+ * and Linux; on macOS wry reports points, which are already CSS pixels (dividing them by
+ * the Retina ratio put every drop at half its place).
+ */
+export function dropPointToCss(
+  x: number,
+  y: number,
+  userAgent = navigator.userAgent,
+  ratio = window.devicePixelRatio || 1,
+): [number, number] {
+  const scale = /Macintosh|Mac OS X/.test(userAgent) ? 1 : ratio;
+  return [x / scale, y / scale];
+}
+
+/** The drop target at a position reported by Tauri, if any. */
+export function dropTargetAt(x: number, y: number) {
+  const el = document.elementFromPoint(...dropPointToCss(x, y));
   return el?.closest<HTMLElement>("[data-file-drop]") ?? null;
 }
 

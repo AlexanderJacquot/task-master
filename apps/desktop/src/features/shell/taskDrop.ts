@@ -10,7 +10,7 @@
 import { useSyncExternalStore } from "react";
 import { isoDate } from "../../lib/dates";
 import type { Task } from "../../lib/types";
-import { setParent, updateTask } from "../../store/actions";
+import { setParent, setParents, updateTasks } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
 import type { TaskStore } from "../../store/store";
 import { ancestorIds } from "../task-detail/hierarchy";
@@ -74,20 +74,39 @@ export function canDrop(target: TaskDropTarget, taskId: string, tasks: Record<st
   }
 }
 
-/** Applies a drop as one undoable write. */
-export function applyTaskDrop(store: TaskStore, taskId: string, target: TaskDropTarget) {
-  if (!canDrop(target, taskId, store.getState().tasks)) return Promise.resolve(null);
+/**
+ * The dragged tasks a target takes: those `canDrop` allows. A task has one parent, so
+ * "parent of" takes a single dragged task only.
+ */
+export function droppable(
+  target: TaskDropTarget,
+  taskIds: readonly string[],
+  tasks: Record<string, Task>,
+): string[] {
+  if (target.kind === "parent-of" && taskIds.length > 1) return [];
+  return taskIds.filter((id) => canDrop(target, id, tasks));
+}
+
+/** Applies a drop of one or several dragged tasks as one undoable write. */
+export function applyTaskDrop(
+  store: TaskStore,
+  taskIds: string | readonly string[],
+  target: TaskDropTarget,
+) {
+  const dragged = typeof taskIds === "string" ? [taskIds] : taskIds;
+  const ids = droppable(target, dragged, store.getState().tasks);
+  if (!ids.length) return Promise.resolve(null);
   switch (target.kind) {
     case "project":
-      return updateTask(store, taskId, [{ project_id: target.id }]);
+      return updateTasks(store, ids, [{ project_id: target.id }]);
     case "epic":
-      return updateTask(store, taskId, [{ epic_id: target.id }]);
+      return updateTasks(store, ids, [{ epic_id: target.id }]);
     case "today":
-      return updateTask(store, taskId, [{ today_on: isoDate() }]);
+      return updateTasks(store, ids, [{ today_on: isoDate() }]);
     case "subtask-of":
-      return setParent(store, taskId, target.id);
+      return setParents(store, ids, target.id);
     case "parent-of":
-      return setParent(store, target.id, taskId);
+      return setParent(store, target.id, ids[0] as string);
   }
 }
 
@@ -95,17 +114,22 @@ export function applyTaskDrop(store: TaskStore, taskId: string, target: TaskDrop
 // Drag state shared by the dragging view and the targets.
 
 interface DragState {
-  /** The dragged task, or null. */
+  /** The task under the pointer, or null. */
   dragging: string | null;
+  /** Every dragged task (several when a multi-selection is dragged), `dragging` first. */
+  group: readonly string[];
   /** The key of the target under the pointer, or null. */
   over: string | null;
 }
 
-let state: DragState = { dragging: null, over: null };
+const IDLE: DragState = { dragging: null, group: [], over: null };
+let state: DragState = IDLE;
 const listeners = new Set<() => void>();
 
 function set(next: DragState) {
-  if (next.dragging === state.dragging && next.over === state.over) return;
+  const same =
+    next.dragging === state.dragging && next.group === state.group && next.over === state.over;
+  if (same) return;
   state = next;
   for (const l of listeners) l();
 }
@@ -126,8 +150,9 @@ function onPointerMove(e: PointerEvent) {
   if (state.dragging) set({ ...state, over: hitTest(e.clientX, e.clientY) });
 }
 
-export function startTaskDrag(taskId: string) {
-  set({ dragging: taskId, over: null });
+/** Starts a drag of `taskId`, with the other tasks dragged along with it (a selection). */
+export function startTaskDrag(taskId: string, along: readonly string[] = []) {
+  set({ dragging: taskId, group: [taskId, ...along.filter((id) => id !== taskId)], over: null });
   window.addEventListener("pointermove", onPointerMove, { capture: true });
 }
 
@@ -135,7 +160,7 @@ export function startTaskDrag(taskId: string) {
 export function finishTaskDrag(): TaskDropTarget | null {
   const over = state.over;
   window.removeEventListener("pointermove", onPointerMove, { capture: true });
-  set({ dragging: null, over: null });
+  set(IDLE);
   return over ? parseDropKey(over) : null;
 }
 
@@ -159,9 +184,9 @@ export function useTaskDrag(): DragState {
  */
 export function useTaskDropTarget(target: TaskDropTarget) {
   const store = useTaskStore();
-  const { dragging, over } = useTaskDrag();
+  const { dragging, group, over } = useTaskDrag();
   const key = dropKey(target);
-  const active = dragging !== null && canDrop(target, dragging, store.getState().tasks);
+  const active = dragging !== null && droppable(target, group, store.getState().tasks).length > 0;
   return {
     active,
     isOver: active && over === key,

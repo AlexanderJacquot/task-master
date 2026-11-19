@@ -1,6 +1,14 @@
 // Command palette matching (plan section 6, Ctrl+K): pure so it can be tested and tuned.
 
-export type PaletteGroup = "Actions" | "Views" | "Projects" | "Epics" | "Tags" | "Tasks";
+export type PaletteGroup =
+  | "Actions"
+  | "Views"
+  | "Projects"
+  | "Epics"
+  | "Tags"
+  | "Tasks"
+  | "Meetings"
+  | "Transcripts";
 
 export interface PaletteItem {
   /** Unique across groups, e.g. `project:<id>`. */
@@ -13,7 +21,16 @@ export interface PaletteItem {
   keywords?: string;
 }
 
-const GROUP_ORDER: PaletteGroup[] = ["Actions", "Views", "Projects", "Epics", "Tags", "Tasks"];
+const GROUP_ORDER: PaletteGroup[] = [
+  "Actions",
+  "Views",
+  "Projects",
+  "Epics",
+  "Tags",
+  "Tasks",
+  "Meetings",
+  "Transcripts",
+];
 
 /**
  * Score of `item` for `query`: every query word must start a word of the label or keywords
@@ -37,8 +54,9 @@ export function score(item: PaletteItem, query: string): number | null {
 }
 
 /**
- * Matching items, best first within each group, groups in a fixed order. Tasks found by
- * full-text search (`searchHits`, best first) always match, keeping the core's order.
+ * Matching items, best first within each group, groups in a fixed order. Tasks and
+ * transcript lines found by full-text search (`searchHits`, best first) always match,
+ * keeping the core's order.
  */
 export function rankItems(
   items: PaletteItem[],

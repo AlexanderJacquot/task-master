@@ -5,7 +5,9 @@
 # tag to Forgejo; the push mirror forwards it here and this builds and publishes the release.
 # Installed apps update from it (ADR 009): update bundles are signed with the key in the
 # TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) secrets and listed in latest.json. The installers
-# themselves are not code-signed (Windows SmartScreen and macOS Gatekeeper warn once).
+# themselves are not code-signed with a vendor certificate (Windows SmartScreen and macOS
+# Gatekeeper warn once). macOS bundles are ad-hoc signed (`tauri.macos.conf.json`, ADR 027)
+# so Apple Silicon does not call them damaged; a Developer ID comes later.
 
 name: release
 
@@ -87,11 +89,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            A new Clean theme in Settings → Appearance: a plain, Notion-like light look with Inter type, simple line icons and no textures or ornaments, beside Dark and Parchment; "Follow the system" can use Clean in light mode. The calendar task list gets a Filter (project, epic, status) in every mode and can be resized from its edge. The sidebar Update pill now downloads the update, then restarts.
+            Click "In desktop app" on an agent session to go back to its conversation in the Claude desktop app (macOS and Windows). The sidebar's Projects section folds like Epics. Fix: Send to agent no longer prefills a folder from another computer's sessions.
 
-            No database changes (schema 12): 0.8.0 to 0.14.0 desktops and servers sync with each other. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.14.0.
+            Database schema 17, as in 0.24.0: a 0.24 sync server keeps working. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.25.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.14.0/docs/releases/0.14.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.25.0/docs/releases/0.25.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.
@@ -99,6 +101,17 @@ jobs:
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }} --config src-tauri/tauri.updater.conf.json --config src-tauri/tauri.sidecar.conf.json
+
+      # The whole bundle, sidecar included, must carry one valid ad-hoc signature: a broken
+      # seal is what makes Gatekeeper call a downloaded app "damaged" (ADR 027). Under the
+      # hardened runtime the microphone needs its entitlement (Scribe, ADR 026).
+      - name: Check the macOS signature
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          app="target/${{ matrix.target }}/release/bundle/macos/task-master.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -q 'Signature=adhoc'
+          codesign -d --entitlements - "$app" 2>&1 | grep -q 'com.apple.security.device.audio-input'
 
   # Arch Linux package task-master-bin (ADR 018), after the release is published: a failure
   # here leaves the installers and in-app updates untouched. Until the AUR_SSH_PRIVATE_KEY

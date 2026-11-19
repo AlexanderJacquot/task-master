@@ -13,6 +13,7 @@ import { CaptureBox } from "../capture/CaptureBox";
 import { AssetLab } from "../ornaments/AssetLab";
 import { FaviconSync, MainDecor } from "../ornaments/Ornaments";
 import { CommandPalette } from "../palette/CommandPalette";
+import { RecordingBar } from "../scribe/Recording";
 import { SIDEBAR_WIDTH, Sidebar } from "../sidebar/Sidebar";
 import { useProjectOrder } from "../sidebar/useProjectOrder";
 import { TaskDetail } from "../task-detail/TaskDetail";
@@ -101,7 +102,8 @@ export function Layout() {
     [openNewTask],
   );
 
-  // Windows and Linux: the frameless main window draws its own title bar (ADR 012).
+  // The main window draws its own title bar strip (ADR 012): frameless on Windows and
+  // Linux, under an overlay title bar on macOS.
   const titleBarStyle = useMemo(customTitleBarStyle, []);
   const windowControls = useMemo(
     () => (titleBarStyle ? tauriWindowControls() : null),
@@ -150,6 +152,7 @@ export function Layout() {
         <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
         <main className="relative flex min-w-0 flex-1 flex-col">
           <MainDecor />
+          <RecordingBar />
           <Outlet />
         </main>
         {task && !onTaskPage && (

@@ -88,6 +88,11 @@ export function LineageCanvas({
   laneSpecs = [],
   epics = {},
   onMoveToLane,
+  onCardDrag,
+  onCardDrop,
+  layout,
+  onPersist = saveCanvas,
+  onEdit,
 }: {
   graph: Graph;
   statuses: Status[];
@@ -129,8 +134,24 @@ export function LineageCanvas({
   epics?: Record<string, Epic>;
   /** A card dropped into another lane: give it that lane's epic or project. */
   onMoveToLane?: (id: string, key: string) => void;
+  /**
+   * A card being dragged, with the pointer in page (client) coordinates, so a drop target
+   * outside the canvas (the side panel) can light up; `null` when the drag ends.
+   */
+  onCardDrag?: (drag: { id: string; client: Point } | null) => void;
+  /**
+   * A dragged card let go at a page point. Returns true when something outside the canvas
+   * took it: the card then goes back to where the drag started.
+   */
+  onCardDrop?: (id: string, client: Point) => boolean;
+  /** The layout to start from (a saved view's); otherwise the one kept on this machine. */
+  layout?: SavedCanvas;
+  /** Receives the layout after each change; by default it is kept on this machine. */
+  onPersist?: (canvas: SavedCanvas) => void;
+  /** The user moved, pinned, nudged or re-arranged cards, or folded a lane. */
+  onEdit?: () => void;
 }) {
-  const [saved] = useState(loadCanvas);
+  const [saved] = useState(() => layout ?? loadCanvas());
   const [positions, setPositions] = useState<Positions>(() => ({
     ...Object.fromEntries(graph.nodes.map((node) => [node.task.id, { x: node.x, y: node.y }])),
     ...saved.positions,
@@ -180,8 +201,10 @@ export function LineageCanvas({
       collapsed: collapsedRef.current,
     };
   }
+  const persistRef = useRef(onPersist);
+  persistRef.current = onPersist;
   function persist() {
-    saveCanvas(snapshot());
+    persistRef.current(snapshot());
   }
   function updateLanes(next: SavedCanvas["lanes"]) {
     laneRef.current = next;
@@ -239,6 +262,7 @@ export function LineageCanvas({
     pinnedRef.current = next;
     setPinned(next);
     persist();
+    onEdit?.();
   }
   function toggleLane(key: string) {
     if (!lanesMode) return;
@@ -250,6 +274,7 @@ export function LineageCanvas({
     collapsedRef.current = next;
     setCollapsed(next);
     persist();
+    onEdit?.();
   }
   /** Lays the cards out again; pinned cards stay where they are. */
   function arrangeAgain() {
@@ -272,6 +297,7 @@ export function LineageCanvas({
       updatePositions({ ...positionsRef.current, ...avoidPinned(fresh, fixed) });
     }
     fitNext.current = true;
+    onEdit?.();
   }
   function relativePoint(event: { clientX: number; clientY: number }): Point {
     const rect = canvas.current?.getBoundingClientRect();
@@ -515,6 +541,7 @@ export function LineageCanvas({
         dragPoint.current = point;
         setDragOverride({ id: active.id, point });
       } else updatePositions({ ...positionsRef.current, [active.id]: point });
+      onCardDrag?.({ id: active.id, client: { x: event.clientX, y: event.clientY } });
     } else {
       const world = worldPoint(point, cameraRef.current);
       setDraft({ point: world, target: targetAt(world) });
@@ -540,8 +567,18 @@ export function LineageCanvas({
         } else onCancelConnection();
       }
     } else if (active.moved) {
-      if (active.kind === "move" && lanesMode) dropInLane(active.id);
+      if (active.kind === "move") {
+        onCardDrag?.(null);
+        if (onCardDrop?.(active.id, { x: event.clientX, y: event.clientY })) {
+          // Taken outside the canvas (the side panel): the card goes back where it was.
+          dragPoint.current = null;
+          setDragOverride(null);
+          if (!lanesMode)
+            updatePositions({ ...positionsRef.current, [active.id]: active.position });
+        } else if (lanesMode) dropInLane(active.id);
+      }
       persist();
+      if (active.kind === "move") onEdit?.();
     } else if (active.kind === "pan") {
       onSelect(null);
       onCancelConnection();
@@ -571,6 +608,7 @@ export function LineageCanvas({
     gesture.current = null;
     dragPoint.current = null;
     setDragOverride(null);
+    if (active?.kind === "move") onCardDrag?.(null);
     if (active?.kind === "move" && !lanesMode)
       updatePositions({ ...positionsRef.current, [active.id]: active.position });
     if (active?.kind === "pan") updateCamera(active.camera);
@@ -590,6 +628,7 @@ export function LineageCanvas({
       .map(([, point]) => point);
     setWorld(id, freeSlot(origin, side, taken));
     persist();
+    onEdit?.();
   }
   async function addLinked(connector: Connector, pick: { title: string } | { existing: string }) {
     setAdding(null);
@@ -878,6 +917,7 @@ export function LineageCanvas({
                       const current = worldRef.current[task.id] ?? node;
                       setWorld(task.id, { x: current.x + offset.x, y: current.y + offset.y });
                       persist();
+                      onEdit?.();
                     }}
                     title={
                       isPinned

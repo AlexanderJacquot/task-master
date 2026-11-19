@@ -7,8 +7,9 @@ use serde_json::{Map, Value, json};
 use crate::clock::{check_date, check_id, new_id};
 use crate::error::{Error, Result};
 use crate::model::{
-    AgentRuntime, BlockOutcome, EpicState, FILTER_NONE, Id, IsoDate, Priority, SessionState,
-    Status, StatusCategory, Task, TaskOwner, Timestamp, VIEW_SPEC_VERSION, ViewScope, ViewSpec,
+    AgentRuntime, BlockOutcome, EpicState, FILTER_NONE, Id, IsoDate, MeetingState, Priority,
+    SessionState, Status, StatusCategory, Task, TaskOwner, Timestamp, VIEW_SPEC_VERSION, ViewScope,
+    ViewSpec,
 };
 use crate::ops::{Batch, Change, Entity, OpKind};
 use crate::{files, query, rank};
@@ -148,6 +149,64 @@ pub enum Command {
     AddAgentNote {
         note: NewAgentNote,
     },
+    /// Adds a meeting (Scribe, ADR 025).
+    CreateMeeting {
+        meeting: NewMeeting,
+    },
+    /// Edits a meeting. The result must still end after it starts.
+    UpdateMeeting {
+        id: Id,
+        changes: Vec<MeetingChange>,
+    },
+    /// Removes a meeting; its attachments are hidden with it, and undo brings both back.
+    DeleteMeeting {
+        id: Id,
+    },
+    /// Replaces a meeting's transcript (Scribe, M20): its live segments are removed and
+    /// these written, the speaker names cleared, `transcribed_at` set and the meeting moved
+    /// to `review`. One batch, so one undo.
+    SetTranscript {
+        meeting_id: Id,
+        segments: Vec<NewSegment>,
+    },
+    /// Corrects a transcript segment.
+    UpdateSegment {
+        id: Id,
+        changes: Vec<SegmentChange>,
+    },
+    /// Cuts a segment in two at a character of its text (`at`, counted in characters);
+    /// the time is shared in proportion. The second part gets `new_id`.
+    SplitSegment {
+        id: Id,
+        at: u32,
+        new_id: Option<Id>,
+    },
+    DeleteSegment {
+        id: Id,
+    },
+    /// Gives every segment of speaker `from` to `to` (one voice found as two).
+    ReassignSpeaker {
+        meeting_id: Id,
+        from: String,
+        to: String,
+    },
+    /// Records Claude Code sessions run in a terminal, as read from their transcripts on
+    /// this device (M21, ADR 028): new ones are added with the project whose folder holds
+    /// them, known ones updated; the app's own runs and sessions the user removed are
+    /// skipped. Usually sent with [`crate::Store::execute_without_undo`].
+    RecordTerminalSessions {
+        sessions: Vec<crate::terminal::TerminalSessionRecord>,
+    },
+    /// Sets a terminal session's project or task by hand.
+    UpdateTerminalSession {
+        id: Id,
+        changes: Vec<crate::terminal::TerminalSessionChange>,
+    },
+    /// Removes a terminal session from the totals; reading its transcript again does not
+    /// bring it back.
+    DeleteTerminalSession {
+        id: Id,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,7 +238,11 @@ pub enum AgentSessionChange {
     Summary(Option<String>),
     CostUsdMicros(Option<i64>),
     Turns(Option<i64>),
+    DurationMs(Option<i64>),
     Error(Option<String>),
+    /// The conversation's own id, once known: a session opened in the desktop app gets
+    /// one there, not from the app (M22).
+    ClaudeSessionId(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -342,7 +405,7 @@ pub struct NewView {
 #[serde(rename_all = "snake_case")]
 pub enum ViewChange {
     Name(String),
-    Spec(ViewSpec),
+    Spec(Box<ViewSpec>),
     Rank(String),
 }
 
@@ -350,7 +413,11 @@ pub enum ViewChange {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct NewAttachment {
     pub id: Option<Id>,
-    pub task_id: Id,
+    /// The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two.
+    #[serde(default)]
+    pub task_id: Option<Id>,
+    #[serde(default)]
+    pub meeting_id: Option<Id>,
     /// From `FileStore::put_*`.
     pub hash: String,
     /// Folders are stripped.
@@ -391,6 +458,86 @@ pub enum TimeBlockChange {
     StartAt(Timestamp),
     EndAt(Timestamp),
     Outcome(BlockOutcome),
+}
+
+/// Most participants a meeting may list.
+pub const MAX_PARTICIPANTS: usize = 100;
+/// Longest participant name.
+const MAX_PARTICIPANT_CHARS: usize = 200;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewMeeting {
+    pub id: Option<Id>,
+    pub title: String,
+    /// Unix ms.
+    pub started_at: Timestamp,
+    /// Unix ms, after `started_at`, at most [`MAX_BLOCK_MS`] later. `None` while
+    /// recording.
+    #[serde(default)]
+    pub ended_at: Option<Timestamp>,
+    #[serde(default)]
+    pub project_id: Option<Id>,
+    #[serde(default)]
+    pub epic_id: Option<Id>,
+    #[serde(default)]
+    pub task_id: Option<Id>,
+    /// Defaults to `scheduled`.
+    #[serde(default)]
+    pub state: Option<MeetingState>,
+    /// Trimmed; blanks and repeats (ignoring case) are dropped.
+    #[serde(default)]
+    pub participants: Vec<String>,
+    #[serde(default)]
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MeetingChange {
+    Title(String),
+    StartedAt(Timestamp),
+    EndedAt(Option<Timestamp>),
+    ProjectId(Option<Id>),
+    EpicId(Option<Id>),
+    TaskId(Option<Id>),
+    /// Entering `validated` records when; leaving it clears that.
+    State(MeetingState),
+    Participants(Vec<String>),
+    Notes(String),
+    Summary(Option<String>),
+    /// Names a transcript speaker key (`"s1"`), or clears its name with `None`.
+    SpeakerName {
+        speaker: String,
+        name: Option<String>,
+    },
+}
+
+/// Longest transcript a meeting may have, in segments.
+pub const MAX_SEGMENTS: usize = 20_000;
+/// Longest segment text.
+const MAX_SEGMENT_CHARS: usize = 10_000;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewSegment {
+    #[serde(default)]
+    pub id: Option<Id>,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    /// `"me"` or `"s1"`, `"s2"`, …
+    pub speaker: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SegmentChange {
+    /// Marks the segment edited.
+    Text(String),
+    Speaker(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -443,6 +590,24 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
         Command::UpdateAgentSession { id, changes } => update_agent_session(b, &id, changes),
         Command::DeleteAgentSession { id } => delete_agent_session(b, &id),
         Command::AddAgentNote { note } => add_agent_note(b, note),
+        Command::CreateMeeting { meeting } => create_meeting(b, meeting),
+        Command::UpdateMeeting { id, changes } => update_meeting(b, &id, changes),
+        Command::DeleteMeeting { id } => delete_meeting(b, &id),
+        Command::SetTranscript {
+            meeting_id,
+            segments,
+        } => set_transcript(b, &meeting_id, segments),
+        Command::UpdateSegment { id, changes } => update_segment(b, &id, changes),
+        Command::SplitSegment { id, at, new_id } => split_segment(b, &id, at, new_id),
+        Command::DeleteSegment { id } => delete_segment(b, &id),
+        Command::ReassignSpeaker {
+            meeting_id,
+            from,
+            to,
+        } => reassign_speaker(b, &meeting_id, &from, &to),
+        Command::RecordTerminalSessions { sessions } => crate::terminal::record(b, sessions),
+        Command::UpdateTerminalSession { id, changes } => crate::terminal::update(b, &id, changes),
+        Command::DeleteTerminalSession { id } => crate::terminal::delete(b, &id),
     }
 }
 
@@ -1293,6 +1458,17 @@ fn view_spec_json(b: &Batch<'_, '_>, spec: &ViewSpec) -> Result<String> {
     for id in f.tag_ids.iter().filter(|id| *id != FILTER_NONE) {
         live_tag(b, id)?;
     }
+    if let Some(lineage) = &spec.lineage {
+        // The Lineage page filters on one project at most, over every task.
+        if spec.scope != ViewScope::All || f.project_ids.len() > 1 {
+            return Err(Error::invalid(
+                "a lineage view covers all tasks and at most one project",
+            ));
+        }
+        if let Some(id) = &lineage.around {
+            live_task(b, id)?;
+        }
+    }
     Ok(serde_json::to_string(spec)?)
 }
 
@@ -1376,9 +1552,53 @@ fn live_view(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::View> {
 // ---------------------------------------------------------------------------------------
 // Attachments
 
+/// What an attachment belongs to.
+enum Owner {
+    Task(Id),
+    Meeting(Id),
+}
+
+fn attachment_owner(a: &crate::model::Attachment) -> Result<Owner> {
+    match (&a.task_id, &a.meeting_id) {
+        (Some(task_id), None) => Ok(Owner::Task(task_id.clone())),
+        (None, Some(meeting_id)) => Ok(Owner::Meeting(meeting_id.clone())),
+        _ => Err(Error::invalid(format!(
+            "attachment {} has no single owner",
+            a.id
+        ))),
+    }
+}
+
+/// Bumps the owner's `updated_at`, so views of it refresh.
+fn touch_owner(b: &mut Batch<'_, '_>, owner: &Owner) -> Result<()> {
+    match owner {
+        Owner::Task(id) => touch_task(b, id),
+        Owner::Meeting(id) => b.apply(Change::new(
+            Entity::Meeting,
+            id,
+            OpKind::Update,
+            json!({ "updated_at": b.now }),
+        )),
+    }
+}
+
 fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
     let id = client_id(n.id)?;
-    live_task(b, &n.task_id)?;
+    let owner = match (&n.task_id, &n.meeting_id) {
+        (Some(task_id), None) => {
+            live_task(b, task_id)?;
+            Owner::Task(task_id.clone())
+        }
+        (None, Some(meeting_id)) => {
+            live_meeting(b, meeting_id)?;
+            Owner::Meeting(meeting_id.clone())
+        }
+        _ => {
+            return Err(Error::invalid(
+                "an attachment belongs to exactly one task or meeting",
+            ));
+        }
+    };
     if !files::is_hash(&n.hash) {
         return Err(Error::invalid(format!("'{}' is not a file hash", n.hash)));
     }
@@ -1401,6 +1621,7 @@ fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
         OpKind::Create,
         json!({
             "task_id": n.task_id,
+            "meeting_id": n.meeting_id,
             "hash": n.hash,
             "name": name,
             "mime": mime,
@@ -1410,7 +1631,7 @@ fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
             "deleted_at": null,
         }),
     ))?;
-    touch_task(b, &n.task_id)
+    touch_owner(b, &owner)
 }
 
 /// Bumps the task's `updated_at`, as tag changes do, so views of it refresh.
@@ -1433,7 +1654,7 @@ fn update_attachment(
             "update_attachment needs at least one change",
         ));
     }
-    let task_id = live_attachment(b, id)?.task_id;
+    let owner = attachment_owner(&live_attachment(b, id)?)?;
     let mut patch = Map::new();
     for change in changes {
         let (key, value) = match change {
@@ -1451,18 +1672,18 @@ fn update_attachment(
         OpKind::Update,
         Value::Object(patch),
     ))?;
-    touch_task(b, &task_id)
+    touch_owner(b, &owner)
 }
 
 fn delete_attachment(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
-    let task_id = live_attachment(b, id)?.task_id;
+    let owner = attachment_owner(&live_attachment(b, id)?)?;
     b.apply(Change::new(
         Entity::Attachment,
         id,
         OpKind::Delete,
         json!({ "deleted_at": b.now, "updated_at": b.now }),
     ))?;
-    touch_task(b, &task_id)
+    touch_owner(b, &owner)
 }
 
 fn live_attachment(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Attachment> {
@@ -1565,6 +1786,385 @@ fn live_time_block(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::TimeBloc
 }
 
 // ---------------------------------------------------------------------------------------
+// Meetings (ADR 025)
+
+fn check_meeting_times(started_at: Timestamp, ended_at: Option<Timestamp>) -> Result<()> {
+    if started_at < 0 {
+        return Err(Error::invalid("a meeting cannot start before 1970"));
+    }
+    if let Some(end) = ended_at {
+        if end <= started_at {
+            return Err(Error::invalid("a meeting must end after it starts"));
+        }
+        if end - started_at > MAX_BLOCK_MS {
+            return Err(Error::invalid("a meeting can last at most 24 hours"));
+        }
+    }
+    Ok(())
+}
+
+/// Names with their spaces tidied, blanks and repeats (ignoring case) dropped, as the JSON
+/// array the column stores.
+fn participants_json(names: &[String]) -> Result<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for name in names {
+        let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+        if name.is_empty() || !seen.insert(name.to_lowercase()) {
+            continue;
+        }
+        if name.chars().count() > MAX_PARTICIPANT_CHARS {
+            return Err(Error::invalid(format!(
+                "a participant's name is limited to {MAX_PARTICIPANT_CHARS} characters"
+            )));
+        }
+        out.push(name);
+    }
+    if out.len() > MAX_PARTICIPANTS {
+        return Err(Error::invalid(format!(
+            "a meeting lists at most {MAX_PARTICIPANTS} participants"
+        )));
+    }
+    Ok(serde_json::to_string(&out)?)
+}
+
+fn create_meeting(b: &mut Batch<'_, '_>, n: NewMeeting) -> Result<()> {
+    let id = client_id(n.id)?;
+    let title = non_empty("title", &n.title)?;
+    check_meeting_times(n.started_at, n.ended_at)?;
+    if let Some(project_id) = &n.project_id {
+        live_project(b, project_id)?;
+    }
+    if let Some(epic_id) = &n.epic_id {
+        live_epic(b, epic_id)?;
+    }
+    if let Some(task_id) = &n.task_id {
+        live_task(b, task_id)?;
+    }
+    let state = n.state.unwrap_or_default();
+    b.apply(Change::new(
+        Entity::Meeting,
+        &id,
+        OpKind::Create,
+        json!({
+            "title": title,
+            "started_at": n.started_at,
+            "ended_at": n.ended_at,
+            "project_id": n.project_id,
+            "epic_id": n.epic_id,
+            "task_id": n.task_id,
+            "state": state.as_str(),
+            "participants": participants_json(&n.participants)?,
+            "notes": n.notes,
+            "summary": null,
+            "transcribed_at": null,
+            "validated_at": (state == MeetingState::Validated).then_some(b.now),
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn update_meeting(b: &mut Batch<'_, '_>, id: &str, changes: Vec<MeetingChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_meeting needs at least one change"));
+    }
+    let meeting = live_meeting(b, id)?;
+    let (mut started_at, mut ended_at) = (meeting.started_at, meeting.ended_at);
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            MeetingChange::Title(t) => ("title", json!(non_empty("title", &t)?)),
+            MeetingChange::StartedAt(t) => {
+                started_at = t;
+                ("started_at", json!(t))
+            }
+            MeetingChange::EndedAt(t) => {
+                ended_at = t;
+                ("ended_at", json!(t))
+            }
+            MeetingChange::ProjectId(p) => {
+                if let Some(p) = &p {
+                    live_project(b, p)?;
+                }
+                ("project_id", json!(p))
+            }
+            MeetingChange::EpicId(e) => {
+                if let Some(e) = &e {
+                    live_epic(b, e)?;
+                }
+                ("epic_id", json!(e))
+            }
+            MeetingChange::TaskId(t) => {
+                if let Some(t) = &t {
+                    live_task(b, t)?;
+                }
+                ("task_id", json!(t))
+            }
+            MeetingChange::State(state) => {
+                let validated_at = match (state, meeting.validated_at) {
+                    (MeetingState::Validated, Some(at)) => Some(at),
+                    (MeetingState::Validated, None) => Some(b.now),
+                    _ => None,
+                };
+                if validated_at != meeting.validated_at {
+                    patch.insert("validated_at".into(), json!(validated_at));
+                }
+                ("state", json!(state.as_str()))
+            }
+            MeetingChange::Participants(names) => {
+                ("participants", json!(participants_json(&names)?))
+            }
+            MeetingChange::Notes(n) => ("notes", json!(n)),
+            MeetingChange::Summary(s) => ("summary", json!(trimmed(s))),
+            MeetingChange::SpeakerName { speaker, name } => {
+                check_speaker(&speaker)?;
+                let mut names = match patch.get("speakers").and_then(Value::as_str) {
+                    Some(current) => serde_json::from_str(current).unwrap_or_default(),
+                    None => meeting.speakers.clone(),
+                };
+                match trimmed(name) {
+                    Some(name) if name.chars().count() > MAX_PARTICIPANT_CHARS => {
+                        return Err(Error::invalid(format!(
+                            "a speaker name has at most {MAX_PARTICIPANT_CHARS} characters"
+                        )));
+                    }
+                    Some(name) => names.insert(speaker, name),
+                    None => names.remove(&speaker),
+                };
+                ("speakers", json!(serde_json::to_string(&names)?))
+            }
+        };
+        patch.insert(key.into(), value);
+    }
+    check_meeting_times(started_at, ended_at)?;
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Meeting,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_meeting(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_meeting(b, id)?;
+    b.apply(Change::new(
+        Entity::Meeting,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+fn live_meeting(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Meeting> {
+    let meeting = query::meeting(b.tx, id)?;
+    if meeting.deleted_at.is_some() {
+        return Err(Error::not_found("meeting", id));
+    }
+    Ok(meeting)
+}
+
+// ---------------------------------------------------------------------------------------
+// Transcripts (Scribe, M20)
+
+/// `"me"`, or `"s"` and a number.
+fn check_speaker(key: &str) -> Result<()> {
+    let numbered = key
+        .strip_prefix('s')
+        .is_some_and(|n| !n.is_empty() && n.len() <= 4 && n.bytes().all(|c| c.is_ascii_digit()));
+    if key == "me" || numbered {
+        Ok(())
+    } else {
+        Err(Error::invalid(format!(
+            "speaker '{key}' is not \"me\" or \"s1\", \"s2\", …"
+        )))
+    }
+}
+
+fn check_segment_text(text: &str) -> Result<String> {
+    let text = text.trim();
+    if text.chars().count() > MAX_SEGMENT_CHARS {
+        return Err(Error::invalid(format!(
+            "a transcript segment has at most {MAX_SEGMENT_CHARS} characters"
+        )));
+    }
+    Ok(text.to_owned())
+}
+
+fn live_segment(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::TranscriptSegment> {
+    let segment = query::segment(b.tx, id)?;
+    if segment.deleted_at.is_some() {
+        return Err(Error::not_found("transcript segment", id));
+    }
+    live_meeting(b, &segment.meeting_id)?;
+    Ok(segment)
+}
+
+fn set_transcript(
+    b: &mut Batch<'_, '_>,
+    meeting_id: &str,
+    segments: Vec<NewSegment>,
+) -> Result<()> {
+    live_meeting(b, meeting_id)?;
+    if segments.len() > MAX_SEGMENTS {
+        return Err(Error::invalid(format!(
+            "a transcript has at most {MAX_SEGMENTS} segments"
+        )));
+    }
+    for old in query::transcript(b.tx, meeting_id)? {
+        b.apply(Change::new(
+            Entity::TranscriptSegment,
+            &old.id,
+            OpKind::Delete,
+            json!({ "deleted_at": b.now, "updated_at": b.now }),
+        ))?;
+    }
+    for n in segments {
+        let id = client_id(n.id)?;
+        check_speaker(&n.speaker)?;
+        if n.start_ms < 0 || n.end_ms < n.start_ms {
+            return Err(Error::invalid("a segment must end after it starts"));
+        }
+        let text = check_segment_text(&n.text)?;
+        if text.is_empty() {
+            continue;
+        }
+        b.apply(Change::new(
+            Entity::TranscriptSegment,
+            &id,
+            OpKind::Create,
+            json!({
+                "meeting_id": meeting_id,
+                "start_ms": n.start_ms,
+                "end_ms": n.end_ms,
+                "speaker": n.speaker,
+                "text": text,
+                "edited": 0,
+                "created_at": b.now,
+                "updated_at": b.now,
+                "deleted_at": null,
+            }),
+        ))?;
+    }
+    b.apply(Change::new(
+        Entity::Meeting,
+        meeting_id,
+        OpKind::Update,
+        json!({
+            "state": MeetingState::Review.as_str(),
+            "transcribed_at": b.now,
+            "validated_at": null,
+            "speakers": "{}",
+            "updated_at": b.now,
+        }),
+    ))
+}
+
+fn update_segment(b: &mut Batch<'_, '_>, id: &str, changes: Vec<SegmentChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_segment needs at least one change"));
+    }
+    live_segment(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        match change {
+            SegmentChange::Text(text) => {
+                let text = check_segment_text(&text)?;
+                if text.is_empty() {
+                    return Err(Error::invalid(
+                        "a segment cannot be empty; delete it instead",
+                    ));
+                }
+                patch.insert("text".into(), json!(text));
+                patch.insert("edited".into(), json!(1));
+            }
+            SegmentChange::Speaker(speaker) => {
+                check_speaker(&speaker)?;
+                patch.insert("speaker".into(), json!(speaker));
+            }
+        }
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn split_segment(b: &mut Batch<'_, '_>, id: &str, at: u32, new_id: Option<Id>) -> Result<()> {
+    let segment = live_segment(b, id)?;
+    let chars: Vec<char> = segment.text.chars().collect();
+    let at = at as usize;
+    let first: String = chars[..at.min(chars.len())].iter().collect();
+    let second: String = chars[at.min(chars.len())..].iter().collect();
+    let (first, second) = (first.trim(), second.trim());
+    if first.is_empty() || second.is_empty() {
+        return Err(Error::invalid(
+            "split a segment between two words, not at its start or end",
+        ));
+    }
+    let new_id = client_id(new_id)?;
+    let span = segment.end_ms - segment.start_ms;
+    let cut = segment.start_ms + span * at as i64 / chars.len().max(1) as i64;
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        id,
+        OpKind::Update,
+        json!({ "text": first, "end_ms": cut, "edited": 1, "updated_at": b.now }),
+    ))?;
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        &new_id,
+        OpKind::Create,
+        json!({
+            "meeting_id": segment.meeting_id,
+            "start_ms": cut,
+            "end_ms": segment.end_ms,
+            "speaker": segment.speaker,
+            "text": second,
+            "edited": 1,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn delete_segment(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_segment(b, id)?;
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+fn reassign_speaker(b: &mut Batch<'_, '_>, meeting_id: &str, from: &str, to: &str) -> Result<()> {
+    live_meeting(b, meeting_id)?;
+    check_speaker(from)?;
+    check_speaker(to)?;
+    if from == to {
+        return Ok(());
+    }
+    for segment in query::transcript(b.tx, meeting_id)? {
+        if segment.speaker == from {
+            b.apply(Change::new(
+                Entity::TranscriptSegment,
+                &segment.id,
+                OpKind::Update,
+                json!({ "speaker": to, "updated_at": b.now }),
+            ))?;
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------
 // Agent sessions (docs/adr/017)
 
 fn create_agent_session(b: &mut Batch<'_, '_>, n: NewAgentSession) -> Result<()> {
@@ -1605,6 +2205,7 @@ fn create_agent_session(b: &mut Batch<'_, '_>, n: NewAgentSession) -> Result<()>
             "summary": null,
             "cost_usd_micros": null,
             "turns": null,
+            "duration_ms": null,
             "error": null,
             "created_at": b.now,
             "updated_at": b.now,
@@ -1666,7 +2267,17 @@ fn update_agent_session(
                 }
                 ("turns", json!(t))
             }
+            AgentSessionChange::DurationMs(d) => {
+                if d.is_some_and(|d| d < 0) {
+                    return Err(Error::invalid("duration cannot be negative"));
+                }
+                ("duration_ms", json!(d))
+            }
             AgentSessionChange::Error(e) => ("error", json!(trimmed(e))),
+            AgentSessionChange::ClaudeSessionId(c) => {
+                crate::clock::check_id(&c)?;
+                ("claude_session_id", json!(c))
+            }
         };
         patch.insert(key.into(), value);
     }
@@ -1737,13 +2348,14 @@ fn add_agent_note(b: &mut Batch<'_, '_>, n: NewAgentNote) -> Result<()> {
     touch_task(b, &session.task_id)
 }
 
-/// A live session started by this device (only its device runs and updates it).
+/// A live session started by this device (only its device runs and updates it). A
+/// session in the desktop app has no process to own: any device may record it.
 fn own_session(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::AgentSession> {
     let session = query::agent_session(b.tx, id)?;
     if session.deleted_at.is_some() {
         return Err(Error::not_found("agent session", id));
     }
-    if session.device_id != b.device_id() {
+    if session.device_id != b.device_id() && session.state != SessionState::Desktop {
         return Err(Error::invalid(
             "this session runs on another device; only that device can change it",
         ));

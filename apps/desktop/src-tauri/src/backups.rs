@@ -1,6 +1,6 @@
 //! Daily backups (keep 14) and the optional upload of each one to an S3-compatible bucket
-//! (Garage in the homelab). Uploading is one-way and best effort: when the bucket is not
-//! reachable (off the LAN, server down), the next cycle tries again.
+//! (AWS S3, MinIO, Garage, ...). Uploading is one-way and best effort: when the bucket is
+//! not reachable (off the network, server down), the next cycle tries again.
 
 use std::collections::HashSet;
 use std::io::Write;

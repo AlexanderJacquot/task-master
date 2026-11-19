@@ -3,17 +3,33 @@
 
 import { ranksForDrop } from "../lib/board";
 import type { RestorePlan } from "../lib/history";
+import { applyMeetingChanges, cleanParticipants } from "../lib/meetings";
 import { rankBetween } from "../lib/rank";
+import { playSound } from "../lib/sounds";
+import {
+  dropTimer,
+  getTimers,
+  putTimer,
+  type RunningTimer,
+  runToBlocks,
+  timerOf,
+} from "../lib/timer";
+import { applySegmentChanges, splitSegment } from "../lib/transcript";
 import type {
+  AgentSession,
   Attachment,
   BlockOutcome,
   Capture,
   Command,
   Epic,
   EpicChange,
+  Meeting,
+  MeetingChange,
+  MeetingState,
   Priority,
   Project,
   ProjectChange,
+  SegmentChange,
   Status,
   StatusChange,
   StoredUpload,
@@ -132,6 +148,7 @@ export async function createTask(
     : task.dependency_ids.length
       ? [{ type: "update_task", id, changes: [{ dependency_ids: task.dependency_ids }] }]
       : [];
+  playSound("scribble");
   const changes = await store.getState().mutate(
     [
       ...(extra.before ?? []),
@@ -286,16 +303,54 @@ export function deleteTask(store: TaskStore, id: string) {
   const s = store.getState();
   if (!s.tasks[id]) return Promise.resolve(null);
   const ids = [id, ...descendantIds(id, childrenByParent(Object.values(s.tasks)))];
+  playSound("burn");
   return s.mutate([{ type: "delete_task", id }], { remove: { tasks: ids } });
 }
 
 /** Makes `id` a subtask of `parentId`, or a top-level task when null. */
 export function setParent(store: TaskStore, id: string, parentId: string | null) {
+  return setParents(store, [id], parentId);
+}
+
+/**
+ * Makes several tasks subtasks of `parentId` (or top-level when null) as one undoable
+ * batch. A task whose ancestor is also given keeps its place under that ancestor.
+ */
+export function setParents(store: TaskStore, ids: Iterable<string>, parentId: string | null) {
   const s = store.getState();
-  const task = s.tasks[id];
-  if (!task) return Promise.resolve(null);
-  const parent = parentId ? s.tasks[parentId] : undefined;
+  const picked = new Set([...ids].filter((id) => s.tasks[id]));
+  const roots = [...picked].filter((id) => !hasPickedAncestor(s.tasks, id, picked));
+  if (!roots.length) return Promise.resolve(null);
   const now = Date.now();
+  const children = childrenByParent(Object.values(s.tasks));
+  const commands: Command[] = [];
+  const updated: Task[] = [];
+  for (const id of roots) {
+    commands.push({ type: "set_parent", id, parent_id: parentId });
+    updated.push(...reparented(s.tasks, children, id, parentId, now));
+  }
+  return s.mutate(commands, { upsert: { tasks: updated } });
+}
+
+function hasPickedAncestor(tasks: Record<string, Task>, id: string, picked: ReadonlySet<string>) {
+  const seen = new Set([id]); // a parent cycle in corrupt data ends the walk
+  for (let p = tasks[id]?.parent_id; p && !seen.has(p); p = tasks[p]?.parent_id) {
+    if (picked.has(p)) return true;
+    seen.add(p);
+  }
+  return false;
+}
+
+/** The optimistic rows after `set_parent`: the task, and subtasks that follow its project. */
+function reparented(
+  tasks: Record<string, Task>,
+  children: ReturnType<typeof childrenByParent>,
+  id: string,
+  parentId: string | null,
+  now: number,
+): Task[] {
+  const task = tasks[id] as Task;
+  const parent = parentId ? tasks[parentId] : undefined;
   const updated: Task[] = [
     {
       ...task,
@@ -307,9 +362,8 @@ export function setParent(store: TaskStore, id: string, parentId: string | null)
   ];
   // As the core does: subtasks that shared the task's project or epic follow it.
   if (parent) {
-    const children = childrenByParent(Object.values(s.tasks));
     for (const subId of descendantIds(id, children)) {
-      const sub = s.tasks[subId];
+      const sub = tasks[subId];
       if (!sub) continue;
       const project = sub.project_id === task.project_id ? parent.project_id : sub.project_id;
       const epic = sub.epic_id === task.epic_id ? parent.epic_id : sub.epic_id;
@@ -318,9 +372,7 @@ export function setParent(store: TaskStore, id: string, parentId: string | null)
       }
     }
   }
-  return s.mutate([{ type: "set_parent", id, parent_id: parentId }], {
-    upsert: { tasks: updated },
-  });
+  return updated;
 }
 
 /** Moves a subtask one step up or down its parent's checklist. */
@@ -351,6 +403,78 @@ export function setTagged(store: TaskStore, taskId: string, tagId: string, tagge
   return s.mutate([{ type: tagged ? "tag_task" : "untag_task", task_id: taskId, tag_id: tagId }], {
     upsert: { tasks: [{ ...task, tag_ids, updated_at: Date.now() }] },
   });
+}
+
+// ---------------------------------------------------------------------------------------
+// Bulk edits (multi-select in list and board views): one batch each, so one undo.
+
+/** True when `change` leaves the task as it is (bulk edits skip those tasks). */
+function changeIsNoop(task: Task, change: TaskChange): boolean {
+  if ("status_id" in change) return change.status_id === task.status_id;
+  if ("due_date" in change) return (change.due_date ?? null) === task.due_date;
+  if ("today_on" in change) return (change.today_on ?? null) === task.today_on;
+  return isNoop(task, change);
+}
+
+/**
+ * Applies the same changes to several tasks as one undoable batch. Tasks the changes
+ * would leave as they are get no command. Resolves to null when nothing changes.
+ */
+export function updateTasks(store: TaskStore, ids: Iterable<string>, changes: TaskChange[]) {
+  const s = store.getState();
+  const now = Date.now();
+  const commands: Command[] = [];
+  const updated: Task[] = [];
+  for (const id of new Set(ids)) {
+    const task = s.tasks[id];
+    if (!task) continue;
+    const effective = changes.filter((c) => !changeIsNoop(task, c));
+    if (!effective.length) continue;
+    commands.push({ type: "update_task", id, changes: effective });
+    updated.push(applyTaskChanges(task, effective, s.statuses, now));
+  }
+  if (!commands.length) return Promise.resolve(null);
+  return s.mutate(commands, { upsert: { tasks: updated } });
+}
+
+/** Adds a tag to (or takes it off) several tasks as one undoable batch. */
+export function setTaggedMany(
+  store: TaskStore,
+  ids: Iterable<string>,
+  tagId: string,
+  tagged: boolean,
+) {
+  const s = store.getState();
+  const now = Date.now();
+  const commands: Command[] = [];
+  const updated: Task[] = [];
+  for (const id of new Set(ids)) {
+    const task = s.tasks[id];
+    if (!task || task.tag_ids.includes(tagId) === tagged) continue;
+    const tag_ids = tagged
+      ? [...task.tag_ids, tagId].sort()
+      : task.tag_ids.filter((t) => t !== tagId);
+    commands.push({ type: tagged ? "tag_task" : "untag_task", task_id: id, tag_id: tagId });
+    updated.push({ ...task, tag_ids, updated_at: now });
+  }
+  if (!commands.length) return Promise.resolve(null);
+  return s.mutate(commands, { upsert: { tasks: updated } });
+}
+
+/**
+ * Soft-deletes several tasks and their subtasks as one undoable batch. A task whose
+ * parent (or any ancestor) is also picked goes with it: the core refuses to delete a
+ * task twice in one batch.
+ */
+export function deleteTasks(store: TaskStore, ids: Iterable<string>) {
+  const s = store.getState();
+  const picked = new Set([...ids].filter((id) => s.tasks[id]));
+  const roots = [...picked].filter((id) => !hasPickedAncestor(s.tasks, id, picked));
+  if (!roots.length) return Promise.resolve(null);
+  const children = childrenByParent(Object.values(s.tasks));
+  const removed = roots.flatMap((id) => [id, ...descendantIds(id, children)]);
+  const commands: Command[] = roots.map((id) => ({ type: "delete_task", id }));
+  return s.mutate(commands, { remove: { tasks: removed } });
 }
 
 /** Deletes a tag; the core takes it off every task in the same undoable batch. */
@@ -483,33 +607,50 @@ function isNoop(task: Task, change: TaskChange): boolean {
  * The rank comes from the new neighbours; the core rebalances the column if it grows long.
  */
 export function moveCard(store: TaskStore, drop: CardDrop) {
+  const { id, ...rest } = drop;
+  return moveCards(store, { ...rest, ids: [id] });
+}
+
+export interface CardsDrop extends Omit<CardDrop, "id"> {
+  /** The cards dragged together, top to bottom; they sit next to each other in `order`. */
+  ids: string[];
+}
+
+/**
+ * Several selected cards dragged together onto one cell: each takes the column (and lane),
+ * and they keep their order at the drop point. One undoable batch.
+ */
+export function moveCards(store: TaskStore, drop: CardsDrop) {
   const s = store.getState();
-  const task = s.tasks[drop.id];
-  if (!task) return Promise.resolve(null);
+  const moved = drop.ids.filter((id) => s.tasks[id]);
+  if (!moved.length) return Promise.resolve(null);
   const ranks: Record<string, string> = {};
   for (const id of drop.order) {
     const rank = s.tasks[id]?.rank;
     if (rank !== undefined) ranks[id] = rank;
   }
   const order = drop.order.filter((id) => id in ranks);
-  const newRanks = ranksForDrop(order, drop.id, ranks);
-  const laneChanges = (drop.laneChanges ?? []).filter((c) => !isNoop(task, c));
+  const newRanks = ranksForDrop(order, moved, ranks);
 
   const now = Date.now();
   const commands: Command[] = [];
   const upserts: Task[] = [];
-  const rank = newRanks[drop.id] as string;
-  if (laneChanges.length) {
+  for (const id of moved) {
+    const task = s.tasks[id] as Task;
+    const rank = newRanks[id] as string;
+    const laneChanges = (drop.laneChanges ?? []).filter((c) => !isNoop(task, c));
     const changes: TaskChange[] = [{ status_id: drop.statusId }, { rank }, ...laneChanges];
-    commands.push({ type: "update_task", id: drop.id, changes });
+    commands.push(
+      laneChanges.length
+        ? { type: "update_task", id, changes }
+        : { type: "move_task", id, status_id: drop.statusId, rank },
+    );
     upserts.push(applyTaskChanges(task, changes, s.statuses, now));
-  } else {
-    commands.push({ type: "move_task", id: drop.id, status_id: drop.statusId, rank });
-    upserts.push(applyTaskChanges(task, [{ status_id: drop.statusId }, { rank }], s.statuses, now));
   }
+  const movedSet = new Set(moved);
   for (const [id, key] of Object.entries(newRanks)) {
     const other = s.tasks[id];
-    if (id === drop.id || !other) continue;
+    if (movedSet.has(id) || !other) continue;
     commands.push({ type: "update_task", id, changes: [{ rank: key }] });
     upserts.push(applyTaskChanges(other, [{ rank: key }], s.statuses, now));
   }
@@ -838,22 +979,38 @@ export function deleteStatus(store: TaskStore, id: string) {
 // ---------------------------------------------------------------------------------------
 // Attachments (ADR 011). The content is stored first (`FilesApi.store*`); these record it.
 
+/** What files are attached to: a task or a meeting. */
+export type AttachmentOwner = { task: string } | { meeting: string };
+
 /**
  * Attaches stored files to a task in one undoable batch. Resolves to the new attachments
  * (empty when the core refused them).
  */
-export async function attachFiles(
+export function attachFiles(
   store: TaskStore,
   taskId: string,
   uploads: StoredUpload[],
 ): Promise<Attachment[]> {
+  return attachFilesTo(store, { task: taskId }, uploads);
+}
+
+/** Attaches stored files to a task or a meeting in one undoable batch. */
+export async function attachFilesTo(
+  store: TaskStore,
+  owner: AttachmentOwner,
+  uploads: StoredUpload[],
+): Promise<Attachment[]> {
   const s = store.getState();
-  const task = s.tasks[taskId];
-  if (!task || !uploads.length) return [];
+  const task_id = "task" in owner ? owner.task : null;
+  const meeting_id = "meeting" in owner ? owner.meeting : null;
+  const task = task_id ? s.tasks[task_id] : undefined;
+  const meeting = meeting_id ? s.meetings[meeting_id] : undefined;
+  if ((!task && !meeting) || !uploads.length) return [];
   const now = Date.now();
   const attachments: Attachment[] = uploads.map((u, i) => ({
     id: uuidv7(now + i),
-    task_id: taskId,
+    task_id,
+    meeting_id,
     hash: u.hash,
     name: u.name,
     mime: u.mime,
@@ -867,14 +1024,20 @@ export async function attachFiles(
       type: "create_attachment" as const,
       attachment: {
         id: a.id,
-        task_id: taskId,
+        ...(task_id ? { task_id } : { meeting_id }),
         hash: a.hash,
         name: a.name,
         mime: a.mime,
         size: a.size,
       },
     })),
-    { upsert: { attachments, tasks: [{ ...task, updated_at: now }] } },
+    {
+      upsert: {
+        attachments,
+        ...(task && { tasks: [{ ...task, updated_at: now }] }),
+        ...(meeting && { meetings: [{ ...meeting, updated_at: now }] }),
+      },
+    },
   );
   if (!changes) return [];
   const confirmed = store.getState().attachments;
@@ -895,6 +1058,23 @@ export function deleteAttachment(store: TaskStore, id: string) {
   const s = store.getState();
   if (!s.attachments[id]) return Promise.resolve(null);
   return s.mutate([{ type: "delete_attachment", id }], { remove: { attachments: [id] } });
+}
+
+/**
+ * Removes every attachment using one of these files, in one undoable batch: the first
+ * step of deleting files from Settings → Files (ADR 023; the shell then purges the content).
+ */
+export function deleteAttachmentsOfFiles(store: TaskStore, hashes: string[]) {
+  const s = store.getState();
+  const wanted = new Set(hashes);
+  const ids = Object.values(s.attachments)
+    .filter((a) => wanted.has(a.hash))
+    .map((a) => a.id);
+  if (!ids.length) return Promise.resolve(null);
+  return s.mutate(
+    ids.map((id) => ({ type: "delete_attachment" as const, id })),
+    { remove: { attachments: ids } },
+  );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -977,6 +1157,126 @@ export async function scheduleBlocks(
   return changes ? blocks.map((b) => b.id) : [];
 }
 
+/**
+ * Logs time worked on a task as `worked` blocks (one undoable batch): a run under a minute
+ * logs nothing, a run over 24 hours is split. Resolves to the new ids.
+ */
+export async function logWork(
+  store: TaskStore,
+  taskId: string,
+  start: number,
+  end: number,
+): Promise<string[]> {
+  const s = store.getState();
+  const task = s.tasks[taskId];
+  const pieces = runToBlocks(start, end);
+  if (!task || !pieces.length) return [];
+  const now = Date.now();
+  const blocks: TimeBlock[] = pieces.map((p) => ({
+    id: uuidv7(now),
+    task_id: taskId,
+    ...p,
+    outcome: "worked",
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  }));
+  const changes = await s.mutate(
+    blocks.map((b) => ({
+      type: "create_time_block" as const,
+      block: {
+        id: b.id,
+        task_id: taskId,
+        start_at: b.start_at,
+        end_at: b.end_at,
+        outcome: "worked" as const,
+      },
+    })),
+    { upsert: { time_blocks: blocks, tasks: [{ ...task, updated_at: now }] } },
+  );
+  return changes ? blocks.map((b) => b.id) : [];
+}
+
+/**
+ * Starts a work timer on a task. Timers on other tasks keep running: several can run at
+ * once. A task not started yet moves to the first in-progress status.
+ * With `sessionId` (a task sent to an agent) the timer follows that session and stops
+ * when it ends (`followAgentTimer`); a timer already running on the task keeps its start.
+ */
+export async function startTimer(
+  store: TaskStore,
+  taskId: string,
+  now = Date.now(),
+  sessionId?: string,
+) {
+  const running = timerOf(taskId);
+  if (running) {
+    if (sessionId) putTimer({ ...running, session_id: sessionId });
+    return;
+  }
+  putTimer(
+    sessionId
+      ? { task_id: taskId, started_at: now, session_id: sessionId }
+      : { task_id: taskId, started_at: now },
+  );
+  const s = store.getState();
+  const task = s.tasks[taskId];
+  const category = task && s.statuses.find((st) => st.id === task.status_id)?.category;
+  const doing = firstStatus(s.statuses, "in_progress");
+  if (task && doing && (category === "todo" || category === "backlog")) {
+    await updateTask(store, taskId, [{ status_id: doing.id }]);
+  }
+}
+
+/** Stops a task's timer and logs the run. Resolves to the new block ids. */
+export async function stopTimer(
+  store: TaskStore,
+  taskId: string,
+  now = Date.now(),
+): Promise<string[]> {
+  const running = timerOf(taskId);
+  if (!running) return [];
+  dropTimer(taskId);
+  return logWork(store, running.task_id, running.started_at, now);
+}
+
+/**
+ * When a timer following an agent session should stop: the session's end, once it is done,
+ * failed, stopped or interrupted. Null while it runs (or goes on in a terminal), and for an
+ * end older than the timer (a follow-up just sent, the session not marked running yet).
+ */
+export function agentTimerEnd(
+  timer: RunningTimer | null,
+  sessions: Record<string, AgentSession>,
+): number | null {
+  if (!timer?.session_id) return null;
+  const session = sessions[timer.session_id];
+  if (
+    !session ||
+    session.state === "running" ||
+    session.state === "terminal" ||
+    session.state === "desktop"
+  )
+    return null;
+  const end = session.ended_at ?? session.updated_at;
+  return end >= timer.started_at ? end : null;
+}
+
+/**
+ * Stops the timer when the agent session it follows ends, logging the run up to the
+ * session's end. Run it in one window only. Returns the unsubscribe function.
+ */
+export function followAgentTimer(store: TaskStore): () => void {
+  const check = () => {
+    for (const timer of getTimers()) {
+      const end = agentTimerEnd(timer, store.getState().agent_sessions);
+      if (end !== null) void stopTimer(store, timer.task_id, end);
+    }
+  };
+  check();
+  return store.subscribe(check);
+}
+
 /** Moves or resizes a block. */
 export function moveBlock(store: TaskStore, id: string, start_at: number, end_at: number) {
   const s = store.getState();
@@ -1031,11 +1331,14 @@ export function adoptTask(store: TaskStore, id: string) {
   return updateTask(store, id, [{ owner: "me" }]);
 }
 
-/** Ends a session continued in a terminal that the app could not follow to its end. */
+/**
+ * Ends a session continued in a terminal, or opened in the desktop app, that the app could
+ * not follow to its end.
+ */
 export function markSessionDone(store: TaskStore, id: string) {
   const s = store.getState();
   const session = s.agent_sessions[id];
-  if (session?.state !== "terminal") return Promise.resolve(null);
+  if (session?.state !== "terminal" && session?.state !== "desktop") return Promise.resolve(null);
   const now = Date.now();
   return s.mutate([{ type: "update_agent_session", id, changes: [{ state: "done" }] }], {
     upsert: { agent_sessions: [{ ...session, state: "done", ended_at: now, updated_at: now }] },
@@ -1046,12 +1349,59 @@ export function markSessionDone(store: TaskStore, id: string) {
 export function removeAgentSession(store: TaskStore, id: string) {
   const s = store.getState();
   const session = s.agent_sessions[id];
-  if (!session || session.state === "running" || session.state === "terminal")
+  if (
+    !session ||
+    session.state === "running" ||
+    session.state === "terminal" ||
+    session.state === "desktop"
+  )
     return Promise.resolve(null);
   const task = s.tasks[session.task_id];
   return s.mutate([{ type: "delete_agent_session", id }], {
     remove: { agent_sessions: [id] },
     ...(task && { upsert: { tasks: [{ ...task, updated_at: Date.now() }] } }),
+  });
+}
+
+/**
+ * Files a terminal session (M21) under a project and, optionally, one of its tasks; `null`
+ * for no project. A task outside the project is let go.
+ */
+export function setTerminalSessionProject(
+  store: TaskStore,
+  id: string,
+  projectId: string | null,
+  taskId: string | null = null,
+) {
+  const s = store.getState();
+  const session = s.terminal_sessions[id];
+  if (!session) return Promise.resolve(null);
+  const task = taskId ? s.tasks[taskId] : undefined;
+  const keepTask = task && (task.project_id ?? null) === projectId ? task.id : null;
+  return s.mutate(
+    [
+      {
+        type: "update_terminal_session",
+        id,
+        changes: [{ project_id: projectId }, { task_id: keepTask }],
+      },
+    ],
+    {
+      upsert: {
+        terminal_sessions: [
+          { ...session, project_id: projectId, task_id: keepTask, updated_at: Date.now() },
+        ],
+      },
+    },
+  );
+}
+
+/** Leaves a terminal session out of the totals; reading its transcript again does not add it back. */
+export function removeTerminalSession(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.terminal_sessions[id]) return Promise.resolve(null);
+  return s.mutate([{ type: "delete_terminal_session", id }], {
+    remove: { terminal_sessions: [id] },
   });
 }
 
@@ -1065,4 +1415,144 @@ export function deleteBlock(store: TaskStore, id: string) {
     remove: { time_blocks: [id] },
     ...(task && { upsert: { tasks: [{ ...task, updated_at: Date.now() }] } }),
   });
+}
+
+// ---------------------------------------------------------------------------------------
+// Meetings (Scribe, ADR 025)
+
+export interface NewMeetingInput {
+  title: string;
+  started_at: number;
+  ended_at: number | null;
+  project_id?: string | null;
+  epic_id?: string | null;
+  task_id?: string | null;
+  state?: MeetingState;
+  participants?: string[];
+  notes?: string;
+}
+
+/** Adds a meeting. Resolves to its id, or null when the core refused it. */
+export async function createMeeting(
+  store: TaskStore,
+  input: NewMeetingInput,
+): Promise<string | null> {
+  const s = store.getState();
+  const title = input.title.trim();
+  if (!title) return null;
+  const now = Date.now();
+  const meeting: Meeting = {
+    id: uuidv7(now),
+    title,
+    started_at: input.started_at,
+    ended_at: input.ended_at,
+    project_id: input.project_id ?? null,
+    epic_id: input.epic_id ?? null,
+    task_id: input.task_id ?? null,
+    state: input.state ?? "scheduled",
+    participants: cleanParticipants(input.participants ?? []),
+    notes: input.notes ?? "",
+    summary: null,
+    transcribed_at: null,
+    validated_at: input.state === "validated" ? now : null,
+    speakers: {},
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  };
+  const changes = await s.mutate(
+    [
+      {
+        type: "create_meeting",
+        meeting: {
+          id: meeting.id,
+          title,
+          started_at: meeting.started_at,
+          ended_at: meeting.ended_at,
+          project_id: meeting.project_id,
+          epic_id: meeting.epic_id,
+          task_id: meeting.task_id,
+          state: meeting.state,
+          participants: meeting.participants,
+          notes: meeting.notes,
+        },
+      },
+    ],
+    { upsert: { meetings: [meeting] } },
+  );
+  return changes ? meeting.id : null;
+}
+
+export function updateMeeting(store: TaskStore, id: string, changes: MeetingChange[]) {
+  const s = store.getState();
+  const meeting = s.meetings[id];
+  if (!meeting || !changes.length) return Promise.resolve(null);
+  const next = applyMeetingChanges(meeting, changes, Date.now());
+  return s.mutate([{ type: "update_meeting", id, changes }], { upsert: { meetings: [next] } });
+}
+
+/** Deletes a meeting; its attachments go with it (undo restores both). */
+export function deleteMeeting(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.meetings[id]) return Promise.resolve(null);
+  const files = Object.values(s.attachments)
+    .filter((a) => a.meeting_id === id)
+    .map((a) => a.id);
+  return s.mutate([{ type: "delete_meeting", id }], {
+    remove: { meetings: [id], attachments: files },
+  });
+}
+
+// ---------------------------------------------------------------------------------------
+// Transcripts (Scribe, M20)
+
+/** Corrects a line's text or speaker. */
+export function updateSegment(store: TaskStore, id: string, changes: SegmentChange[]) {
+  const s = store.getState();
+  const seg = s.transcript_segments[id];
+  if (!seg || !changes.length) return Promise.resolve(null);
+  const next = applySegmentChanges(seg, changes, Date.now());
+  return s.mutate([{ type: "update_segment", id, changes }], {
+    upsert: { transcript_segments: [next] },
+  });
+}
+
+/** Cuts a line in two at character `at` (between two words). */
+export function splitTranscriptSegment(store: TaskStore, id: string, at: number) {
+  const s = store.getState();
+  const seg = s.transcript_segments[id];
+  if (!seg) return Promise.resolve(null);
+  const now = Date.now();
+  const newId = uuidv7(now);
+  const parts = splitSegment(seg, at, newId, now);
+  if (!parts) return Promise.resolve(null);
+  return s.mutate([{ type: "split_segment", id, at, new_id: newId }], {
+    upsert: { transcript_segments: parts },
+  });
+}
+
+export function deleteSegment(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.transcript_segments[id]) return Promise.resolve(null);
+  return s.mutate([{ type: "delete_segment", id }], { remove: { transcript_segments: [id] } });
+}
+
+/** One voice found as two: every line of `from` goes to `to`. */
+export function reassignSpeaker(store: TaskStore, meetingId: string, from: string, to: string) {
+  const s = store.getState();
+  if (from === to) return Promise.resolve(null);
+  const now = Date.now();
+  const moved = Object.values(s.transcript_segments)
+    .filter((seg) => seg.meeting_id === meetingId && seg.speaker === from)
+    .map((seg) => ({ ...seg, speaker: to, updated_at: now }));
+  return s.mutate([{ type: "reassign_speaker", meeting_id: meetingId, from, to }], {
+    upsert: { transcript_segments: moved },
+  });
+}
+
+/** Names a voice for the whole meeting (a blank name clears it). */
+export function nameSpeaker(store: TaskStore, meetingId: string, speaker: string, name: string) {
+  return updateMeeting(store, meetingId, [
+    { speaker_name: { speaker, name: name.trim() || null } },
+  ]);
 }

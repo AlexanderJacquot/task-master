@@ -5,6 +5,8 @@ import type {
   AgentSession,
   AgentSettings,
   AgentStart,
+  GitInfo,
+  PlanUsage,
   ProjectFolder,
 } from "../lib/types";
 import { agentSession } from "./fixtures";
@@ -19,6 +21,11 @@ export function fakeAgents(
     folders?: ProjectFolder[];
     notes?: AgentNote[];
     live?: AgentActivity[];
+    planUsage?: PlanUsage | Error;
+    /** Why opening a conversation in the desktop app fails. */
+    openDesktop?: Error;
+    /** The repository found in each folder (by path); none elsewhere. */
+    repos?: Record<string, GitInfo>;
   } = {},
 ) {
   const calls: string[] = [];
@@ -32,6 +39,10 @@ export function fakeAgents(
     model: null,
     started_status_id: null,
     done_status_id: null,
+    directive: null,
+    edit_user_tasks: true,
+    limits: { day_usd_micros: null, week_usd_micros: null, month_usd_micros: null },
+    import_terminal_sessions: true,
     ...opts.settings,
   };
   let folders = opts.folders ?? [];
@@ -45,7 +56,7 @@ export function fakeAgents(
         permission_mode: input.permission_mode ?? settings.permission_mode,
         model: input.model ?? null,
         prompt: input.prompt,
-        state: "running",
+        state: input.surface === "desktop" ? "desktop" : "running",
         started_at: Date.now(),
         ended_at: null,
       });
@@ -61,6 +72,10 @@ export function fakeAgents(
     openTerminal: async (id) => {
       calls.push(`terminal ${id}`);
     },
+    openDesktop: async (id) => {
+      calls.push(`desktop ${id}`);
+      if (opts.openDesktop instanceof Error) throw opts.openDesktop;
+    },
     live: async () => opts.live ?? [],
     brief: async (taskId) => `# Brief of ${taskId}`,
     notes: async () => opts.notes ?? [],
@@ -71,13 +86,28 @@ export function fakeAgents(
       return settings;
     },
     detect: async (s) => ({ path: `/usr/bin/${s.claude_path}`, version: "2.1.318" }),
+    planUsage: async () => {
+      calls.push("plan usage");
+      if (opts.planUsage instanceof Error) throw opts.planUsage;
+      return opts.planUsage ?? { plan: null, windows: [], fetched_at: 1 };
+    },
+    scanTerminal: async () => {
+      calls.push("scan terminal");
+      return { read: 0, recorded: 0 };
+    },
     distros: async () => [],
+    device: async () => "this-device",
     folders: async () => folders,
     setFolder: async (project_id, path) => {
       calls.push(`folder ${project_id} ${path}`);
       folders = folders.filter((f) => f.project_id !== project_id);
       if (path) folders.push({ project_id, path, runtime: settings.runtime, updated_at: 1 });
       return folders;
+    },
+    projectGit: async (project_id) => {
+      calls.push(`git ${project_id}`);
+      const path = folders.find((f) => f.project_id === project_id)?.path;
+      return (path && opts.repos?.[path]) || null;
     },
     pickFolder: async () => "/picked",
     onActivity: async (handler) => {

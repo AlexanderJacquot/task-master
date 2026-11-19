@@ -13,18 +13,17 @@ import {
 import { Button, cx, IconButton, INPUT, SectionLabel } from "../../components/ui";
 import { formatAgo } from "../../lib/dates";
 import type { AgentNote, AgentSession, Task } from "../../lib/types";
-import { markSessionDone, removeAgentSession } from "../../store/actions";
+import { markSessionDone, removeAgentSession, startTimer } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { MarkdownView } from "../task-detail/MarkdownView";
 import { SendToAgentDialog } from "./SendToAgentDialog";
-import { STATE_TONE } from "./SessionChip";
+import { StateBadge } from "./SessionChip";
 import {
   folderName,
   formatCost,
   formatDuration,
   PERMISSION_MODES,
   RESUME_MESSAGE,
-  STATE_LABEL,
   sessionsOf,
 } from "./sessions";
 
@@ -86,6 +85,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
   const [now, setNow] = useState(Date.now());
   const running = session.state === "running";
   const inTerminal = session.state === "terminal";
+  const inDesktop = session.state === "desktop";
 
   // Notes change while it runs; reload them with the session.
   // biome-ignore lint/correctness/useExhaustiveDependencies: updated_at is the reload trigger (each note bumps it).
@@ -121,6 +121,14 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
     }
   };
 
+  // A follow-up runs the session again: the work timer runs until it ends. Timed from
+  // before the send, so an end the shell records right away still stops it.
+  const followUp = async (text: string) => {
+    const at = Date.now();
+    await api.send(session.id, text);
+    void startTimer(store, session.task_id, at, session.id);
+  };
+
   const duration = formatDuration((session.ended_at ?? now) - session.started_at);
   const cost = formatCost(session.cost_usd_micros);
   const mode = PERMISSION_MODES.find((m) => m.value === session.permission_mode)?.label;
@@ -131,9 +139,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
       className="flex flex-col gap-2 rounded-xl border border-line bg-raised/60 p-3 text-[13px]"
     >
       <div className="flex items-center gap-2">
-        <span className={cx("rounded-md px-1.5 text-[12px] leading-5", STATE_TONE[session.state])}>
-          {STATE_LABEL[session.state]}
-        </span>
+        <StateBadge session={session} onError={setError} />
         <button
           type="button"
           onClick={() => setOpen(!open)}
@@ -144,18 +150,20 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           {folderName(session.folder)} · {formatAgo(session.started_at, now)} · {duration}
           {cost && ` · ${cost}`}
         </button>
-        <IconButton
-          label={running ? "Continue in terminal (stops the background run)" : "Open in terminal"}
-          disabled={!!busy}
-          onClick={() => void act("terminal", () => api.openTerminal(session.id))}
-        >
-          <SquareTerminal size={14} />
-        </IconButton>
+        {!inDesktop && (
+          <IconButton
+            label={running ? "Continue in terminal (stops the background run)" : "Open in terminal"}
+            disabled={!!busy}
+            onClick={() => void act("terminal", () => api.openTerminal(session.id))}
+          >
+            <SquareTerminal size={14} />
+          </IconButton>
+        )}
         {session.state === "interrupted" && (
           <Button
             size="sm"
             disabled={!!busy}
-            onClick={() => void act("resume", () => api.send(session.id, RESUME_MESSAGE))}
+            onClick={() => void act("resume", () => followUp(RESUME_MESSAGE))}
           >
             <Play size={13} />
             {busy === "resume" ? "Resuming…" : "Resume"}
@@ -169,7 +177,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           >
             <StopIcon size={14} />
           </IconButton>
-        ) : inTerminal ? (
+        ) : inTerminal || inDesktop ? (
           <IconButton
             label="Mark done"
             disabled={!!busy}
@@ -199,6 +207,13 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
           <SquareTerminal size={13} className="shrink-0" aria-hidden />
           Continuing in a terminal. When the agent records its summary, or you mark it done, the
           terminal closes a few seconds later.
+        </p>
+      )}
+      {inDesktop && (
+        <p role="status" className="flex items-center gap-1.5 text-accent">
+          <Bot size={13} className="shrink-0" aria-hidden />
+          Opened in the Claude desktop app: send the prompt there, and click In desktop app to go
+          back to it. It ends when the agent records its summary, or when you mark it done.
         </p>
       )}
 
@@ -239,7 +254,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
             {session.turns !== null && `${session.turns} turns · `}
             {session.runtime === "wsl" ? "WSL" : "native"}
           </p>
-          {!running && !inTerminal && (
+          {!running && !inTerminal && !inDesktop && (
             <form
               className="flex gap-2"
               onSubmit={(e) => {
@@ -247,7 +262,7 @@ function SessionCard({ session, expanded }: { session: AgentSession; expanded: b
                 const text = reply.trim();
                 if (!text) return;
                 void act("send", async () => {
-                  await api.send(session.id, text);
+                  await followUp(text);
                   setReply("");
                 });
               }}

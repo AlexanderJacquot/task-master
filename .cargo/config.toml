@@ -1,0 +1,25 @@
+# Scribe's speech models (ADR 026, M20).
+[env]
+# whisper-rs-sys generates its bindings with libclang (bindgen). Its shipped bindings are
+# laid out for Linux x86-64 and fail their size checks on Windows, so they are only the
+# fallback it uses where libclang is missing (Linux CI, WSL). The Windows and macOS runners
+# have libclang.
+# whisper.cpp for any user's CPU, not the build machine's: no -march=native, an AVX2
+# baseline on x86-64 (every Windows 11 PC has it). Ignored on Arm.
+GGML_NATIVE = "OFF"
+GGML_AVX = "ON"
+GGML_AVX2 = "ON"
+GGML_FMA = "ON"
+GGML_F16C = "ON"
+# Windows: whisper.cpp must use the static C runtime (/MT) like sherpa-onnx and the Rust
+# code (`+crt-static` below), or the link fails (LNK2038). Its CMakeLists asks for CMake
+# 3.5, which leaves CMP0091 unset and its default /MD flags winning; whisper-rs-sys passes
+# CMAKE_* variables to cmake. MSVC-only: ignored elsewhere.
+CMAKE_POLICY_DEFAULT_CMP0091 = "NEW"
+CMAKE_MSVC_RUNTIME_LIBRARY = "MultiThreaded"
+
+# sherpa-onnx's Windows libraries use the static C runtime (/MT): build everything with it.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

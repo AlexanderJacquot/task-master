@@ -1,6 +1,8 @@
 //! Domain types shared by every adapter. With the `specta` feature they are exported to
 //! TypeScript through the desktop shell's generated bindings.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 /// UUIDv7 string.
@@ -246,13 +248,14 @@ pub struct Tag {
     pub deleted_at: Option<Timestamp>,
 }
 
-/// A file attached to a task. The content is stored by hash outside the database (see
-/// [`crate::FileStore`]); several rows may share one file.
+/// A file attached to a task or a meeting (exactly one of the two). The content is stored
+/// by hash outside the database (see [`crate::FileStore`]); several rows may share one file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct Attachment {
     pub id: Id,
-    pub task_id: Id,
+    pub task_id: Option<Id>,
+    pub meeting_id: Option<Id>,
     /// SHA-256 of the content, lowercase hex.
     pub hash: String,
     /// File name, without any folder.
@@ -276,6 +279,8 @@ pub enum BlockOutcome {
     Done,
     /// Time spent on the task without finishing it.
     Worked,
+    /// Planned but not worked on: no time logged, and the task is back to be planned.
+    Missed,
     Cancelled,
 }
 
@@ -285,6 +290,7 @@ impl BlockOutcome {
             Self::Planned => "planned",
             Self::Done => "done",
             Self::Worked => "worked",
+            Self::Missed => "missed",
             Self::Cancelled => "cancelled",
         }
     }
@@ -294,6 +300,7 @@ impl BlockOutcome {
             "planned" => Self::Planned,
             "done" => Self::Done,
             "worked" => Self::Worked,
+            "missed" => Self::Missed,
             "cancelled" => Self::Cancelled,
             _ => return None,
         })
@@ -310,6 +317,106 @@ pub struct TimeBlock {
     /// After `start_at`.
     pub end_at: Timestamp,
     pub outcome: BlockOutcome,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
+/// Where a [`Meeting`] is in its life (ADR 025). Only `scheduled` and `held` are set by
+/// hand; the others belong to recording and transcription (M19, M20).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MeetingState {
+    /// Planned, not started.
+    #[default]
+    Scheduled,
+    /// Took place, with notes but no transcript.
+    Held,
+    Recording,
+    /// Recorded, being transcribed.
+    Processing,
+    /// Transcript ready, to be checked.
+    Review,
+    /// Transcript checked: the audio's retention period has started.
+    Validated,
+    /// Recording or transcription failed; can be retried.
+    Failed,
+}
+
+impl MeetingState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Scheduled => "scheduled",
+            Self::Held => "held",
+            Self::Recording => "recording",
+            Self::Processing => "processing",
+            Self::Review => "review",
+            Self::Validated => "validated",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "scheduled" => Self::Scheduled,
+            "held" => Self::Held,
+            "recording" => Self::Recording,
+            "processing" => Self::Processing,
+            "review" => Self::Review,
+            "validated" => Self::Validated,
+            "failed" => Self::Failed,
+            _ => return None,
+        })
+    }
+}
+
+/// A meeting (Scribe, ADR 025): on the calendar, optionally linked to a project, an epic
+/// and a task, with participants and notes. Its audio never enters the database.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct Meeting {
+    pub id: Id,
+    pub title: String,
+    pub started_at: Timestamp,
+    /// After `started_at`; `None` while it is being recorded.
+    pub ended_at: Option<Timestamp>,
+    pub project_id: Option<Id>,
+    pub epic_id: Option<Id>,
+    pub task_id: Option<Id>,
+    pub state: MeetingState,
+    /// Names, as typed.
+    pub participants: Vec<String>,
+    /// Markdown.
+    pub notes: String,
+    /// Markdown.
+    pub summary: Option<String>,
+    pub transcribed_at: Option<Timestamp>,
+    pub validated_at: Option<Timestamp>,
+    /// Names given to the transcript's speaker keys (`"s1"` → `"Ada"`); a key without a
+    /// name shows as "Speaker 1", and `"me"` as "Me".
+    #[serde(default)]
+    pub speakers: std::collections::BTreeMap<String, String>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
+/// One stretch of a meeting's transcript (Scribe, M20): who spoke from when to when, and
+/// what they said. Times count from the start of the recording.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct TranscriptSegment {
+    pub id: Id,
+    pub meeting_id: Id,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    /// `"me"` (this device's microphone) or `"s1"`, `"s2"`, … (voices on the computer's
+    /// sound).
+    pub speaker: String,
+    pub text: String,
+    /// The user corrected the text.
+    pub edited: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub deleted_at: Option<Timestamp>,
@@ -344,6 +451,40 @@ impl AgentRuntime {
     }
 }
 
+/// A Claude Code session run in a terminal, outside the app (M21, ADR 028), read from the
+/// transcript Claude Code keeps. Counted with [`AgentSession`]s on the Agents page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct TerminalSession {
+    pub id: Id,
+    /// Claude Code's session id (the transcript's file name).
+    pub claude_session_id: String,
+    /// The device whose transcript it is; only that device records it.
+    pub device_id: String,
+    /// Working directory, as Claude Code saw it.
+    pub folder: String,
+    /// From the folder (the project whose folder holds it), or set by hand.
+    pub project_id: Option<Id>,
+    /// Set by hand.
+    pub task_id: Option<Id>,
+    /// Claude Code's title for the conversation.
+    pub title: Option<String>,
+    /// The model that wrote most of it.
+    pub model: Option<String>,
+    pub started_at: Timestamp,
+    /// The last message so far.
+    pub ended_at: Timestamp,
+    /// Claude Code's own total, in millionths of a dollar; `None` when it recorded none.
+    pub cost_usd_micros: Option<i64>,
+    /// Time Claude worked (its turns), in ms, not the time the session sat open.
+    pub duration_ms: Option<i64>,
+    /// Requests to the model.
+    pub turns: Option<i64>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
 /// Where an [`AgentSession`] is.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -361,6 +502,11 @@ pub enum SessionState {
     /// Continued by hand in a terminal (`claude --resume`), outside the app's control. Ends
     /// when the agent records its summary, the terminal closes, or the user marks it done.
     Terminal,
+    /// Opened in the Claude desktop app (M22, ADR 029): a conversation the app cannot
+    /// follow. Ends when the agent records its summary or the user marks it done. Any
+    /// device may record its notes and summary (the claude.ai connector runs on the sync
+    /// server).
+    Desktop,
 }
 
 impl SessionState {
@@ -372,12 +518,14 @@ impl SessionState {
             Self::Cancelled => "cancelled",
             Self::Interrupted => "interrupted",
             Self::Terminal => "terminal",
+            Self::Desktop => "desktop",
         }
     }
 
-    /// Still going: a headless run of the app, or a conversation open in a terminal.
+    /// Still going: a headless run of the app, or a conversation open in a terminal or the
+    /// desktop app.
     pub fn is_active(self) -> bool {
-        matches!(self, Self::Running | Self::Terminal)
+        matches!(self, Self::Running | Self::Terminal | Self::Desktop)
     }
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -388,6 +536,7 @@ impl SessionState {
             "cancelled" => Self::Cancelled,
             "interrupted" => Self::Interrupted,
             "terminal" => Self::Terminal,
+            "desktop" => Self::Desktop,
             _ => return None,
         })
     }
@@ -422,6 +571,10 @@ pub struct AgentSession {
     /// Total cost reported by Claude Code, in millionths of a dollar.
     pub cost_usd_micros: Option<i64>,
     pub turns: Option<i64>,
+    /// How long the agent worked, summed over its runs, in ms. Not start to end: a session
+    /// can sit idle between follow-ups.
+    #[serde(default)]
+    pub duration_ms: Option<i64>,
     pub error: Option<String>,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
@@ -491,6 +644,87 @@ pub struct ViewSpec {
     /// Agents' own tasks (ADR 017) are hidden unless set.
     #[serde(default)]
     pub show_agent_tasks: bool,
+    /// Set for a saved Lineage canvas (ADR 022): it opens on the Lineage page instead of a
+    /// list or board. Its project, epic and tag filters are `filter`'s (one project at
+    /// most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
+    #[serde(default)]
+    pub lineage: Option<LineageSpec>,
+}
+
+/// A saved Lineage canvas: the filters the page has beyond [`ViewFilter`], and where the
+/// cards sit. The cards themselves are whatever the filters match when it opens.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct LineageSpec {
+    /// Only this task's lineage (its prerequisites and dependents, all the way).
+    #[serde(default)]
+    pub around: Option<Id>,
+    #[serde(default)]
+    pub completion: LineageCompletion,
+    /// Only tasks with at least one link.
+    #[serde(default)]
+    pub linked_only: bool,
+    #[serde(default)]
+    pub arrange: LineageArrange,
+    /// Freeform card positions by task id, in canvas pixels.
+    #[serde(default)]
+    pub positions: BTreeMap<Id, CanvasPoint>,
+    /// Positions inside a lane (y from the lane's top), per arrangement.
+    #[serde(default)]
+    pub lanes: LanePositions,
+    /// Cards that stay put: no dragging, and "Arrange" leaves them alone.
+    #[serde(default)]
+    pub pinned: Vec<Id>,
+    /// Folded lanes (epic or project ids, or [`FILTER_NONE`]), per arrangement.
+    #[serde(default)]
+    pub collapsed: LaneKeys,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum LineageCompletion {
+    #[default]
+    All,
+    Open,
+    /// Open and not blocked by an open prerequisite.
+    Ready,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum LineageArrange {
+    #[default]
+    Free,
+    Epic,
+    Project,
+}
+
+/// A point on the Lineage canvas, in whole pixels.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct CanvasPoint {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct LanePositions {
+    #[serde(default)]
+    pub epic: BTreeMap<Id, CanvasPoint>,
+    #[serde(default)]
+    pub project: BTreeMap<Id, CanvasPoint>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct LaneKeys {
+    #[serde(default)]
+    pub epic: Vec<String>,
+    #[serde(default)]
+    pub project: Vec<String>,
 }
 
 /// The base set of tasks, the same keys as the built-in routes.
@@ -601,10 +835,15 @@ pub struct Snapshot {
     pub statuses: Vec<Status>,
     pub tags: Vec<Tag>,
     pub views: Vec<View>,
-    /// Attachments of live tasks.
+    /// Attachments of live tasks and live meetings.
     pub attachments: Vec<Attachment>,
     /// Time blocks of live tasks, by start.
     pub time_blocks: Vec<TimeBlock>,
     /// Agent sessions of live tasks, every device's, by start.
     pub agent_sessions: Vec<AgentSession>,
+    /// Live meetings, by start.
+    pub meetings: Vec<Meeting>,
+    /// Live terminal sessions, every device's, by start.
+    #[serde(default)]
+    pub terminal_sessions: Vec<TerminalSession>,
 }

@@ -6,9 +6,9 @@ use rusqlite::{Connection, OptionalExtension, Row, params_from_iter, types::ToSq
 
 use crate::error::{Error, Result};
 use crate::model::{
-    AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, Epic, EpicState, Id, Priority,
-    Project, ProjectFolder, SessionState, Snapshot, Status, StatusCategory, Tag, Task, TaskOwner,
-    TimeBlock, View,
+    AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, Epic, EpicState, Id, Meeting,
+    MeetingState, Priority, Project, ProjectFolder, SessionState, Snapshot, Status, StatusCategory,
+    Tag, Task, TaskOwner, TerminalSession, TimeBlock, TranscriptSegment, View,
 };
 
 const TASK_COLS: &str = "id, project_id, epic_id, parent_id, status_id, title, description, \
@@ -23,14 +23,22 @@ const STATUS_COLS: &str =
     "id, name, category, color, rank, wip_limit, created_at, updated_at, deleted_at";
 const VIEW_COLS: &str = "id, name, spec, rank, created_at, updated_at, deleted_at";
 const ATTACHMENT_COLS: &str =
-    "id, task_id, hash, name, mime, size, created_at, updated_at, deleted_at";
+    "id, task_id, hash, name, mime, size, created_at, updated_at, deleted_at, meeting_id";
+
+const MEETING_COLS: &str = "id, title, started_at, ended_at, project_id, epic_id, task_id, \
+    state, participants, notes, summary, transcribed_at, validated_at, created_at, updated_at, \
+    deleted_at, speakers";
+
+const SEGMENT_COLS: &str =
+    "id, meeting_id, start_ms, end_ms, speaker, text, edited, created_at, updated_at, deleted_at";
 
 const TIME_BLOCK_COLS: &str =
     "id, task_id, start_at, end_at, outcome, created_at, updated_at, deleted_at";
 
 const SESSION_COLS: &str = "s.id, s.task_id, s.device_id, s.claude_session_id, s.folder, \
     s.runtime, s.permission_mode, s.prompt, s.state, s.started_at, s.ended_at, s.summary, \
-    s.cost_usd_micros, s.turns, s.error, s.created_at, s.updated_at, s.deleted_at, s.model";
+    s.cost_usd_micros, s.turns, s.error, s.created_at, s.updated_at, s.deleted_at, s.model, \
+    s.duration_ms";
 
 const NOTE_COLS: &str =
     "n.id, n.session_id, n.task_id, n.body, n.created_at, n.updated_at, n.deleted_at";
@@ -143,7 +151,125 @@ fn attachment_row(r: &Row<'_>) -> rusqlite::Result<Attachment> {
         created_at: r.get(6)?,
         updated_at: r.get(7)?,
         deleted_at: r.get(8)?,
+        meeting_id: r.get(9)?,
     })
+}
+
+fn meeting_row(r: &Row<'_>) -> rusqlite::Result<Meeting> {
+    let state: String = r.get(7)?;
+    let participants: String = r.get(8)?;
+    Ok(Meeting {
+        id: r.get(0)?,
+        title: r.get(1)?,
+        started_at: r.get(2)?,
+        ended_at: r.get(3)?,
+        project_id: r.get(4)?,
+        epic_id: r.get(5)?,
+        task_id: r.get(6)?,
+        state: MeetingState::parse(&state).ok_or_else(|| bad_value(7, state))?,
+        participants: serde_json::from_str(&participants)
+            .map_err(|_| bad_value(8, participants))?,
+        notes: r.get(9)?,
+        summary: r.get(10)?,
+        transcribed_at: r.get(11)?,
+        validated_at: r.get(12)?,
+        created_at: r.get(13)?,
+        updated_at: r.get(14)?,
+        deleted_at: r.get(15)?,
+        speakers: {
+            let speakers: String = r.get(16)?;
+            serde_json::from_str(&speakers).map_err(|_| bad_value(16, speakers))?
+        },
+    })
+}
+
+fn segment_row(r: &Row<'_>) -> rusqlite::Result<TranscriptSegment> {
+    Ok(TranscriptSegment {
+        id: r.get(0)?,
+        meeting_id: r.get(1)?,
+        start_ms: r.get(2)?,
+        end_ms: r.get(3)?,
+        speaker: r.get(4)?,
+        text: r.get(5)?,
+        edited: r.get(6)?,
+        created_at: r.get(7)?,
+        updated_at: r.get(8)?,
+        deleted_at: r.get(9)?,
+    })
+}
+
+/// One transcript segment, deleted ones included.
+pub(crate) fn segment(conn: &Connection, id: &str) -> Result<TranscriptSegment> {
+    conn.query_row(
+        &format!("SELECT {SEGMENT_COLS} FROM transcript_segments WHERE id = ?1"),
+        [id],
+        segment_row,
+    )
+    .optional()?
+    .ok_or_else(|| Error::not_found("transcript segment", id))
+}
+
+/// A meeting's live transcript, in time order.
+pub(crate) fn transcript(conn: &Connection, meeting_id: &str) -> Result<Vec<TranscriptSegment>> {
+    query(
+        conn,
+        &format!(
+            "SELECT {SEGMENT_COLS} FROM transcript_segments
+             WHERE meeting_id = ?1 AND deleted_at IS NULL
+             ORDER BY start_ms, id"
+        ),
+        &[&meeting_id],
+        segment_row,
+    )
+}
+
+/// A transcript line matching a search.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct TranscriptHit {
+    pub meeting_id: Id,
+    pub segment_id: Id,
+    pub start_ms: i64,
+    pub speaker: String,
+    /// The segment's text with the matches between `[` and `]`, shortened around them.
+    pub snippet: String,
+}
+
+/// Transcript lines of live meetings matching every word of `text`, best first.
+pub(crate) fn search_transcripts(
+    conn: &Connection,
+    text: &str,
+    limit: u32,
+) -> Result<Vec<TranscriptHit>> {
+    let terms: Vec<String> = text
+        .split_whitespace()
+        .map(|word| format!("\"{}\"*", word.replace('"', "\"\"")))
+        .collect();
+    if terms.is_empty() {
+        return Ok(Vec::new());
+    }
+    let fts_query = terms.join(" ");
+    query(
+        conn,
+        "SELECT s.meeting_id, s.id, s.start_ms, s.speaker,
+                snippet(transcript_fts, 0, '[', ']', '…', 16)
+         FROM transcript_fts
+         JOIN transcript_segments s ON s.rowid = transcript_fts.rowid
+         JOIN meetings m ON m.id = s.meeting_id
+         WHERE transcript_fts MATCH ?1 AND s.deleted_at IS NULL AND m.deleted_at IS NULL
+         ORDER BY bm25(transcript_fts), m.started_at DESC, s.start_ms
+         LIMIT ?2",
+        &[&fts_query, &limit],
+        |r| {
+            Ok(TranscriptHit {
+                meeting_id: r.get(0)?,
+                segment_id: r.get(1)?,
+                start_ms: r.get(2)?,
+                speaker: r.get(3)?,
+                snippet: r.get(4)?,
+            })
+        },
+    )
 }
 
 fn time_block_row(r: &Row<'_>) -> rusqlite::Result<TimeBlock> {
@@ -183,6 +309,7 @@ fn session_row(r: &Row<'_>) -> rusqlite::Result<AgentSession> {
         updated_at: r.get(16)?,
         deleted_at: r.get(17)?,
         model: r.get(18)?,
+        duration_ms: r.get(19)?,
     })
 }
 
@@ -196,6 +323,73 @@ fn note_row(r: &Row<'_>) -> rusqlite::Result<AgentNote> {
         updated_at: r.get(5)?,
         deleted_at: r.get(6)?,
     })
+}
+
+const TERMINAL_COLS: &str = "id, claude_session_id, device_id, folder, project_id, task_id, \
+    title, model, started_at, ended_at, cost_usd_micros, duration_ms, turns, created_at, \
+    updated_at, deleted_at";
+
+fn terminal_row(r: &Row<'_>) -> rusqlite::Result<TerminalSession> {
+    Ok(TerminalSession {
+        id: r.get(0)?,
+        claude_session_id: r.get(1)?,
+        device_id: r.get(2)?,
+        folder: r.get(3)?,
+        project_id: r.get(4)?,
+        task_id: r.get(5)?,
+        title: r.get(6)?,
+        model: r.get(7)?,
+        started_at: r.get(8)?,
+        ended_at: r.get(9)?,
+        cost_usd_micros: r.get(10)?,
+        duration_ms: r.get(11)?,
+        turns: r.get(12)?,
+        created_at: r.get(13)?,
+        updated_at: r.get(14)?,
+        deleted_at: r.get(15)?,
+    })
+}
+
+/// Any terminal session, including soft-deleted ones.
+pub(crate) fn terminal_session(conn: &Connection, id: &str) -> Result<TerminalSession> {
+    conn.query_row(
+        &format!("SELECT {TERMINAL_COLS} FROM terminal_sessions WHERE id = ?1"),
+        [id],
+        terminal_row,
+    )
+    .optional()?
+    .ok_or_else(|| Error::not_found("terminal session", id))
+}
+
+/// The terminal session recorded for a Claude Code session, deleted or not (the oldest
+/// row, should two devices have recorded it).
+pub(crate) fn terminal_session_by_claude_id(
+    conn: &Connection,
+    claude_session_id: &str,
+) -> Result<Option<TerminalSession>> {
+    Ok(conn
+        .query_row(
+            &format!(
+                "SELECT {TERMINAL_COLS} FROM terminal_sessions WHERE claude_session_id = ?1
+                 ORDER BY created_at, id LIMIT 1"
+            ),
+            [claude_session_id],
+            terminal_row,
+        )
+        .optional()?)
+}
+
+/// Live terminal sessions, by start.
+pub(crate) fn terminal_sessions(conn: &Connection) -> Result<Vec<TerminalSession>> {
+    query(
+        conn,
+        &format!(
+            "SELECT {TERMINAL_COLS} FROM terminal_sessions WHERE deleted_at IS NULL
+             ORDER BY started_at, id"
+        ),
+        &[],
+        terminal_row,
+    )
 }
 
 /// Any agent session, including soft-deleted ones.
@@ -398,6 +592,49 @@ pub(crate) fn time_block(conn: &Connection, id: &str) -> Result<TimeBlock> {
     .ok_or_else(|| Error::not_found("time block", id))
 }
 
+/// Any meeting, including soft-deleted ones.
+pub(crate) fn meeting(conn: &Connection, id: &str) -> Result<Meeting> {
+    conn.query_row(
+        &format!("SELECT {MEETING_COLS} FROM meetings WHERE id = ?1"),
+        [id],
+        meeting_row,
+    )
+    .optional()?
+    .ok_or_else(|| Error::not_found("meeting", id))
+}
+
+/// Live meetings by start, optionally only those linked to a project, epic or task.
+pub(crate) fn meetings(conn: &Connection, link: Option<(&str, &str)>) -> Result<Vec<Meeting>> {
+    match link {
+        None => query(
+            conn,
+            &format!(
+                "SELECT {MEETING_COLS} FROM meetings WHERE deleted_at IS NULL
+                 ORDER BY started_at, id"
+            ),
+            &[],
+            meeting_row,
+        ),
+        Some((column, id)) => {
+            let column = match column {
+                "project" => "project_id",
+                "epic" => "epic_id",
+                "task" => "task_id",
+                other => return Err(Error::invalid(format!("meetings have no '{other}' link"))),
+            };
+            query(
+                conn,
+                &format!(
+                    "SELECT {MEETING_COLS} FROM meetings WHERE deleted_at IS NULL AND {column} = ?1
+                     ORDER BY started_at, id"
+                ),
+                &[&id],
+                meeting_row,
+            )
+        }
+    }
+}
+
 /// Every live entity, in display order (rank, then id).
 pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
     let mut tasks = query(
@@ -443,13 +680,18 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
             &[],
             view_row,
         )?,
-        // A deleted task keeps its attachment rows, so undoing the delete restores them.
+        // A deleted task or meeting keeps its attachment rows, so undoing the delete
+        // restores them.
         attachments: query(
             conn,
             "SELECT a.id, a.task_id, a.hash, a.name, a.mime, a.size, a.created_at,
-                    a.updated_at, a.deleted_at
-             FROM attachments a JOIN tasks t ON t.id = a.task_id
-             WHERE a.deleted_at IS NULL AND t.deleted_at IS NULL
+                    a.updated_at, a.deleted_at, a.meeting_id
+             FROM attachments a
+             LEFT JOIN tasks t ON t.id = a.task_id
+             LEFT JOIN meetings m ON m.id = a.meeting_id
+             WHERE a.deleted_at IS NULL
+               AND (t.deleted_at IS NULL AND t.id IS NOT NULL
+                    OR m.deleted_at IS NULL AND m.id IS NOT NULL)
              ORDER BY a.created_at, a.id",
             &[],
             attachment_row,
@@ -475,6 +717,8 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
             &[],
             session_row,
         )?,
+        meetings: meetings(conn, None)?,
+        terminal_sessions: terminal_sessions(conn)?,
     })
 }
 

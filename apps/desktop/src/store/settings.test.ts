@@ -24,6 +24,9 @@ async function setup(fail = false) {
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
+        transcript_segments: [],
+        terminal_sessions: [],
         statuses: [],
       } as Changes);
     },

@@ -9,6 +9,7 @@ mod backups;
 mod calendar_sync;
 mod config;
 mod google;
+mod scribe;
 mod server_sync;
 
 use backups::BackupStatus;
@@ -54,6 +55,8 @@ struct AppState {
     /// The database file (the MCP server of agent sessions opens it too).
     db_path: PathBuf,
     agents: agents::AgentRunner,
+    /// Meeting recordings on this device (ADR 025, M19).
+    scribe: scribe::ScribeRuntime,
     config_path: PathBuf,
     config: Mutex<AppConfig>,
     backup: Mutex<BackupStatus>,
@@ -146,6 +149,27 @@ fn redo(state: State<'_, AppState>) -> CommandResult<Option<Changes>> {
 #[specta::specta]
 fn search(state: State<'_, AppState>, text: String, limit: u32) -> CommandResult<Vec<Id>> {
     with_store(&state, |s| s.search(&text, limit))
+}
+
+/// A meeting's transcript, in time order (Scribe; not part of the snapshot).
+#[tauri::command]
+#[specta::specta]
+fn meeting_transcript(
+    state: State<'_, AppState>,
+    meeting_id: Id,
+) -> CommandResult<Vec<taskmaster_core::TranscriptSegment>> {
+    with_store(&state, |s| s.transcript(&meeting_id))
+}
+
+/// Transcript lines of live meetings matching every word of `text`, best first.
+#[tauri::command]
+#[specta::specta]
+fn search_transcripts(
+    state: State<'_, AppState>,
+    text: String,
+    limit: u32,
+) -> CommandResult<Vec<taskmaster_core::TranscriptHit>> {
+    with_store(&state, |s| s.search_transcripts(&text, limit))
 }
 
 /// A task's change history, newest first (read from the ops log).
@@ -307,7 +331,8 @@ fn save_attachment(state: State<'_, AppState>, id: Id, path: String) -> CommandR
 }
 
 /// Serves attachment content to the UI: `tm://localhost/<attachment id>` (on Windows
-/// `http://tm.localhost/<id>`). Only ids of attachments resolve, never paths.
+/// `http://tm.localhost/<id>`). Only ids of attachments resolve, never paths. Meeting
+/// audio is `meeting-audio/<meeting id>/<track>` (ADR 025).
 fn serve_attachment(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec<u8>> {
     let empty = |status: StatusCode| {
         Response::builder()
@@ -316,6 +341,9 @@ fn serve_attachment(app: &AppHandle, request: &Request<Vec<u8>>) -> Response<Vec
             .unwrap_or_default()
     };
     let id = request.uri().path().trim_start_matches('/');
+    if let Some(rest) = id.strip_prefix("meeting-audio/") {
+        return scribe::serve(app, request, rest);
+    }
     let Some(state) = app.try_state::<AppState>() else {
         return empty(StatusCode::SERVICE_UNAVAILABLE);
     };
@@ -569,6 +597,10 @@ fn show_capture(app: &AppHandle) {
         let _ = window.set_size(tauri::LogicalSize::new(CAPTURE_SIZE.0, CAPTURE_SIZE.1));
         let _ = window.center();
         let _ = window.show();
+        // On macOS the window is a non-activating panel (`taskmaster_macos_panel`): `show`
+        // already makes it key, and `set_focus` would activate the app, which pulls the
+        // user off a full-screen app's Space onto the main window's.
+        #[cfg(not(target_os = "macos"))]
         let _ = window.set_focus();
         let _ = CaptureOpened.emit_to(app, CAPTURE_WINDOW);
     }
@@ -584,6 +616,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             undo,
             redo,
             search,
+            meeting_transcript,
+            search_transcripts,
             task_activity,
             parse_capture,
             get_config,
@@ -613,27 +647,54 @@ fn specta_builder() -> Builder<tauri::Wry> {
             server_sync::sync_sign_in,
             server_sync::sync_join,
             server_sync::sync_now,
+            server_sync::files_overview,
+            server_sync::purge_files,
             server_sync::sync_disconnect,
             agents::agent_start,
             agents::agent_send,
             agents::agent_cancel,
             agents::agent_open_terminal,
+            agents::agent_open_desktop,
             agents::agent_live,
             agents::agent_brief,
             agents::agent_notes,
             agents::agent_settings,
             agents::set_agent_settings,
             agents::detect_claude,
+            agents::claude_plan_usage,
             agents::list_wsl_distros,
+            agents::agent_device,
             agents::project_folders,
-            agents::set_project_folder
+            agents::set_project_folder,
+            agents::project_git,
+            agents::terminal::scan_terminal_sessions,
+            scribe::scribe_status,
+            scribe::scribe_devices,
+            scribe::scribe_settings,
+            scribe::set_scribe_settings,
+            scribe::scribe_start,
+            scribe::scribe_stop,
+            scribe::scribe_audio,
+            scribe::scribe_recover,
+            scribe::scribe_purge_audio,
+            scribe::scribe_audio_usage,
+            scribe::transcribe::scribe_models,
+            scribe::transcribe::scribe_download_model,
+            scribe::transcribe::scribe_cancel_download,
+            scribe::transcribe::scribe_delete_model,
+            scribe::transcribe::scribe_process,
+            scribe::transcribe::scribe_cancel_process
         ])
         .events(collect_events![
             StoreChanged,
             CaptureOpened,
             calendar_sync::CalendarSynced,
             server_sync::SyncChanged,
-            agents::AgentActivity
+            agents::AgentActivity,
+            scribe::ScribeLevels,
+            scribe::ScribeChanged,
+            scribe::transcribe::ScribeProgress,
+            scribe::transcribe::ScribeModelProgress
         ])
         // Timestamps (Unix ms) and op sequence numbers stay far below 2^53.
         .dangerously_cast_bigints_to_number()
@@ -698,6 +759,13 @@ pub fn run() {
             if let Err(err) = app.global_shortcut().register(capture_shortcut()) {
                 eprintln!("quick capture hotkey unavailable: {err}");
             }
+            // Over full-screen apps and on every Space (ADR 027).
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window(CAPTURE_WINDOW)
+                && let Err(err) = taskmaster_macos_panel::make_panel(&window)
+            {
+                eprintln!("quick capture panel unavailable: {err}");
+            }
 
             let config_path = app.path().app_config_dir()?.join(CONFIG_FILE);
             let config = AppConfig::load(&config_path);
@@ -742,6 +810,7 @@ pub fn run() {
                 data_dir,
                 db_path: path,
                 agents: agents::AgentRunner::default(),
+                scribe: scribe::ScribeRuntime::default(),
                 config_path,
                 config: Mutex::new(config),
                 backup: Mutex::new(BackupStatus::default()),
@@ -751,6 +820,20 @@ pub fn run() {
 
             // Finished terminal sessions close even across a restart (ADR 017).
             agents::watch_terminals(app.handle());
+            // Claude Code sessions run outside the app count too (M21, ADR 028).
+            agents::terminal::run(app.handle());
+
+            // Interrupted recordings are repaired for "keep", cut-short encodings and
+            // transcriptions resume; audio past its retention is deleted every hour.
+            scribe::resume(app.handle());
+            let handle = app.handle().clone();
+            std::thread::Builder::new()
+                .name("scribe-transcribe".into())
+                .spawn(move || scribe::transcribe::worker(handle))?;
+            let handle = app.handle().clone();
+            std::thread::Builder::new()
+                .name("scribe-expiry".into())
+                .spawn(move || scribe::transcribe::expiry_loop(handle))?;
 
             // Local tools share this database but have their own SQLite connection.
             let handle = app.handle().clone();
@@ -813,6 +896,7 @@ pub fn run() {
         .run(|app, event| {
             // Agent runs are children of the app: stop them, marked interrupted.
             if let tauri::RunEvent::Exit = event {
+                scribe::shutdown(app);
                 agents::shutdown(app);
             }
         });
@@ -848,6 +932,26 @@ mod tests {
         let mut windows = read("tauri.linux.conf.json")["app"]["windows"].clone();
         let main = windows[0].as_object_mut().unwrap();
         assert_eq!(main.remove("decorations"), Some(serde_json::json!(false)));
+        assert_eq!(windows, base);
+    }
+
+    /// Same for `tauri.macos.conf.json`: the main window keeps its frame but draws its
+    /// content under an overlay title bar, with the traffic lights on the app's own strip.
+    #[test]
+    fn macos_config_only_overlays_the_main_title_bar() {
+        let read = |name: &str| -> serde_json::Value {
+            let path = concat!(env!("CARGO_MANIFEST_DIR"), "/").to_owned() + name;
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+        };
+        let base = read("tauri.conf.json")["app"]["windows"].clone();
+        let mut windows = read("tauri.macos.conf.json")["app"]["windows"].clone();
+        let main = windows[0].as_object_mut().unwrap();
+        assert_eq!(
+            main.remove("titleBarStyle"),
+            Some(serde_json::json!("Overlay"))
+        );
+        assert_eq!(main.remove("hiddenTitle"), Some(serde_json::json!(true)));
+        assert!(main.remove("trafficLightPosition").is_some());
         assert_eq!(windows, base);
     }
 

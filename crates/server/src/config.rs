@@ -26,6 +26,10 @@ pub struct Config {
     pub oidc_allowed_groups: Vec<String>,
     pub backup: Option<S3Backup>,
     pub backup_keep_days: usize,
+    /// Serve the remote MCP endpoint `/mcp` (ADR 024).
+    pub mcp: bool,
+    /// OAuth clients whose access tokens `/mcp` accepts (`client_id` claim).
+    pub mcp_oauth_clients: Vec<String>,
 }
 
 impl Default for Config {
@@ -40,6 +44,8 @@ impl Default for Config {
             oidc_allowed_groups: Vec::new(),
             backup: None,
             backup_keep_days: 30,
+            mcp: false,
+            mcp_oauth_clients: vec!["task-master-claude".into()],
         }
     }
 }
@@ -95,24 +101,41 @@ impl Config {
                 format!("TM_BACKUP_KEEP_DAYS must be a positive number, not '{n}'")
             })?,
         };
+        let list = |key: &str| {
+            var(key).map(|v| {
+                v.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+        };
+        let public_url = var("TM_PUBLIC_URL").map(|u| u.trim_end_matches('/').to_owned());
+        let mcp = match var("TM_MCP").as_deref() {
+            None | Some("off") => false,
+            Some("on") => true,
+            Some(other) => return Err(format!("TM_MCP must be on or off, not '{other}'")),
+        };
+        if mcp && auth == AuthMode::Oidc && public_url.is_none() {
+            return Err(
+                "TM_MCP=on with TM_AUTH=oidc needs TM_PUBLIC_URL (the MCP URL Claude uses)".into(),
+            );
+        }
+        let mcp_oauth_clients = list("TM_MCP_OAUTH_CLIENTS")
+            .filter(|c| !c.is_empty())
+            .unwrap_or(defaults.mcp_oauth_clients);
         Ok(Self {
             listen: var("TM_LISTEN").unwrap_or(defaults.listen),
             data_dir: var("TM_DATA_DIR").map_or(defaults.data_dir, PathBuf::from),
-            public_url: var("TM_PUBLIC_URL").map(|u| u.trim_end_matches('/').to_owned()),
+            public_url,
             auth,
             oidc_issuer,
             oidc_client_id: var("TM_OIDC_CLIENT_ID").unwrap_or(defaults.oidc_client_id),
-            oidc_allowed_groups: var("TM_OIDC_ALLOWED_GROUPS")
-                .map(|g| {
-                    g.split(',')
-                        .map(str::trim)
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_owned)
-                        .collect()
-                })
-                .unwrap_or_default(),
+            oidc_allowed_groups: list("TM_OIDC_ALLOWED_GROUPS").unwrap_or_default(),
             backup,
             backup_keep_days,
+            mcp,
+            mcp_oauth_clients,
         })
     }
 }
@@ -157,6 +180,23 @@ mod tests {
         assert_eq!(c.backup.as_ref().unwrap().region, "garage");
         assert_eq!(c.backup_keep_days, 7);
         assert_eq!(c.data_dir, PathBuf::from("/srv/tm"));
+        assert!(!c.mcp, "the MCP endpoint is off unless asked for");
+    }
+
+    #[test]
+    fn remote_mcp() {
+        let c = Config::from_vars(vars(&[
+            ("TM_AUTH", "oidc"),
+            ("TM_OIDC_ISSUER", "https://auth.example.org"),
+            ("TM_PUBLIC_URL", "https://tasks.example.org"),
+            ("TM_MCP", "on"),
+        ]))
+        .unwrap();
+        assert!(c.mcp);
+        assert_eq!(c.mcp_oauth_clients, ["task-master-claude"]);
+        let c =
+            Config::from_vars(vars(&[("TM_MCP", "on"), ("TM_MCP_OAUTH_CLIENTS", "a, b")])).unwrap();
+        assert_eq!(c.mcp_oauth_clients, ["a", "b"]);
     }
 
     #[test]
@@ -166,5 +206,12 @@ mod tests {
         assert!(bad(&[("TM_AUTH", "oidc")]).contains("TM_OIDC_ISSUER"));
         assert!(bad(&[("TM_BACKUP_S3_ENDPOINT", "http://x")]).contains("TM_BACKUP_S3_BUCKET"));
         assert!(bad(&[("TM_BACKUP_KEEP_DAYS", "0")]).contains("positive"));
+        assert!(bad(&[("TM_MCP", "yes")]).contains("TM_MCP"));
+        let no_url = bad(&[
+            ("TM_AUTH", "oidc"),
+            ("TM_OIDC_ISSUER", "https://auth.example.org"),
+            ("TM_MCP", "on"),
+        ]);
+        assert!(no_url.contains("TM_PUBLIC_URL"));
     }
 }

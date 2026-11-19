@@ -1065,6 +1065,7 @@ fn spec(scope: ViewScope) -> ViewSpec {
         show_subtasks: false,
         show_cancelled: false,
         show_agent_tasks: false,
+        lineage: None,
     }
 }
 
@@ -1127,7 +1128,7 @@ fn view_commands_roundtrip_and_keep_the_spec_exactly() {
             id: view.id.clone(),
             changes: vec![
                 ViewChange::Name("Homelab list".into()),
-                ViewChange::Spec(list.clone()),
+                ViewChange::Spec(Box::new(list.clone())),
             ],
         },
     );
@@ -1233,6 +1234,112 @@ fn view_commands_parse_from_the_ui_json_shape_with_defaults() {
     let wire = serde_json::to_value(s.snapshot().unwrap()).unwrap();
     assert_eq!(wire["views"][0]["spec"]["scope"]["kind"], "tag");
     assert_eq!(wire["views"][0]["spec"]["layout"], "list");
+}
+
+#[test]
+fn lineage_views_keep_their_layout_and_are_validated() {
+    let mut s = store();
+    let project = add_project(&mut s, "Homelab", None);
+    let other = add_project(&mut s, "Garden", None);
+    let epic = add_epic(&mut s, "IaC");
+    let a = add_task(&mut s, new_task("Plan"));
+    let b = add_task(&mut s, new_task("Build"));
+
+    let mut canvas = spec(ViewScope::All);
+    canvas.filter.project_ids = vec![project.id.clone()];
+    canvas.filter.epic_ids = vec![epic.id.clone(), FILTER_NONE.into()];
+    canvas.show_subtasks = true;
+    canvas.lineage = Some(LineageSpec {
+        around: Some(a.id.clone()),
+        completion: LineageCompletion::Ready,
+        linked_only: true,
+        arrange: LineageArrange::Epic,
+        positions: [
+            (a.id.clone(), CanvasPoint { x: -40, y: 120 }),
+            (b.id.clone(), CanvasPoint { x: 300, y: 120 }),
+        ]
+        .into(),
+        lanes: LanePositions {
+            epic: [(b.id.clone(), CanvasPoint { x: 10, y: 48 })].into(),
+            ..LanePositions::default()
+        },
+        pinned: vec![a.id.clone()],
+        collapsed: LaneKeys {
+            epic: vec![FILTER_NONE.into()],
+            project: vec![],
+        },
+    });
+    let created = roundtrip(
+        &mut s,
+        Command::CreateView {
+            view: NewView {
+                id: Some(new_id()),
+                name: "Homelab chain".into(),
+                spec: canvas.clone(),
+                rank: None,
+            },
+        },
+    );
+    let view = created.views[0].clone();
+    assert_eq!(view.spec, canvas);
+    assert_eq!(s.snapshot().unwrap().views[0].spec, canvas);
+
+    // Moving a card is a spec update, undoable like any other.
+    let mut moved = canvas.clone();
+    let lineage = moved.lineage.as_mut().unwrap();
+    lineage
+        .positions
+        .insert(b.id.clone(), CanvasPoint { x: 600, y: 0 });
+    roundtrip(
+        &mut s,
+        Command::UpdateView {
+            id: view.id.clone(),
+            changes: vec![ViewChange::Spec(Box::new(moved.clone()))],
+        },
+    );
+    assert_eq!(s.snapshot().unwrap().views[0].spec, moved);
+
+    let create = |spec: ViewSpec| Command::CreateView {
+        view: NewView {
+            id: None,
+            name: "Bad".into(),
+            spec,
+            rank: None,
+        },
+    };
+    let mut two_projects = canvas.clone();
+    two_projects.filter.project_ids = vec![project.id.clone(), other.id.clone()];
+    assert!(invalid(s.execute(create(two_projects))).contains("one project"));
+    let mut scoped = canvas.clone();
+    scoped.scope = ViewScope::Today;
+    assert!(invalid(s.execute(create(scoped))).contains("lineage"));
+    let mut gone = canvas.clone();
+    gone.lineage.as_mut().unwrap().around = Some(new_id());
+    assert!(matches!(
+        s.execute(create(gone)),
+        Err(Error::NotFound { .. })
+    ));
+}
+
+#[test]
+fn lineage_specs_parse_with_defaults_and_plain_views_stay_without_one() {
+    let mut s = store();
+    let json = serde_json::json!([
+        { "type": "create_view", "view": { "name": "Canvas",
+          "spec": { "version": 1, "scope": { "kind": "all" }, "lineage": {} } } },
+        { "type": "create_view", "view": { "name": "List",
+          "spec": { "version": 1, "scope": { "kind": "all" } } } }
+    ]);
+    let commands: Vec<Command> = serde_json::from_value(json).unwrap();
+    let changes = s.execute_all(commands).unwrap();
+    assert_eq!(changes.views[0].spec.lineage, Some(LineageSpec::default()));
+    assert_eq!(changes.views[1].spec.lineage, None);
+
+    let wire = serde_json::to_value(s.snapshot().unwrap()).unwrap();
+    let canvas = &wire["views"][0]["spec"]["lineage"];
+    assert_eq!(canvas["arrange"], "free");
+    assert_eq!(canvas["completion"], "all");
+    assert!(wire["views"][1]["spec"]["lineage"].is_null());
 }
 
 #[test]
@@ -1636,4 +1743,77 @@ fn create_and_link_a_task_in_one_batch() {
     s.undo().unwrap();
     assert!(task(&s, &a.id).dependency_ids.is_empty());
     assert!(s.snapshot().unwrap().tasks.iter().all(|t| t.id != id));
+}
+
+// ---------------------------------------------------------------------------------------
+// Reverting one change by its batch id (agents' undo)
+
+#[test]
+fn reverting_a_batch_restores_it_unless_its_rows_changed_since() {
+    let mut s = store();
+    let parent = add_task(&mut s, new_task("Parent"));
+    add_task(
+        &mut s,
+        NewTask {
+            parent_id: Some(parent.id.clone()),
+            ..new_task("Child")
+        },
+    );
+    let before = s.snapshot().unwrap();
+    let deleted = s
+        .execute_without_undo(vec![Command::DeleteTask {
+            id: parent.id.clone(),
+        }])
+        .unwrap();
+    let batch = deleted.batch_id.unwrap();
+    assert!(s.snapshot().unwrap().tasks.is_empty());
+
+    let reverted = s.revert_batch(&batch).unwrap();
+    assert!(!reverted.is_empty());
+    assert_eq!(
+        s.snapshot().unwrap(),
+        before,
+        "the task and its subtask are back"
+    );
+    // Its rows changed since (by the revert itself): a second revert is refused.
+    let message = invalid(s.revert_batch(&batch));
+    assert!(message.contains("changed since"), "{message}");
+
+    // A later edit of the same row blocks reverting the earlier one.
+    let renamed = s
+        .execute(Command::UpdateTask {
+            id: parent.id.clone(),
+            changes: vec![TaskChange::Title("Renamed".into())],
+        })
+        .unwrap()
+        .batch_id
+        .unwrap();
+    s.execute(Command::UpdateTask {
+        id: parent.id.clone(),
+        changes: vec![TaskChange::Priority(Priority::High)],
+    })
+    .unwrap();
+    invalid(s.revert_batch(&renamed));
+    // Another row's later edit does not.
+    let other = add_task(&mut s, new_task("Other"));
+    let titled = s
+        .execute(Command::UpdateTask {
+            id: other.id.clone(),
+            changes: vec![TaskChange::Title("Other, renamed".into())],
+        })
+        .unwrap()
+        .batch_id
+        .unwrap();
+    s.execute(Command::UpdateTask {
+        id: parent.id.clone(),
+        changes: vec![TaskChange::Title("Again".into())],
+    })
+    .unwrap();
+    s.revert_batch(&titled).unwrap();
+    assert_eq!(task(&s, &other.id).title, "Other");
+
+    assert!(matches!(
+        s.revert_batch("00000000-0000-7000-8000-00000000dead"),
+        Err(Error::NotFound { .. })
+    ));
 }

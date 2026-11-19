@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
   clampWidth,
+  clearColumnPrefs,
   fitWidth,
   lanesFor,
   loadColumnPrefs,
@@ -48,5 +49,16 @@ describe("board column prefs", () => {
     expect(loadColumnPrefs()).toEqual({ a: { collapsed: true, width: MAX_COLUMN_WIDTH }, b: {} });
     localStorage.setItem("task-master.board.columns", "{not json");
     expect(loadColumnPrefs()).toEqual({});
+  });
+
+  it("forgets the layout of the given columns only (Reset view)", () => {
+    localStorage.setItem(
+      "task-master.board.columns",
+      JSON.stringify({ a: { collapsed: true }, b: { width: 400 }, c: { width: 500 } }),
+    );
+    clearColumnPrefs(["a", "b"]);
+    expect(loadColumnPrefs()).toEqual({ c: { width: 500 } });
+    clearColumnPrefs(["c"]);
+    expect(localStorage.getItem("task-master.board.columns")).toBeNull();
   });
 });

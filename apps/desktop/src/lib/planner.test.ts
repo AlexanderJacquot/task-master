@@ -8,10 +8,12 @@ import {
   freeSlots,
   type PlanInput,
   planCandidates,
+  readFocus,
   seededRandom,
   suggestPlan,
 } from "./planner";
 import type { Task } from "./types";
+import { FILTER_NONE } from "./views";
 
 // Monday 2026-11-09 to Sunday 2026-11-15; "now" is the Sunday before, so no day is past.
 const MON = "2026-11-09";
@@ -104,10 +106,37 @@ describe("candidates", () => {
         .map((t) => t.title)
         .sort();
     expect(titles()).toEqual(["A", "B", "Child", "Inbox"]);
-    expect(titles({ ...DEFAULT_FOCUS, projectId: "p1" })).toEqual(["A", "Child"]);
-    expect(titles({ ...DEFAULT_FOCUS, projectId: "inbox" })).toEqual(["Inbox"]);
-    expect(titles({ ...DEFAULT_FOCUS, epicId: "e1" })).toEqual(["A"]);
-    expect(titles({ ...DEFAULT_FOCUS, statusId: STATUS.inProgress })).toEqual([]);
+    expect(titles({ ...DEFAULT_FOCUS, projectIds: ["p1"] })).toEqual(["A", "Child"]);
+    expect(titles({ ...DEFAULT_FOCUS, projectIds: ["inbox"] })).toEqual(["Inbox"]);
+    expect(titles({ ...DEFAULT_FOCUS, projectIds: ["p2", "inbox"] })).toEqual(["B", "Inbox"]);
+    expect(titles({ ...DEFAULT_FOCUS, epicIds: ["e1"] })).toEqual(["A"]);
+    expect(titles({ ...DEFAULT_FOCUS, epicIds: ["e1", FILTER_NONE], projectIds: ["p1"] })).toEqual([
+      "A",
+      "Child",
+    ]);
+    expect(titles({ ...DEFAULT_FOCUS, statusIds: [STATUS.inProgress] })).toEqual([]);
+    expect(titles({ ...DEFAULT_FOCUS, statusIds: [STATUS.inProgress, STATUS.todo] })).toEqual([
+      "A",
+      "B",
+      "Child",
+      "Inbox",
+    ]);
+  });
+});
+
+describe("readFocus", () => {
+  it("reads lists, and the single values saved before", () => {
+    expect(readFocus(undefined)).toEqual(DEFAULT_FOCUS);
+    expect(readFocus({ projectIds: ["p1", 3], epicIds: [], statusIds: ["s"] })).toEqual({
+      projectIds: ["p1"],
+      epicIds: [],
+      statusIds: ["s"],
+    });
+    expect(readFocus({ projectId: "inbox", epicId: null, statusId: "s" })).toEqual({
+      projectIds: ["inbox"],
+      epicIds: [],
+      statusIds: ["s"],
+    });
   });
 });
 

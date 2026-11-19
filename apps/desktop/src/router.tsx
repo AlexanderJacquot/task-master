@@ -11,11 +11,13 @@ import { MoreIcon as MoreHorizontal } from "./components/TaskIcons";
 import { IconButton } from "./components/ui";
 import { AgentsPage } from "./features/agents/AgentsPage";
 import { CalendarPage } from "./features/calendar/CalendarPage";
-import { LineagePage } from "./features/lineage/LineagePage";
+import { LineagePage, SavedLineagePage } from "./features/lineage/LineagePage";
 import { MetricsPage } from "./features/metrics/MetricsPage";
 import { EpicPage } from "./features/organize/EpicPage";
 import { ProjectPage } from "./features/organize/ProjectPage";
 import { TagMenu } from "./features/organize/TagMenu";
+import { MeetingPage } from "./features/scribe/MeetingPage";
+import { ScribePage } from "./features/scribe/ScribePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { Layout } from "./features/shell/Layout";
 import { SavedViewPage, ViewPage } from "./features/shell/ViewPage";
@@ -87,6 +89,26 @@ const agentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "agents",
   component: AgentsPage,
+});
+
+const scribeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "scribe",
+  component: ScribePage,
+});
+
+const meetingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "meeting/$meetingId",
+  // ?line=<segment id> opens on a transcript line (a search result).
+  validateSearch: (search: Record<string, unknown>): { line?: string } => ({
+    ...(typeof search.line === "string" && { line: search.line }),
+  }),
+  component: function MeetingView() {
+    const { meetingId } = meetingRoute.useParams();
+    const { line } = meetingRoute.useSearch();
+    return <MeetingPage key={meetingId} meetingId={meetingId} {...(line && { line })} />;
+  },
 });
 
 const metricsRoute = createRoute({
@@ -168,7 +190,9 @@ const savedViewRoute = createRoute({
     const view = useStoreState((s) => s.views[viewId]);
     if (!view) return <Missing what="View" />;
     // Remount when the stored view changes (save, rename, undo) so the draft starts from it.
-    return <SavedViewPage key={`${view.id}:${view.updated_at}`} view={view} />;
+    const key = `${view.id}:${view.updated_at}`;
+    if (view.spec.lineage) return <SavedLineagePage key={key} view={view} />;
+    return <SavedViewPage key={key} view={view} />;
   },
 });
 
@@ -200,6 +224,8 @@ const routeTree = rootRoute.addChildren([
   metricsRoute,
   lineageRoute,
   agentsRoute,
+  scribeRoute,
+  meetingRoute,
   allRoute,
   projectRoute,
   epicRoute,

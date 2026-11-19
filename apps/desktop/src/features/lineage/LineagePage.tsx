@@ -3,19 +3,29 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { type ReactNode, useMemo, useRef, useState } from "react";
 import {
   ArrowRightIcon as ArrowRight,
+  BookmarkIcon as Bookmark,
   LineageIcon as GitBranch,
   SearchIcon as Search,
   CloseIcon as X,
 } from "../../components/TaskIcons";
-import { cx, FOCUS, IconButton, Select } from "../../components/ui";
-import type { Task } from "../../lib/types";
+import { Button, cx, FOCUS, IconButton, InlineInput, Select } from "../../components/ui";
+import type { Task, View } from "../../lib/types";
 import { FILTER_NONE } from "../../lib/views";
-import { copyBelonging, createTask, setParent, updateTask } from "../../store/actions";
+import {
+  copyBelonging,
+  createTask,
+  createView,
+  deleteView,
+  setParent,
+  updateTask,
+  updateView,
+} from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { EditableTitle } from "../shell/EditableTitle";
 import { MultiPick } from "../shell/FilterBar";
 import { useOpenTask } from "../shell/useOpenTask";
 import { parentCandidates, subtaskCandidates } from "../task-detail/hierarchy";
-import type { Connector } from "./canvas";
+import { type Connector, loadCanvas, type SavedCanvas, saveCanvas } from "./canvas";
 import {
   type Completion,
   closedTaskIds,
@@ -27,23 +37,13 @@ import {
 } from "./graph";
 import { LineageCanvas } from "./LineageCanvas";
 import type { Arrange, LaneSpec } from "./lanes";
+import { canvasOf, filterOf, type LineageFilter, lineageSpec, sameFilter } from "./saved";
 
 const control = "rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink";
 
 /** Filters survive leaving the page, like the canvas layout (a local view preference). */
 const FILTER_KEY = "task-master.lineage-filter";
-type SavedFilter = {
-  project: string;
-  /** Epic ids, or `FILTER_NONE` for tasks without an epic; empty shows all. */
-  epics: string[];
-  /** Tag ids, or `FILTER_NONE` for tasks without tags; empty shows all. */
-  tags: string[];
-  completion: Completion;
-  linkedOnly: boolean;
-  /** Show subtasks (tasks with a parent) on the canvas. */
-  subtasks: boolean;
-  arrange: Arrange;
-};
+type SavedFilter = LineageFilter;
 function loadFilter(): SavedFilter {
   const fallback: SavedFilter = {
     project: "",
@@ -78,6 +78,29 @@ function savedIds(list: unknown, single: unknown): string[] {
 
 /** A task created from the side panel, to place beside the card it was linked to. */
 type Placement = { id: string; near: string; side: Connector["side"] };
+
+/** How a card dragged onto the side panel is linked to the selected task. */
+type DropZone = "parent" | "subtask" | "prereq" | "dependent";
+const DROP_ZONES: { zone: DropZone; label: string; hint: string }[] = [
+  { zone: "parent", label: "Its parent", hint: "the selected task becomes its subtask" },
+  { zone: "subtask", label: "A subtask", hint: "of the selected task" },
+  { zone: "prereq", label: "A prerequisite", hint: "the selected task waits on it" },
+  { zone: "dependent", label: "A dependent", hint: "it waits on the selected task" },
+];
+
+type DropTarget = { panel: boolean; zone: DropZone | null };
+/** A card being dragged on the canvas, and what is under the pointer. */
+type CardDrag = DropTarget & { id: string };
+
+/** What is under a page point: the side panel (with its drop overlay), and which zone. */
+function dropTargetAt(client: { x: number; y: number }): DropTarget {
+  const element = document.elementFromPoint?.(client.x, client.y);
+  const zone = element?.closest<HTMLElement>("[data-drop-zone]")?.dataset.dropZone;
+  return {
+    panel: !!element?.closest("[data-lineage-panel]"),
+    zone: zone ? (zone as DropZone) : null,
+  };
+}
 
 /** Whether the side panel is open survives leaving the page (open by default). */
 const PANEL_KEY = "task-master.lineage-panel";
@@ -117,8 +140,28 @@ function LinkChip({
   );
 }
 
-/** `around`: open on one task's lineage (from a task's "Lineage" button). */
-export function LineagePage({ around }: { around?: string } = {}) {
+/**
+ * A saved Lineage view (ADR 022). Its filters and card layout are a draft until "Save
+ * view"; "Revert" remounts the page from the stored view.
+ */
+export function SavedLineagePage({ view }: { view: View }) {
+  const [revision, setRevision] = useState(0);
+  return <LineagePage key={revision} view={view} onRevert={() => setRevision((r) => r + 1)} />;
+}
+
+/**
+ * `around`: open on one task's lineage (from a task's "Lineage" button). `view`: a saved
+ * Lineage view, whose filters and layout replace the ones kept on this machine.
+ */
+export function LineagePage({
+  around: aroundParam,
+  view,
+  onRevert,
+}: {
+  around?: string;
+  view?: View;
+  onRevert?: () => void;
+} = {}) {
   const store = useTaskStore();
   const navigate = useNavigate();
   const tasks = useStoreState((s) => s.tasks);
@@ -128,9 +171,20 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const statuses = useStoreState((s) => s.statuses);
   const pending = useStoreState((s) => s.pending);
   const openTask = useOpenTask();
+  const savedFilter = useMemo(() => (view ? filterOf(view.spec) : null), [view]);
+  const savedAround = view?.spec.lineage?.around ?? null;
+  /** In a saved view the task it centers on is part of the draft. */
+  const [viewAround, setViewAround] = useState<string | null>(savedAround);
+  const around = view ? (viewAround ?? undefined) : aroundParam;
+  /** The canvas starts from the saved view's layout, or the one kept on this machine. */
+  const [initialLayout] = useState<SavedCanvas>(() => (view ? canvasOf(view.spec) : loadCanvas()));
+  /** The canvas layout as last reported, to save into a view. */
+  const layout = useRef(initialLayout);
+  const [layoutEdited, setLayoutEdited] = useState(false);
+  const [savingAs, setSavingAs] = useState(false);
   const [selected, setSelected] = useState<string | null>(around ?? null);
   const [connecting, setConnecting] = useState<Connector | null>(null);
-  const [filter, setFilter] = useState(loadFilter);
+  const [filter, setFilter] = useState(() => savedFilter ?? loadFilter());
   const { project, completion, linkedOnly, subtasks, arrange } = filter;
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
@@ -138,6 +192,8 @@ export function LineagePage({ around }: { around?: string } = {}) {
   const [reveal, setReveal] = useState<{ id: string; seq: number } | null>(null);
   const [placement, setPlacement] = useState<Placement | null>(null);
   const [wholeChain, setWholeChain] = useState(false);
+  /** A card dragged on the canvas: over the side panel, the panel turns into drop zones. */
+  const [cardDrag, setCardDrag] = useState<CardDrag | null>(null);
   const all = useMemo(
     () =>
       Object.values(tasks).sort((a, b) => a.rank.localeCompare(b.rank) || a.id.localeCompare(b.id)),
@@ -171,24 +227,26 @@ export function LineagePage({ around }: { around?: string } = {}) {
       focus?.id,
     ],
   );
-  /** Lanes in order: epics (or projects) by rank, the "none" lane last. */
+  /**
+   * Lanes in order: epics (or projects) by rank, the "none" lane last. A lane shows when it
+   * holds cards in view; an empty one only when picked in the filter (the epics picked, the
+   * project chosen), so a card can be dropped into it.
+   */
   const laneSpecs = useMemo((): LaneSpec[] => {
     if (arrange === "free") return [];
     const present = new Set(
       graph.nodes.map((node) => (arrange === "epic" ? node.task.epic_id : node.task.project_id)),
     );
     const byRank = <T extends { rank: string }>(a: T, b: T) => (a.rank < b.rank ? -1 : 1);
-    const picked = filter.epics.filter((id) => id !== FILTER_NONE);
     const specs: LaneSpec[] =
       arrange === "epic"
         ? Object.values(epics)
             .filter(
               (e) =>
                 present.has(e.id) ||
-                // Empty lanes for active epics in view, to drop cards into.
                 (e.state === "active" &&
                   !focus &&
-                  (picked.length ? picked.includes(e.id) : !filter.epics.length) &&
+                  filter.epics.includes(e.id) &&
                   (!project || !e.project_id || e.project_id === project)),
             )
             .sort(byRank)
@@ -198,11 +256,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
             .sort(byRank)
             .map((p) => ({ key: p.id, label: p.name, color: p.color }));
     const showNone =
-      present.has(null) ||
-      (!focus &&
-        (arrange === "epic"
-          ? !filter.epics.length || filter.epics.includes(FILTER_NONE)
-          : !project));
+      present.has(null) || (!focus && arrange === "epic" && filter.epics.includes(FILTER_NONE));
     if (showNone)
       specs.push({
         key: FILTER_NONE,
@@ -222,24 +276,25 @@ export function LineagePage({ around }: { around?: string } = {}) {
   /** Epics shown under a project filter: that project's, plus epics without a project. */
   const epicFits = (id: string, projectId: string) =>
     id === FILTER_NONE || !epics[id]?.project_id || epics[id]?.project_id === projectId;
-  /** Arranging keeps the selection: the same cards stay, only their places change. */
-  function changeArrange(value: Arrange) {
-    const next = { ...filter, arrange: value };
-    setFilter(next);
-    try {
-      localStorage.setItem(FILTER_KEY, JSON.stringify(next));
-    } catch {
-      /* Arranging still works without storage. */
-    }
-  }
-  function changeFilter(next: Partial<SavedFilter>) {
-    const value = { ...filter, ...next };
-    setFilter(value);
+  /** Keeps the filters on this machine; a saved view holds its own instead. */
+  function remember(value: SavedFilter) {
+    if (view) return;
     try {
       localStorage.setItem(FILTER_KEY, JSON.stringify(value));
     } catch {
       /* Filters still work without storage. */
     }
+  }
+  /** Arranging keeps the selection: the same cards stay, only their places change. */
+  function changeArrange(value: Arrange) {
+    const next = { ...filter, arrange: value };
+    setFilter(next);
+    remember(next);
+  }
+  function changeFilter(next: Partial<SavedFilter>) {
+    const value = { ...filter, ...next };
+    setFilter(value);
+    remember(value);
     setSelected(null);
     setConnecting(null);
     setError("");
@@ -325,14 +380,52 @@ export function LineagePage({ around }: { around?: string } = {}) {
       /* The panel still toggles without storage. */
     }
   }
+  /** Shows one task's lineage, or every task again (null). A saved view keeps it as a draft. */
+  function focusOn(id: string | null) {
+    if (!view) {
+      void navigate({ to: "/lineage", search: id ? { around: id } : {} });
+      return;
+    }
+    setViewAround(id);
+    setSelected(id);
+    setConnecting(null);
+    setError("");
+  }
   /** A search result: select it and bring its card into view, or open its lineage. */
   function show(id: string) {
     setSelected(id);
     setConnecting(null);
     setError("");
     if (onCanvas.has(id)) setReveal({ id, seq: Date.now() });
-    else void navigate({ to: "/lineage", search: { around: id } });
+    else focusOn(id);
   }
+  /** What a saved view of the page as it is now holds. */
+  function currentSpec() {
+    return lineageSpec(filter, focus?.id ?? null, layout.current, onCanvas);
+  }
+  async function saveAsView(name: string) {
+    setSavingAs(false);
+    if (!name.trim()) return;
+    const id = await createView(store, name, currentSpec());
+    if (id) void navigate({ to: "/view/$viewId", params: { viewId: id } });
+    else setError(store.getState().lastError ?? "Could not save the view.");
+  }
+  async function saveView() {
+    if (!view) return;
+    // The page remounts from the stored view once it has changed.
+    const result = await updateView(store, view.id, [{ spec: currentSpec() }]);
+    if (!result) setError(store.getState().lastError ?? "Could not save the view.");
+  }
+  async function removeView() {
+    if (!view) return;
+    if ((await deleteView(store, view.id)) !== null) void navigate({ to: "/lineage", search: {} });
+  }
+  const dirty =
+    !!view &&
+    (layoutEdited ||
+      viewAround !== savedAround ||
+      !savedFilter ||
+      !sameFilter(filter, savedFilter));
   async function createFromPanel(side: Connector["side"]) {
     if (!current || !query.trim()) return;
     const id = await addLinked(current.id, side, { title: query.trim() });
@@ -433,6 +526,46 @@ export function LineagePage({ around }: { around?: string } = {}) {
     if (result) setError("");
     else setError(store.getState().lastError ?? "Could not change the parent.");
   }
+  /** Whether the dragged task can be linked to the selected one through this zone. */
+  function canDrop(zone: DropZone, id: string): boolean {
+    if (!current || id === current.id || pending > 0) return false;
+    switch (zone) {
+      case "parent":
+        return canParent.parents.has(id);
+      case "subtask":
+        return canParent.subtasks.has(id);
+      case "prereq":
+        return canLink(id, current.id);
+      case "dependent":
+        return canLink(current.id, id);
+    }
+  }
+  function dragCard(drag: { id: string; client: { x: number; y: number } } | null) {
+    if (!drag || !panelOpen) {
+      setCardDrag(null);
+      return;
+    }
+    const { panel, zone } = dropTargetAt(drag.client);
+    // Only a change re-renders the page: the pointer moves many times a second.
+    setCardDrag((prev) =>
+      prev?.id === drag.id && prev.panel === panel && prev.zone === zone
+        ? prev
+        : { id: drag.id, panel, zone },
+    );
+  }
+  /** A card let go over the side panel: link it to the selected task by the zone under it. */
+  function dropCard(id: string, client: { x: number; y: number }): boolean {
+    setCardDrag(null);
+    if (!panelOpen) return false;
+    const { panel, zone } = dropTargetAt(client);
+    if (!panel) return false;
+    if (!current || !zone || !canDrop(zone, id)) return true;
+    if (zone === "parent") void adopt(current.id, id);
+    else if (zone === "subtask") void adopt(id, current.id);
+    else if (zone === "prereq") void connect(id, current.id);
+    else void connect(current.id, id);
+    return true;
+  }
   function remove(from: string, to: string) {
     void updateTask(store, to, [
       { dependency_ids: (tasks[to]?.dependency_ids ?? []).filter((id) => id !== from) },
@@ -441,24 +574,67 @@ export function LineagePage({ around }: { around?: string } = {}) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-line px-6 py-5">
+      <header className="border-b border-line px-6 py-3">
         <div className="flex items-center gap-3">
-          <GitBranch size={24} className="text-rubric" />
-          <h1 className="font-display text-3xl text-ink">Lineage</h1>
+          <GitBranch size={24} className="shrink-0 text-rubric" />
+          {view ? (
+            <h1 className="min-w-0 font-display text-3xl text-ink">
+              <EditableTitle
+                value={view.name}
+                placeholder="View name"
+                onRename={(name) => void updateView(store, view.id, [{ name }])}
+              />
+            </h1>
+          ) : (
+            <h1 className="font-display text-3xl text-ink">Lineage</h1>
+          )}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {view ? (
+              <>
+                {dirty && (
+                  <>
+                    <Button size="sm" onClick={onRevert}>
+                      Revert
+                    </Button>
+                    <Button size="sm" variant="primary" onClick={() => void saveView()}>
+                      Save view
+                    </Button>
+                  </>
+                )}
+                <Button size="sm" onClick={() => void removeView()}>
+                  Delete view
+                </Button>
+              </>
+            ) : savingAs ? (
+              <InlineInput
+                initial=""
+                autoFocus
+                placeholder="Name of the new view"
+                onCommit={(name) => void saveAsView(name)}
+                onCancel={() => setSavingAs(false)}
+              />
+            ) : (
+              <Button
+                size="sm"
+                title="Keep these filters and where the cards sit as a saved view"
+                onClick={() => setSavingAs(true)}
+              >
+                <Bookmark size={14} />
+                Save as view
+              </Button>
+            )}
+          </div>
         </div>
         <p className="mt-2 text-sm text-ink-3">
-          Arrange tasks on the canvas. Drag a connector between cards to link a prerequisite to its
-          dependent.
+          {view
+            ? "A saved lineage view: its filters and card layout. Changes stay a draft until you save the view."
+            : "Arrange tasks on the canvas. Drag a connector between cards to link a prerequisite to its dependent."}
         </p>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
+        <div className="mt-2 flex flex-wrap items-center gap-3">
           {focus && (
             <span className="flex items-center gap-1 rounded-full border border-accent/40 bg-accent/10 py-1 pr-1 pl-3 text-sm text-ink">
               <span className="max-w-64 truncate">Lineage of “{focus.title}”</span>
-              <IconButton
-                label="Show all tasks"
-                className="size-6"
-                onClick={() => void navigate({ to: "/lineage", search: {} })}
-              >
+              <IconButton label="Show all tasks" className="size-6" onClick={() => focusOn(null)}>
                 <X size={13} />
               </IconButton>
             </span>
@@ -552,7 +728,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
           {error}
         </p>
       )}
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         <LineageCanvas
           graph={graph}
           scope={`${project}:${filter.epics.join(",")}:${filter.tags.join(",")}:${completion}:${linkedOnly}:${subtasks}:${focus?.id ?? ""}:${arrange}`}
@@ -560,7 +736,16 @@ export function LineagePage({ around }: { around?: string } = {}) {
           laneSpecs={laneSpecs}
           epics={epics}
           onMoveToLane={moveToLane}
-          fitOnOpen={!!focus}
+          onCardDrag={dragCard}
+          onCardDrop={dropCard}
+          // A saved view keeps no camera: it opens framed on its cards.
+          fitOnOpen={!!focus || !!view}
+          layout={initialLayout}
+          onPersist={(canvas) => {
+            layout.current = canvas;
+            if (!view) saveCanvas(canvas);
+          }}
+          onEdit={() => setLayoutEdited(true)}
           statuses={statuses}
           closed={closed}
           blocked={blocked}
@@ -603,7 +788,8 @@ export function LineagePage({ around }: { around?: string } = {}) {
         {panelOpen && (
           <aside
             aria-label="Lineage panel"
-            className="flex w-80 shrink-0 flex-col overflow-y-auto border-l border-line bg-raised p-5"
+            data-lineage-panel
+            className="flex w-96 max-w-[45%] shrink-0 flex-col overflow-y-auto border-l border-line bg-raised p-5"
           >
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-sm font-medium text-ink">Find a task</h2>
@@ -627,11 +813,11 @@ export function LineagePage({ around }: { around?: string } = {}) {
             />
             <p className="mt-2 text-xs text-ink-3">
               {current
-                ? `Click a result to select it, or link it to “${current.title}”: as a prerequisite, a dependent, its parent or a subtask.`
+                ? `Click a result to select it, or link it to “${current.title}”: as a prerequisite, a dependent, its parent or a subtask. You can also drag a card from the canvas onto this panel.`
                 : "Click a result to find it on the canvas, or select a card to link tasks to it."}
             </p>
             {search && (
-              <div className="mt-2 flex max-h-80 flex-col overflow-y-auto">
+              <div className="mt-2 flex flex-col">
                 {current &&
                   (["in", "out"] as const).map((side) => (
                     <button
@@ -678,7 +864,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
                 <h3 className="text-xs font-medium tracking-wide text-ink-3 uppercase">
                   {browse.title}
                 </h3>
-                <ul aria-label={browse.title} className="mt-1 max-h-72 overflow-y-auto">
+                <ul aria-label={browse.title} className="mt-1">
                   {browse.tasks.slice(0, 40).map((task) => (
                     <SearchResult
                       key={task.id}
@@ -720,9 +906,7 @@ export function LineagePage({ around }: { around?: string } = {}) {
                   onCopy={() => void copyToFollowers()}
                   onClear={() => setSelected(null)}
                   onOpen={() => openTask(current.id)}
-                  onShowLineage={() =>
-                    void navigate({ to: "/lineage", search: { around: current.id } })
-                  }
+                  onShowLineage={() => focusOn(current.id)}
                   onRemove={remove}
                   onSetParent={(child, parent) => void adopt(child, parent)}
                   onConnectOnGraph={() => {
@@ -734,8 +918,75 @@ export function LineagePage({ around }: { around?: string } = {}) {
             )}
           </aside>
         )}
+        {panelOpen && cardDrag?.panel && (
+          <DropOverlay
+            dragged={tasks[cardDrag.id]}
+            current={current}
+            hovered={cardDrag.zone}
+            canDrop={(zone) => canDrop(zone, cardDrag.id)}
+          />
+        )}
       </div>
     </div>
+  );
+}
+
+/** Covers the side panel while a card is dragged: drop zones to link it to the selected task. */
+function DropOverlay({
+  dragged,
+  current,
+  hovered,
+  canDrop,
+}: {
+  dragged: Task | undefined;
+  current: Task | undefined;
+  hovered: DropZone | null;
+  canDrop: (zone: DropZone) => boolean;
+}) {
+  const message = !current
+    ? "Select a card first, then drag another card here to link it to the selected one."
+    : dragged?.id === current.id
+      ? `This is the selected task. Drag another card here to link it to “${current.title}”.`
+      : null;
+  return (
+    // Laid over the side panel (same width): it counts as the panel for the drop.
+    <section
+      aria-label="Drop to link"
+      data-lineage-panel
+      className="absolute inset-y-0 right-0 flex w-96 max-w-[45%] flex-col gap-3 border-l border-line bg-raised p-5"
+    >
+      {message || !current ? (
+        <p className="m-auto text-center text-sm text-ink-3">{message}</p>
+      ) : (
+        <>
+          <p className="text-sm text-ink-2">
+            Link “{dragged?.title}” to “{current.title}” as:
+          </p>
+          {DROP_ZONES.map(({ zone, label, hint }) => {
+            const allowed = canDrop(zone);
+            return (
+              <div
+                key={zone}
+                data-drop-zone={zone}
+                data-allowed={allowed}
+                title={allowed ? undefined : "Already linked, or the link would make a loop"}
+                className={cx(
+                  "flex min-h-16 flex-1 flex-col items-center justify-center rounded-xl border-2 border-dashed px-3 text-center",
+                  !allowed
+                    ? "border-line text-ink-3 opacity-40"
+                    : hovered === zone
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-line-strong text-ink-2",
+                )}
+              >
+                <span className="text-sm font-medium">{label}</span>
+                <span className="text-xs">{hint}</span>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -767,12 +1018,14 @@ function SearchResult({
   onSetParent: (child: string, parent: string) => void;
 }) {
   return (
-    <li className="flex h-10 items-center gap-1 border-b border-line last:border-b-0">
+    // The title gets its own line and the link chips the next one: side by side in the
+    // panel's width, the four chips left the title a few pixels.
+    <li className="border-b border-line py-1 last:border-b-0">
       <button
         type="button"
-        title={visible ? "Show on the canvas" : "Open its lineage"}
+        title={`${task.title}: ${visible ? "show on the canvas" : "open its lineage"}`}
         className={cx(
-          "min-w-0 flex-1 truncate rounded-md px-2 py-1 text-left text-sm hover:bg-hover",
+          "line-clamp-2 w-full rounded-md px-2 py-1 text-left text-sm break-words hover:bg-hover",
           selected ? "font-medium text-accent" : "text-ink-2",
           done && "text-ink-3 line-through",
           FOCUS,
@@ -782,7 +1035,7 @@ function SearchResult({
         {task.title}
       </button>
       {current && !selected && (
-        <>
+        <div className="flex flex-wrap gap-1 px-2 pt-0.5 pb-1">
           <LinkChip
             label={`Add ${task.title} as a prerequisite`}
             disabled={busy || !canLink(task.id, current.id)}
@@ -811,7 +1064,7 @@ function SearchResult({
           >
             Subtask
           </LinkChip>
-        </>
+        </div>
       )}
     </li>
   );

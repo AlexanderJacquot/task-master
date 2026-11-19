@@ -8,6 +8,7 @@ import type { Epic, EpicState } from "../../lib/types";
 import { categoryOf } from "../../lib/views";
 import { deleteEpic, updateEpic } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { MeetingsSection } from "../scribe/MeetingsSection";
 import { EditableTitle } from "../shell/EditableTitle";
 import { HeaderButton, ViewPage } from "../shell/ViewPage";
 import { EPIC_SHAPES, EpicMark } from "./EpicMark";
@@ -157,6 +158,7 @@ function EpicDetails({ epic }: { epic: Epic }) {
         }}
         className="w-full resize-y rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-[14.5px] text-ink-2 hover:border-line-strong focus:border-accent focus:outline-none"
       />
+      <MeetingsSection link={{ epic: epic.id }} page={false} limit={3} />
     </div>
   );
 }

@@ -64,8 +64,8 @@ Tasks are the only things you work on. Projects and epics are containers that gr
 
 | Entity | What it is | Key fields | Relations |
 | --- | --- | --- | --- |
-| Project | Where work lives: a life area or a body of work ("Chaumet", "Homelab", "Perso / Admin") | name, color, icon, archived, rank | Optional parent project (one level: areas → projects); later, linked folders |
-| Epic | An outcome or goal that groups tasks, possibly across projects ("Go freelance", "Migrate homelab to IaC") | name, description, target date, status (active, done, dropped) | Many tasks; optional home project; progress computed from its tasks |
+| Project | Where work lives: a life area or a body of work ("Work", "House", "Admin") | name, color, icon, archived, rank | Optional parent project (one level: areas → projects); later, linked folders |
+| Epic | An outcome or goal that groups tasks, possibly across projects ("Launch the website", "Renovate the kitchen") | name, description, target date, status (active, done, dropped) | Many tasks; optional home project; progress computed from its tasks |
 | Task | A unit of work | title, description (markdown), status, priority, due date, scheduled-for-today flag, estimate, rank, created/updated/completed timestamps | One project (or Inbox when none), zero or one epic, optional parent task, many tags |
 | Subtask | A task whose `parent_id` is set | same as task | Inherits project and epic from the parent by default; unlimited depth in data, two levels shown in the UI |
 | Tag | Free label across everything (`#waiting`, `#quick`, `#deep-work`) | name, color | Many-to-many with tasks |
@@ -227,7 +227,7 @@ The MVP is a three-pane app: sidebar for navigation, a main area showing a board
 **Capture and navigation**
 
 - Quick capture (global hotkey, e.g. `Ctrl+Shift+Space`) opens a small window; `n` inside the app does the same.
-- Inline syntax: `Fix DNS on watch #homelab @Homelab !high ^fri +epic:IaC` → tag, project, priority, due date, epic. Unknown tags are created; unknown projects prompt.
+- Inline syntax: `Fix the boiler #home @House !high ^fri +epic:Repairs` → tag, project, priority, due date, epic. Unknown tags are created; unknown projects prompt.
 - Command palette (`Ctrl+K`): jump to any task, project, epic or view; run any action.
 - Full-text search across titles and descriptions.
 - Undo/redo (`Ctrl+Z` / `Ctrl+Shift+Z`) for every action, including drag and drop.
@@ -270,7 +270,7 @@ Each later feature plugs into the core as new tables, new command variants and a
 **Phase 5: Sync and phone**
 
 - Designed in ADR 015 (started early, at the user's request, before Phases 2 and 3): `crates/server` (axum) is one more replica of the core and also serves the API (`/api/v1`) for other software (a home dashboard, headless AI integrations). Devices push and pull `ops` asynchronously (push ~2 s after an edit, pull on a server-sent poke); merge is latest edit wins per field by `hlc`, a delete wins over a later edit, and merged states are repaired automatically. Milestones M11 (core) to M15 (CLI and MCP).
-- Auth is optional: a base URL alone, server tokens, or OIDC (Authelia at home).
+- Auth is optional: a base URL alone, server tokens, or OIDC with any provider.
 - Phone: a responsive layout first (board collapses to one column with a status switcher), shipped either as a Tauri 2 mobile build or as a PWA served by the sync service.
 
 **Later candidates**: standalone markdown notes linked to tasks, recurring tasks, Obsidian export, weekly review screen, priority scoring.

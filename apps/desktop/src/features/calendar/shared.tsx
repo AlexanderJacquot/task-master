@@ -4,6 +4,8 @@ import { useDraggable } from "@dnd-kit/core";
 import { createContext, useContext } from "react";
 import { DueDateIcon as Flag } from "../../components/TaskIcons";
 import { cx, Dot, FOCUS } from "../../components/ui";
+import type { Span } from "../../lib/calendar";
+import type { PlanHours } from "../../lib/planner";
 import type { Project, Status, Task, TimeBlock } from "../../lib/types";
 
 /** What draggables carry: the calendar ref (`task:<id>` or `block:<id>`) and a label. */
@@ -27,6 +29,10 @@ export interface CalendarData {
   openUrl?(url: string): void;
   /** A synced calendar's name, for event details. */
   calendarName(id: string): string;
+  /** Working hours (set in Plan mode), where replanning looks for free time. */
+  hours: PlanHours;
+  /** Timed events of the shown range, busy for replanning. */
+  busyEvents: Span[];
 }
 
 export const CalendarContext = createContext<CalendarData | null>(null);
@@ -50,10 +56,11 @@ export function projectColor(task: Task | undefined, projects: Record<string, Pr
 /** Fill and edge of a block, from its project's color and outcome. */
 export function blockStyle(color: string | null, outcome: TimeBlock["outcome"]) {
   const edge = color ?? "var(--tm-accent)";
-  const strength = outcome === "planned" ? 22 : 12;
+  const strength = outcome === "planned" ? 22 : outcome === "missed" ? 6 : 12;
   return {
     borderLeftColor: edge,
     background: `color-mix(in srgb, ${edge} ${strength}%, var(--tm-raised))`,
+    ...(outcome === "missed" && { borderLeftStyle: "dashed" as const }),
   };
 }
 

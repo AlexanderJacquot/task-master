@@ -26,6 +26,7 @@ import {
   EditIcon as Pencil,
   AddIcon as Plus,
   ProjectsIcon,
+  ScribeIcon,
   SearchIcon as Search,
   SettingsIcon as Settings2,
   TodayIcon as Sun,
@@ -49,6 +50,7 @@ import { useUpdates } from "../../lib/updater";
 import { inView, isOpen, type ViewContext } from "../../lib/views";
 import { createEpic, createProject, deleteProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { isActive } from "../agents/sessions";
 import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import { PROJECT_COLORS } from "../organize/projectColors";
@@ -56,6 +58,7 @@ import { TagMenu } from "../organize/TagMenu";
 import { AppLogo, NavIcon, Wordmark } from "../ornaments/Ornaments";
 import { useShell } from "../shell/shellContext";
 import { DROP_OVER_CLASS, type TaskDropTarget, useTaskDropTarget } from "../shell/taskDrop";
+import { TimerPill } from "../timer/Timer";
 import { ProjectTree } from "./ProjectTree";
 import { useProjectOrder } from "./useProjectOrder";
 
@@ -254,6 +257,20 @@ function loadOpenSections(): Record<string, boolean> {
   }
 }
 
+/** Whether the sidebar section `id` is open, remembered per machine. */
+function useOpenSection(id: string, defaultOpen: boolean): [boolean, (open: boolean) => void] {
+  const [open, setOpen] = useState(() => loadOpenSections()[id] ?? defaultOpen);
+  const set = (next: boolean) => {
+    setOpen(next);
+    try {
+      localStorage.setItem(SECTIONS_KEY, JSON.stringify({ ...loadOpenSections(), [id]: next }));
+    } catch {
+      // Not remembered; fine.
+    }
+  };
+  return [open, set];
+}
+
 /** A collapsible sidebar section whose open state is remembered per machine. */
 function Collapsible({
   id,
@@ -272,16 +289,8 @@ function Collapsible({
   onAdd?: () => void;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(() => loadOpenSections()[id] ?? defaultOpen);
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    try {
-      localStorage.setItem(SECTIONS_KEY, JSON.stringify({ ...loadOpenSections(), [id]: next }));
-    } catch {
-      // Not remembered; fine.
-    }
-  };
+  const [open, setOpen] = useOpenSection(id, defaultOpen);
+  const toggle = () => setOpen(!open);
   return (
     <section className="mt-1">
       <div className="group/section flex items-center">
@@ -311,7 +320,7 @@ function Collapsible({
           </IconButton>
         )}
       </div>
-      {open && <div className="mt-0.5 flex flex-col gap-px">{children}</div>}
+      {open && <div className="mt-0.5 flex flex-col gap-px pl-2">{children}</div>}
     </section>
   );
 }
@@ -495,11 +504,10 @@ export function Sidebar({
   const views = useStoreState((s) => s.views);
   const statusList = useStoreState((s) => s.statuses);
   const runningAgents = useStoreState(
-    (s) =>
-      Object.values(s.agent_sessions).filter((a) => a.state === "running" || a.state === "terminal")
-        .length,
+    (s) => Object.values(s.agent_sessions).filter(isActive).length,
   );
   const [adding, setAdding] = useState<"project" | "epic" | null>(null);
+  const [projectsOpen, setProjectsOpen] = useOpenSection("projects", true);
   const [showArchived, setShowArchived] = useState(false);
   const order = useProjectOrder();
 
@@ -620,6 +628,9 @@ export function Sidebar({
         <RailLink to="/lineage" label="Lineage">
           <GitBranch size={18} className="text-green-700 dark:text-green-300 clean:text-ink-2" />
         </RailLink>
+        <RailLink to="/scribe" label="Scribe">
+          <ScribeIcon size={18} className="text-amber-800 dark:text-amber-200 clean:text-ink-2" />
+        </RailLink>
         <RailLink to="/agents" label="Agents">
           <Bot size={18} className={cx(runningAgents > 0 && "animate-pulse text-accent")} />
         </RailLink>
@@ -645,6 +656,7 @@ export function Sidebar({
           );
         })}
         <div className="flex-1" />
+        <TimerPill compact />
         <UpdatePill compact />
         <ShortcutsButton onClick={shell.showShortcuts} className="mb-1" />
         <RailLink to="/settings" label="Settings">
@@ -776,6 +788,17 @@ export function Sidebar({
             Lineage
           </NavItem>
           <NavItem
+            to="/scribe"
+            icon={
+              <ScribeIcon
+                size={17}
+                className="shrink-0 text-amber-800 dark:text-amber-200 clean:text-ink-2"
+              />
+            }
+          >
+            Scribe
+          </NavItem>
+          <NavItem
             to="/agents"
             count={runningAgents || undefined}
             title={runningAgents ? `${runningAgents} active` : undefined}
@@ -797,64 +820,82 @@ export function Sidebar({
         </div>
 
         <section className="mt-5">
-          <div className="group/section flex items-center justify-between px-2.5 pb-1.5">
-            <span className="flex items-center gap-2 font-display text-[14px] tracking-wide text-rubric clean:text-[13px] clean:font-medium! clean:text-ink-3">
+          <div className="group/section flex items-center justify-between pb-1.5">
+            <button
+              type="button"
+              aria-expanded={projectsOpen}
+              onClick={() => setProjectsOpen(!projectsOpen)}
+              className={cx(
+                "flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-0.5 text-left font-display text-[14px] tracking-wide text-rubric hover:bg-hover clean:text-[13px] clean:font-medium! clean:text-ink-3",
+                FOCUS,
+              )}
+            >
+              {projectsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
               <ProjectsIcon size={16} />
-              Projects
-            </span>
-            <IconButton label="New project" onClick={() => setAdding("project")} className="size-6">
+              <span className="flex-1">Projects</span>
+            </button>
+            <IconButton
+              label="New project"
+              onClick={() => {
+                setProjectsOpen(true);
+                setAdding("project");
+              }}
+              className="size-6"
+            >
               <Plus size={14} />
             </IconButton>
           </div>
-          <div className="flex flex-col gap-px pl-2">
-            <ProjectTree
-              nodes={areas}
-              renderProject={(p, children) => (
-                <ProjectRow
-                  project={p}
-                  count={projectCount(p.id, children)}
-                  shortcut={shortcutOf(p.id)}
+          {projectsOpen && (
+            <div className="flex flex-col gap-px pl-2">
+              <ProjectTree
+                nodes={areas}
+                renderProject={(p, children) => (
+                  <ProjectRow
+                    project={p}
+                    count={projectCount(p.id, children)}
+                    shortcut={shortcutOf(p.id)}
+                  />
+                )}
+              />
+              {adding === "project" && (
+                <InlineInput
+                  initial=""
+                  placeholder="Project name"
+                  autoFocus
+                  onCommit={(name) => {
+                    setAdding(null);
+                    void createProject(store, name);
+                  }}
+                  onCancel={() => setAdding(null)}
+                  className="mt-1"
                 />
               )}
-            />
-            {adding === "project" && (
-              <InlineInput
-                initial=""
-                placeholder="Project name"
-                autoFocus
-                onCommit={(name) => {
-                  setAdding(null);
-                  void createProject(store, name);
-                }}
-                onCancel={() => setAdding(null)}
-                className="mt-1"
-              />
-            )}
-            {!areas.length && adding !== "project" && (
-              <button
-                type="button"
-                onClick={() => setAdding("project")}
-                className="rounded-lg px-2.5 py-1 text-left text-[13px] text-ink-3 hover:bg-hover"
-              >
-                Create your first project
-              </button>
-            )}
-            {archived.length > 0 && (
-              <>
+              {!areas.length && adding !== "project" && (
                 <button
                   type="button"
-                  aria-expanded={showArchived}
-                  onClick={() => setShowArchived((v) => !v)}
-                  className="mt-1 flex items-center gap-1.5 px-2.5 py-0.5 text-left text-[12.5px] text-ink-3 hover:text-ink"
+                  onClick={() => setAdding("project")}
+                  className="rounded-lg px-2.5 py-1 text-left text-[13px] text-ink-3 hover:bg-hover"
                 >
-                  {showArchived ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                  Archived ({archived.length})
+                  Create your first project
                 </button>
-                {showArchived &&
-                  archived.map((p) => <ProjectRow key={p.id} project={p} count={0} muted />)}
-              </>
-            )}
-          </div>
+              )}
+              {archived.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    aria-expanded={showArchived}
+                    onClick={() => setShowArchived((v) => !v)}
+                    className="mt-1 flex items-center gap-1.5 px-2.5 py-0.5 text-left text-[12.5px] text-ink-3 hover:text-ink"
+                  >
+                    {showArchived ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    Archived ({archived.length})
+                  </button>
+                  {showArchived &&
+                    archived.map((p) => <ProjectRow key={p.id} project={p} count={0} muted />)}
+                </>
+              )}
+            </div>
+          )}
         </section>
 
         <div className="mx-2 mt-4 mb-2 h-px bg-line" />
@@ -933,14 +974,20 @@ export function Sidebar({
               key={view.id}
               to="/view/$viewId"
               params={{ viewId: view.id }}
-              icon={<Bookmark size={14} className="shrink-0" />}
+              icon={
+                view.spec.lineage ? (
+                  <GitBranch size={14} className="shrink-0" />
+                ) : (
+                  <Bookmark size={14} className="shrink-0" />
+                )
+              }
             >
               {view.name}
             </NavItem>
           ))}
           {viewList.length === 0 && (
             <p className="px-2.5 py-1 text-[12.5px] text-ink-3">
-              Use "Save as view" in any view's Display menu
+              Use "Save as view" in any view's Display menu, or on the Lineage page
             </p>
           )}
         </Collapsible>
@@ -960,6 +1007,7 @@ export function Sidebar({
         </Collapsible>
 
         <div className="mt-auto flex flex-col gap-1 pt-4">
+          <TimerPill />
           <UpdatePill />
           <div className="flex items-stretch gap-1">
             <div className="flex min-w-0 flex-1 flex-col [&>a]:flex-1">

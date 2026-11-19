@@ -5,14 +5,14 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// An S3-compatible bucket (Garage in the homelab) that receives the daily backups.
+/// An S3-compatible bucket that receives the daily backups.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RemoteBackup {
     pub enabled: bool,
-    /// e.g. `https://s3.solarnexus.space` (path-style requests).
+    /// e.g. `https://s3.example.com` (path-style requests).
     pub endpoint: String,
     pub bucket: String,
-    /// Garage's default region is `garage`.
+    /// e.g. `us-east-1`; Garage's default region is `garage`.
     pub region: String,
     pub access_key: String,
     pub secret_key: String,
@@ -62,6 +62,50 @@ pub struct AgentSettings {
     /// Where a task goes when the agent reports it done; Review when `None`.
     #[serde(default)]
     pub done_status_id: Option<taskmaster_core::Id>,
+    /// Standing instructions for every agent this device starts, appended to each new
+    /// session's system prompt after the app's own rules; none when `None`.
+    #[serde(default)]
+    pub directive: Option<String>,
+    /// May agents edit the user's own tasks (title, description, priority, prerequisites,
+    /// any status)? When off, only the status of a session's task and its subtasks.
+    #[serde(default = "default_true")]
+    pub edit_user_tasks: bool,
+    /// Spending the user allows agents, shown against what they cost on the Agents page;
+    /// "Send to agent" asks before going over one.
+    #[serde(default)]
+    pub limits: SpendLimits,
+    /// Read the Claude Code sessions run in a terminal (their transcripts, where agents
+    /// run) so their cost and time count on the Agents page (M21, ADR 028).
+    #[serde(default = "default_true")]
+    pub import_terminal_sessions: bool,
+}
+
+/// Spend limits in millionths of a dollar, over all devices' sessions; none when `None`.
+/// A day, week (from Monday) and month are the user's local calendar periods.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+pub struct SpendLimits {
+    #[serde(default)]
+    pub day_usd_micros: Option<i64>,
+    #[serde(default)]
+    pub week_usd_micros: Option<i64>,
+    #[serde(default)]
+    pub month_usd_micros: Option<i64>,
+}
+
+impl SpendLimits {
+    /// A zero or negative limit means none.
+    fn normalized(self) -> Self {
+        let positive = |v: Option<i64>| v.filter(|m| *m > 0);
+        Self {
+            day_usd_micros: positive(self.day_usd_micros),
+            week_usd_micros: positive(self.week_usd_micros),
+            month_usd_micros: positive(self.month_usd_micros),
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_claude() -> String {
@@ -83,6 +127,10 @@ impl Default for AgentSettings {
             model: None,
             started_status_id: None,
             done_status_id: None,
+            directive: None,
+            edit_user_tasks: true,
+            limits: SpendLimits::default(),
+            import_terminal_sessions: true,
         }
     }
 }
@@ -105,6 +153,8 @@ impl AgentSettings {
         self.model = blank_to_none(self.model);
         self.started_status_id = blank_to_none(self.started_status_id);
         self.done_status_id = blank_to_none(self.done_status_id);
+        self.directive = blank_to_none(self.directive);
+        self.limits = self.limits.normalized();
         self.claude_path = self.claude_path.trim().to_owned();
         if self.claude_path.is_empty() {
             self.claude_path = default_claude();
@@ -166,6 +216,8 @@ pub struct AppConfig {
     pub schedule: Schedule,
     #[serde(default)]
     pub agents: AgentSettings,
+    #[serde(default)]
+    pub scribe: crate::scribe::ScribeSettings,
     /// A data folder chosen in settings; the OS app-data folder when `None`.
     #[serde(default)]
     pub data_dir: Option<PathBuf>,
@@ -355,6 +407,35 @@ mod tests {
     }
 
     #[test]
+    fn spend_limits_of_zero_or_less_mean_none() {
+        let settings = AgentSettings {
+            limits: SpendLimits {
+                day_usd_micros: Some(0),
+                week_usd_micros: Some(-5),
+                month_usd_micros: Some(20_000_000),
+            },
+            ..AgentSettings::default()
+        }
+        .normalized()
+        .unwrap();
+        assert_eq!(
+            settings.limits,
+            SpendLimits {
+                month_usd_micros: Some(20_000_000),
+                ..SpendLimits::default()
+            }
+        );
+        // Settings saved before limits existed still load.
+        let old: AgentSettings = serde_json::from_str(r#"{"runtime":"native"}"#).unwrap();
+        assert_eq!(old.limits, SpendLimits::default());
+        // Agents may edit the user's tasks unless the setting says otherwise.
+        assert!(old.edit_user_tasks);
+        let off: AgentSettings =
+            serde_json::from_str(r#"{"runtime":"native","edit_user_tasks":false}"#).unwrap();
+        assert!(!off.edit_user_tasks);
+    }
+
+    #[test]
     fn config_roundtrips_through_its_file() {
         let dir = std::env::temp_dir().join(format!("tm-config-{}", taskmaster_core::new_id()));
         let path = dir.join("config.json");
@@ -367,7 +448,19 @@ mod tests {
             agents: AgentSettings {
                 runtime: taskmaster_core::AgentRuntime::Wsl,
                 wsl_distro: Some("Ubuntu".into()),
+                directive: Some("Reply in French.\nRun the tests.".into()),
+                limits: SpendLimits {
+                    month_usd_micros: Some(50_000_000),
+                    ..SpendLimits::default()
+                },
                 ..AgentSettings::default()
+            },
+            scribe: crate::scribe::ScribeSettings {
+                mic_device: Some("wasapi:{0.0.1}".into()),
+                capture_system: false,
+                model: Some("small".into()),
+                retention_days: 3,
+                ..crate::scribe::ScribeSettings::default()
             },
             data_dir: Some(dir.join("data")),
             remote: Some(RemoteBackup {

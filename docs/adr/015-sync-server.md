@@ -86,7 +86,9 @@ backup) or "merge" (both logs; UUIDs never collide). Op-log compaction comes wit
 30-day purge; a device that falls behind it re-bootstraps from the snapshot.
 
 **What stays per device.** `config.json`, the `settings` table and the calendar sync
-tables (ADR 014). Attachment content syncs by hash: uploaded once, downloaded when opened.
+tables (ADR 014). Attachment content syncs by hash: uploaded before its attachment op is
+pushed and downloaded during sync when a live attachment needs a missing local file.
+Settings → Files can purge unused content across replicas (ADR 023).
 
 **Calendar sync** runs on one place at a time: "This device" (default) or "Server". Moving
 it sends the Google client and refresh token to the server, which relinks the events

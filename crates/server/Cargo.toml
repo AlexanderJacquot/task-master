@@ -35,3 +35,7 @@ ureq = "3.4.3"
 url = "2.5"
 
 taskmaster-client = { path = "../client" }
+# Remote MCP for claude.ai and the mobile apps (ADR 024): the same tools as the stdio
+# server, over rmcp's Streamable HTTP transport.
+taskmaster-mcp = { path = "../mcp" }
+rmcp = { version = "3.9.0", default-features = false, features = ["server", "transport-streamable-http-server"] }

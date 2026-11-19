@@ -1,9 +1,11 @@
 # Connecting Google Calendar
 
-task-master currently syncs with Google Calendar through an OAuth desktop client you
-configure in Google Cloud. Google may require public homepage and policy URLs before
-letting you leave Testing, even for personal use. The pages in this repository provide
-those resources; see [publishing the project pages](github-pages.md).
+task-master syncs with Google Calendar through an OAuth desktop client that you create
+in your own Google Cloud project: the app ships no shared Google credentials, so your
+calendar data only ever goes between your devices and Google. Google may require public
+homepage and policy URLs before letting you leave Testing, even for personal use. You
+can point to the project's published pages (below), or publish your own; see
+[publishing the project pages](github-pages.md).
 Design: `docs/adr/014-google-calendar-sync.md`.
 
 ## 1. Create the OAuth client
@@ -13,7 +15,7 @@ Design: `docs/adr/014-google-calendar-sync.md`.
 3. **APIs & Services → OAuth consent screen** (also called "Google Auth Platform"):
    - **Branding:** app name "task-master"; your Google account email as support and
      developer contact. Use the homepage, privacy policy and terms URLs below, after
-     publishing those pages. Add `alexanderjacquot.github.io` to **Authorized domains**.
+     Add the pages' domain to **Authorized domains**.
      A logo is optional; `site/assets/app-icon.png` is available if you want one.
    - **Audience:** user type **External**. While Testing, add your Google address as
      a test user.
@@ -30,7 +32,7 @@ Design: `docs/adr/014-google-calendar-sync.md`.
 4. **APIs & Services → Credentials → Create credentials → OAuth client ID**, type
    **Desktop app**. Copy the **client ID** and **client secret**.
 
-Branding values for this repository's GitHub Pages site:
+Branding values using the project's published pages:
 
 | Google field | Value |
 | --- | --- |
@@ -39,8 +41,8 @@ Branding values for this repository's GitHub Pages site:
 | Application terms of service link | `https://alexanderjacquot.github.io/task-master/terms.html` |
 | Authorized domain | `alexanderjacquot.github.io` |
 
-These URLs become available after [the Pages deployment](github-pages.md). If you use
-another account, repository or custom domain, update the URLs and domain accordingly.
+If you publish the pages from your own fork or domain ([how](github-pages.md)), use
+those URLs and that domain instead.
 
 Scopes to add under **Data Access**:
 
@@ -88,7 +90,7 @@ After joining a task-master sync server, Settings → Calendar offers **Runs on:
 device / Server**. Choosing Server transfers your OAuth client and refresh token and
 keeps syncing when the desktop is closed. Choosing This device waits for the server
 worker to finish and transfers ownership back. Existing events are relinked, not copied.
-See [server setup](server.md#6-connect-the-desktop-m13) for credential storage, leases
+See [server setup](server.md#google-calendar-on-the-server) for credential storage, leases
 and recovery. To disconnect Google, first move it back to This device.
 
 ## Troubleshooting

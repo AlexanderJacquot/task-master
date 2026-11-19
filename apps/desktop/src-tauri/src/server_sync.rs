@@ -17,15 +17,15 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use taskmaster_client::engine::{Engine, EngineError, Host};
 pub use taskmaster_client::engine::{JoinMode, SyncStatus};
-use taskmaster_client::oidc;
+use taskmaster_client::{Client, oidc};
 use taskmaster_core::{Store, now_ms};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tauri_specta::Event;
 
 use crate::config::SyncAccount;
 use crate::google;
-use crate::{AppState, CommandError, CommandResult, internal, invalid};
+use crate::{AppState, CommandError, CommandResult, internal, invalid, with_store};
 
 /// Loopback ports of the OIDC redirect, tried in order (each registered with the provider,
 /// docs/server.md). Windows can reserve a whole block that holds the first one: WSL's
@@ -349,6 +349,12 @@ mod tests {
     }
 
     #[test]
+    // The stand-in for a reserved port (a connected socket's own port) only refuses a
+    // listener on Linux; macOS and Windows let one bind there (ADR 027).
+    #[cfg_attr(
+        not(target_os = "linux"),
+        ignore = "a connected socket's port is not busy here"
+    )]
     fn a_busy_port_nobody_answers_on_is_skipped_at_once() {
         // A connected socket's own port: bound, but nothing listens there, like a port
         // Windows reserved for WSL.
@@ -376,4 +382,53 @@ mod tests {
             Ok(google::Callback::Code("abc".into()))
         );
     }
+}
+
+/// What Settings → Files shows (ADR 023): the files on this device and, when this device
+/// syncs, the ones on the server.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct FilesOverview {
+    pub local: Vec<taskmaster_core::StoredFileInfo>,
+    /// `None` without a sync server, or when it could not be read (see `server_error`).
+    pub server: Option<taskmaster_core::BlobList>,
+    pub server_error: Option<String>,
+}
+
+#[tauri::command(async)]
+#[specta::specta]
+pub fn files_overview(state: State<'_, AppState>) -> CommandResult<FilesOverview> {
+    let local = with_store(&state, |s| s.stored_files())?;
+    let host = Desktop {
+        state: &state,
+        app: None,
+    };
+    let (server, server_error) = match host.account().filter(|a| a.joined) {
+        None => (None, None),
+        Some(account) => match Client::new(&account.url, account.token).list_blobs() {
+            Ok(Some(list)) => (Some(list), None),
+            Ok(None) => (
+                None,
+                Some("the server is older than this app: update it to see its files".into()),
+            ),
+            Err(e) => (None, Some(e.to_string())),
+        },
+    };
+    Ok(FilesOverview {
+        local,
+        server,
+        server_error,
+    })
+}
+
+/// Permanently deletes the content of `hashes` here (the UI deletes their attachments
+/// first), then syncs so the server and the other devices drop it too.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn purge_files(
+    state: State<'_, AppState>,
+    hashes: Vec<String>,
+) -> CommandResult<taskmaster_core::PurgeReport> {
+    let report = with_store(&state, |s| s.purge_files(&hashes))?;
+    state.sync.kick();
+    Ok(report)
 }

@@ -46,6 +46,21 @@ export function loadColumnPrefs(): ColumnPrefs {
   }
 }
 
+/**
+ * Forgets the width and collapsed state of these columns (Reset view), so they open again
+ * and share the board's width equally. A mounted board reads it when it is remounted.
+ */
+export function clearColumnPrefs(statusIds: readonly string[]): void {
+  const prefs = loadColumnPrefs();
+  for (const id of statusIds) delete prefs[id];
+  try {
+    if (Object.keys(prefs).length === 0) localStorage.removeItem(STORAGE_KEY);
+    else localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+  } catch {
+    // Storage unavailable: nothing was remembered either.
+  }
+}
+
 /** The board's measured inner width and its columns, to size unsized columns to fit. */
 export interface ColumnFit {
   /** Width available to the board's content, in px. */

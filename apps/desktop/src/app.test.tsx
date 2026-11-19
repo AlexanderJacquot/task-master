@@ -36,6 +36,9 @@ function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
+        transcript_segments: [],
+        terminal_sessions: [],
         statuses: [],
       } as Changes;
     },
@@ -56,8 +59,8 @@ let store: TaskStore;
 let fake: ReturnType<typeof fakeApi>;
 const existing = task({ title: "Renew passport", status_id: STATUS.todo });
 
-async function renderApp(path = "/inbox") {
-  fake = fakeApi(() => store, [existing]);
+async function renderApp(path = "/inbox", tasks: Task[] = [existing]) {
+  fake = fakeApi(() => store, tasks);
   store = createTaskStore(fake.api);
   await store.getState().hydrate();
   const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
@@ -269,6 +272,28 @@ describe("the board", () => {
     expect(await screen.findByRole("region", { name: "Lane Normal" })).toBeTruthy();
   });
 
+  it("adds a task to a lane from the + by its name", async () => {
+    await openBoard();
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    await pickOption("Swimlanes", "Lanes by priority");
+    const lane = await screen.findByRole("region", { name: "Lane Normal" });
+    fireEvent.click(within(lane).getByRole("button", { name: "Add a task to Normal" }));
+    const input = within(lane).getByPlaceholderText("New task in Normal…");
+    fireEvent.change(input, { target: { value: "Book the photo booth" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(fake.executed.at(-1)?.[0]).toMatchObject({
+        type: "create_task",
+        task: { title: "Book the photo booth", priority: "normal", status_id: STATUS.todo },
+      }),
+    );
+    expect(await within(lane).findByRole("button", { name: "Book the photo booth" })).toBeTruthy();
+    // The field stays for the next task; Escape closes it.
+    expect((input as HTMLInputElement).value).toBe("");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(within(lane).queryByPlaceholderText("New task in Normal…")).toBeNull();
+  });
+
   it("collapses a lane to a strip of drop targets, remembers it, and opens it again", async () => {
     await openBoard();
     fireEvent.click(screen.getByRole("button", { name: "Display" }));
@@ -360,6 +385,163 @@ describe("the board", () => {
     fireEvent.doubleClick(handle);
     expect(handle.getAttribute("aria-valuenow")).toBe(String(initialWidth));
     expect(localStorage.getItem("task-master.board.columns")).toBe("{}");
+  });
+
+  it("resets the view: filters, swimlanes, column widths, collapsed columns and lanes", async () => {
+    await openBoard();
+    const handle = () => screen.getByRole("separator", { name: "Resize To do" });
+    const fitted = handle().getAttribute("aria-valuenow");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Waiting" }));
+    fireEvent.keyDown(handle(), { key: "End" });
+    expect(localStorage.getItem("task-master.board.columns")).toContain('"width":960');
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    await pickOption("Swimlanes", "Lanes by priority");
+    const lane = await screen.findByRole("region", { name: "Lane Normal" });
+    fireEvent.click(within(lane).getByRole("button", { name: /Normal/, expanded: true }));
+    expect(localStorage.getItem("task-master.board.lanes")).toBe('{"priority:normal":true}');
+
+    if (!screen.queryByRole("button", { name: "Reset view" }))
+      fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reset view" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Lane Normal" })).toBeNull());
+    // Still a board, every column open again and sharing the width.
+    expect(await screen.findByRole("list", { name: "Waiting" })).toBeTruthy();
+    expect(handle().getAttribute("aria-valuenow")).toBe(fitted);
+    expect(localStorage.getItem("task-master.board.columns")).toBeNull();
+    expect(localStorage.getItem("task-master.board.lanes")).toBeNull();
+    expect(JSON.parse(localStorage.getItem("task-master.view.inbox") ?? "{}")).toMatchObject({
+      layout: "board",
+      swimlane: "none",
+    });
+  });
+});
+
+describe("multi-select", () => {
+  const a = task({ title: "Alpha", status_id: STATUS.todo, rank: "a1" });
+  const b = task({ title: "Bravo", status_id: STATUS.todo, rank: "a2" });
+  const c = task({ title: "Charlie", status_id: STATUS.todo, rank: "a3" });
+
+  beforeEach(async () => {
+    cleanup();
+    await renderApp("/inbox", [a, b, c]);
+    await screen.findByText("Charlie");
+  });
+
+  /** The title button of a list row (the open panel may show the same title). */
+  const row = (title: string) => {
+    const rows = screen.getAllByTestId("task-row");
+    const el = rows.find((r) => within(r).queryByRole("button", { name: title }));
+    if (!el) throw new Error(`no row ${title}`);
+    return within(el).getByRole("button", { name: title });
+  };
+  const picked = () =>
+    screen
+      .getAllByTestId("task-row")
+      .filter((r) => r.dataset.picked)
+      .map((r) => [a, b, c].find((t) => r.textContent?.includes(t.title))?.title);
+
+  it("picks tasks with Ctrl and Shift+click and sets their status in one batch", async () => {
+    fireEvent.click(row("Alpha"), { ctrlKey: true });
+    fireEvent.click(row("Charlie"), { shiftKey: true });
+    const bar = await screen.findByRole("toolbar", { name: "Selected tasks" });
+    expect(within(bar).getByText("3 selected")).toBeTruthy();
+    // Ctrl+click takes one back out.
+    fireEvent.click(row("Bravo"), { ctrlKey: true });
+    expect(within(bar).getByText("2 selected")).toBeTruthy();
+    expect(screen.queryByRole("complementary", { name: "Task details" })).toBeNull();
+
+    fireEvent.keyDown(within(bar).getByRole("button", { name: "Status" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "In progress" }));
+    await waitFor(() =>
+      expect(fake.executed.at(-1)).toEqual([
+        { type: "update_task", id: a.id, changes: [{ status_id: STATUS.inProgress }] },
+        { type: "update_task", id: c.id, changes: [{ status_id: STATUS.inProgress }] },
+      ]),
+    );
+  });
+
+  it("clears with Esc, and a plain click opens the task instead", async () => {
+    fireEvent.click(row("Alpha"), { ctrlKey: true });
+    await screen.findByRole("toolbar", { name: "Selected tasks" });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByRole("toolbar", { name: "Selected tasks" })).toBeNull(),
+    );
+
+    fireEvent.click(row("Alpha"), { ctrlKey: true });
+    fireEvent.click(row("Bravo"));
+    await waitFor(() =>
+      expect(screen.queryByRole("toolbar", { name: "Selected tasks" })).toBeNull(),
+    );
+    expect(await screen.findByRole("complementary", { name: "Task details" })).toBeTruthy();
+  });
+
+  it("starts from the open task, and keeps the panel open on Esc", async () => {
+    fireEvent.click(row("Alpha"));
+    await screen.findByRole("complementary", { name: "Task details" });
+    fireEvent.click(row("Bravo"), { shiftKey: true });
+    await waitFor(() => expect(picked()).toEqual(["Alpha", "Bravo"]));
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(picked()).toEqual([]));
+    expect(screen.getByRole("complementary", { name: "Task details" })).toBeTruthy();
+  });
+
+  it("selects every task with Ctrl+A and deletes them as one undoable batch", async () => {
+    fireEvent.keyDown(document.body, { key: "a", ctrlKey: true });
+    const bar = await screen.findByRole("toolbar", { name: "Selected tasks" });
+    expect(within(bar).getByText("3 selected")).toBeTruthy();
+    fireEvent.click(within(bar).getByRole("button", { name: "Delete" }));
+    await waitFor(() =>
+      expect(fake.executed.at(-1)).toEqual([
+        { type: "delete_task", id: a.id },
+        { type: "delete_task", id: b.id },
+        { type: "delete_task", id: c.id },
+      ]),
+    );
+    await waitFor(() => expect(screen.queryByText("Alpha")).toBeNull());
+    expect(screen.queryByRole("toolbar", { name: "Selected tasks" })).toBeNull();
+  });
+
+  it("picks cards on the board too", async () => {
+    fireEvent.click(screen.getByRole("button", { name: "board" }));
+    const todo = await screen.findByRole("list", { name: "To do" });
+    fireEvent.click(within(todo).getByRole("button", { name: "Alpha" }), { ctrlKey: true });
+    fireEvent.click(within(todo).getByRole("button", { name: "Bravo" }), { metaKey: true });
+    const bar = await screen.findByRole("toolbar", { name: "Selected tasks" });
+    expect(within(bar).getByText("2 selected")).toBeTruthy();
+    expect(within(todo).getByRole("button", { name: "Alpha" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    fireEvent.keyDown(within(bar).getByRole("button", { name: "Priority" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "High" }));
+    await waitFor(() =>
+      expect(fake.executed.at(-1)).toEqual([
+        { type: "update_task", id: a.id, changes: [{ priority: "high" }] },
+        { type: "update_task", id: b.id, changes: [{ priority: "high" }] },
+      ]),
+    );
+  });
+});
+
+describe("reset view", () => {
+  it("clears filters, search and display choices in the list, keeping the layout", async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Filter" }));
+    await pickOption("Filter by due date", "Overdue");
+    fireEvent.click(screen.getByRole("button", { name: "Display" }));
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Group by" }), { key: "ArrowDown" });
+    fireEvent.click(await screen.findByRole("option", { name: "Group by priority" }));
+    const search = screen.getByRole("searchbox", { name: "Search tasks" }) as HTMLInputElement;
+    fireEvent.change(search, { target: { value: "passport" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Reset view" }));
+
+    await waitFor(() => expect(screen.queryByLabelText("Filter by due date")).toBeNull());
+    expect(search.value).toBe("");
+    expect(JSON.parse(localStorage.getItem("task-master.view.inbox") ?? "{}")).toMatchObject({
+      layout: "list",
+      group_by: "status",
+      filter: { due: null },
+    });
+    expect(await screen.findByText("Renew passport")).toBeTruthy();
   });
 });
 
@@ -643,6 +825,28 @@ describe("redesign", () => {
     );
   });
 
+  it("opens a subtask's full page when it is clicked on the full page", async () => {
+    cleanup();
+    const child = task({ title: "Book the photo", status_id: STATUS.todo, parent_id: existing.id });
+    fake = fakeApi(() => store, [existing, child]);
+    fake.api.snapshot = async () => snapshot({ tasks: [existing, child] });
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    const router = createAppRouter(
+      createMemoryHistory({ initialEntries: [`/task/${existing.id}`] }),
+    );
+    render(
+      <StoreProvider store={store} api={fake.api}>
+        <RouterProvider router={router} />
+      </StoreProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Book the photo" }));
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/task/${child.id}`));
+    expect(router.state.location.search).toEqual({});
+    const title = (await screen.findByLabelText("Title")) as HTMLTextAreaElement;
+    await waitFor(() => expect(title.value).toBe("Book the photo"));
+  });
+
   it("opens the full page with Shift+Enter on a list row", async () => {
     const router = await renderWith("/inbox");
     const row = await screen.findByRole("button", { name: "Renew passport" });
@@ -818,6 +1022,26 @@ describe("redesign", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/project/pb"));
     fireEvent.keyDown(window, { key: "n", ctrlKey: true });
     expect(await screen.findByRole("dialog", { name: "New task in Beta" })).toBeTruthy();
+  });
+
+  it("folds the sidebar's projects, remembers it, and unfolds them for New project", async () => {
+    await renderWith("/inbox", [project({ id: "pa", name: "Alpha" })]);
+    const nav = await screen.findByRole("navigation");
+    const header = within(nav).getByRole("button", { name: "Projects" });
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(header);
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(within(nav).queryByRole("link", { name: "Alpha" })).toBeNull();
+    expect(JSON.parse(localStorage.getItem("task-master.sidebar-sections") ?? "{}")).toEqual({
+      projects: false,
+    });
+
+    await renderWith("/inbox", [project({ id: "pa", name: "Alpha" })]);
+    const again = await screen.findByRole("navigation");
+    expect(within(again).queryByRole("link", { name: "Alpha" })).toBeNull();
+    fireEvent.click(within(again).getByRole("button", { name: "New project" }));
+    expect(within(again).getByRole("link", { name: "Alpha" })).toBeTruthy();
+    expect(within(again).getByPlaceholderText("Project name")).toBeTruthy();
   });
 
   it("renames a project from the sidebar with a double-click", async () => {

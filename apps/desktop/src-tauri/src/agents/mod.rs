@@ -7,8 +7,12 @@
 //! the end of the run is written with `execute_without_undo`. Runs are children of the
 //! app: quitting stops them and marks them interrupted.
 
+pub mod desktop;
+pub mod git;
 pub mod launch;
+pub mod plan;
 pub mod stream;
+pub mod terminal;
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
@@ -63,8 +67,13 @@ fn state_label(state: SessionState) -> &'static str {
         SessionState::Cancelled => "Stopped",
         SessionState::Interrupted => "Interrupted",
         SessionState::Terminal => "In terminal",
+        SessionState::Desktop => "In desktop app",
     }
 }
+
+/// Refusal for a session still open in the Claude desktop app (ADR 029).
+const IN_DESKTOP: &str = "this session is open in the Claude desktop app: continue it there, \
+                          or mark it done first";
 
 /// Kept of a run's stderr, for the error message when it fails.
 const STDERR_TAIL: usize = 4000;
@@ -102,8 +111,26 @@ pub fn opening_prompt(brief: &str, instructions: &str) -> String {
     format!("{}\n\n## What to do\n\n{ask}\n", brief.trim_end())
 }
 
-/// Appended to Claude Code's system prompt for the whole session.
-pub fn session_rules(task_title: &str, task_id: &str, done_status: &str) -> String {
+/// Appended to Claude Code's system prompt for the whole session: the app's rules, then
+/// the user's standing directive for every agent (Settings → Agents), when any.
+pub fn session_rules(
+    task_title: &str,
+    task_id: &str,
+    done_status: &str,
+    directive: Option<&str>,
+) -> String {
+    let rules = app_rules(task_title, task_id, done_status);
+    match directive.map(str::trim).filter(|d| !d.is_empty()) {
+        Some(directive) => format!(
+            "{rules}\n# The user's standing instructions\n\n\
+             The user set these for every agent session they start; follow them unless the \
+             task says otherwise.\n\n{directive}\n"
+        ),
+        None => rules,
+    }
+}
+
+fn app_rules(task_title: &str, task_id: &str, done_status: &str) -> String {
     format!(
         "You were started from task-master, the user's task manager, to work on the task \
          \"{task_title}\" (id `{task_id}`). Its context is in the first message; the \
@@ -122,12 +149,118 @@ pub fn session_rules(task_title: &str, task_id: &str, done_status: &str) -> Stri
     )
 }
 
+/// The first message of a session opened in the Claude desktop app (ADR 029): no system
+/// prompt or MCP config can be passed there, so the rules come first, with the session id
+/// the task-master tools need. `brief` is `None` for the short form (the agent reads the
+/// task with get_task), used when the whole brief would make the link too long.
+pub fn desktop_prompt(
+    task_title: &str,
+    task_id: &str,
+    session_id: &str,
+    done_status: &str,
+    directive: Option<&str>,
+    brief: Option<&str>,
+    instructions: &str,
+) -> String {
+    let mut out = format!(
+        "You were started from task-master, the user's task manager, to work on the task \
+         \"{task_title}\" (id `{task_id}`), as its agent session `{session_id}`.\n\n\
+         Track your work with the task-master MCP tools as you go: create agent tasks for the \
+         steps you plan (they become subtasks of this task), move them to in_progress and \
+         done, add short notes for findings and decisions, and call complete_session with a \
+         summary (done, left, to check) before you finish. This conversation was not started \
+         with a session, so pass session_id `{session_id}` to add_note and complete_session. \
+         If this task has subtasks of its own (the user's), mark each one done with \
+         update_task as soon as you finish it; complete_session refuses while a subtask is \
+         open unless you list it in left_open. The app then moves this task to {done_status} \
+         for the user to check: do not mark it done yourself. If the task-master tools are \
+         not available here, say so and work from this message.\n"
+    );
+    if let Some(directive) = directive.map(str::trim).filter(|d| !d.is_empty()) {
+        out.push_str(&format!(
+            "\n# The user's standing instructions\n\nThe user set these for every agent \
+             session they start; follow them unless the task says otherwise.\n\n{directive}\n"
+        ));
+    }
+    match brief {
+        Some(brief) => {
+            out.push('\n');
+            out.push_str(&opening_prompt(brief, instructions));
+        }
+        None => {
+            let instructions = instructions.trim();
+            let ask = if instructions.is_empty() {
+                "Work on this task in the current folder."
+            } else {
+                instructions
+            };
+            out.push_str(&format!(
+                "\nStart by reading the task with get_task (task_id `{task_id}`).\n\n\
+                 ## What to do\n\n{ask}\n"
+            ));
+        }
+    }
+    out
+}
+
+/// The link that opens a new Code session in the Claude desktop app, in `folder`, with
+/// `prompt` typed in (the user sends it).
+pub fn desktop_link(prompt: &str, folder: &str) -> String {
+    format!(
+        "claude://code/new?q={}&folder={}",
+        percent_encode(prompt),
+        percent_encode(folder)
+    )
+}
+
+/// Every byte but the URL's unreserved characters as `%XX` (spaces as `%20`, not `+`).
+fn percent_encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() * 3);
+    for b in text.bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// Longest link handed to the system: Windows truncates protocol launches near 2 KB.
+fn max_link(os: Os) -> usize {
+    match os {
+        Os::Windows => 2_000,
+        _ => 16_000,
+    }
+}
+
+/// Why sessions cannot open in the desktop app here, if they cannot.
+pub fn desktop_unavailable(os: Os, runtime: AgentRuntime) -> Option<&'static str> {
+    match (os, runtime) {
+        (Os::Linux, _) => Some("The Claude desktop app is for macOS and Windows"),
+        (_, AgentRuntime::Wsl) => Some(
+            "The Claude desktop app runs sessions on this computer, not in WSL; set the \
+             runtime to this computer in Settings → Agents, or run it in the background",
+        ),
+        _ => None,
+    }
+}
+
 /// `--mcp-config` content: our server for this session, and the status picked for agent
 /// work done (the server's default, Review, when `None`).
-pub fn mcp_config(server: &str, db: &str, session_id: &str, done_status: Option<&str>) -> String {
+pub fn mcp_config(
+    server: &str,
+    db: &str,
+    session_id: &str,
+    done_status: Option<&str>,
+    edit_user_tasks: bool,
+) -> String {
     let mut args = vec!["--db", db, "--session", session_id];
     if let Some(id) = done_status {
         args.extend(["--done-status", id]);
+    }
+    if !edit_user_tasks {
+        args.push("--no-edit-user-tasks");
     }
     let config = serde_json::json!({
         "mcpServers": {
@@ -166,6 +299,10 @@ pub fn outcome(
         if let Some(turns) = r.turns {
             let total = session.turns.unwrap_or(0) + turns;
             changes.push(AgentSessionChange::Turns(Some(total)));
+        }
+        if let Some(ms) = r.duration_ms {
+            let total = session.duration_ms.unwrap_or(0) + ms;
+            changes.push(AgentSessionChange::DurationMs(Some(total)));
         }
     }
     // Tools refused for want of an approval: from the result and from the stream.
@@ -255,7 +392,13 @@ fn write_mcp_config(
     let done_status = settings.done_status_id.as_deref();
     std::fs::write(
         &config_file,
-        mcp_config(&server, &db, session_id, done_status),
+        mcp_config(
+            &server,
+            &db,
+            session_id,
+            done_status,
+            settings.edit_user_tasks,
+        ),
     )
     .map_err(|e| format!("cannot write the MCP config: {e}"))?;
     Ok(config_file)
@@ -676,6 +819,20 @@ pub struct AgentStart {
     pub model: Option<String>,
     /// Extra instructions; may be empty.
     pub prompt: String,
+    /// In the background (the default) or in the Claude desktop app.
+    #[serde(default)]
+    pub surface: AgentSurface,
+}
+
+/// Where a session started from a task runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSurface {
+    /// Headless, followed by the app.
+    #[default]
+    Background,
+    /// A new Code session in the Claude desktop app, which the user sends (ADR 029).
+    Desktop,
 }
 
 /// Starts a session on a task. The session is recorded even when Claude Code cannot be
@@ -688,9 +845,15 @@ pub fn agent_start(
     input: AgentStart,
 ) -> CommandResult<AgentSession> {
     let settings = settings(&state)?;
+    if input.surface == AgentSurface::Desktop
+        && let Some(why) = desktop_unavailable(Os::current(), settings.runtime)
+    {
+        return Err(invalid(why));
+    }
     let folder = launch::to_runtime_path(&input.folder, settings.runtime);
     let permission_mode = input
         .permission_mode
+        .clone()
         .unwrap_or_else(|| settings.permission_mode.clone());
     let (brief, title, done_status) = with_store(&state, |s| {
         let snapshot = s.snapshot()?;
@@ -722,14 +885,123 @@ pub fn agent_start(
     })?
     .agent_sessions
     .remove(0);
+    if input.surface == AgentSurface::Desktop {
+        return open_in_desktop(
+            &app,
+            &state,
+            &settings,
+            session,
+            &title,
+            &done_status,
+            &brief,
+            &input,
+        );
+    }
     let prompt = opening_prompt(&brief, &input.prompt);
-    let rules = session_rules(&title, &input.task_id, &done_status);
+    let rules = session_rules(
+        &title,
+        &input.task_id,
+        &done_status,
+        settings.directive.as_deref(),
+    );
     if let Err(message) = spawn_run(&app, &state, &session, false, prompt, Some(rules)) {
         fail(&state, &session.id, &message);
         return Err(invalid(message));
     }
     mark_started(&state, &settings, &input.task_id);
     Ok(session)
+}
+
+/// Marks the session open in the desktop app and opens the link there (ADR 029).
+#[allow(clippy::too_many_arguments)]
+fn open_in_desktop(
+    app: &AppHandle,
+    state: &AppState,
+    settings: &AgentSettings,
+    session: AgentSession,
+    title: &str,
+    done_status: &str,
+    brief: &str,
+    input: &AgentStart,
+) -> CommandResult<AgentSession> {
+    let prompt = |brief: Option<&str>| {
+        desktop_prompt(
+            title,
+            &input.task_id,
+            &session.id,
+            done_status,
+            settings.directive.as_deref(),
+            brief,
+            &input.prompt,
+        )
+    };
+    let mut link = desktop_link(&prompt(Some(brief)), &session.folder);
+    if link.len() > max_link(Os::current()) {
+        link = desktop_link(&prompt(None), &session.folder);
+    }
+    let session = with_store(state, |s| {
+        s.execute_without_undo(vec![Command::UpdateAgentSession {
+            id: session.id.clone(),
+            changes: vec![AgentSessionChange::State(SessionState::Desktop)],
+        }])
+    })?
+    .agent_sessions
+    .remove(0);
+    use tauri_plugin_opener::OpenerExt;
+    if let Err(e) = app.opener().open_url(&link, None::<&str>) {
+        let message = format!("cannot open the Claude desktop app: {e}");
+        fail(state, &session.id, &message);
+        return Err(invalid(message));
+    }
+    mark_started(state, settings, &input.task_id);
+    Ok(session)
+}
+
+/// Brings up the session's conversation in the Claude desktop app (ADR 029 amendment): the
+/// desktop session that runs its recorded conversation, else the one whose first prompt
+/// names the session. Async: it may read transcripts, off the UI thread.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn agent_open_desktop(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: Id,
+) -> CommandResult<()> {
+    if let Some(why) = desktop_unavailable(Os::current(), AgentRuntime::Native) {
+        return Err(invalid(why));
+    }
+    let (session, device) = with_store(&state, |s| {
+        Ok((s.agent_session(&session_id)?, s.device_id().to_owned()))
+    })?;
+    if session.device_id != device {
+        return Err(invalid(
+            "this session was opened in the Claude desktop app on another device; open it there",
+        ));
+    }
+    let root = desktop::sessions_dir()
+        .ok_or_else(|| invalid("cannot find the Claude desktop app's data"))?;
+    let found = desktop::find(&root, &[&session.claude_session_id]).or_else(|| {
+        let projects = terminal::local_projects_dir().ok()?;
+        let since = u64::try_from(session.started_at).unwrap_or(0);
+        let conversation =
+            desktop::conversation_naming(&terminal::transcripts(&projects), &session.id, since)?;
+        desktop::find(&root, &[&conversation])
+    });
+    let Some(found) = found else {
+        return Err(invalid(
+            "cannot find this conversation in the Claude desktop app: send its prompt there \
+             first (it may also have been deleted)",
+        ));
+    };
+    if found.archived {
+        return Err(invalid(
+            "this conversation is archived in the Claude desktop app: unarchive it there",
+        ));
+    }
+    use tauri_plugin_opener::OpenerExt;
+    app.opener()
+        .open_url(desktop::continue_link(&found), None::<&str>)
+        .map_err(|e| invalid(format!("cannot open the Claude desktop app: {e}")))
 }
 
 fn fail(state: &AppState, id: &str, message: &str) {
@@ -758,6 +1030,9 @@ pub fn agent_send(
     }
     if is_live(&state, &session_id)? {
         return Err(invalid("the session is still running"));
+    }
+    if with_store(&state, |s| s.agent_session(&session_id))?.state == SessionState::Desktop {
+        return Err(invalid(IN_DESKTOP));
     }
     let session = with_store(&state, |s| {
         s.execute_without_undo(vec![Command::UpdateAgentSession {
@@ -840,6 +1115,9 @@ pub fn agent_open_terminal(
     if session.device_id != device {
         return Err(invalid("this session ran on another device; open it there"));
     }
+    if session.state == SessionState::Desktop {
+        return Err(invalid(IN_DESKTOP));
+    }
     let os = Os::current();
     let default_terminal = match os {
         Os::Linux => std::env::var("TERMINAL")
@@ -856,15 +1134,23 @@ pub fn agent_open_terminal(
     if was_live {
         stop_for_terminal(&state, &session.id)?;
     }
-    // The session's MCP config, up to date when it can be (the agent keeps its tools).
+    // The session's MCP config, up to date when it can be (the agent keeps its tools). A
+    // session sent to the desktop app has no folder yet: made here, so the terminal gets
+    // the session's tools and records claude's pid like any other.
     let config = state
         .data_dir
         .join("agents")
         .join(&session.id)
         .join("mcp.json");
-    if config.is_file()
-        && let Err(e) = write_mcp_config(&state, &settings, &session.id, session.runtime)
+    if let Some(dir) = config.parent()
+        && let Err(e) = std::fs::create_dir_all(dir)
     {
+        eprintln!(
+            "cannot make the folder of agent session {}: {e}",
+            session.id
+        );
+    }
+    if let Err(e) = write_mcp_config(&state, &settings, &session.id, session.runtime) {
         eprintln!(
             "cannot update the MCP config of agent session {}: {e}",
             session.id
@@ -1046,7 +1332,7 @@ enum Watch {
 }
 
 /// `state`: the session's (`None` once removed). `window_closed`: the terminal process the
-/// app started exited after [`TERMINAL_LAUNCHER`] (launchers exit at once and say nothing).
+/// app started exited in a way that says so ([`launcher_exit_closes_window`]).
 /// `claude`: whether the recorded pid still runs this session's claude, when known.
 fn watch_step(state: Option<SessionState>, window_closed: bool, claude: Option<bool>) -> Watch {
     let gone = claude == Some(false) || (claude.is_none() && window_closed);
@@ -1056,6 +1342,23 @@ fn watch_step(state: Option<SessionState>, window_closed: bool, claude: Option<b
         _ if gone => Watch::Stop,
         _ => Watch::Close,
     }
+}
+
+/// Whether the terminal process the app started, by exiting, says its window closed. Not
+/// when it exits at once (a launcher handing over), and never on macOS: there it is
+/// `osascript`, which returns once Terminal has the script, seconds later when Terminal
+/// had to start first, while claude runs on in the window.
+fn launcher_exit_closes_window(os: Os, quick: bool) -> bool {
+    !quick && os != Os::Mac
+}
+
+/// Whether to check claude's pid on this tick: periodically, and before acting on an end
+/// (the session left the terminal state, or its window looks closed), so a launcher that
+/// exits late never ends a session whose claude still runs.
+fn probe_now(current: Option<SessionState>, window_closed: bool, tick: u32) -> bool {
+    current != Some(SessionState::Terminal)
+        || window_closed
+        || tick.is_multiple_of(TERMINAL_PROBE_EVERY)
 }
 
 /// A terminal this app started for a session.
@@ -1237,7 +1540,7 @@ fn run_watch(state: &AppState, session: &AgentSession, mut child: Option<Termina
                 }
                 break;
             }
-            window_closed = !quick;
+            window_closed = launcher_exit_closes_window(os, quick);
             child = None;
         }
         let Ok(settings) = settings(state) else {
@@ -1248,8 +1551,7 @@ fn run_watch(state: &AppState, session: &AgentSession, mut child: Option<Termina
             .filter(|s| s.deleted_at.is_none())
             .map(|s| s.state);
         let pid = read_pid(&pid_file);
-        // Check the process when it matters: periodically, and before acting on an end.
-        if current != Some(SessionState::Terminal) || tick % TERMINAL_PROBE_EVERY == 0 {
+        if probe_now(current, window_closed, tick) {
             claude = pid.and_then(|pid| {
                 claude_alive(
                     &settings,
@@ -1403,6 +1705,15 @@ pub fn set_agent_settings(
     Ok(settings)
 }
 
+/// The Claude plan's usage limits (5-hour and weekly windows), read with Claude Code's
+/// sign-in where agents run; an `invalid` error carries a message to show as is.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn claude_plan_usage(state: State<'_, AppState>) -> CommandResult<plan::PlanUsage> {
+    let settings = settings(&state)?;
+    plan::fetch(&settings).map_err(invalid)
+}
+
 /// Claude Code as found with these settings (not saved).
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ClaudeCheck {
@@ -1466,6 +1777,14 @@ pub fn list_wsl_distros() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// This device's id: the agent sessions with it ran here, so their folders are paths on
+/// this computer (sessions sync from every device).
+#[tauri::command]
+#[specta::specta]
+pub fn agent_device(state: State<'_, AppState>) -> CommandResult<String> {
+    with_store(&state, |s| Ok(s.device_id().to_owned()))
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn project_folders(state: State<'_, AppState>) -> CommandResult<Vec<ProjectFolder>> {
@@ -1492,9 +1811,129 @@ pub fn set_project_folder(
     })
 }
 
+/// Where the git repository of a project's folder stands; `None` when the project has no
+/// folder on this device, the folder is not in a repository, or git is not installed (the
+/// UI then hides what needs git). Off the main thread: it starts git up to three times.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn project_git(
+    state: State<'_, AppState>,
+    project_id: Id,
+) -> CommandResult<Option<git::GitInfo>> {
+    let folder = with_store(&state, |s| s.project_folders())?
+        .into_iter()
+        .find(|f| f.project_id == project_id);
+    let Some(folder) = folder else {
+        return Ok(None);
+    };
+    if folder.runtime == AgentRuntime::Native && !Path::new(&folder.path).is_dir() {
+        return Ok(None);
+    }
+    let settings = settings(&state)?;
+    Ok(read_git(&settings, folder.runtime, &folder.path))
+}
+
+/// Runs the git commands in `folder` and reads their answers.
+fn read_git(settings: &AgentSettings, runtime: AgentRuntime, folder: &str) -> Option<git::GitInfo> {
+    // Started together: through `wsl.exe` each start costs a noticeable moment.
+    let children: Vec<_> = [git::ROOT, git::BRANCH, git::DESCRIBE]
+        .iter()
+        .map(|args| {
+            let launch = git::command(settings, runtime, folder, args);
+            hidden(&mut process(&launch))
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()
+        })
+        .collect();
+    let outputs: Vec<Option<String>> = children
+        .into_iter()
+        .map(|child| {
+            let out = child?.wait_with_output().ok()?;
+            out.status
+                .success()
+                .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+        })
+        .collect();
+    git::info(
+        outputs[0].as_deref(),
+        outputs[1].as_deref(),
+        outputs[2].as_deref(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Reads a real repository: none, then one commit, then a release tag with work on top.
+    #[test]
+    fn a_folder_is_read_as_a_git_repository_or_not() {
+        let has_git = Process::new("git").arg("--version").output().is_ok();
+        if !has_git {
+            eprintln!("git is not installed: skipped");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!(
+            "tm-git-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let folder = dir.to_str().unwrap();
+        let settings = AgentSettings::default();
+        let read = || read_git(&settings, AgentRuntime::Native, folder);
+        let run = |args: &[&str]| {
+            let ok = Process::new("git")
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(["-c", "tag.gpgsign=false"])
+                .args(args)
+                .current_dir(&dir)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "git {args:?}");
+        };
+
+        // The temporary folder is (normally) in no repository.
+        if read().is_none() {
+            run(&["init", "-q", "-b", "main"]);
+            let fresh = read().expect("a repository");
+            assert_eq!(fresh.branch.as_deref(), Some("main"));
+            assert_eq!((fresh.commit, fresh.tag), (None, None), "no commit yet");
+
+            std::fs::write(dir.join("a.txt"), "1").unwrap();
+            run(&["add", "a.txt"]);
+            run(&["commit", "-q", "-m", "one"]);
+            run(&["tag", "v1.0.0"]);
+            std::fs::write(dir.join("a.txt"), "2").unwrap();
+            run(&["commit", "-q", "-am", "two"]);
+            std::fs::write(dir.join("a.txt"), "3").unwrap();
+
+            let info = read().expect("a repository");
+            assert_eq!(info.tag.as_deref(), Some("v1.0.0"));
+            assert_eq!(info.commits_since_tag, 1);
+            assert!(info.dirty);
+            assert!(info.commit.is_some());
+            let root = std::fs::canonicalize(&info.root).unwrap();
+            assert_eq!(root, std::fs::canonicalize(&dir).unwrap());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn session() -> AgentSession {
         AgentSession {
@@ -1513,6 +1952,7 @@ mod tests {
             summary: None,
             cost_usd_micros: Some(1_000),
             turns: Some(2),
+            duration_ms: Some(4_000),
             error: None,
             created_at: 1,
             updated_at: 1,
@@ -1598,6 +2038,28 @@ mod tests {
         assert_eq!(watch_step(Some(Done), true, None), Watch::Stop);
     }
 
+    #[test]
+    fn a_late_launcher_never_ends_a_session_whose_claude_runs() {
+        use SessionState::{Done, Terminal};
+        // macOS: osascript returns late when Terminal had to start; the window is still
+        // there. Elsewhere a late exit is the window closing.
+        assert!(!launcher_exit_closes_window(Os::Mac, false));
+        assert!(!launcher_exit_closes_window(Os::Mac, true));
+        assert!(launcher_exit_closes_window(Os::Linux, false));
+        assert!(!launcher_exit_closes_window(Os::Linux, true));
+        assert!(launcher_exit_closes_window(Os::Windows, false));
+
+        // A window that looks closed is checked against claude's pid on that very tick
+        // (not only every TERMINAL_PROBE_EVERY), as is a session that left the terminal.
+        assert!(probe_now(Some(Terminal), true, 1));
+        assert!(!probe_now(Some(Terminal), false, 1));
+        assert!(probe_now(Some(Terminal), false, TERMINAL_PROBE_EVERY));
+        assert!(probe_now(Some(Done), false, 1));
+        assert!(probe_now(None, false, 1));
+        // So a launcher that exits late while claude runs keeps the session open.
+        assert_eq!(watch_step(Some(Terminal), true, Some(true)), Watch::Keep);
+    }
+
     /// The real thing on this machine: the terminal script records the pid of what it
     /// `exec`s, the check recognises it by the Claude session id, and closing stops it.
     #[cfg(unix)]
@@ -1669,6 +2131,7 @@ mod tests {
             text: Some("All done.".into()),
             cost_usd_micros: Some(500),
             turns: Some(3),
+            duration_ms: Some(6_000),
             denials: vec!["Write".into()],
         }
     }
@@ -1689,6 +2152,7 @@ mod tests {
                 AgentSessionChange::Summary(Some("All done.".into())),
                 AgentSessionChange::CostUsdMicros(Some(1_500)),
                 AgentSessionChange::Turns(Some(5)),
+                AgentSessionChange::DurationMs(Some(10_000)),
                 AgentSessionChange::Error(Some(
                     "Needed approval, so not used: Bash, Write. Allow them with another \
                      permission mode, or continue in the terminal."
@@ -1802,11 +2266,12 @@ mod tests {
                 &db.display().to_string(),
                 &session.id,
                 None,
+                true,
             ),
         )
         .unwrap();
         let rules = dir.join("rules.md");
-        std::fs::write(&rules, session_rules(&task.title, &task.id, "Review")).unwrap();
+        std::fs::write(&rules, session_rules(&task.title, &task.id, "Review", None)).unwrap();
         let settings = AgentSettings {
             model: Some("haiku".into()),
             ..AgentSettings::default()
@@ -1899,6 +2364,51 @@ mod tests {
     }
 
     #[test]
+    fn a_desktop_session_opens_with_its_rules_and_session_id() {
+        let full = desktop_prompt(
+            "Redesign the header",
+            "t1",
+            "s1",
+            "Review",
+            Some("Use British spelling."),
+            Some("# Task: Redesign the header\n"),
+            "Start with the logo",
+        );
+        assert!(full.contains("pass session_id `s1` to add_note and complete_session"));
+        assert!(full.contains("moves this task to Review"));
+        assert!(full.contains("Use British spelling."));
+        assert!(full.contains("# Task: Redesign the header"));
+        assert!(full.ends_with("## What to do\n\nStart with the logo\n"));
+        // The short form sends the agent to the task instead of carrying it.
+        let short = desktop_prompt("Redesign", "t1", "s1", "Review", None, None, "");
+        assert!(short.contains("get_task (task_id `t1`)"));
+        assert!(!short.contains("standing instructions"));
+        assert!(short.ends_with("Work on this task in the current folder.\n"));
+    }
+
+    #[test]
+    fn the_desktop_link_encodes_the_prompt_and_folder() {
+        assert_eq!(
+            desktop_link("Fix it: 100% & more\né", "/Users/me/my repo"),
+            "claude://code/new?q=Fix%20it%3A%20100%25%20%26%20more%0A%C3%A9\
+             &folder=%2FUsers%2Fme%2Fmy%20repo"
+        );
+        assert_eq!(
+            desktop_link("a", r"C:\Code\x"),
+            "claude://code/new?q=a&folder=C%3A%5CCode%5Cx"
+        );
+    }
+
+    #[test]
+    fn the_desktop_app_is_for_macos_and_windows_on_this_computer() {
+        assert!(desktop_unavailable(Os::Mac, AgentRuntime::Native).is_none());
+        assert!(desktop_unavailable(Os::Windows, AgentRuntime::Native).is_none());
+        assert!(desktop_unavailable(Os::Windows, AgentRuntime::Wsl).is_some());
+        assert!(desktop_unavailable(Os::Linux, AgentRuntime::Native).is_some());
+        assert!(max_link(Os::Windows) < max_link(Os::Mac));
+    }
+
+    #[test]
     fn the_prompt_and_files_carry_the_task() {
         assert_eq!(
             opening_prompt("# Task: X\n\n- Id: `t`\n", "  "),
@@ -1907,13 +2417,33 @@ mod tests {
         assert!(
             opening_prompt("# Task: X", "Only fix the tests").ends_with("Only fix the tests\n")
         );
-        let rules = session_rules("Fix sync", "0190-id", "To check");
+        let rules = session_rules("Fix sync", "0190-id", "To check", None);
         assert!(rules.contains("\"Fix sync\" (id `0190-id`)"));
         assert!(rules.contains("complete_session"));
         assert!(rules.contains("moves this task to To check"));
         assert!(rules.contains("mark each one done"), "{rules}");
+        assert!(!rules.contains("standing instructions"));
+        assert_eq!(
+            session_rules("Fix sync", "0190-id", "To check", Some("  \n ")),
+            rules
+        );
+        let directed = session_rules(
+            "Fix sync",
+            "0190-id",
+            "To check",
+            Some("\nAnswer in French.\nCommit on a branch.\n\n"),
+        );
+        let (head, tail) = directed
+            .split_once("# The user's standing instructions")
+            .unwrap();
+        assert_eq!(head, format!("{rules}\n"));
+        assert!(
+            tail.ends_with("\n\nAnswer in French.\nCommit on a branch.\n"),
+            "{tail}"
+        );
         let picked: serde_json::Value =
-            serde_json::from_str(&mcp_config("tm-mcp", "tm.sqlite", "s1", Some("st1"))).unwrap();
+            serde_json::from_str(&mcp_config("tm-mcp", "tm.sqlite", "s1", Some("st1"), false))
+                .unwrap();
         assert_eq!(
             picked["mcpServers"]["task-master"]["args"],
             serde_json::json!([
@@ -1922,7 +2452,8 @@ mod tests {
                 "--session",
                 "s1",
                 "--done-status",
-                "st1"
+                "st1",
+                "--no-edit-user-tasks"
             ])
         );
         let config: serde_json::Value = serde_json::from_str(&mcp_config(
@@ -1930,6 +2461,7 @@ mod tests {
             r"C:\data\tm.sqlite",
             "s1",
             None,
+            true,
         ))
         .unwrap();
         assert_eq!(

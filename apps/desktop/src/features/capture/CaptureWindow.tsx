@@ -5,6 +5,7 @@ import { DeleteIcon as Trash2, CloseIcon as X } from "../../components/TaskIcons
 import { Button, IconButton } from "../../components/ui";
 import { deleteTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { useFileDrop } from "../shell/useFileDrop";
 import { OpenTaskContext } from "../shell/useOpenTask";
 import { isEditable } from "../shell/useShortcuts";
 import { TaskEditor } from "../task-detail/TaskDetail";
@@ -53,7 +54,8 @@ export const tauriCaptureControls = (): CaptureControls => {
  * The quick-capture window (global hotkey, plan section 6): one input, then out of the way.
  * Hides on Escape, after a capture, or when it loses focus; each opening starts fresh.
  * Shift+Enter saves and grows the window into the full task editor (description,
- * subtasks, files...); it then stays open until Esc or Done, so file pickers can open.
+ * subtasks, files...); it then stays open until Esc, Ctrl+Enter or Done, so file
+ * pickers can open.
  */
 export function CaptureWindow({ controls }: { controls: CaptureControls }) {
   const store = useTaskStore();
@@ -68,6 +70,9 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
   const editingRef = useRef(editing);
   editingRef.current = editing;
   const task = useStoreState((s) => (editing ? s.tasks[editing] : undefined));
+  // Files dragged from the OS onto the editor's attachments and description. The main
+  // window's shell mounts this too; each window listens to its own webview.
+  useFileDrop();
 
   const hide = () =>
     void controls.hide().then(() => {
@@ -108,10 +113,26 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [editing]);
 
+  // Ctrl+Enter saves and closes from anywhere in the editor. Fields save on blur, so
+  // leaving the focused one first commits what is being typed. Capture phase, so the
+  // description editor does not insert a line for it first.
+  useEffect(() => {
+    if (!editing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" || !(e.ctrlKey || e.metaKey) || e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+      hideRef.current();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [editing]);
+
   if (editing) {
     return (
       <OpenTaskContext.Provider value={(id) => (id ? setEditing(id) : hide())}>
-        <div className="tex-sheet flex h-full flex-col overflow-hidden border border-line-strong bg-overlay">
+        <div className="tex-sheet flex h-full flex-col overflow-hidden rounded-xl border border-line-strong bg-overlay">
           <div
             data-tauri-drag-region
             className="flex items-center gap-2 border-b border-line px-5 py-2.5"
@@ -122,7 +143,9 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
             >
               Quick capture
             </p>
-            <span className="text-[12.5px] text-ink-3">Saves as you edit · Esc closes</span>
+            <span className="text-[12.5px] text-ink-3">
+              Saves as you edit · Ctrl+Enter or Esc closes
+            </span>
             <Button
               size="sm"
               className="text-danger hover:text-danger"
@@ -168,7 +191,7 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
   }
 
   return (
-    <div className="tex-sheet flex h-full flex-col overflow-hidden border border-line-strong bg-overlay">
+    <div className="tex-sheet flex h-full flex-col overflow-hidden rounded-xl border border-line-strong bg-overlay">
       <p className="px-5 pt-3 font-display text-[15px] tracking-wide text-accent">Quick capture</p>
       {ready ? (
         <CaptureBox

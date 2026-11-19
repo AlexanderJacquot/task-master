@@ -1,6 +1,7 @@
 // Pure helpers for agent sessions (ADR 017): which session a task shows, where a new one
 // starts, and how numbers read.
 
+import { daysFrom, isoDate } from "../../lib/dates";
 import type {
   AgentRuntime,
   AgentSession,
@@ -10,9 +11,17 @@ import type {
   Task,
 } from "../../lib/types";
 
-/** Still going: a headless run, or a conversation continued in a terminal. */
+/** Still going: a headless run, or a conversation in a terminal or the desktop app. */
 export function isActive(session: AgentSession): boolean {
-  return session.state === "running" || session.state === "terminal";
+  return session.state === "running" || session.state === "terminal" || session.state === "desktop";
+}
+
+/**
+ * Whether a session can open in the Claude desktop app (ADR 029): macOS or Windows, with
+ * agents running on this computer (not in WSL). `userAgent` is the WebView's.
+ */
+export function desktopAppPossible(runtime: AgentRuntime, userAgent: string): boolean {
+  return runtime === "native" && /Macintosh|Mac OS X|Windows/.test(userAgent);
 }
 
 /** The follow-up the Resume button sends to an interrupted session. */
@@ -43,15 +52,52 @@ export function sortedSessions(sessions: Record<string, AgentSession>): AgentSes
   );
 }
 
-/** Folders of earlier sessions for this runtime, newest first, without repeats. */
+export interface SessionDay<T = AgentSession> {
+  /** Local calendar date the sessions started on, `YYYY-MM-DD`. */
+  day: string;
+  sessions: T[];
+}
+
+/** Sessions (sorted newest first) split by the local day they started on. */
+export function sessionsByDay<T extends { started_at: number }>(sessions: T[]): SessionDay<T>[] {
+  const days: SessionDay<T>[] = [];
+  for (const s of sessions) {
+    const day = isoDate(new Date(s.started_at));
+    const last = days[days.length - 1];
+    if (last?.day === day) last.sessions.push(s);
+    else days.push({ day, sessions: [s] });
+  }
+  return days;
+}
+
+/** A day divider's label: "Today", "Yesterday", "Monday, Nov 9", with the year if not this one. */
+export function formatDayHeading(day: string, today: string): string {
+  const days = daysFrom(today, day);
+  if (days === 0) return "Today";
+  if (days === -1) return "Yesterday";
+  const [y, m, d] = day.split("-").map(Number);
+  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    ...(day.slice(0, 4) === today.slice(0, 4) ? {} : { year: "numeric" }),
+  });
+}
+
+/**
+ * Folders of earlier sessions on this device (`device`) for this runtime, newest first,
+ * without repeats. Sessions sync from every device, and another one's folders are paths on
+ * that computer.
+ */
 export function recentFolders(
   sessions: Record<string, AgentSession>,
   runtime: AgentRuntime,
+  device: string,
   limit = 6,
 ): string[] {
   const out: string[] = [];
   for (const s of Object.values(sessions).sort((a, b) => b.started_at - a.started_at)) {
-    if (s.runtime !== runtime || out.includes(s.folder)) continue;
+    if (s.device_id !== device || s.runtime !== runtime || out.includes(s.folder)) continue;
     out.push(s.folder);
     if (out.length === limit) break;
   }
@@ -59,8 +105,9 @@ export function recentFolders(
 }
 
 /**
- * Where a new session on `task` starts: the folder of its last session, else its project's
- * folder on this device (or its area's), else the most recent folder, else nothing.
+ * Where a new session on `task` starts: the folder of its last session on this device
+ * (`device`), else its project's folder on this device (or its area's), else the most
+ * recent folder on this device, else nothing.
  */
 export function defaultFolder(
   task: Task,
@@ -68,8 +115,11 @@ export function defaultFolder(
   folders: ProjectFolder[],
   projects: Record<string, Project>,
   runtime: AgentRuntime,
+  device: string,
 ): string {
-  const own = sessionsOf(sessions, task.id).find((s) => s.runtime === runtime);
+  const own = sessionsOf(sessions, task.id).find(
+    (s) => s.device_id === device && s.runtime === runtime,
+  );
   if (own) return own.folder;
   const byProject = new Map(
     folders.filter((f) => f.runtime === runtime).map((f) => [f.project_id, f.path]),
@@ -81,7 +131,7 @@ export function defaultFolder(
     const fromArea = area ? byProject.get(area) : undefined;
     if (fromArea) return fromArea;
   }
-  return recentFolders(sessions, runtime, 1)[0] ?? "";
+  return recentFolders(sessions, runtime, device, 1)[0] ?? "";
 }
 
 export const STATE_LABEL: Record<SessionState, string> = {
@@ -91,6 +141,7 @@ export const STATE_LABEL: Record<SessionState, string> = {
   cancelled: "Stopped",
   interrupted: "Interrupted",
   terminal: "In terminal",
+  desktop: "In desktop app",
 };
 
 /** Models offered when sending to an agent; the values are Claude Code `--model` aliases. */
@@ -122,9 +173,10 @@ export const PERMISSION_MODES: Array<{ value: string; label: string; hint: strin
   },
 ];
 
-/** `$0.0045`, `$1.20`. */
-export function formatCost(micros: number | null): string | null {
-  if (micros === null) return null;
+/** `$0.0045`, `$1.20`, `$0.00`. */
+export function formatCost(micros: number | null | undefined): string | null {
+  if (micros === null || micros === undefined) return null;
+  if (micros === 0) return "$0.00";
   const dollars = micros / 1_000_000;
   return `$${dollars < 0.1 ? dollars.toFixed(4) : dollars.toFixed(2)}`;
 }

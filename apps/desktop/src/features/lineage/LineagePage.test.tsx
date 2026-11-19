@@ -42,6 +42,9 @@ async function setup(
         time_blocks: [],
         agent_sessions: [],
         agent_notes: [],
+        meetings: [],
+        transcript_segments: [],
+        terminal_sessions: [],
       };
     },
     undo: async () => null,
@@ -520,6 +523,70 @@ it("makes tasks parents or subtasks from the side panel", async () => {
   expect(commands).toHaveLength(3);
 });
 
+it("links a card dragged onto the side panel to the selected task", async () => {
+  const release = task({ title: "Release" });
+  const notes = task({ title: "Write notes" });
+  place([release, notes]);
+  const { store, commands } = await setup([release, notes]);
+  // jsdom has no layout: say what is under the pointer by hand.
+  let under: Element | null = null;
+  const original = document.elementFromPoint;
+  document.elementFromPoint = (() => under) as typeof document.elementFromPoint;
+  try {
+    const canvas = screen.getByRole("application", { name: "Task canvas" });
+    const panel = screen.getByRole("complementary", { name: "Lineage panel" });
+    const zone = (name: string) =>
+      document.querySelector(`[data-drop-zone="${name}"]`) as HTMLElement;
+    fireEvent.click(screen.getByRole("button", { name: "Select Release" }));
+    const card = screen.getByRole("button", { name: "Select Write notes" });
+    const node = card.parentElement as HTMLElement;
+
+    // Over the canvas the panel stays as it is.
+    under = canvas;
+    drag(card, { x: 500, y: 150 }, { x: 560, y: 200 }, false);
+    expect(screen.queryByRole("region", { name: "Drop to link" })).toBeNull();
+    // Over the panel it turns into drop zones; dropping on one links the card.
+    under = panel;
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 900, clientY: 200 });
+    expect(screen.getByRole("region", { name: "Drop to link" }).textContent).toContain(
+      "Write notes",
+    );
+    under = zone("subtask");
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 900, clientY: 300 });
+    expect(zone("subtask").className).toContain("border-accent");
+    fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 900, clientY: 300 });
+    await waitFor(() => expect(store.getState().tasks[notes.id]?.parent_id).toBe(release.id));
+    await waitFor(() => expect(store.getState().pending).toBe(0));
+    expect(commands.at(-1)).toEqual([{ type: "set_parent", id: notes.id, parent_id: release.id }]);
+    // The card went back where the drag started; the overlay is gone.
+    expect(node.style.left).toBe("450px");
+    expect(screen.queryByRole("region", { name: "Drop to link" })).toBeNull();
+
+    // Already its subtask, and it can't become the parent (a loop): dropping does nothing.
+    under = panel;
+    drag(card, { x: 500, y: 150 }, { x: 900, y: 200 }, false);
+    expect(zone("subtask").dataset.allowed).toBe("false");
+    expect(zone("parent").dataset.allowed).toBe("false");
+    expect(zone("dependent").dataset.allowed).toBe("true");
+    under = zone("parent");
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 900, clientY: 250 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 900, clientY: 250 });
+    // A dependent works.
+    under = panel;
+    drag(card, { x: 500, y: 150 }, { x: 900, y: 200 }, false);
+    under = zone("dependent");
+    fireEvent.pointerMove(canvas, { pointerId: 1, clientX: 900, clientY: 400 });
+    fireEvent.pointerUp(canvas, { pointerId: 1, clientX: 900, clientY: 400 });
+    await waitFor(() =>
+      expect(store.getState().tasks[notes.id]?.dependency_ids).toEqual([release.id]),
+    );
+    expect(commands).toHaveLength(2);
+    expect(node.style.left).toBe("450px");
+  } finally {
+    document.elementFromPoint = original;
+  }
+});
+
 it("hides and shows the side panel and remembers it", async () => {
   const a = task({ title: "Plan" });
   place([a]);
@@ -616,11 +683,15 @@ it("shows what blocks a task on its page and opens Lineage on it", async () => {
 it("arranges cards in lanes by epic and moves a card to another epic by dropping it there", async () => {
   const alpha = epic({ id: "e-alpha", name: "Alpha", rank: "a" });
   const beta = epic({ id: "e-beta", name: "Beta", rank: "b" });
+  const empty = epic({ id: "e-empty", name: "Empty", rank: "c" });
   const a = task({ title: "Plan", epic_id: alpha.id });
   const b = task({ title: "Build", epic_id: alpha.id, dependency_ids: [a.id] });
   const c = task({ title: "Loose" });
-  place([a, b, c]);
-  const { store, commands } = await setup([a, b, c], false, "/lineage", { epics: [alpha, beta] });
+  const d = task({ title: "Ship", epic_id: beta.id });
+  place([a, b, c, d]);
+  const { store, commands } = await setup([a, b, c, d], false, "/lineage", {
+    epics: [alpha, beta, empty],
+  });
   const node = (title: string) =>
     screen.queryByRole("button", { name: `Select ${title}` })?.parentElement ?? null;
   // Freeform cards show their epic.
@@ -630,6 +701,8 @@ it("arranges cards in lanes by epic and moves a card to another epic by dropping
   expect(lane("Alpha")).toBeTruthy();
   expect(lane("Beta")).toBeTruthy();
   expect(lane("No epic")).toBeTruthy();
+  // An epic without cards in view gets no lane.
+  expect(screen.queryByRole("region", { name: "Lane Empty" })).toBeNull();
   // The lane names the epic, so the cards don't.
   expect(node("Plan")?.querySelector("[data-card-epic]")).toBeNull();
   const top = (element: HTMLElement | null) => Number.parseFloat(element?.style.top ?? "NaN");
@@ -661,6 +734,23 @@ it("arranges cards in lanes by epic and moves a card to another epic by dropping
   expect(JSON.parse(localStorage.getItem("task-master.lineage-filter") ?? "{}").arrange).toBe(
     "epic",
   );
+});
+
+it("shows an empty epic lane only when the epic is picked in the filter", async () => {
+  const alpha = epic({ id: "e-alpha", name: "Alpha", rank: "a" });
+  const empty = epic({ id: "e-empty", name: "Empty", rank: "b" });
+  const a = task({ title: "Plan", epic_id: alpha.id });
+  place([a]);
+  await setup([a], false, "/lineage", { epics: [alpha, empty] });
+  await pickOption("Arrange lineage", "Lanes by epic");
+  expect(screen.getByRole("region", { name: "Lane Alpha" })).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Lane Empty" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Lane No epic" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Filter lineage by epic" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Alpha" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Empty" }));
+  expect(await screen.findByRole("region", { name: "Lane Empty" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Lane Alpha" })).toBeTruthy();
 });
 
 it("arranges lanes by project and moves a card to another project", async () => {
@@ -779,4 +869,80 @@ it("shows or hides subtasks on the canvas and remembers the choice", async () =>
   );
   fireEvent.click(toggle);
   expect(await screen.findByRole("button", { name: "Select Small step" })).toBeTruthy();
+});
+
+it("saves the arranged canvas as a named view, reopens it as saved, and saves, reverts or deletes edits", async () => {
+  const a = task({ title: "Plan" });
+  const b = task({ title: "Build", dependency_ids: [a.id] });
+  const c = task({ title: "Unrelated" });
+  place([a, b, c]);
+  const { commands } = await setup([a, b, c]);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Connected tasks only" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Select Unrelated" })).toBeNull(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save as view" }));
+  const name = screen.getByPlaceholderText("Name of the new view");
+  fireEvent.change(name, { target: { value: "Release chain" } });
+  fireEvent.keyDown(name, { key: "Enter" });
+
+  await waitFor(() => expect(commands.at(-1)?.[0]).toMatchObject({ type: "create_view" }));
+  expect(commands.at(-1)?.[0]).toMatchObject({
+    view: {
+      name: "Release chain",
+      spec: {
+        scope: { kind: "all" },
+        lineage: {
+          around: null,
+          linked_only: true,
+          arrange: "free",
+          positions: { [a.id]: { x: 100, y: 100 }, [b.id]: { x: 450, y: 100 } },
+        },
+      },
+    },
+  });
+  // Only the cards on the canvas keep a place.
+  expect(JSON.stringify(commands.at(-1))).not.toContain(c.id);
+
+  // It opens as the saved view, listed under Saved views.
+  expect(await screen.findByRole("heading", { name: /Release chain/ })).toBeTruthy();
+  const nav = screen.getByRole("navigation");
+  fireEvent.click(within(nav).getByRole("button", { name: /Saved views/ }));
+  expect(within(nav).getByRole("link", { name: "Release chain" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Select Unrelated" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save view" })).toBeNull();
+  const left = () =>
+    (screen.getByRole("button", { name: "Select Plan" }).parentElement as HTMLElement).style.left;
+  const nudge = () =>
+    fireEvent.keyDown(screen.getByRole("button", { name: "Select Plan" }), {
+      key: "ArrowLeft",
+      altKey: true,
+    });
+
+  // Moving a card is a draft: Revert puts it back, and this machine's own canvas is untouched.
+  nudge();
+  expect(left()).toBe("84px");
+  expect(loadCanvas().positions[a.id]).toEqual({ x: 100, y: 100 });
+  fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
+  await waitFor(() => expect(left()).toBe("100px"));
+  expect(screen.queryByRole("button", { name: "Save view" })).toBeNull();
+
+  // A filter change is a draft too.
+  fireEvent.click(screen.getByRole("checkbox", { name: "Connected tasks only" }));
+  expect(await screen.findByRole("button", { name: "Save view" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("checkbox", { name: "Connected tasks only" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Save view" })).toBeNull());
+
+  nudge();
+  fireEvent.click(await screen.findByRole("button", { name: "Save view" }));
+  await waitFor(() => expect(commands.at(-1)?.[0]).toMatchObject({ type: "update_view" }));
+  expect(commands.at(-1)?.[0]).toMatchObject({
+    changes: [{ spec: { lineage: { positions: { [a.id]: { x: 84, y: 100 } } } } }],
+  });
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Save view" })).toBeNull());
+  expect(left()).toBe("84px");
+
+  fireEvent.click(screen.getByRole("button", { name: "Delete view" }));
+  await waitFor(() => expect(commands.at(-1)?.[0]).toMatchObject({ type: "delete_view" }));
+  expect(await screen.findByRole("heading", { name: "Lineage" })).toBeTruthy();
 });

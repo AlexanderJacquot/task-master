@@ -13,6 +13,715 @@ two exists. Milestones P0 (core preparation) to P8 (App Store). **P0 is done** o
 `p1-ios-walking-skeleton` and green on CI (the app runs in the simulator and syncs). Next: P2, starting
 with phone mockups of the read screens.
 
+**Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
+desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
+folders only from this device's sessions, devenv for agents. Schema 17, unchanged.
+
+**Release 0.24.0** (2026-11-19, on `main`; notes `docs/releases/0.24.0.md`): M21 terminal
+sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
+Schema 17: update the sync server with the app.
+
+**devenv builds with Xcode, and for iOS** (2026-11-19, on `main`): this Mac now has Xcode
+27.2 and the iOS 27.2 simulators (from the App Store, in the nix-darwin config with
+xcodegen, xcbeautify, swiftlint and XcodeBuildMCP; Claude Code has the `xcode` and
+`XcodeBuildMCP` MCP servers and Xcode's agent skills in `~/.claude/skills`). `devenv.nix`:
+`apple.sdk = null` on macOS, so the shell no longer sets `DEVELOPER_DIR`/`SDKROOT` to a Nix
+macOS 14.4 SDK or puts xcbuild's stand-in `xcrun` first (they hid Xcode and the iOS SDKs);
+Rust targets `aarch64-apple-ios` and `aarch64-apple-ios-sim`; for those two targets cc-rs
+and cargo use `/usr/bin/clang` and `/usr/bin/ar` (the Nix clang wrapper adds
+`-mmacos-version-min`, which clang rejects next to an iOS target). Checks in a fresh devenv
+shell without the Nix SDK: clippy, `cargo test --workspace` (332 passed, 8 ignored), biome,
+typecheck, `pnpm test` (550 passed, 2 skipped); `taskmaster-core` builds for both iOS
+targets. A shell entered before this change keeps the old variables: reload it. Later:
+`scripts/ios/build-xcframework.sh` on `p1-ios-walking-skeleton` calls `rustup target add`,
+and devenv's Rust has no rustup (the targets come from `devenv.nix`).
+
+**Back to the desktop app's conversation** (2026-11-19, on `main` from branch `desktop-open-session`;
+ADR 029 second amendment): the "In desktop app" state (session card, Agents page) is a
+button. `agent_open_desktop` (shell `agents/desktop.rs`) finds the desktop app's session
+record (`<app data>/Claude/claude-code-sessions/*/*/local_*.json`, `cliSessionId` or
+`lastAssistantCliSessionId`) for the recorded conversation id, else for the transcript
+since the session's start whose first lines name the session id, and opens
+`claude://code/continue?session=local_<id>`. Refused (reason on the card/row) on Linux,
+for another device's session, when not found, or when archived there. Tests: shell
+`desktop::tests` (4), `agents.test.tsx` (click on the card; the error on the Agents page).
+Found by reading the desktop app 6.6395's link handler. Later: offer the same on ended
+sessions that ran in the desktop app (no marker of that once they are done).
+
+**Agent folder from another device** (2026-11-19, on `main`, ADR 017 amended): Send to
+Claude prefilled the task's last session folder (and recent folders) from sessions synced
+from another computer, so a macOS start got `/home/alex/...` and failed with "the folder
+... does not exist". The picker now takes folders only from this device's sessions: shell
+command `agent_device` (this device's id; bindings regenerated), `defaultFolder` and
+`recentFolders` take it. Test: `ignores folders of sessions that ran on another device`.
+Checks: biome, typecheck, `pnpm test` (549 passed, 2 skipped), clippy, `cargo test
+--workspace` (328 passed, 8 ignored). Not yet tried in the running app.
+
+**devenv for agents** (2026-11-19, on `main`): `.envrc` loads `devenv direnvrc` before
+`use devenv` (direnv's own library had no `use_devenv` on this Mac); devenv provides `cmake`
+on every platform (whisper-rs-sys), so `nix shell nixpkgs#cmake` is no longer needed; a
+SessionStart hook in `.claude/settings.json` appends `direnv export bash` to
+`$CLAUDE_ENV_FILE`, so Claude Code's shell has cargo, cmake and pnpm. Checked by running
+the hook's command by hand; it takes effect in the next session.
+
+**Fold the sidebar's projects** (2026-11-19, on `main`): the Projects header
+is a fold toggle like Epics (open by default, remembered per machine as `projects` in
+`task-master.sidebar-sections`; `useOpenSection` is shared with `Collapsible`); New
+project unfolds it. Test: app `folds the sidebar's projects, remembers it, and unfolds
+them for New project`. Checks: biome, typecheck, `pnpm test` (548 passed, 2 skipped),
+clippy and `cargo test` without `taskmaster-desktop` (239 passed, 2 ignored): with
+`nix shell nixpkgs#cmake`, whisper-rs-sys's CMake setup failed here (`add_subdirectory
+given source "tests"`), so the shell crate was not built. Not yet seen in the running app.
+
+**Fixes from the macOS run** (2026-11-19, branch `macos-agent-fixes`; ADR 029 amendment,
+ADR 028 amended): (1) terminal watcher: `launcher_exit_closes_window` (never on macOS,
+where the child is `osascript`) and `probe_now` (claude's pid is checked on the tick a
+window looks closed), so a launcher that exits late never ends a session whose claude
+runs. (2) Desktop sessions: `fill_own_run` takes a transcript's turns and time without
+a cost; the reader's third time measure is each prompt's span (`is_prompt`, per
+`promptId`); the scan cache carries `READER` (2) so finished transcripts are read again.
+(3) Open in terminal on a session that was in the desktop app makes its `agents/<id>/`
+folder and MCP config, so its pid is recorded and Mark done stops claude. Tests: shell
+`a_late_launcher_never_ends_a_session_whose_claude_runs`,
+`a_desktop_transcript_without_totals_gets_the_time_of_its_turns`; core
+`a_desktop_transcript_without_a_cost_still_gives_its_turns_and_time`. Tried live on a
+debug bundle: Open in terminal with Terminal.app not running stays In terminal and Mark
+done stops claude (also for a desktop session); the desktop session got its time (57 s,
+no cost). docs/agents.md: time and turns, cost when written, the trust question. All
+checks pass: fmt, clippy, `cargo test --workspace` (328 passed, 8 ignored), biome,
+typecheck, `pnpm test` (547 passed, 2 skipped).
+
+**M21/M22 tried on macOS** (2026-11-19, on `main` at 1ee6a11, pulled from the GitHub
+mirror: the Forgejo host did not resolve). Checks: biome, typecheck, `pnpm test` (547
+passed, 2 skipped), clippy, `cargo test --workspace` (325 passed, 8 ignored; cmake from
+`nix shell nixpkgs#cmake`, devenv has none on macOS), `real_claude` and `real_transcripts`
+pass. Live, on a debug bundle with identifier `space.solarnexus.taskmaster.dev` (its own
+database): Check finds `~/.local/bin/claude` through the login shell; a background run,
+a follow-up, Open in terminal and Mark done (claude stopped) work; Run → In the Claude
+desktop app opens the link, the agent's note and summary arrive through the local server
+with `session_id`, and the conversation id is recorded. ADR 029's open questions: the
+desktop app writes transcripts to `~/.claude/projects` and gives `CLAUDE_CODE_SESSION_ID`
+(and `CLAUDE_CODE_ENTRYPOINT=claude-desktop`) to stdio MCP servers (a probe server). Found:
+(1) Open in terminal while Terminal.app is not running: `osascript` exits after
+`TERMINAL_LAUNCHER` (3 s), `run_watch` takes it for a closed window before probing the
+pid, marks the session done at once and stops watching, so that claude is never stopped.
+(2) The desktop app writes `cost-state` only now and then (none in the test session,
+none in 3 of 6 desktop transcripts here, one 85 min stale in another), and
+`fill_own_run` (core `terminal.rs`) skips a transcript without a cost, turns and time
+too: desktop sessions show no cost, time or turns. (3) The Folder field gets macOS Smart
+Dashes (`--` typed becomes an em dash); the bad path is kept in the recent folders. (4) The
+first Send in the desktop app for a folder it does not trust yet only asks for trust; the
+prompt had to be sent again. (5) A debug bundle opened from Finder panics (bindings
+export to `../src` from cwd `/`); run its binary from `apps/desktop/src-tauri`.
+
+**M22 Sessions in the Claude desktop app** (2026-11-19, branch `m22-desktop-app`; ADR
+029): "Send to agent" can open the task in the Claude desktop app
+(`claude://code/new?q=&folder=`) instead of running headless. Core: session state `desktop`
+(active; any device may record it while open), `AgentSessionChange::ClaudeSessionId`; the
+transcript import fills a desktop session's (or an ended costless session's) cost, time
+and requests, never a running headless one. MCP: `add_note`/`complete_session` take
+`session_id` when the server has none (desktop sessions only); the stdio server records
+`CLAUDE_CODE_SESSION_ID`; `remove_agent_session` uses `is_active`. Shell: `AgentSurface`
+on `AgentStart`, `desktop_prompt` (rules with the session id, then directive, brief and
+instructions; a short form with get_task past 2,000 characters on Windows, 16,000
+elsewhere), `desktop_link`, `desktop_unavailable` (Linux and WSL refused); follow-ups
+and Open in terminal refused while open there. UI: Run choice in Send to agent
+(remembered; permissions and model hidden), "In desktop app" with Mark done, sidebar
+count via `isActive`. Docs: agents.md, mcp.md. Tests: core (2), MCP (1), shell (3),
+`agents.test.tsx` and `sessions.test.ts`. Not tried with the real desktop app (needs
+macOS or Windows): whether it writes transcripts to `~/.claude/projects` and gives
+`CLAUDE_CODE_SESSION_ID` to MCP servers. No migration (ships with schema 17).
+`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test
+--workspace --locked` (with `WHISPER_DONT_GENERATE_BINDINGS=1`), `pnpm biome ci .`,
+`pnpm typecheck`, `pnpm test` (547 passed, 2 skipped) pass.
+
+**M21 Terminal sessions** (2026-11-18, branch `m21-terminal-usage`; ADR 028): Claude Code
+sessions run in a terminal, outside the app, now count on the Agents page with the app's
+own agent sessions. Core: migration 17 (`terminal_sessions`, synced and exported),
+`RecordTerminalSessions` (upsert by Claude session id; the app's own runs and removed
+rows skipped; project from this device's project folders, filled in later for a folder
+that gains one unless set by hand), `UpdateTerminalSession` (project, task),
+`DeleteTerminalSession`; `folder_project`. Shell `agents/terminal.rs`: reads
+`<config>/projects/*/*.jsonl` where agents run (WSL through `wslpath -w`), only changed
+files (`terminal-sessions.json` in the data folder), 15 s after start and every 5 min, or
+on demand (IPC `scan_terminal_sessions`). Setting `import_terminal_sessions` (on). Cost is
+Claude Code's own `cost-state` total, time the sum of `turn_duration`. UI: `usage.ts`
+counts both kinds through `Counted`; Agents page "Sessions" filter (all / sent from tasks
+/ run in a terminal), terminal rows in Recent sessions with a project picker and remove,
+"read them now"; spend limits count terminal spend too (Send to agent included); "Inbox"
+is "No project" in the filter and breakdown. Settings → Agents → Terminal. Tests: core
+`tests/terminal_sessions.rs` (7) and `folder_project`; shell `agents::terminal` (5, plus
+an ignored `real_transcripts` that reads this machine's: 219 sessions, $513.53, the same
+as summing `cost-state` directly, 3.7 s in debug); `usage.test.ts`, `agents.test.tsx`
+(terminal sessions). Not tried in the running app nor with WSL from Windows. Schema 17:
+update the sync server with the app. `cargo fmt`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo test --workspace --locked` (with
+`WHISPER_DONT_GENERATE_BINDINGS=1`, see Later), `pnpm biome ci .`, typecheck, `pnpm test`
+(545 passed, 2 skipped) pass.
+
+**Release 0.23.2** (2026-11-18, on `main`; notes `docs/releases/0.23.2.md`): 0.23.1's
+macOS builds failed: tauri-cli builds for macOS 10.13 by default (MACOSX_DEPLOYMENT_TARGET)
+and whisper.cpp needs `std::filesystem` (10.15). `tauri.macos.conf.json` sets
+`minimumSystemVersion` 10.15. The `native` CI job cannot catch this (plain cargo, no
+deployment target). 0.23.1 shipped to Windows and Linux only.
+
+**Release 0.23.1** (2026-11-18, on `main`; notes `docs/releases/0.23.1.md`): 0.23.0 was
+tagged but never published: its `native` Windows check failed compiling whisper-rs-sys,
+whose shipped bindings are Linux-shaped. The `native` job had never run on Windows (M19
+was not pushed), and three more things surfaced: (1) `.cargo/config.toml` no longer forces
+the shipped bindings (bindgen with libclang on the Windows/macOS runners, fallback to them
+elsewhere); (2) whisper.cpp is built with the static C runtime like sherpa-onnx
+(`CMAKE_POLICY_DEFAULT_CMP0091=NEW`, `CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`, else
+LNK2038); (3) `build.rs` embeds the Common Controls 6 manifest dependency in every
+executable through the linker instead of tauri-build's app-only resource (test
+executables died with STATUS_ENTRYPOINT_NOT_FOUND); (4) the busy-port test runs on Linux
+only (ADR 027). Otherwise the same as 0.23.0:
+
+**Release 0.23.0**: M19
+(recording) and M20 (transcription) merged with 0.22.2's macOS ad-hoc signing. Since that
+signs with the hardened runtime, `src-tauri/entitlements.plist` adds
+`com.apple.security.device.audio-input` (else macOS denies the microphone without asking),
+and `release.yml` checks it is signed in. Schema 16: update the sync server with the app.
+
+**M20 Scribe: transcription and speakers** (2026-11-18, branch `m20-scribe-transcribe`,
+released in 0.23.0 with M19; ADR 025 and ADR 026 "M20 notes"): recordings are transcribed
+on the device and checked by hand. Core: migration 16 (`transcript_segments` + FTS,
+`meetings.speakers`), commands `SetTranscript` (one batch, state `review`),
+`UpdateSegment`, `SplitSegment`, `DeleteSegment`, `ReassignSpeaker`, `UpdateMeeting
+speaker_name`; reads `meeting_transcript`, `search_transcripts`; sync and export carry
+them. Shell `src-tauri/src/scribe/`: `models.rs` (pinned downloads, resume, SHA-256),
+`engine.rs` (whisper-rs 0.16 with our own Silero VAD: whisper.cpp ignores its VAD option
+under `whisper_full_with_state`; sherpa-onnx 2.0.1 static diarization), `merge.rs` (words +
+turns → segments, echo removal, speaker changes snapped to sentence ends), `pipeline.rs`
+(cached steps), `transcribe.rs` (IPC, queue worker, resume, hourly expiry),
+`retention.rs`. UI: transcription row and audio expiry notice under the player,
+`features/scribe/TranscriptPanel.tsx` (virtualized lines, play from a line, follow
+playback, speaker menu, name / "Same voice as…", correct, split, delete, Validate / Check
+again), Settings → Scribe → Transcription (models, language, auto-transcribe, days kept),
+Ctrl+K meetings and transcript lines (`/meeting/$id?line=`). Tests: core
+`tests/transcripts.rs` (7); scribe `merge` (6), `engine` (2), `models` (5), `retention`;
+`lib/transcript.test.ts` (6), `features/scribe/transcript.test.tsx` (6), palette.
+Tried for real in WSL with the `tiny` model on synthesized speech (two voices + mic): right
+speaker on every line, starts within 0.2 s. Not tried on Windows/macOS hardware (the
+`native` CI job builds and tests there), nor in the running app. Schema 16: update the sync
+server with the app. `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D
+warnings`, `cargo test --workspace --locked`, `pnpm biome ci .`, `pnpm typecheck`,
+`pnpm test` (539 passed, 2 skipped) pass.
+
+**M19 Scribe: recording** (2026-11-15, branch `m19-scribe-capture`; ADR 025 "M19 notes",
+ADR 026 "M19 spike"): the meeting page records the microphone and the computer's sound
+(Windows WASAPI loopback, macOS 14.6+ CoreAudio process tap, both through cpal 0.18.2;
+Linux says recording is unsupported). `src-tauri/src/scribe/`: `capture.rs` (cpal, streams
+on their own thread; stub off Windows/macOS), `audio.rs` (mixdown, windowed-sinc resampler
+to 16 kHz, levels), `recorder.rs` (two aligned tracks, silence across gaps, first chunk at
+its time), `wav.rs` (header rewritten every second, `repair` after a crash), `opus.rs` (Ogg
+Opus via opus-rs =0.1.42 + ogg 0.9.2, 24 kb/s), `files.rs` (folder layout,
+`recording.json`, byte ranges), `mod.rs` (IPC: `scribe_status/devices/settings/
+set_scribe_settings/start/stop/audio/recover/purge_audio/audio_usage`, events
+`ScribeLevels`, `ScribeChanged`; `tm://localhost/meeting-audio/<id>/<track>` with ranges;
+resume on start, clean stop on quit). UI: `lib/scribe.ts` (own store and `ScribeApi`),
+`features/scribe/Recording.tsx` (recording bar on every page, meeting page panel: Record,
+live levels and consent reminder, Keep/Discard after an interruption, a two-track player,
+Delete audio), Settings → Scribe (microphone, computer's sound, reminder, audio list) and
+the audio list in Settings → Files; quitting while recording asks. `Info.plist` usage
+strings for macOS. CI: new `native` job lints and tests the desktop crate on Windows and
+macOS. Tests: scribe `audio` (5), `wav` (3), `opus` (2), `recorder` (3), `files` (3),
+config roundtrip; `lib/scribe.test.ts` (3), `features/scribe/recording.test.tsx` (4).
+The capture code was checked with clippy for `x86_64-pc-windows-msvc` and
+`aarch64-apple-darwin` from WSL (a scratch crate including the real files); never run on a
+real device: WSL has no audio. `cargo fmt --check`, `cargo clippy --workspace --all-targets
+-- -D warnings`, `cargo test --workspace --locked`, `pnpm biome ci .`, `pnpm typecheck`,
+`pnpm test` (526 passed, 2 skipped) pass.
+**Release 0.22.2** (2026-11-18, on `main`; notes `docs/releases/0.22.2.md`): the macOS
+work below (ad-hoc signing, capture panel, file drops, flush title bar) and devenv. No
+migration. `release.yml`'s release body was still 0.21.0's text; now 0.22.2's.
+
+**macOS: ad-hoc signing, capture over full-screen apps, devenv** (2026-11-18, on `main`,
+uncommitted; ADR 027). (1) `src-tauri/tauri.macos.conf.json` ad-hoc signs the bundle
+(`signingIdentity: "-"`, sidecar included), so downloads are no longer "damaged";
+Gatekeeper still asks once (Privacy & Security → Open Anyway). `release.yml` checks the
+signature after each macOS build. Developer ID + notarization: backlog task in task-master
+(project Task Master, epic Development). (2) Quick capture on macOS is a non-activating
+`NSPanel` (status level, all Spaces, full-screen auxiliary), shown with `show()` only (no
+`set_focus`, which activated the app and switched Spaces). The class swap needs unsafe
+code, so it lives in the new workspace crate `crates/macos-panel`
+(`taskmaster-macos-panel`, own lints: unsafe allowed, undocumented unsafe denied; deps
+`objc2` 0.6 / `objc2-app-kit` 0.3, already in the tree). (3) `devenv.nix` / `devenv.yaml` /
+`.envrc`: Rust 1.99.1, Node 24, pnpm via corepack, caches in `.devenv/state` (README).
+Checks run on macOS through devenv: `cargo fmt --check`, `cargo clippy --workspace
+--all-targets -D warnings`, `pnpm biome check`, `pnpm typecheck`, `pnpm test` (519 passed)
+pass; `cargo test --workspace` passes except
+`server_sync::tests::a_busy_port_nobody_answers_on_is_skipped_at_once`, which fails on
+macOS only (port reuse; untouched, CI is Linux). Tried here: a local `--bundles app`
+build is ad-hoc signed with the sidecar and passes the CI signature check (it does not
+launch: built in devenv it links Nix's libiconv, refused under the hardened runtime);
+`pnpm tauri dev` starts with the panel in place (the first version panicked on objc2's
+equal-size assertion; the panel class now mirrors tao's one ivar). Tried by hand
+(dev build): capture shows over a full-screen app and takes the keyboard without leaving
+its Space; the file picker from the capture editor works. (4) Files dragged from the OS:
+the capture window never mounted `useFileDrop` (drops there did nothing on any OS), and on
+macOS wry reports drag positions in points while Tauri calls them physical, so dividing by
+the Retina ratio put every drop at half its place (main window too). `CaptureWindow` now
+mounts the hook; `dropPointToCss` keeps macOS points as they are
+(`useFileDrop.test.ts`). Drag and drop into the capture editor tried by hand: works. (5) macOS title bar flush like
+Windows and Linux (ADR 012 amendment): overlay title bar in `tauri.macos.conf.json`
+(window list repeated, shell test `macos_config_only_overlays_the_main_title_bar`),
+`TitleBar` variant `macos` (no buttons, all canvas over the folded sidebar, hidden in full
+screen). Screenshotted on a debug bundle (computer use): flush, lights centred, sidebar open
+and folded. Full screen not tried live. Tip: a dev binary from `tauri dev` has no bundle, so
+computer use cannot see it; `pnpm tauri build --debug --bundles app` with
+`hardenedRuntime: false` (devenv libiconv) gives one it can drive.
+
+**Docs for the public** (2026-11-17, on `main`, uncommitted): user-facing docs made
+general instead of homelab-specific. `docs/server.md` rewritten (quick start, Compose,
+reverse proxy, generic OIDC with an Authelia example, updating); `docs/mcp.md` remote
+setup generic (`tasks.example.com`); `docs/backups.md` any S3 provider;
+`docs/release.md` and `docs/github-pages.md` treat the Forgejo mirror as the maintainer's
+setup; `docs/google-calendar.md` says the client is the user's own; README drops the
+Forgejo `@claude` review line and gains a Contributing section; `docs/plan.md` examples
+neutral. Settings → Remote backup no longer defaults to the maintainer's endpoint
+(empty, placeholder `https://s3.example.com`, region `us-east-1`) or says "homelab".
+ADRs, release notes and this log left as history. Not run here: `pnpm biome check`,
+`pnpm test` (needed approval in a background session).
+
+**Release 0.22.1** (2026-11-16, on `release/0.22.1`, then `main`; notes
+`docs/releases/0.22.1.md`): fixes from `homepage-infra-tile-order` (based on 840216c, the
+rest of that branch was already on `main`): `host_env` strips path entries under any
+sibling `<tmp>/.mount_*` (kitty crashed after an in-app update), the command palette skips
+done tasks (status lookup by id; the first version passed the statuses array and failed
+tsc), board tag chips truncate, sidebar groups indent. No migration.
+
+**MCP: everything the user can do** (2026-11-14, branch `mcp-full-parity`, not released;
+ADR 017 amended): audit of agents saying they "can't" create, delete or move tasks.
+(1) This device's `task-master-mcp.exe` was the 2026-11-12 build next to a 0.21.0 app:
+the passive NSIS update cannot replace the exe while Claude Code sessions run it. Fix:
+`src-tauri/windows/installer-hooks.nsh` (`NSIS_HOOK_PREINSTALL`, taskkill), wired in
+`tauri.sidecar.conf.json`; `task-master-mcp --version`. Until it ships: close Claude
+Code sessions and run the 0.21.0 setup again. (2) New tools and fields: `update_task`
+project/epic/parent/due/today/estimate/owner/tags/position; `create_task` owner me,
+dates, estimate, tags; `delete_task`, `update_/delete_project`, `update_/delete_epic`,
+`list_tags`, `update_/delete_tag`, attachments (`list_/attach_/read_/rename_/
+remove_attachment`; `path` stdio only), `remove_agent_session`, `undo` (by the
+`change_id` every write now reports; core `Store::revert_batch`, refused when the rows
+changed since). `edit_user_tasks` now also opens `schedule_block`, `update_block`,
+`link_tasks` on any task; deletes stay behind it; the session's task is never closed,
+cancelled or deleted by its agent. `list_projects` takes `include_archived`, shows each
+epic's project. New MCP dependency `base64` 0.23 (already in the workspace). Board
+columns and saved views left out on purpose. Tests: core
+`reverting_a_batch_restores_it_unless_its_rows_changed_since`; MCP (crates/mcp/tests/
+tools.rs) `the_users_tasks_move_between_projects_epics_and_parents`,
+`deletes_and_undo_follow_the_setting_and_spare_the_session_task`,
+`projects_epics_and_tags_are_edited_and_deleted`,
+`the_users_calendar_and_links_are_editable_by_default`,
+`attachments_are_added_read_renamed_and_removed`, `ended_agent_sessions_can_be_removed`;
+the calendar and lineage scope tests now run with editing off. Not tried in the app; the
+NSIS hook is untested (needs a Windows installer build).
+
+**M18 Scribe: meetings without audio** (2026-11-14, branch `worktree-m18-meetings`, ADR 025
+amended with "M18 notes"; plan docs/meetings-plan.md): migration 15 adds `meetings` and
+rebuilds `attachments` (`task_id` nullable, `meeting_id`, CHECK exactly one). Commands
+`CreateMeeting` / `UpdateMeeting` / `DeleteMeeting` with undo, sync, export/import;
+snapshot and `Changes` carry `meetings`. Calendar sync pushes `meeting:<id>` events and
+follows moves back; a deletion in Google does not delete the meeting. MCP `list_meetings`,
+`get_meeting`, meetings in `get_calendar`. UI: sidebar tab **Scribe** (`/scribe`,
+virtualized list, search, project filter, Start meeting / Plan a meeting), meeting page
+(`/meeting/$id`: title, date and times, project / epic / task links, participant chips with
+suggestions from earlier meetings, markdown notes, attachments, End now / Start now,
+delete), meetings drawn on the calendar (week/day/month) and used as busy time by the
+planner, "Make it a meeting" on Google events, Meetings sections on task, project and epic
+pages, meeting attachments in Settings → Files. New icon `scribe` (quill on a page;
+`NotebookPen` in the clean look). Not in M18 (deferred to M20): transcript and speaker
+tables. Tests: `crates/core/tests/meetings.rs` (7), `db.rs`
+`meetings_migration_keeps_task_attachments`, `calendar_sync.rs`
+`meetings_are_pushed_followed_and_come_back_when_deleted_there`, `crates/mcp/tests/tools.rs`
+`meetings_are_listed_read_in_full_and_on_the_calendar`, `lib/meetings.test.ts`,
+`features/scribe/scribe.test.tsx`, `lib/files.test.ts`, `store/attachments.test.ts`.
+`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --locked`, `pnpm biome ci .`, `pnpm typecheck`, `pnpm test`
+(519 passed, 2 skipped) pass. Not tried in the app; Google push not tried against Google.
+Schema 15: the sync server must be updated with the app.
+
+**Release 0.21.0** (2026-11-14, on `main`; notes `docs/releases/0.21.0.md`): agents may
+edit the user's tasks. Its `the_users_tasks_are_mostly_off_limits` test still expected the
+old rule (another task of the user's left unchanged); updated and renamed
+`the_users_tasks_can_be_edited_within_limits`.
+
+**MCP: agents edit the user's tasks** (2026-11-14, branch `worktree-mcp-edit-personal-tasks`,
+released in 0.21.0; ADR 017 amended): `update_task` now changes the user's own tasks too
+(title, description, priority, prerequisites, any status), anywhere. Kept: the session's
+task is never marked done by the agent, and the session's subtree is never cancelled.
+Settings → Agents → _Let agents edit my tasks_ (`AgentSettings::edit_user_tasks`, default
+on) turns it off: the app passes `--no-edit-user-tasks` and the old rule applies. The
+remote MCP on the sync server has no setting and allows edits. The work was left
+uncommitted by another session and taken over for the release. Tests:
+`with_editing_turned_off_the_users_tasks_keep_to_their_status` (crates/mcp), config
+default, the settings checkbox (`agentSettings.test.tsx`). Not tried in the app.
+
+**Release 0.20.1** (2026-11-13, branch `zen-stones-icon`, then `main`; notes
+`docs/releases/0.20.1.md`): new app icon, a eucalyptus zen stone stack, as the native icon
+(`src-tauri/icons`, `app-icon.png`, via `scripts/generate-app-icons.mjs` from a 1024 px
+source with ~6% margin) and the in-app logo (`app-icons/app-zen-stones`, the `logo`
+slot's `initial`, in RELEASE_FILES). Its trimmed source is
+`scripts/asset-pack/extra/app-icons/app-zen-stones.png`; `import.sh` now includes that
+folder so re-importing the zip keeps it. ADR 019 amended. Not tried in the app.
+
+**Release 0.20.0** (2026-11-13, on `release/0.20.0`, then `main`; notes
+`docs/releases/0.20.0.md`): M17 remote MCP and safe public sync (PR #5) and the
+`create_project` / `create_epic` MCP tools. The iPhone branches (`p0-phone-core`,
+`p1-ios-walking-skeleton`) stay out. No schema change (14). The release body in
+`release.yml` still carried the 0.18.0 text (0.19.0 shipped with it); rewritten.
+
+**MCP: create projects and epics** (2026-11-13, branch `mcp-create-project-epic` from
+`main`, released in 0.20.0; ADR 017 amended): new tools `create_project` (name, `area_id`,
+color) and `create_epic` (name, `project_id` defaulting to the session task's unless
+`no_project`, description, target date) over the existing core commands. What they create
+is the user's (no owner field); a same-named one in the same place is returned instead of
+a duplicate. An earlier agent session reported this done but its work was never committed
+(task `01a1d524…`). Tests: `creates_projects_in_areas_without_duplicates`,
+`creates_epics_in_the_session_project_by_default` in `crates/mcp/tests/tools.rs`.
+
+**M17 remote MCP** (2026-11-13, branch `m17-remote-mcp`, ADR 024): the sync server serves
+the MCP tools at `POST /mcp` (rmcp Streamable HTTP, stateless, JSON) when `TM_MCP=on`, for
+claude.ai and the mobile apps. `TaskServer::shared` runs on the server's own store
+(`AppState::store` is now `Arc<Mutex<Store>>`); a write hook announces the new head on
+`/events` and kicks the calendar runner. Auth: the server is an OAuth resource server for
+Authelia: 401 + `WWW-Authenticate: Bearer resource_metadata=…`, RFC 9728 metadata at
+`/.well-known/oauth-protected-resource[/mcp]`, `Oidc::verify_access` checks RFC 9068 access
+tokens (`typ: at+jwt`, issuer, audience `<public>/mcp`, expiry, `client_id` in
+`TM_MCP_OAUTH_CLIENTS`, allowed groups); server tokens need `api:write`. Setup:
+docs/mcp.md section 5 (Authelia client, public Traefik router for `/mcp` only). Tests:
+5 end-to-end in `crates/server/tests/server.rs` (challenge and metadata, a tool write that
+syncs to a device and is announced, nine refused tokens, server token scopes, off by
+default), config tests. Not yet tried against real Authelia and claude.ai: check whether
+Claude sends `resource` and Authelia accepts it, the access token's `aud`, refresh token
+lifetime (Authelia default 1 h 30 min idle) and rotation. Homelab changes not made yet.
+Public sync: sync routes now check the token in a `route_layer` before the body is read
+(an anonymous 64 MB push was buffered before); test
+`an_anonymous_upload_is_refused_before_its_body_is_read`.
+
+**Release 0.18.0** (2026-11-12, on `release/0.18.0`, then `main`; notes
+`docs/releases/0.18.0.md`): integrates the uncommitted worktree work: several timers at once
+(`worktree-multi-timers`), project folder git detection (`worktree-git-folder-detection`),
+quick capture Ctrl+Enter (`worktree-capture-ctrl-enter`), Copy task id
+(`worktree-task-copy-id`), Files page thumbnails (`worktree-files-preview`), tighter Lineage
+header (`worktree-lineage-canvas-space`), and busy spinners on Sync now / Back up now. The
+sync settings test now queries the status line ("Syncing…" also labels the button). No
+schema change (14). `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets
+-- -D warnings`, `cargo test --workspace --locked`, `pnpm biome check .`, `pnpm typecheck`,
+`pnpm test` (500 passed, 2 skipped) pass on the integrated branch. Not tried in the app.
+
+**Project folder: git repository detection** (2026-11-12, worktree branch
+`worktree-git-folder-detection`, ADR 017 amended): shell command `project_git` reads the
+project folder with the system's git where agents run (native or WSL): repository root,
+branch, short commit, latest tag (the release) and commits since it, uncommitted changes;
+`null` when there is no folder, no repository or no git. The project page shows
+"v0.16.1 +2 · main" beside the folder button (details in its tooltip and menu), and
+nothing when the folder is not a repository. Read on open, on folder change, on window
+focus. Tests: `agents/git.rs` (parsing, native/WSL commands), `agents/mod.rs` (a real
+temporary repository), `features/agents/repo.test.ts`, `agents.test.tsx` ("shows the
+release and branch…"). `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --locked`, `cargo fmt --check`, `pnpm biome check .`,
+`pnpm typecheck`, `pnpm test` (496 passed, 2 skipped) pass. Not tried in the app, nor on
+Windows/WSL.
+
+**Pending-work integration** (2026-11-12): the Files page, Agents page updates,
+board selection/drag and reset work below were checked together before committing.
+`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --locked`,
+`cargo fmt --check`, `pnpm biome check .`, `pnpm typecheck` and `pnpm test` pass
+(492 frontend tests passed, 2 skipped). Earlier "not run yet" notes below describe
+the individual work sessions and are superseded by this integration check.
+
+**Release 0.17.1** (2026-11-12, on `main`; notes `docs/releases/0.17.1.md`): 0.17.0 was
+tagged but its release build stopped at `pnpm biome ci .` (progress.md, edited after the
+local biome run), so it was never published; 0.17.1 is the same release. Run the checks
+after the last edit, `biome ci` included.
+
+**Release 0.17.0** (2026-11-12, tagged, never published; notes `docs/releases/0.17.0.md`): Files page,
+Claude plan usage and sessions by day on the Agents page, MCP session filters, 3-day calendar,
+calendar filter picklists, Reset view, multi-selection drag, Lineage lanes for epics in view.
+No migration (schema 14). Checks before tagging: `cargo fmt --check`, clippy (`-D warnings`,
+all targets), `cargo test --workspace --locked`, `pnpm biome check .`, `pnpm typecheck`,
+`pnpm test`.
+
+**Agent runs stopped by the plan limit, finished** (2026-11-12, uncommitted on `main`): three
+agent sessions failed at 15:03–15:07 on Claude's 5-hour limit. The 3-day view was already
+done (below). The other two:
+- Calendar tray filter (the plan focus) takes several projects, epics and statuses: `MultiPick`
+  checklists like the list/board filter bar, with "Inbox" and "No epic". `PlanFocus` is now
+  `projectIds`/`epicIds`/`statusIds`; `readFocus` reads the single values saved before.
+  Tests: `planner.test.ts` (lists, `readFocus`), `calendar.test.tsx` ("picks several statuses").
+- Lineage lanes by epic: a lane shows only when it holds cards in view; an empty epic (or
+  "No epic") lane only when picked in the Epic filter, to drop cards into. Before, every
+  active epic of the scope had a lane. Same for "No project" in lanes by project.
+  Test: `LineagePage.test.tsx` ("shows an empty epic lane only when…").
+  `pnpm biome check .`, `pnpm typecheck` and `pnpm test` (495 passed, 2 skipped) pass; no Rust
+  changed, so cargo was not run. Not tried in the app.
+
+**Three-day calendar view** (2026-11-12): the calendar range selector now
+has **3 days**, initially today plus two days. Previous/next moves by three days;
+Today returns to the current range. The view shares the timed grid, day lanes,
+planning and event loading with the existing day/week views. Date math and UI tests
+cover month boundaries, event range, navigation and mode persistence.
+
+**MCP agent run filtering and pagination** (2026-11-12):
+`list_agent_sessions` reads live session history newest first, with `state`, `task_id`,
+`project_id` and `latest_only` filters. The latest filter selects each task's newest
+session before checking its state, so `state: "failed", latest_only: true` finds tasks
+whose latest run failed. JSON rows include task title/status, session state and times,
+and compact summary/error; `next_cursor` pages through results. `list_tasks` now returns
+a `next_cursor` when its 200-row limit leaves more tasks. MCP integration tests cover
+the filters and both cursors; `docs/mcp.md` explains usage. `cargo test --workspace
+--locked`, `cargo clippy -p taskmaster-mcp --all-targets -- -D warnings`,
+`cargo fmt --check`, `pnpm biome check .`, `pnpm typecheck` and `pnpm test` pass.
+A live stdio MCP call returned paginated failed sessions.
+
+**Settings → Files** (2026-11-12, on `files-page`; ADR 023): lists content
+on this device and the sync server, with storage totals, unused cleanup, age and size
+filters, sorting, task links, description warnings, multiselect and a permanent-delete
+confirmation. Deleting removes the file's attachments in one undoable batch, purges its
+local content and propagates a tombstone through the server on sync; other devices drop
+unused copies after pulling. Live attachments protect content; backups retain copies.
+The page stays usable with an older server, but its server files are unavailable until
+that server updates. Tests cover core, server, sync, pure frontend logic and page deletion.
+Integrated-tree checks pass: `cargo clippy -- -D warnings`, `cargo test`, `cargo fmt --check`,
+`pnpm biome check .`, `pnpm typecheck` and `pnpm test` (490 passed, 2 skipped). Tauri dev compiled
+and opened the app; a temporary development navigation requested the Files route without
+logged runtime errors, then was removed. The shared desktop capture did not show the Files
+window, so visual and pointer interaction remain unverified.
+
+
+**Agents page: recent sessions by day** (2026-11-12, uncommitted on `main`): Recent
+sessions are split under day dividers ("Today", "Yesterday", "Monday, Nov 9", with the
+year when not this one), each with the day's session count and cost; rows under a divider
+show the start time instead of "3 h ago". Every session row (Active too) shows its task's
+project (mark + name, "Inbox" without one) and epic (shape + name, in its color); the
+project is left out when the page is focused on one project. Days are the local day a
+session started (`sessionsByDay`, `formatDayHeading` in `features/agents/sessions.ts`).
+Tests: `sessions.test.ts` ("days"), `agents.test.tsx` ("groups recent sessions by day…").
+**Not run yet**: the agent session could not run pnpm or vitest (approval needed).
+
+**Agents page: Claude plan usage** (2026-11-12, uncommitted on `main`): a "Claude plan"
+section shows the 5-hour window and the weekly windows (all models; Opus/Sonnet once used)
+as meters with "% left" and when each resets, like Claude Code's `/usage`. The shell command
+`claude_plan_usage` (`agents/plan.rs`) reads Claude Code's OAuth sign-in where agents run
+and asks `api.anthropic.com/api/oauth/usage` (undocumented; read leniently); it never
+refreshes or writes the token. Read on open, every 5 minutes, and with Refresh. ADR 017
+amended. Rust tests (credentials, answer parsing, RFC 3339) and an ignored live test
+(`cargo test -p taskmaster-desktop live_plan -- --ignored --nocapture`, which worked against
+a real Pro sign-in); `cargo test`, clippy and fmt pass. **Not run yet**: pnpm (tsc, biome,
+vitest) needed approval; new tests in `usage.test.ts` and `agents.test.tsx`.
+
+**Reset view** (2026-11-12, uncommitted on `main`): Display popover → "Reset view" in list
+and board (built-in and saved views). It brings back the default display (filters, group,
+sort, swimlanes, show toggles) but keeps the layout and a saved view's lineage. It also
+clears the search, folded groups and subtasks, and the selection. On the board it forgets
+the widths and collapsed state of the board's columns (`clearColumnPrefs`), so they open
+and share the width equally again, and the hand-made lane choices (`clearLaneChoices`),
+then remounts `BoardView` (`key`) so it reads them. Column prefs are per status and shared
+by every board, so resetting one board resets the columns everywhere. For a saved view the
+reset is a draft (Revert/Save view). Tests: app tests "resets the view…" (board) and
+"reset view" (list), unit tests in `useBoardColumns.test.ts` and `useCollapsedLanes.test.ts`.
+**Not run yet**: the agent session could not run pnpm or vitest (approval needed).
+
+**Drag a multi-selection on the board** (2026-11-12, uncommitted on `main`): dragging a
+card that is part of the multi-selection drags every picked card. The others leave their
+cells during the drag; the overlay shows a stack and the count. On a drop they land
+together around the dropped card, in board order (lane by lane, column by column), each
+taking the column and lane: `moveCards` in `store/actions.ts`, one batch (`moveCard` now
+calls it), ranks from `ranksForDrop`, which takes several adjacent cards. Dropped on the
+sidebar (project, epic, Today) or the side panel's "subtask" zone, it applies to every
+dragged task that can take it, in one batch (`applyTaskDrop` with ids, `updateTasks`, new
+`setParents`; a picked subtask of a picked task stays under it). "Parent of" takes one
+task only, so that zone is off for a group (`droppable`). `startTaskDrag(id, along)`
+carries the group. Tests: `lib/board.test.ts`, `store/board.test.ts` ("moveCards"),
+`features/shell/taskDrop.test.ts`, `features/board/BoardView.test.ts`. The list view has no
+drag at all, so this is board only. **Not run yet**: no pnpm/tsc/vitest/biome in the agent
+session (approval needed); not tried in the app.
+
+**Quick capture: Ctrl+Enter saves and closes the expanded editor** (2026-11-12, branch
+`worktree-capture-ctrl-enter`): in the editor Shift+Enter opens, Ctrl+Enter (or Cmd+Enter)
+blurs the focused field (fields save on blur, so the text being typed is committed) and
+hides the window. The listener runs in the capture phase so CodeMirror's own Mod-Enter
+(insert blank line) never sees it. Header hint updated. Test in
+`features/capture/captureWindow.test.tsx`. **Not run yet**: no pnpm/vitest/biome in the
+agent session (approval needed); not tried in the app.
+
+**Release 0.16.1** (2026-11-12, on `release/0.16.1`, then `main`; notes `docs/releases/0.16.1.md`): the 0.16.0 release build never ran
+(its `release` workflow failed at the Rust format check, which the integration had not run),
+so 0.16.0 has no installers or update. 0.16.1 formats the 0.16.0 merges and adds:
+- Quick capture: the panel has rounded corners (`rounded-xl`). The capture window is
+  `transparent` in `tauri.conf.json` and both platform configs (they replace the window
+  list, see the `*_config_only_drops_the_main_frame` tests); `main.tsx` puts
+  `capture-window` on `<html>` so `index.css` clears the page background there. macOS
+  needs `macOSPrivateApi` for transparent windows (not enabled), so its corners stay square.
+- Calendar: replanning and a daily review (ADR 013 amended). New block outcome `missed`
+  (not worked on; logs nothing; the task is back to be planned) in the core, with
+  migration **0014** (no data change; bumps the schema to 14 so 0.16.0 servers refuse the
+  sync instead of failing on `missed`). The block menu has Done, Cancelled, "Worked,
+  replan", "Not done, replan" and Planned; the replan choices ask for later today, the
+  next working day, a picked time, or not now (`features/calendar/BlockOutcome.tsx`,
+  slots in `lib/replan.ts`). **Review** in the calendar header goes through the blocks of
+  the last 7 days that ended still planned (`DayReview.tsx`). Tests: `lib/replan.test.ts`,
+  `calendar.test.tsx`, core `time_blocks.rs` and `calendar_sync.rs` (missed takes the
+  Google event away). Limits: replanning sees calendar events of the shown range only
+  (a day view does not know tomorrow's events); the new block keeps the old length.
+
+**Release 0.16.0** (2026-11-12, on `release/0.16.0`, then `main`): integrates the seven feature
+branches that were not in main or had uncommitted work (agent timer, Agents page usage and
+spend limits, multi-select, saved Lineage views, drag a card onto the side panel, property
+order, paper sounds). Each uncommitted worktree was committed on its own `worktree-*` branch
+first; the agent sessions had not run cargo or pnpm, so this release ran the checks:
+clippy (`-D warnings`, all targets), `cargo test --workspace`, `pnpm biome check`,
+`pnpm test` and `tsc --noEmit`. Fixes made on the way: `ViewChange::Spec` boxed (clippy
+large variant after `ViewSpec` grew), biome formatting, and a Resume test that now expects
+the timer's move to in progress. Schema **13** (migration 0013, agent session duration):
+desktops and sync servers sync only with each other. Notes: `docs/releases/0.16.0.md`.
+Not in this release: the iPhone work on `p0-phone-core` and `p1-ios-walking-skeleton`
+(their ADR 022 would clash with the saved-views ADR 022 when merged; renumber it then).
+The "not run yet" notes in the entries below are superseded: the checks ran at 0.16.0.
+
+**Paper sounds** (2026-11-11, released in 0.16.0): on the parchment
+theme a sheet crumples when a task opens (side panel or full page; not for a task just
+created), a quill scribbles when a task is created (`createTask`, so capture too) and the
+sheet burns when one is deleted (`deleteTask`). Synthesized with the Web Audio API from
+filtered noise (`lib/sounds.ts`): no audio files, no dependency. Settings → Appearance
+"Paper sounds" toggle, on by default, per machine (`task-master.sounds`); silent on dark
+and clean. Unit tests `lib/sounds.test.ts`. Not listened to yet: needs a by-ear check
+in the app (`pnpm dev`, Parchment theme) and tuning of the sounds in `lib/sounds.ts`.
+**Agent runs time the task** (2026-11-11, branch `worktree-agent-timer`): sending a task to an
+agent (Send to agent, a follow-up reply, Resume) starts the work timer on it, tied to the
+session (`RunningTimer.session_id`). When that session is done, failed, stopped or interrupted
+the timer stops and logs the run up to the session's `ended_at` (`agentTimerEnd`,
+`followAgentTimer` in `store/actions.ts`, run by the main window only). Continuing in a
+terminal keeps it running. Like a hand-started timer, it stops the timer on another task; a
+timer the user starts by hand afterwards is not stopped by the session. If the task's timer
+was already running, it keeps its start and now follows the session. Store tests in
+`store/timer.test.ts`. pnpm checks could not run in the agent session (approval needed).
+**Lineage: drag a card onto the side panel** (2026-11-11, released in 0.16.0): with a card selected, dragging another card from the canvas over the side panel
+turns the panel into four drop zones: its parent, a subtask, a prerequisite, a dependent
+(zones that would duplicate a link or make a loop are dimmed and ignore the drop). Dropping
+on the panel never moves the card: it goes back where the drag started. Nothing selected,
+or the selected card itself dragged: the overlay says so. `LineageCanvas` gains
+`onCardDrag`/`onCardDrop` (client coordinates); `LineagePage` hit-tests with
+`document.elementFromPoint` (`[data-lineage-panel]`, `[data-drop-zone]`). Test in
+`LineagePage.test.tsx`. **Not run yet**: the agent session could not run pnpm (approval), so
+`pnpm biome check` and `pnpm test` are still to do.
+**Multi-select in list and board** (2026-11-11, released in 0.16.0):
+Ctrl/Cmd+click on a list row's title or a board card adds it to a selection, Shift+click
+picks the range from the last one (list: row order; board: lane by lane, column by
+column), Ctrl+A selects every task in the view, Esc clears (the side panel stays open). The
+task open in the panel is where the first Ctrl/Shift+click starts. A plain click still opens
+a task and drops the selection. While tasks are picked a bar at the bottom of the view sets
+status, priority, project, epic, due date or tags (add to all / take off all) on all of
+them, or deletes them; each is one `execute` batch, so one Ctrl+Z (`updateTasks`,
+`setTaggedMany`, `deleteTasks` in `store/actions.ts`; a picked subtask of a picked parent
+goes with it). Tasks that leave the view leave the selection; folding a group does not.
+`lib/selection.ts` (unit tests), `features/shell/BulkBar.tsx`, `listedIds` in
+`lib/views.ts`; store tests `store/bulk.test.ts`, app tests "multi-select". **Not yet
+run**: the agent session could not install node_modules in the worktree (pnpm needed
+approval), so `pnpm biome check` and `pnpm test` still have to run; no Rust changes.
+**Saved Lineage views** (2026-11-11, released in 0.16.0): the
+Lineage page header has "Save as view": it names and saves the page's filters, focus task
+and card layout (positions, lane positions, pinned cards, folded lanes; no camera) as a
+saved view (ADR 022, `ViewSpec.lineage`). It is listed under Saved views with the Lineage
+icon and opens on the Lineage page; edits are a draft (Revert / Save view), the title
+renames, "Delete view" removes it. Cards follow the filters; only visible cards keep a
+place. `features/lineage/saved.ts` (unit tests), `LineageCanvas` takes `layout`,
+`onPersist`, `onEdit`; core validation and tests in `crates/core/tests/store.rs`, page test
+in `LineagePage.test.tsx`. **Not compiled or tested yet** (the agent session could not run
+cargo or pnpm): regenerate `bindings.ts` (`cargo test -p taskmaster-desktop export_bindings`,
+or the full `cargo test`), then clippy, `pnpm biome check`, `pnpm test`.
+**Agents page: cost, time and spend limits** (2026-11-11, released in 0.16.0): the Agents page filters by project and period (Today, This week, This month,
+All time; kept in localStorage) and shows tiles for spend, agent time, sessions and turns,
+a by-project table (click a project to focus it), and a meter per spend limit with what is
+left. Sessions record how long the agent worked (`agent_sessions.duration_ms`, migration
+0013, summed from Claude Code's per-run `duration_ms` like cost). Settings → Agents has
+spend limits per day/week/month (`AgentSettings.limits`, config.json); Send to agent asks
+"Start anyway" once one is spent. ADR 017 amended. Helpers in `features/agents/usage.ts`
+(unit tests), app tests in `agents.test.tsx` and `agentSettings.test.tsx`, Rust tests in
+core `tests/agents.rs`, `agents/mod.rs`, `agents/stream.rs`, `config.rs`.
+**Not run yet**: the session could not run cargo or pnpm, so `bindings.ts` is not
+regenerated (`cargo test` does it) and no check has run (clippy, cargo test, biome, pnpm test).
+
+**task-master in your own Claude** (2026-11-11, on `main`, released in 0.15.0): `task-master-mcp`
+needs no `--db` any more: it opens `$TASK_MASTER_DB`, else the app's database on this
+device (config.json `data_dir`, else the OS app-data folder; `crates/mcp/src/locate.rs`,
+unit tests). `--show-db` prints that path. Without a session the server's instructions
+describe standalone use (read everything, agent tasks only, the user's tasks read-only).
+`docs/mcp.md`: adding it to Claude Code / Claude Desktop per OS, how tools get picked,
+versions, other computers; ADR 017 amended. Live check: stdio handshake and
+`list_projects` against the WSL database. The Windows `.exe` with this change is not
+built yet (next release); under WSL interop it sees `%APPDATA%` (checked).
+
+**Fold the description** (2026-11-11, on `main`, released in 0.15.0): the Description section of
+the side panel and the full task page has a chevron header that folds it; folded, the
+header shows the description's first line of text. The choice is kept apart for the panel
+and the page and remembered on this machine (`task-master.description.folded`); a task
+just created (cursor in its description) opens it without changing the choice. The page
+now shows a "Description" header too. `features/task-detail/useDescriptionFolded.ts`,
+unit tests beside it. Checks run at the 0.15.0 release.
+
+**Agent directive** (2026-11-11, on `main`, released in 0.15.0): Settings → Agents has a
+"Directive" text box, standing instructions for every agent this device starts. It is
+kept in `config.json` (`AgentSettings.directive`, per device like the other agent
+settings, blank saved as none) and `session_rules` appends it to the app's rules under
+"# The user's standing instructions", so it goes into `--append-system-prompt-file` of
+each new session (resumed runs keep the system prompt they started with). Unit tests in
+`agents/mod.rs`, `config.rs` and `agentSettings.test.tsx`. Checks run at the 0.15.0 release.
+
+**Lineage side panel readable** (2026-11-11, on `main`, released in 0.15.0): with a card selected,
+each search/browse row in the 320px panel put four link chips (Prereq, Dependent, Parent,
+Subtask) beside the title, squeezing the title to a few pixels. Rows now show the title on
+its own line (up to two lines, full title in the tooltip) and the chips wrapped below; the
+panel is 384px (at most 45% of the page); the result lists no longer scroll inside the
+scrolling panel. `SearchResult` in `features/lineage/LineagePage.tsx`. Checks run at the 0.15.0 release.
+
+**Subtasks all the way down** (2026-11-11, on `main`, released in 0.15.0): the list nests
+subtasks at any depth (it used to stop at two levels and drop grandchildren). Every row
+with subtasks in the view has a chevron to unroll or fold it; top-level rows start
+unrolled, deeper ones folded. "Show subtasks" in Display (shared with the board, where it
+already showed every level as cards) now also shows in list mode and unrolls every level;
+toggling it drops the hand choices. Indentation is capped at 8 levels. `buildRows` and
+`isRowExpanded` in `lib/views.ts`, unit tests in `views.test.ts`. Checks run at the 0.15.0 release.
+
+**MCP: calendar and lineage tools** (2026-11-11, on `main`, released in 0.15.0): the agent MCP
+server gains `get_calendar`, `schedule_block`, `update_block` (`crates/mcp/src/calendar.rs`)
+and `get_lineage`, `link_tasks` (`crates/mcp/src/lineage.rs`); see ADR 017 "Calendar and
+Lineage tools". Writes keep the session scope rule. Unit tests in `calendar.rs`, end-to-end
+tests in `crates/mcp/tests/tools.rs`. Checks run at the 0.15.0 release.
+
+**Default project picker** (2026-11-11, on `main`, released in 0.15.0): Settings → Adding tasks
+used a native `<select>` (OS-styled dropdown); it now uses the app's `Select` with project
+color dots, like the other settings. Checks run at the 0.15.0 release.
+
+**Quick-capture window follows the theme** (2026-11-11, on `main`, released in 0.15.0): the capture
+window is created hidden at app start and read theme/weathering only then, so after
+switching away from parchment in Settings it kept the parchment look. `lib/appearance.ts`
+(`followAppearance`) re-applies on `storage` events, and `main.tsx` re-applies on each
+`captureOpened`. Unit test `appearance.test.ts`. Checks run at the 0.15.0 release.
+
+**Work timer** (2026-11-11, on `main`, released in 0.15.0): "Start timer" on the task page and
+side panel (Time row) runs one timer per machine (localStorage, `lib/timer.ts`, synced to
+the capture window through `storage` events); a to-do or backlog task moves to the first
+in-progress status. Stop logs the run as `worked` time blocks (ADR 013; under a minute is
+dropped, over 24 h is split; one undoable batch), so it shows on the calendar. The task
+shows "N logged (of estimate)"; a pill at the bottom of the sidebar (and the rail) shows
+the running task and clock, opens the task and stops it. Starting on another task stops
+and logs the running one. Actions `startTimer`/`stopTimer`/`logWork` in `store/actions.ts`;
+unit, store and app tests. Checks run at the 0.15.0 release.
+
+**Add a task from a swimlane** (2026-11-10, on `main`, released in 0.15.0): a small "+" by each
+swimlane's name on the board opens a title field; Enter adds a task to that lane (its
+epic, project or priority, on top of the view's capture defaults; an epic lane outside a
+project uses the epic's home project) and keeps the field for the next one. A collapsed
+lane opens. `laneFields` in `lib/board.ts`, unit and app tests. Checks run at the 0.15.0 release.
+
+**Subtask click on the full task page** (2026-11-10, on `main`, released in 0.15.0): clicking a
+subtask (or a dependency, or a palette result) on `/task/:id` only set `?task=`, and that
+page renders no side panel, so nothing happened. `useOpenTask` now navigates to the
+clicked task's full page when on `/task/`. Regression test in `app.test.tsx`. Checks run at the
+0.15.0 release.
+
 **Calendar tray filter and width** (2026-11-10, on `main`, released in 0.14.0): the plan's focus
 selects (project, epic, open status) moved from the Plan bar into the calendar's task tray
 as a collapsible "Filter" with a "Clear filter" button, and now narrow the tray in every
@@ -80,6 +789,24 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### Task detail: property order (2026-11-11, released in 0.16.0)
+
+- Side panel and task page now list properties in one fixed order: status, project, epic,
+  priority, due, today, estimate, time, tags (the task page keeps the timer on its own
+  row). The task page no longer moves set pills ahead of unset ones, so pills stay put.
+  Checks not run yet: the background session could not install deps or run biome/vitest.
+
+### Release 0.15.0 (2026-11-11)
+
+- Work timer, folding descriptions, nested subtasks at any depth, add from a swimlane,
+  agent directive, MCP for your own Claude plus calendar and lineage tools, and fixes
+  (capture window theme, subtask clicks on the task page, Lineage panel, project picker).
+  Merged with origin's 0.14.0. The iPhone branches (`p0-phone-core`,
+  `p1-ios-walking-skeleton`) stay unmerged: P0 replaces the desktop sync client and needs
+  a hands-on sync check first. Schema unchanged (12). Checks pass locally (fmt, clippy,
+  cargo test, biome, typecheck, 409 frontend tests). Notes in `docs/releases/0.15.0.md`;
+  tagged `v0.15.0`.
 
 ### P1 iOS walking skeleton, step 1: `crates/mobile` (2026-11-10, branch `p1-ios-walking-skeleton`, stacked on `p0-phone-core`)
 
@@ -1659,6 +2386,40 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- From the macOS run (2026-11-19, see Current milestone): `spellcheck`/autocorrect off
+  and no smart punctuation on path inputs; add `cmake` to `devenv.nix` (whisper.cpp,
+  sherpa-onnx); a session with both the claude.ai connector and the local server has two
+  task-master tool sets (only the local one records the conversation id).
+- Terminal sessions (ADR 028): show them in the MCP (`list_agent_sessions` or their own
+  tool), and on the task page when one is filed under a task.
+- Local Linux/WSL builds of the desktop crate fail without libclang: since 9a84fec the
+  `.cargo/config.toml` comment says whisper-rs-sys falls back to its shipped bindings
+  where libclang is missing, but bindgen panics first ("Unable to find libclang"). Set
+  `WHISPER_DONT_GENERATE_BINDINGS=1` for Linux only (or add libclang to devenv). Check
+  the Linux CI job too.
+- Milestone numbers: the Scribe plan's next step was also called M21 (summary, action
+  items); it becomes M23 (M21 and M22 went to terminal and desktop app sessions).
+- Scribe (meetings, docs/meetings-plan.md, ADR 025/026): M18–M20 built; M21 (summary,
+  action items, MCP transcript search) to do. After it: a synced contacts list replacing
+  free-text participant names (task `01a1d747…`), live captions, Linux capture, voice
+  profiles, recurring meetings. Check on real Windows/macOS hardware: transcription speed
+  with `large-v3-turbo`, Metal, the release builds of whisper.cpp and sherpa-onnx (x86_64
+  macOS is cross-built on an arm64 runner).
+- Git, on top of `project_git` (ADR 017): record the release (tag + commits, commit,
+  branch) an agent session started and ended on, as new `agent_sessions` columns (a
+  migration, synced); stamp a task with the release it was finished on; a "create PR"
+  link built from the repository's remote (`git remote get-url origin`, Forgejo/GitHub
+  URL forms). Each feature hides when `project_git` returns null.
+
+- Agents page: Claude subscription usage (5-hour and weekly windows) from Claude Code's
+  `rate_limit_event` stream lines (capture a real one first; the shape is not in the
+  fixture); a daily spend chart; split a long session's cost across the days it ran.
+
+- MCP for your own Claude (docs/mcp.md, Later): an opt-in flag so Claude creates tasks
+  owned by the user (ADR 017 rule change, decide first); the `claude mcp add` line to
+  copy in Settings → Agents; a Claude Code plugin marketplace. (The remote endpoint for
+  claude.ai and mobile is M17, ADR 024.)
+
 - Task drop targets (`features/shell/taskDrop.ts`): let the calendar tray and blocks use
   them too; open the collapsed Epics section on hover while dragging; targets in the
   collapsed sidebar rail; drop on the Lineage nav item to open Lineage focused on the
@@ -1688,7 +2449,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 - Board: Shift+Enter on a card to open the full page.
 - Board: column widths and collapsed columns per saved view (today: per machine, all boards).
 
-- List view multi-select and bulk actions (plan section 6), via one `execute` batch.
+- Multi-select (done in list and board, group drag on the board): pick with the keyboard
+  (e.g. Shift+↑/↓ between rows); a bulk "Today" toggle and "move under a parent"; drag
+  in the list view (it has none yet: no reorder, no drag to the sidebar or side panel).
 
 - Core: writer thread + reader pool if the M6 perf test needs it (ADR 002).
 - Core: status commands (M6), undo across restarts.
@@ -1715,3 +2478,5 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 - Send to agent: a Model selector (Default/Opus/Sonnet/Haiku). Stored per session
   (`agent_sessions.model`, migration 0012) so follow-ups reuse it. Not yet run: cargo/pnpm checks.
+
+- Release 0.19.0: merged the files-side-preview, lineage-arrange-crossings and sync-mode-toggle worktrees (phone branches left out).

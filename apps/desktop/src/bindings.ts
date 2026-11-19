@@ -14,6 +14,10 @@ export const commands = {
 	redo: () => typedError<Changes_Serialize | null, CommandError>(__TAURI_INVOKE("redo")),
 	/**  Live task ids matching every word of `text`, best first. */
 	search: (text: string, limit: number) => typedError<string[], CommandError>(__TAURI_INVOKE("search", { text, limit })),
+	/**  A meeting's transcript, in time order (Scribe; not part of the snapshot). */
+	meetingTranscript: (meetingId: string) => typedError<TranscriptSegment_Serialize[], CommandError>(__TAURI_INVOKE("meeting_transcript", { meetingId })),
+	/**  Transcript lines of live meetings matching every word of `text`, best first. */
+	searchTranscripts: (text: string, limit: number) => typedError<TranscriptHit[], CommandError>(__TAURI_INVOKE("search_transcripts", { text, limit })),
 	/**  A task's change history, newest first (read from the ops log). */
 	taskActivity: (taskId: string, limit: number) => typedError<Activity_Serialize[], CommandError>(__TAURI_INVOKE("task_activity", { taskId, limit })),
 	/**
@@ -35,7 +39,7 @@ export const commands = {
 	/**  Writes every user table to a JSON file, and the attachment files to a folder beside it. */
 	exportTo: (path: string) => typedError<null, CommandError>(__TAURI_INVOKE("export_to", { path })),
 	/**  Replaces all data with an export file, after saving a backup of the current data. */
-	importFrom: (path: string) => typedError<ImportSummary, CommandError>(__TAURI_INVOKE("import_from", { path })),
+	importFrom: (path: string) => typedError<ImportSummary_Serialize, CommandError>(__TAURI_INVOKE("import_from", { path })),
 	/**
 	 *  Moves the data to `path` (or back to the OS default when `None`) and restarts. An
 	 *  existing database there is used as is; otherwise the current one is copied over.
@@ -99,6 +103,12 @@ export const commands = {
 	 */
 	syncJoin: (mode: JoinMode) => typedError<SyncStatus_Serialize, CommandError>(__TAURI_INVOKE("sync_join", { mode })),
 	syncNow: () => __TAURI_INVOKE<SyncStatus_Serialize>("sync_now"),
+	filesOverview: () => typedError<FilesOverview_Serialize, CommandError>(__TAURI_INVOKE("files_overview")),
+	/**
+	 *  Permanently deletes the content of `hashes` here (the UI deletes their attachments
+	 *  first), then syncs so the server and the other devices drop it too.
+	 */
+	purgeFiles: (hashes: string[]) => typedError<PurgeReport, CommandError>(__TAURI_INVOKE("purge_files", { hashes })),
 	/**
 	 *  Stops syncing and forgets the server and its token. Local data stays; joining again
 	 *  later sends everything again (the server ignores what it has).
@@ -120,6 +130,12 @@ export const commands = {
 	 *  closes (when it can be followed). Async: stopping a run waits for it, off the UI thread.
 	 */
 	agentOpenTerminal: (sessionId: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_open_terminal", { sessionId })),
+	/**
+	 *  Brings up the session's conversation in the Claude desktop app (ADR 029 amendment): the
+	 *  desktop session that runs its recorded conversation, else the one whose first prompt
+	 *  names the session. Async: it may read transcripts, off the UI thread.
+	 */
+	agentOpenDesktop: (sessionId: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_open_desktop", { sessionId })),
 	/**  What each running session is doing, for a window that just opened. */
 	agentLive: () => typedError<AgentActivity_Serialize[], CommandError>(__TAURI_INVOKE("agent_live")),
 	/**  The brief a session on this task would start with (for the dialog's preview). */
@@ -133,14 +149,72 @@ export const commands = {
 	 *  gets, looks it up through the user's login shell.
 	 */
 	detectClaude: (settings: AgentSettings_Deserialize) => typedError<ClaudeCheck, CommandError>(__TAURI_INVOKE("detect_claude", { settings })),
+	/**
+	 *  The Claude plan's usage limits (5-hour and weekly windows), read with Claude Code's
+	 *  sign-in where agents run; an `invalid` error carries a message to show as is.
+	 */
+	claudePlanUsage: () => typedError<PlanUsage_Serialize, CommandError>(__TAURI_INVOKE("claude_plan_usage")),
 	/**  Installed WSL distributions (Windows only; empty elsewhere or without WSL). */
 	listWslDistros: () => __TAURI_INVOKE<string[]>("list_wsl_distros"),
+	/**
+	 *  This device's id: the agent sessions with it ran here, so their folders are paths on
+	 *  this computer (sessions sync from every device).
+	 */
+	agentDevice: () => typedError<string, CommandError>(__TAURI_INVOKE("agent_device")),
 	projectFolders: () => typedError<ProjectFolder[], CommandError>(__TAURI_INVOKE("project_folders")),
 	/**
 	 *  Sets (or clears, with `None`) this device's folder for a project, as the current
 	 *  runtime sees it.
 	 */
 	setProjectFolder: (projectId: string, path: string | null) => typedError<ProjectFolder[], CommandError>(__TAURI_INVOKE("set_project_folder", { projectId, path })),
+	/**
+	 *  Where the git repository of a project's folder stands; `None` when the project has no
+	 *  folder on this device, the folder is not in a repository, or git is not installed (the
+	 *  UI then hides what needs git). Off the main thread: it starts git up to three times.
+	 */
+	projectGit: (projectId: string) => typedError<GitInfo_Serialize | null, CommandError>(__TAURI_INVOKE("project_git", { projectId })),
+	/**  Reads the terminal sessions now ("Import now" on the Agents page). */
+	scanTerminalSessions: () => typedError<TerminalScan, CommandError>(__TAURI_INVOKE("scan_terminal_sessions")),
+	/**  What recording can do here, and the recording in progress. */
+	scribeStatus: () => typedError<ScribeStatus_Serialize, CommandError>(__TAURI_INVOKE("scribe_status")),
+	/**  Microphones to choose from. */
+	scribeDevices: () => typedError<AudioDevice[], CommandError>(__TAURI_INVOKE("scribe_devices")),
+	scribeSettings: () => typedError<ScribeSettings_Serialize, CommandError>(__TAURI_INVOKE("scribe_settings")),
+	setScribeSettings: (settings: ScribeSettings_Deserialize) => typedError<ScribeSettings_Serialize, CommandError>(__TAURI_INVOKE("set_scribe_settings", { settings })),
+	/**
+	 *  Starts recording the meeting with the saved microphone and system-sound settings.
+	 *  The meeting starts now and has no end until the recording stops.
+	 */
+	scribeStart: (meetingId: string) => typedError<ScribeStatus_Serialize, CommandError>(__TAURI_INVOKE("scribe_start", { meetingId })),
+	/**  Stops the recording in progress and waits until its files are complete. */
+	scribeStop: () => typedError<ScribeStatus_Serialize, CommandError>(__TAURI_INVOKE("scribe_stop")),
+	/**  The meeting's audio on this device; `None` when it has none here. */
+	scribeAudio: (meetingId: string) => typedError<MeetingAudio_Serialize | null, CommandError>(__TAURI_INVOKE("scribe_audio", { meetingId })),
+	/**
+	 *  After an interrupted recording: `keep` finishes it with what reached the disk (the
+	 *  meeting ends where the audio ends); otherwise the audio is deleted.
+	 */
+	scribeRecover: (meetingId: string, keep: boolean) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_recover", { meetingId, keep })),
+	/**  Deletes the meeting's audio from this device (the transcript, when any, stays). */
+	scribePurgeAudio: (meetingId: string) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_purge_audio", { meetingId })),
+	/**  Meeting audio kept on this device, largest first. */
+	scribeAudioUsage: () => typedError<AudioUsage[], CommandError>(__TAURI_INVOKE("scribe_audio_usage")),
+	scribeModels: () => typedError<ModelInfo_Serialize[], CommandError>(__TAURI_INVOKE("scribe_models")),
+	/**
+	 *  Downloads a model (and the speaker models the first time) in the background; progress
+	 *  comes as `ScribeModelProgress`. The first model installed becomes the active one.
+	 */
+	scribeDownloadModel: (model: string) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_download_model", { model })),
+	/**  Stops the download in progress; what was fetched is kept for the next attempt. */
+	scribeCancelDownload: () => typedError<null, CommandError>(__TAURI_INVOKE("scribe_cancel_download")),
+	scribeDeleteModel: (model: string) => typedError<ModelInfo_Serialize[], CommandError>(__TAURI_INVOKE("scribe_delete_model", { model })),
+	/**
+	 *  Queues a meeting's transcription (or a new one, replacing the transcript). Needs a
+	 *  finished recording on this device and an installed model.
+	 */
+	scribeProcess: (meetingId: string) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_process", { meetingId })),
+	/**  Stops a queued or running transcription; the meeting goes back to where it was. */
+	scribeCancelProcess: (meetingId: string) => typedError<null, CommandError>(__TAURI_INVOKE("scribe_cancel_process", { meetingId })),
 };
 
 /** Events */
@@ -148,6 +222,10 @@ export const events = {
 	agentActivity: makeEvent<AgentActivity_Serialize, AgentActivity_Deserialize>("agent-activity"),
 	calendarSynced: makeEvent<CalendarSynced_Serialize, CalendarSynced_Deserialize>("calendar-synced"),
 	captureOpened: makeEvent<CaptureOpened, CaptureOpened>("capture-opened"),
+	scribeChanged: makeEvent<ScribeChanged, ScribeChanged>("scribe-changed"),
+	scribeLevels: makeEvent<ScribeLevels_Serialize, ScribeLevels_Deserialize>("scribe-levels"),
+	scribeModelProgress: makeEvent<ScribeModelProgress_Serialize, ScribeModelProgress_Deserialize>("scribe-model-progress"),
+	scribeProgress: makeEvent<ScribeProgress, ScribeProgress>("scribe-progress"),
 	storeChanged: makeEvent<StoreChanged, StoreChanged>("store-changed"),
 	syncChanged: makeEvent<SyncChanged_Serialize, SyncChanged_Deserialize>("sync-changed"),
 };
@@ -242,9 +320,19 @@ export type AgentSession = AgentSession_Serialize | AgentSession_Deserialize;
 
 export type AgentSessionChange = AgentSessionChange_Serialize | AgentSessionChange_Deserialize;
 
-export type AgentSessionChange_Deserialize = ({ state: SessionState }) & { cost_usd_micros?: never; error?: never; summary?: never; turns?: never } | ({ summary?: string | null }) & { cost_usd_micros?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros?: number | null }) & { error?: never; state?: never; summary?: never; turns?: never } | ({ turns?: number | null }) & { cost_usd_micros?: never; error?: never; state?: never; summary?: never } | ({ error?: string | null }) & { cost_usd_micros?: never; state?: never; summary?: never; turns?: never };
+export type AgentSessionChange_Deserialize = ({ state: SessionState }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; summary?: never; turns?: never } | ({ summary?: string | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros?: number | null }) & { claude_session_id?: never; duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ turns?: number | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never } | ({ duration_ms?: number | null }) & { claude_session_id?: never; cost_usd_micros?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ error?: string | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; state?: never; summary?: never; turns?: never } | 
+/**
+ *  The conversation's own id, once known: a session opened in the desktop app gets
+ *  one there, not from the app (M22).
+ */
+({ claude_session_id: string }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never };
 
-export type AgentSessionChange_Serialize = ({ state: SessionState }) & { cost_usd_micros?: never; error?: never; summary?: never; turns?: never } | ({ summary: string | null }) & { cost_usd_micros?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros: number | null }) & { error?: never; state?: never; summary?: never; turns?: never } | ({ turns: number | null }) & { cost_usd_micros?: never; error?: never; state?: never; summary?: never } | ({ error: string | null }) & { cost_usd_micros?: never; state?: never; summary?: never; turns?: never };
+export type AgentSessionChange_Serialize = ({ state: SessionState }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; summary?: never; turns?: never } | ({ summary: string | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; turns?: never } | ({ cost_usd_micros: number | null }) & { claude_session_id?: never; duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ turns: number | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never } | ({ duration_ms: number | null }) & { claude_session_id?: never; cost_usd_micros?: never; error?: never; state?: never; summary?: never; turns?: never } | ({ error: string | null }) & { claude_session_id?: never; cost_usd_micros?: never; duration_ms?: never; state?: never; summary?: never; turns?: never } | 
+/**
+ *  The conversation's own id, once known: a session opened in the desktop app gets
+ *  one there, not from the app (M22).
+ */
+({ claude_session_id: string }) & { cost_usd_micros?: never; duration_ms?: never; error?: never; state?: never; summary?: never; turns?: never };
 
 /**  A Claude Code run started from a task (docs/adr/017). */
 export type AgentSession_Deserialize = {
@@ -272,6 +360,11 @@ export type AgentSession_Deserialize = {
 	/**  Total cost reported by Claude Code, in millionths of a dollar. */
 	cost_usd_micros?: number | null,
 	turns?: number | null,
+	/**
+	 *  How long the agent worked, summed over its runs, in ms. Not start to end: a session
+	 *  can sit idle between follow-ups.
+	 */
+	duration_ms?: number | null,
 	error?: string | null,
 	created_at: number,
 	updated_at: number,
@@ -304,6 +397,11 @@ export type AgentSession_Serialize = {
 	/**  Total cost reported by Claude Code, in millionths of a dollar. */
 	cost_usd_micros: number | null,
 	turns: number | null,
+	/**
+	 *  How long the agent worked, summed over its runs, in ms. Not start to end: a session
+	 *  can sit idle between follow-ups.
+	 */
+	duration_ms: number | null,
 	error: string | null,
 	created_at: number,
 	updated_at: number,
@@ -336,6 +434,26 @@ export type AgentSettings_Deserialize = {
 	started_status_id?: string | null,
 	/**  Where a task goes when the agent reports it done; Review when `None`. */
 	done_status_id?: string | null,
+	/**
+	 *  Standing instructions for every agent this device starts, appended to each new
+	 *  session's system prompt after the app's own rules; none when `None`.
+	 */
+	directive?: string | null,
+	/**
+	 *  May agents edit the user's own tasks (title, description, priority, prerequisites,
+	 *  any status)? When off, only the status of a session's task and its subtasks.
+	 */
+	edit_user_tasks?: boolean,
+	/**
+	 *  Spending the user allows agents, shown against what they cost on the Agents page;
+	 *  "Send to agent" asks before going over one.
+	 */
+	limits?: SpendLimits_Deserialize,
+	/**
+	 *  Read the Claude Code sessions run in a terminal (their transcripts, where agents
+	 *  run) so their cost and time count on the Agents page (M21, ADR 028).
+	 */
+	import_terminal_sessions?: boolean,
 };
 
 /**  How this device runs Claude Code for agent sessions (ADR 017). */
@@ -361,6 +479,26 @@ export type AgentSettings_Serialize = {
 	started_status_id: string | null,
 	/**  Where a task goes when the agent reports it done; Review when `None`. */
 	done_status_id: string | null,
+	/**
+	 *  Standing instructions for every agent this device starts, appended to each new
+	 *  session's system prompt after the app's own rules; none when `None`.
+	 */
+	directive: string | null,
+	/**
+	 *  May agents edit the user's own tasks (title, description, priority, prerequisites,
+	 *  any status)? When off, only the status of a session's task and its subtasks.
+	 */
+	edit_user_tasks: boolean,
+	/**
+	 *  Spending the user allows agents, shown against what they cost on the Agents page;
+	 *  "Send to agent" asks before going over one.
+	 */
+	limits: SpendLimits_Serialize,
+	/**
+	 *  Read the Claude Code sessions run in a terminal (their transcripts, where agents
+	 *  run) so their cost and time count on the Agents page (M21, ADR 028).
+	 */
+	import_terminal_sessions: boolean,
 };
 
 /**  What "Send to agent" sends. */
@@ -377,6 +515,8 @@ export type AgentStart_Deserialize = {
 	model?: string | null,
 	/**  Extra instructions; may be empty. */
 	prompt: string,
+	/**  In the background (the default) or in the Claude desktop app. */
+	surface?: AgentSurface,
 };
 
 /**  What "Send to agent" sends. */
@@ -390,23 +530,33 @@ export type AgentStart_Serialize = {
 	model: string | null,
 	/**  Extra instructions; may be empty. */
 	prompt: string,
+	/**  In the background (the default) or in the Claude desktop app. */
+	surface: AgentSurface,
 };
 
+/**  Where a session started from a task runs. */
+export type AgentSurface = 
+/**  Headless, followed by the app. */
+"background" | 
+/**  A new Code session in the Claude desktop app, which the user sends (ADR 029). */
+"desktop";
+
 /**
- *  A file attached to a task. The content is stored by hash outside the database (see
- *  [`crate::FileStore`]); several rows may share one file.
+ *  A file attached to a task or a meeting (exactly one of the two). The content is stored
+ *  by hash outside the database (see [`crate::FileStore`]); several rows may share one file.
  */
 export type Attachment = Attachment_Serialize | Attachment_Deserialize;
 
 export type AttachmentChange = { name: string };
 
 /**
- *  A file attached to a task. The content is stored by hash outside the database (see
- *  [`crate::FileStore`]); several rows may share one file.
+ *  A file attached to a task or a meeting (exactly one of the two). The content is stored
+ *  by hash outside the database (see [`crate::FileStore`]); several rows may share one file.
  */
 export type Attachment_Deserialize = {
 	id: string,
-	task_id: string,
+	task_id?: string | null,
+	meeting_id?: string | null,
 	/**  SHA-256 of the content, lowercase hex. */
 	hash: string,
 	/**  File name, without any folder. */
@@ -420,12 +570,13 @@ export type Attachment_Deserialize = {
 };
 
 /**
- *  A file attached to a task. The content is stored by hash outside the database (see
- *  [`crate::FileStore`]); several rows may share one file.
+ *  A file attached to a task or a meeting (exactly one of the two). The content is stored
+ *  by hash outside the database (see [`crate::FileStore`]); several rows may share one file.
  */
 export type Attachment_Serialize = {
 	id: string,
-	task_id: string,
+	task_id: string | null,
+	meeting_id: string | null,
 	/**  SHA-256 of the content, lowercase hex. */
 	hash: string,
 	/**  File name, without any folder. */
@@ -436,6 +587,38 @@ export type Attachment_Serialize = {
 	created_at: number,
 	updated_at: number,
 	deleted_at: number | null,
+};
+
+/**  An input device the user can pick. */
+export type AudioDevice = {
+	/**  Stable id to pass back to `scribe_start`. */
+	id: string,
+	name: string,
+	is_default: boolean,
+};
+
+/**  Where a meeting's audio stands on this device. */
+export type AudioState = "recording" | 
+/**
+ *  Recording stopped without finishing (the app or the computer stopped): keep or
+ *  discard.
+ */
+"interrupted" | 
+/**  Being compressed after recording; playable already. */
+"encoding" | "ready";
+
+export type AudioTrack = {
+	/**  `mic` or `system`. */
+	track: string,
+	/**  Path for the `tm:` protocol: `meeting-audio/<meeting id>/<track>`. */
+	path: string,
+};
+
+/**  Size of one meeting's audio (Settings → Files). */
+export type AudioUsage = {
+	meeting_id: string,
+	bytes: number,
+	duration_ms: number,
 };
 
 /**  How a server authenticates requests. */
@@ -478,12 +661,27 @@ export type BackupStatus_Serialize = {
 	remote_error: string | null,
 };
 
+/**
+ *  `POST /auth/oidc`: trade an ID token from the provider for a device token.
+ *  `GET /blobs`: the attachment content the server holds, and what was purged (ADR 023).
+ */
+export type BlobList = {
+	files: FileEntry[],
+	/**
+	 *  Hashes purged from Settings → Files on some device: every device drops its copy
+	 *  unless a live attachment there still uses it.
+	 */
+	purged: string[],
+};
+
 /**  What became of a [`TimeBlock`]. Logged time is the sum of `done` and `worked` blocks. */
 export type BlockOutcome = "planned" | 
 /**  The task was finished in this block. */
 "done" | 
 /**  Time spent on the task without finishing it. */
-"worked" | "cancelled";
+"worked" | 
+/**  Planned but not worked on: no time logged, and the task is back to be planned. */
+"missed" | "cancelled";
 
 /**  An event of a shown calendar, read-only in the app. */
 export type CalendarEvent = CalendarEvent_Serialize | CalendarEvent_Deserialize;
@@ -596,6 +794,12 @@ export type CalendarSynced_Deserialize = CalendarStatus_Deserialize;
 /**  Sent when a sync starts and ends, so views re-read events and status. */
 export type CalendarSynced_Serialize = CalendarStatus_Serialize;
 
+/**  A point on the Lineage canvas, in whole pixels. */
+export type CanvasPoint = {
+	x: number,
+	y: number,
+};
+
 /**
  *  A parsed line with its names resolved, ready for the UI to preview and turn into
  *  commands.
@@ -604,6 +808,29 @@ export type Capture = Capture_Serialize | Capture_Deserialize;
 
 /**  Sent to the capture window each time it is shown, so it clears and focuses its input. */
 export type CaptureOpened = null;
+
+/**  What recording can do on this system. */
+export type CaptureSupport = CaptureSupport_Serialize | CaptureSupport_Deserialize;
+
+/**  What recording can do on this system. */
+export type CaptureSupport_Deserialize = {
+	/**  Microphone recording works here. */
+	recording: boolean,
+	/**  The computer's sound can be recorded too. */
+	system_audio: boolean,
+	/**  Why not, or what to know first (permissions). */
+	note?: string | null,
+};
+
+/**  What recording can do on this system. */
+export type CaptureSupport_Serialize = {
+	/**  Microphone recording works here. */
+	recording: boolean,
+	/**  The computer's sound can be recorded too. */
+	system_audio: boolean,
+	/**  Why not, or what to know first (permissions). */
+	note: string | null,
+};
 
 /**
  *  A parsed line with its names resolved, ready for the UI to preview and turn into
@@ -665,6 +892,10 @@ export type Changes_Deserialize = {
 	time_blocks: TimeBlock_Deserialize[],
 	agent_sessions: AgentSession_Deserialize[],
 	agent_notes: AgentNote_Deserialize[],
+	meetings: Meeting_Deserialize[],
+	/**  Transcript segments written (Scribe): not in the snapshot, read per meeting. */
+	transcript_segments?: TranscriptSegment_Deserialize[],
+	terminal_sessions?: TerminalSession_Deserialize[],
 };
 
 /**
@@ -685,6 +916,10 @@ export type Changes_Serialize = {
 	time_blocks: TimeBlock_Serialize[],
 	agent_sessions: AgentSession_Serialize[],
 	agent_notes: AgentNote_Serialize[],
+	meetings: Meeting_Serialize[],
+	/**  Transcript segments written (Scribe): not in the snapshot, read per meeting. */
+	transcript_segments: TranscriptSegment_Serialize[],
+	terminal_sessions: TerminalSession_Serialize[],
 };
 
 /**  Claude Code as found with these settings (not saved). */
@@ -749,7 +984,42 @@ export type Command_Deserialize = { type: "create_task"; task: NewTask_Deseriali
 /**  Removes a finished session (and its notes) from the task's history. */
 { type: "delete_agent_session"; id: string } | 
 /**  A progress line from the agent, on its session's task. */
-{ type: "add_agent_note"; note: NewAgentNote_Deserialize };
+{ type: "add_agent_note"; note: NewAgentNote_Deserialize } | 
+/**  Adds a meeting (Scribe, ADR 025). */
+{ type: "create_meeting"; meeting: NewMeeting_Deserialize } | 
+/**  Edits a meeting. The result must still end after it starts. */
+{ type: "update_meeting"; id: string; changes: MeetingChange_Deserialize[] } | 
+/**  Removes a meeting; its attachments are hidden with it, and undo brings both back. */
+{ type: "delete_meeting"; id: string } | 
+/**
+ *  Replaces a meeting's transcript (Scribe, M20): its live segments are removed and
+ *  these written, the speaker names cleared, `transcribed_at` set and the meeting moved
+ *  to `review`. One batch, so one undo.
+ */
+{ type: "set_transcript"; meeting_id: string; segments: NewSegment_Deserialize[] } | 
+/**  Corrects a transcript segment. */
+{ type: "update_segment"; id: string; changes: SegmentChange[] } | 
+/**
+ *  Cuts a segment in two at a character of its text (`at`, counted in characters);
+ *  the time is shared in proportion. The second part gets `new_id`.
+ */
+{ type: "split_segment"; id: string; at: number; new_id?: string | null } | { type: "delete_segment"; id: string } | 
+/**  Gives every segment of speaker `from` to `to` (one voice found as two). */
+{ type: "reassign_speaker"; meeting_id: string; from: string; to: string } | 
+/**
+ *  Records Claude Code sessions run in a terminal, as read from their transcripts on
+ *  this device (M21, ADR 028): new ones are added with the project whose folder holds
+ *  them, known ones updated; the app's own runs and sessions the user removed are
+ *  skipped. Usually sent with [`crate::Store::execute_without_undo`].
+ */
+{ type: "record_terminal_sessions"; sessions: TerminalSessionRecord_Deserialize[] } | 
+/**  Sets a terminal session's project or task by hand. */
+{ type: "update_terminal_session"; id: string; changes: TerminalSessionChange_Deserialize[] } | 
+/**
+ *  Removes a terminal session from the totals; reading its transcript again does not
+ *  bring it back.
+ */
+{ type: "delete_terminal_session"; id: string };
 
 /**  A user action. Several commands sent together form one undoable batch. */
 export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize } | { type: "update_task"; id: string; changes: TaskChange_Serialize[] } | 
@@ -796,7 +1066,42 @@ export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize }
 /**  Removes a finished session (and its notes) from the task's history. */
 { type: "delete_agent_session"; id: string } | 
 /**  A progress line from the agent, on its session's task. */
-{ type: "add_agent_note"; note: NewAgentNote_Serialize };
+{ type: "add_agent_note"; note: NewAgentNote_Serialize } | 
+/**  Adds a meeting (Scribe, ADR 025). */
+{ type: "create_meeting"; meeting: NewMeeting_Serialize } | 
+/**  Edits a meeting. The result must still end after it starts. */
+{ type: "update_meeting"; id: string; changes: MeetingChange_Serialize[] } | 
+/**  Removes a meeting; its attachments are hidden with it, and undo brings both back. */
+{ type: "delete_meeting"; id: string } | 
+/**
+ *  Replaces a meeting's transcript (Scribe, M20): its live segments are removed and
+ *  these written, the speaker names cleared, `transcribed_at` set and the meeting moved
+ *  to `review`. One batch, so one undo.
+ */
+{ type: "set_transcript"; meeting_id: string; segments: NewSegment_Serialize[] } | 
+/**  Corrects a transcript segment. */
+{ type: "update_segment"; id: string; changes: SegmentChange[] } | 
+/**
+ *  Cuts a segment in two at a character of its text (`at`, counted in characters);
+ *  the time is shared in proportion. The second part gets `new_id`.
+ */
+{ type: "split_segment"; id: string; at: number; new_id: string | null } | { type: "delete_segment"; id: string } | 
+/**  Gives every segment of speaker `from` to `to` (one voice found as two). */
+{ type: "reassign_speaker"; meeting_id: string; from: string; to: string } | 
+/**
+ *  Records Claude Code sessions run in a terminal, as read from their transcripts on
+ *  this device (M21, ADR 028): new ones are added with the project whose folder holds
+ *  them, known ones updated; the app's own runs and sessions the user removed are
+ *  skipped. Usually sent with [`crate::Store::execute_without_undo`].
+ */
+{ type: "record_terminal_sessions"; sessions: TerminalSessionRecord_Serialize[] } | 
+/**  Sets a terminal session's project or task by hand. */
+{ type: "update_terminal_session"; id: string; changes: TerminalSessionChange_Serialize[] } | 
+/**
+ *  Removes a terminal session from the totals; reading its transcript again does not
+ *  bring it back.
+ */
+{ type: "delete_terminal_session"; id: string };
 
 /**  What the settings screen shows: never the secret itself. */
 export type ConfigView = ConfigView_Serialize | ConfigView_Deserialize;
@@ -842,7 +1147,7 @@ export type DueFilter =
 "none";
 
 /**  Kinds of entity front ends get back in [`crate::Changes`] and events. */
-export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block" | "agent_session" | "agent_note";
+export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block" | "agent_session" | "agent_note" | "meeting" | "transcript_segment" | "terminal_session";
 
 export type EntityRef = {
 	kind: EntityKind,
@@ -910,11 +1215,85 @@ export type FieldChange = {
 	after: string,
 };
 
+/**  One file in the store, for Settings → Files. */
+export type FileEntry = {
+	hash: string,
+	size: number,
+	/**  When it was written here (Unix ms; 0 when the system does not say). */
+	stored_at: number,
+};
+
+/**
+ *  What Settings → Files shows (ADR 023): the files on this device and, when this device
+ *  syncs, the ones on the server.
+ */
+export type FilesOverview = FilesOverview_Serialize | FilesOverview_Deserialize;
+
+/**
+ *  What Settings → Files shows (ADR 023): the files on this device and, when this device
+ *  syncs, the ones on the server.
+ */
+export type FilesOverview_Deserialize = {
+	local: StoredFileInfo[],
+	/**  `None` without a sync server, or when it could not be read (see `server_error`). */
+	server?: BlobList | null,
+	server_error?: string | null,
+};
+
+/**
+ *  What Settings → Files shows (ADR 023): the files on this device and, when this device
+ *  syncs, the ones on the server.
+ */
+export type FilesOverview_Serialize = {
+	local: StoredFileInfo[],
+	/**  `None` without a sync server, or when it could not be read (see `server_error`). */
+	server: BlobList | null,
+	server_error: string | null,
+};
+
+/**  Where a project folder's git repository stands. */
+export type GitInfo = GitInfo_Serialize | GitInfo_Deserialize;
+
+/**  Where a project folder's git repository stands. */
+export type GitInfo_Deserialize = {
+	/**  Top folder of the repository, as the runtime sees it (may be above the project folder). */
+	root: string,
+	/**  The checked-out branch; `None` when HEAD is detached. */
+	branch?: string | null,
+	/**  Short hash of HEAD; `None` before the first commit. */
+	commit?: string | null,
+	/**  The latest tag reachable from HEAD: the release the work is on. `None` without tags. */
+	tag?: string | null,
+	/**  Commits on top of `tag` (0 when HEAD is the tagged commit or there is no tag). */
+	commits_since_tag: number,
+	/**  Tracked files have uncommitted changes. */
+	dirty: boolean,
+};
+
+/**  Where a project folder's git repository stands. */
+export type GitInfo_Serialize = {
+	/**  Top folder of the repository, as the runtime sees it (may be above the project folder). */
+	root: string,
+	/**  The checked-out branch; `None` when HEAD is detached. */
+	branch: string | null,
+	/**  Short hash of HEAD; `None` before the first commit. */
+	commit: string | null,
+	/**  The latest tag reachable from HEAD: the release the work is on. `None` without tags. */
+	tag: string | null,
+	/**  Commits on top of `tag` (0 when HEAD is the tagged commit or there is no tag). */
+	commits_since_tag: number,
+	/**  Tracked files have uncommitted changes. */
+	dirty: boolean,
+};
+
 /**  List grouping (the board always has status columns). */
 export type GroupBy = "status" | "project" | "epic" | "priority" | "due";
 
 /**  What an import replaced, for the UI to report. */
-export type ImportSummary = {
+export type ImportSummary = ImportSummary_Serialize | ImportSummary_Deserialize;
+
+/**  What an import replaced, for the UI to report. */
+export type ImportSummary_Deserialize = {
 	tasks: number,
 	projects: number,
 	epics: number,
@@ -922,8 +1301,48 @@ export type ImportSummary = {
 	views: number,
 	attachments: number,
 	time_blocks: number,
+	meetings: number,
+	transcript_segments?: number,
 	/**  Attachments whose file was not found (an export copied without its folder). */
 	missing_files: number,
+};
+
+/**  What an import replaced, for the UI to report. */
+export type ImportSummary_Serialize = {
+	tasks: number,
+	projects: number,
+	epics: number,
+	tags: number,
+	views: number,
+	attachments: number,
+	time_blocks: number,
+	meetings: number,
+	transcript_segments: number,
+	/**  Attachments whose file was not found (an export copied without its folder). */
+	missing_files: number,
+};
+
+export type JobState = 
+/**  Waiting for another transcription, a recording or the compression to finish. */
+"queued" | "running" | "failed";
+
+/**  A meeting's transcription on this device, when one is queued, running or failed. */
+export type JobView = JobView_Serialize | JobView_Deserialize;
+
+/**  A meeting's transcription on this device, when one is queued, running or failed. */
+export type JobView_Deserialize = {
+	state: JobState,
+	step?: Step | null,
+	fraction: number | null,
+	error?: string | null,
+};
+
+/**  A meeting's transcription on this device, when one is queued, running or failed. */
+export type JobView_Serialize = {
+	state: JobState,
+	step: Step | null,
+	fraction: number | null,
+	error: string | null,
 };
 
 /**  How a device starts syncing. */
@@ -933,7 +1352,276 @@ export type JoinMode =
 /**  Back up this device's data, empty it, then take the server's. */
 "replace";
 
+export type LaneKeys = LaneKeys_Serialize | LaneKeys_Deserialize;
+
+export type LaneKeys_Deserialize = {
+	epic?: string[],
+	project?: string[],
+};
+
+export type LaneKeys_Serialize = {
+	epic: string[],
+	project: string[],
+};
+
+export type LanePositions = LanePositions_Serialize | LanePositions_Deserialize;
+
+export type LanePositions_Deserialize = {
+	epic?: { [key in string]: CanvasPoint },
+	project?: { [key in string]: CanvasPoint },
+};
+
+export type LanePositions_Serialize = {
+	epic: { [key in string]: CanvasPoint },
+	project: { [key in string]: CanvasPoint },
+};
+
 export type Layout = "list" | "board";
+
+export type LineageArrange = "free" | "epic" | "project";
+
+export type LineageCompletion = "all" | "open" | 
+/**  Open and not blocked by an open prerequisite. */
+"ready";
+
+/**
+ *  A saved Lineage canvas: the filters the page has beyond [`ViewFilter`], and where the
+ *  cards sit. The cards themselves are whatever the filters match when it opens.
+ */
+export type LineageSpec = LineageSpec_Serialize | LineageSpec_Deserialize;
+
+/**
+ *  A saved Lineage canvas: the filters the page has beyond [`ViewFilter`], and where the
+ *  cards sit. The cards themselves are whatever the filters match when it opens.
+ */
+export type LineageSpec_Deserialize = {
+	/**  Only this task's lineage (its prerequisites and dependents, all the way). */
+	around?: string | null,
+	completion?: LineageCompletion,
+	/**  Only tasks with at least one link. */
+	linked_only?: boolean,
+	arrange?: LineageArrange,
+	/**  Freeform card positions by task id, in canvas pixels. */
+	positions?: { [key in string]: CanvasPoint },
+	/**  Positions inside a lane (y from the lane's top), per arrangement. */
+	lanes?: LanePositions_Deserialize,
+	/**  Cards that stay put: no dragging, and "Arrange" leaves them alone. */
+	pinned?: string[],
+	/**  Folded lanes (epic or project ids, or [`FILTER_NONE`]), per arrangement. */
+	collapsed?: LaneKeys_Deserialize,
+};
+
+/**
+ *  A saved Lineage canvas: the filters the page has beyond [`ViewFilter`], and where the
+ *  cards sit. The cards themselves are whatever the filters match when it opens.
+ */
+export type LineageSpec_Serialize = {
+	/**  Only this task's lineage (its prerequisites and dependents, all the way). */
+	around: string | null,
+	completion: LineageCompletion,
+	/**  Only tasks with at least one link. */
+	linked_only: boolean,
+	arrange: LineageArrange,
+	/**  Freeform card positions by task id, in canvas pixels. */
+	positions: { [key in string]: CanvasPoint },
+	/**  Positions inside a lane (y from the lane's top), per arrangement. */
+	lanes: LanePositions_Serialize,
+	/**  Cards that stay put: no dragging, and "Arrange" leaves them alone. */
+	pinned: string[],
+	/**  Folded lanes (epic or project ids, or [`FILTER_NONE`]), per arrangement. */
+	collapsed: LaneKeys_Serialize,
+};
+
+/**  The recording in progress. */
+export type LiveRecording = LiveRecording_Serialize | LiveRecording_Deserialize;
+
+/**  The recording in progress. */
+export type LiveRecording_Deserialize = {
+	meeting_id: string,
+	started_at: number,
+	mic: string,
+	/**  The output device recorded, when the computer's sound is. */
+	system?: string | null,
+};
+
+/**  The recording in progress. */
+export type LiveRecording_Serialize = {
+	meeting_id: string,
+	started_at: number,
+	mic: string,
+	/**  The output device recorded, when the computer's sound is. */
+	system: string | null,
+};
+
+/**
+ *  A meeting (Scribe, ADR 025): on the calendar, optionally linked to a project, an epic
+ *  and a task, with participants and notes. Its audio never enters the database.
+ */
+export type Meeting = Meeting_Serialize | Meeting_Deserialize;
+
+/**  A meeting's audio on this device. */
+export type MeetingAudio = MeetingAudio_Serialize | MeetingAudio_Deserialize;
+
+/**  A meeting's audio on this device. */
+export type MeetingAudio_Deserialize = {
+	state: AudioState,
+	started_at: number,
+	/**  Recorded length (so far, while recording or interrupted). */
+	duration_ms: number,
+	bytes: number,
+	tracks: AudioTrack[],
+	warnings: string[],
+	/**  A transcription queued, running or failed. */
+	job?: JobView_Deserialize | null,
+	/**  When the audio will be deleted (retention setting); `None` while it is kept. */
+	purge_at?: number | null,
+};
+
+/**  A meeting's audio on this device. */
+export type MeetingAudio_Serialize = {
+	state: AudioState,
+	started_at: number,
+	/**  Recorded length (so far, while recording or interrupted). */
+	duration_ms: number,
+	bytes: number,
+	tracks: AudioTrack[],
+	warnings: string[],
+	/**  A transcription queued, running or failed. */
+	job: JobView_Serialize | null,
+	/**  When the audio will be deleted (retention setting); `None` while it is kept. */
+	purge_at: number | null,
+};
+
+export type MeetingChange = MeetingChange_Serialize | MeetingChange_Deserialize;
+
+export type MeetingChange_Deserialize = ({ title: string }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never } | ({ started_at: number }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ ended_at?: number | null }) & { epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ project_id?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ epic_id?: string | null }) & { ended_at?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ task_id?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; title?: never } | 
+/**  Entering `validated` records when; leaving it clears that. */
+({ state: MeetingState }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; summary?: never; task_id?: never; title?: never } | ({ participants: string[] }) & { ended_at?: never; epic_id?: never; notes?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ notes: string }) & { ended_at?: never; epic_id?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ summary?: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; task_id?: never; title?: never } | 
+/**  Names a transcript speaker key (`"s1"`), or clears its name with `None`. */
+({ speaker_name: {
+	speaker: string,
+	name?: string | null,
+} }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never };
+
+export type MeetingChange_Serialize = ({ title: string }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never } | ({ started_at: number }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ ended_at: number | null }) & { epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ project_id: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ epic_id: string | null }) & { ended_at?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ task_id: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; title?: never } | 
+/**  Entering `validated` records when; leaving it clears that. */
+({ state: MeetingState }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; summary?: never; task_id?: never; title?: never } | ({ participants: string[] }) & { ended_at?: never; epic_id?: never; notes?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ notes: string }) & { ended_at?: never; epic_id?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never } | ({ summary: string | null }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; speaker_name?: never; started_at?: never; state?: never; task_id?: never; title?: never } | 
+/**  Names a transcript speaker key (`"s1"`), or clears its name with `None`. */
+({ speaker_name: {
+	speaker: string,
+	name: string | null,
+} }) & { ended_at?: never; epic_id?: never; notes?: never; participants?: never; project_id?: never; started_at?: never; state?: never; summary?: never; task_id?: never; title?: never };
+
+/**
+ *  Where a [`Meeting`] is in its life (ADR 025). Only `scheduled` and `held` are set by
+ *  hand; the others belong to recording and transcription (M19, M20).
+ */
+export type MeetingState = 
+/**  Planned, not started. */
+"scheduled" | 
+/**  Took place, with notes but no transcript. */
+"held" | "recording" | 
+/**  Recorded, being transcribed. */
+"processing" | 
+/**  Transcript ready, to be checked. */
+"review" | 
+/**  Transcript checked: the audio's retention period has started. */
+"validated" | 
+/**  Recording or transcription failed; can be retried. */
+"failed";
+
+/**
+ *  A meeting (Scribe, ADR 025): on the calendar, optionally linked to a project, an epic
+ *  and a task, with participants and notes. Its audio never enters the database.
+ */
+export type Meeting_Deserialize = {
+	id: string,
+	title: string,
+	started_at: number,
+	/**  After `started_at`; `None` while it is being recorded. */
+	ended_at?: number | null,
+	project_id?: string | null,
+	epic_id?: string | null,
+	task_id?: string | null,
+	state: MeetingState,
+	/**  Names, as typed. */
+	participants: string[],
+	/**  Markdown. */
+	notes: string,
+	/**  Markdown. */
+	summary?: string | null,
+	transcribed_at?: number | null,
+	validated_at?: number | null,
+	/**
+	 *  Names given to the transcript's speaker keys (`"s1"` → `"Ada"`); a key without a
+	 *  name shows as "Speaker 1", and `"me"` as "Me".
+	 */
+	speakers?: { [key in string]: string },
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**
+ *  A meeting (Scribe, ADR 025): on the calendar, optionally linked to a project, an epic
+ *  and a task, with participants and notes. Its audio never enters the database.
+ */
+export type Meeting_Serialize = {
+	id: string,
+	title: string,
+	started_at: number,
+	/**  After `started_at`; `None` while it is being recorded. */
+	ended_at: number | null,
+	project_id: string | null,
+	epic_id: string | null,
+	task_id: string | null,
+	state: MeetingState,
+	/**  Names, as typed. */
+	participants: string[],
+	/**  Markdown. */
+	notes: string,
+	/**  Markdown. */
+	summary: string | null,
+	transcribed_at: number | null,
+	validated_at: number | null,
+	/**
+	 *  Names given to the transcript's speaker keys (`"s1"` → `"Ada"`); a key without a
+	 *  name shows as "Speaker 1", and `"me"` as "Me".
+	 */
+	speakers: { [key in string]: string },
+	created_at: number,
+	updated_at: number,
+	deleted_at: number | null,
+};
+
+/**  A transcription model as Settings shows it. */
+export type ModelInfo = ModelInfo_Serialize | ModelInfo_Deserialize;
+
+/**  A transcription model as Settings shows it. */
+export type ModelInfo_Deserialize = {
+	id: string,
+	label: string,
+	description: string,
+	/**  Download size, with the speaker models when they are not here yet. */
+	download_bytes: number,
+	installed: boolean,
+	active: boolean,
+	/**  Bytes downloaded so far while a download runs. */
+	downloading?: number | null,
+};
+
+/**  A transcription model as Settings shows it. */
+export type ModelInfo_Serialize = {
+	id: string,
+	label: string,
+	description: string,
+	/**  Download size, with the speaker models when they are not here yet. */
+	download_bytes: number,
+	installed: boolean,
+	active: boolean,
+	/**  Bytes downloaded so far while a download runs. */
+	downloading: number | null,
+};
 
 /**  A name from the line and the live entity it matched, if any. */
 export type NameMatch = NameMatch_Serialize | NameMatch_Deserialize;
@@ -1006,7 +1694,9 @@ export type NewAttachment = NewAttachment_Serialize | NewAttachment_Deserialize;
 
 export type NewAttachment_Deserialize = {
 	id?: string | null,
-	task_id: string,
+	/**  The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two. */
+	task_id?: string | null,
+	meeting_id?: string | null,
 	/**  From `FileStore::put_*`. */
 	hash: string,
 	/**  Folders are stripped. */
@@ -1018,7 +1708,9 @@ export type NewAttachment_Deserialize = {
 
 export type NewAttachment_Serialize = {
 	id: string | null,
-	task_id: string,
+	/**  The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two. */
+	task_id: string | null,
+	meeting_id: string | null,
 	/**  From `FileStore::put_*`. */
 	hash: string,
 	/**  Folders are stripped. */
@@ -1052,6 +1744,48 @@ export type NewEpic_Serialize = {
 	rank: string | null,
 };
 
+export type NewMeeting = NewMeeting_Serialize | NewMeeting_Deserialize;
+
+export type NewMeeting_Deserialize = {
+	id?: string | null,
+	title: string,
+	/**  Unix ms. */
+	started_at: number,
+	/**
+	 *  Unix ms, after `started_at`, at most [`MAX_BLOCK_MS`] later. `None` while
+	 *  recording.
+	 */
+	ended_at?: number | null,
+	project_id?: string | null,
+	epic_id?: string | null,
+	task_id?: string | null,
+	/**  Defaults to `scheduled`. */
+	state?: MeetingState | null,
+	/**  Trimmed; blanks and repeats (ignoring case) are dropped. */
+	participants?: string[],
+	notes?: string,
+};
+
+export type NewMeeting_Serialize = {
+	id: string | null,
+	title: string,
+	/**  Unix ms. */
+	started_at: number,
+	/**
+	 *  Unix ms, after `started_at`, at most [`MAX_BLOCK_MS`] later. `None` while
+	 *  recording.
+	 */
+	ended_at: number | null,
+	project_id: string | null,
+	epic_id: string | null,
+	task_id: string | null,
+	/**  Defaults to `scheduled`. */
+	state: MeetingState | null,
+	/**  Trimmed; blanks and repeats (ignoring case) are dropped. */
+	participants: string[],
+	notes: string,
+};
+
 export type NewProject = NewProject_Serialize | NewProject_Deserialize;
 
 export type NewProject_Deserialize = {
@@ -1072,6 +1806,26 @@ export type NewProject_Serialize = {
 	color: string | null,
 	icon: string | null,
 	rank: string | null,
+};
+
+export type NewSegment = NewSegment_Serialize | NewSegment_Deserialize;
+
+export type NewSegment_Deserialize = {
+	id?: string | null,
+	start_ms: number,
+	end_ms: number,
+	/**  `"me"` or `"s1"`, `"s2"`, … */
+	speaker: string,
+	text: string,
+};
+
+export type NewSegment_Serialize = {
+	id: string | null,
+	start_ms: number,
+	end_ms: number,
+	/**  `"me"` or `"s1"`, `"s2"`, … */
+	speaker: string,
+	text: string,
 };
 
 export type NewStatus = NewStatus_Serialize | NewStatus_Deserialize;
@@ -1201,6 +1955,47 @@ export type NewView_Serialize = {
 	rank: string | null,
 };
 
+export type PlanUsage = PlanUsage_Serialize | PlanUsage_Deserialize;
+
+export type PlanUsage_Deserialize = {
+	/**  `pro`, `max`, … as Claude Code recorded it at sign-in. */
+	plan?: string | null,
+	windows: PlanWindow_Deserialize[],
+	fetched_at: number,
+};
+
+export type PlanUsage_Serialize = {
+	/**  `pro`, `max`, … as Claude Code recorded it at sign-in. */
+	plan: string | null,
+	windows: PlanWindow_Serialize[],
+	fetched_at: number,
+};
+
+/**  One usage window of the plan. */
+export type PlanWindow = PlanWindow_Serialize | PlanWindow_Deserialize;
+
+/**  One usage window of the plan. */
+export type PlanWindow_Deserialize = {
+	/**  The endpoint's key: `five_hour`, `seven_day`, `seven_day_opus`, … */
+	kind: string,
+	label: string,
+	/**  Share used, 0–100 (may pass 100 when over). */
+	percent: number | null,
+	/**  When the window resets (Unix ms); `None` when it has not started. */
+	resets_at?: number | null,
+};
+
+/**  One usage window of the plan. */
+export type PlanWindow_Serialize = {
+	/**  The endpoint's key: `five_hour`, `seven_day`, `seven_day_opus`, … */
+	kind: string,
+	label: string,
+	/**  Share used, 0–100 (may pass 100 when over). */
+	percent: number | null,
+	/**  When the window resets (Unix ms); `None` when it has not started. */
+	resets_at: number | null,
+};
+
 /**  Four levels; stored as 0 (urgent) to 3 (low). */
 export type Priority = "urgent" | "high" | "normal" | "low";
 
@@ -1249,6 +2044,15 @@ export type Project_Serialize = {
 	deleted_at: number | null,
 };
 
+/**  What [`Store::purge_files`] did. */
+export type PurgeReport = {
+	/**  Files deleted from this folder. */
+	removed: number,
+	freed_bytes: number,
+	/**  Files left because a live attachment still uses them. */
+	in_use: number,
+};
+
 /**  What the settings screen sends. An empty `secret_key` keeps the stored one. */
 export type RemoteInput = {
 	enabled: boolean,
@@ -1295,6 +2099,123 @@ export type Schedule_Serialize = {
 	sync_minutes: number,
 };
 
+/**
+ *  A meeting's audio on this device changed: recording started or stopped, encoding
+ *  finished, audio kept, discarded or deleted. The UI reads `scribe_audio` again.
+ */
+export type ScribeChanged = {
+	meeting_id: string,
+};
+
+/**  Audio levels of the recording, about ten times a second. */
+export type ScribeLevels = ScribeLevels_Serialize | ScribeLevels_Deserialize;
+
+/**  Audio levels of the recording, about ten times a second. */
+export type ScribeLevels_Deserialize = {
+	meeting_id: string,
+	elapsed_ms: number,
+	/**  0 (silent) to 1. */
+	mic: number | null,
+	system?: number | null,
+};
+
+/**  Audio levels of the recording, about ten times a second. */
+export type ScribeLevels_Serialize = {
+	meeting_id: string,
+	elapsed_ms: number,
+	/**  0 (silent) to 1. */
+	mic: number | null,
+	system: number | null,
+};
+
+/**  A model download's progress; `finished` with `error: None` when it is installed. */
+export type ScribeModelProgress = ScribeModelProgress_Serialize | ScribeModelProgress_Deserialize;
+
+/**  A model download's progress; `finished` with `error: None` when it is installed. */
+export type ScribeModelProgress_Deserialize = {
+	model: string,
+	done: number,
+	total: number,
+	finished: boolean,
+	error?: string | null,
+};
+
+/**  A model download's progress; `finished` with `error: None` when it is installed. */
+export type ScribeModelProgress_Serialize = {
+	model: string,
+	done: number,
+	total: number,
+	finished: boolean,
+	error: string | null,
+};
+
+/**  A transcription's progress, a few times a second while it runs. */
+export type ScribeProgress = {
+	meeting_id: string,
+	step: Step,
+	/**  0 to 1, over all steps. */
+	fraction: number | null,
+};
+
+/**  Scribe settings of this device (Settings → Scribe). */
+export type ScribeSettings = ScribeSettings_Serialize | ScribeSettings_Deserialize;
+
+/**  Scribe settings of this device (Settings → Scribe). */
+export type ScribeSettings_Deserialize = {
+	/**  Microphone id from `scribe_devices`; the system default when `None`. */
+	mic_device?: string | null,
+	/**  Record the computer's sound too (everyone else on a call). */
+	capture_system?: boolean,
+	/**  Remind to tell participants they are recorded, when recording starts. */
+	consent_reminder?: boolean,
+	/**  The transcription model used (`models::WHISPER` id); the first one downloaded. */
+	model?: string | null,
+	/**  Language spoken in meetings (`en`, `fr`, …); detected per track when `None`. */
+	language?: string | null,
+	/**  Transcribe as soon as a recording stops (when a model is installed). */
+	auto_transcribe?: boolean,
+	/**  Days audio is kept after the transcript is validated (or made, if never validated). */
+	retention_days?: number,
+};
+
+/**  Scribe settings of this device (Settings → Scribe). */
+export type ScribeSettings_Serialize = {
+	/**  Microphone id from `scribe_devices`; the system default when `None`. */
+	mic_device: string | null,
+	/**  Record the computer's sound too (everyone else on a call). */
+	capture_system: boolean,
+	/**  Remind to tell participants they are recorded, when recording starts. */
+	consent_reminder: boolean,
+	/**  The transcription model used (`models::WHISPER` id); the first one downloaded. */
+	model: string | null,
+	/**  Language spoken in meetings (`en`, `fr`, …); detected per track when `None`. */
+	language: string | null,
+	/**  Transcribe as soon as a recording stops (when a model is installed). */
+	auto_transcribe: boolean,
+	/**  Days audio is kept after the transcript is validated (or made, if never validated). */
+	retention_days: number,
+};
+
+export type ScribeStatus = ScribeStatus_Serialize | ScribeStatus_Deserialize;
+
+export type ScribeStatus_Deserialize = {
+	support: CaptureSupport_Deserialize,
+	/**  Transcription can run on this system. */
+	transcription: boolean,
+	live?: LiveRecording_Deserialize | null,
+};
+
+export type ScribeStatus_Serialize = {
+	support: CaptureSupport_Serialize,
+	/**  Transcription can run on this system. */
+	transcription: boolean,
+	live: LiveRecording_Serialize | null,
+};
+
+export type SegmentChange = 
+/**  Marks the segment edited. */
+({ text: string }) & { speaker?: never } | ({ speaker: string }) & { text?: never };
+
 /**  Where an [`AgentSession`] is. */
 export type SessionState = "running" | 
 /**  The run ended normally (Claude finished its turn). */
@@ -1307,7 +2228,14 @@ export type SessionState = "running" |
  *  Continued by hand in a terminal (`claude --resume`), outside the app's control. Ends
  *  when the agent records its summary, the terminal closes, or the user marks it done.
  */
-"terminal";
+"terminal" | 
+/**
+ *  Opened in the Claude desktop app (M22, ADR 029): a conversation the app cannot
+ *  follow. Ends when the agent records its summary or the user marks it done. Any
+ *  device may record its notes and summary (the claude.ai connector runs on the sync
+ *  server).
+ */
+"desktop";
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
 export type Snapshot = Snapshot_Serialize | Snapshot_Deserialize;
@@ -1320,12 +2248,16 @@ export type Snapshot_Deserialize = {
 	statuses: Status_Deserialize[],
 	tags: Tag_Deserialize[],
 	views: View_Deserialize[],
-	/**  Attachments of live tasks. */
+	/**  Attachments of live tasks and live meetings. */
 	attachments: Attachment_Deserialize[],
 	/**  Time blocks of live tasks, by start. */
 	time_blocks: TimeBlock_Deserialize[],
 	/**  Agent sessions of live tasks, every device's, by start. */
 	agent_sessions: AgentSession_Deserialize[],
+	/**  Live meetings, by start. */
+	meetings: Meeting_Deserialize[],
+	/**  Live terminal sessions, every device's, by start. */
+	terminal_sessions?: TerminalSession_Deserialize[],
 };
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
@@ -1336,17 +2268,47 @@ export type Snapshot_Serialize = {
 	statuses: Status_Serialize[],
 	tags: Tag_Serialize[],
 	views: View_Serialize[],
-	/**  Attachments of live tasks. */
+	/**  Attachments of live tasks and live meetings. */
 	attachments: Attachment_Serialize[],
 	/**  Time blocks of live tasks, by start. */
 	time_blocks: TimeBlock_Serialize[],
 	/**  Agent sessions of live tasks, every device's, by start. */
 	agent_sessions: AgentSession_Serialize[],
+	/**  Live meetings, by start. */
+	meetings: Meeting_Serialize[],
+	/**  Live terminal sessions, every device's, by start. */
+	terminal_sessions: TerminalSession_Serialize[],
 };
 
 export type SortBy = 
 /**  Today, overdue, priority, due date, then manual rank. */
 "default" | "manual" | "due" | "priority" | "created" | "updated";
+
+/**
+ *  Spend limits in millionths of a dollar, over all devices' sessions; none when `None`.
+ *  A day, week (from Monday) and month are the user's local calendar periods.
+ */
+export type SpendLimits = SpendLimits_Serialize | SpendLimits_Deserialize;
+
+/**
+ *  Spend limits in millionths of a dollar, over all devices' sessions; none when `None`.
+ *  A day, week (from Monday) and month are the user's local calendar periods.
+ */
+export type SpendLimits_Deserialize = {
+	day_usd_micros?: number | null,
+	week_usd_micros?: number | null,
+	month_usd_micros?: number | null,
+};
+
+/**
+ *  Spend limits in millionths of a dollar, over all devices' sessions; none when `None`.
+ *  A day, week (from Monday) and month are the user's local calendar periods.
+ */
+export type SpendLimits_Serialize = {
+	day_usd_micros: number | null,
+	week_usd_micros: number | null,
+	month_usd_micros: number | null,
+};
 
 /**  A workflow column. */
 export type Status = Status_Serialize | Status_Deserialize;
@@ -1394,8 +2356,24 @@ export type Status_Serialize = {
 	deleted_at: number | null,
 };
 
+/**  Where a run is, for the progress bar. */
+export type Step = 
+/**  Your microphone. */
+"mic" | 
+/**  The computer's sound. */
+"system" | "speakers" | "merge";
+
 /**  Emitted after every committed batch, whoever wrote it. */
 export type StoreChanged = Changed;
+
+/**  A file in this replica's attachment folder (Settings → Files, ADR 023). */
+export type StoredFileInfo = {
+	hash: string,
+	size: number,
+	stored_at: number,
+	/**  A live attachment of a live task uses it. */
+	in_use: boolean,
+};
 
 /**  A file stored in the attachment folder, ready to be attached with `create_attachment`. */
 export type StoredUpload = {
@@ -1595,6 +2573,131 @@ export type Task_Serialize = {
 	deleted_at: number | null,
 };
 
+/**  What one scan did. */
+export type TerminalScan = {
+	/**  Transcripts read (new or changed since the last scan). */
+	read: number,
+	/**  Sessions added or updated. */
+	recorded: number,
+};
+
+/**
+ *  A Claude Code session run in a terminal, outside the app (M21, ADR 028), read from the
+ *  transcript Claude Code keeps. Counted with [`AgentSession`]s on the Agents page.
+ */
+export type TerminalSession = TerminalSession_Serialize | TerminalSession_Deserialize;
+
+export type TerminalSessionChange = TerminalSessionChange_Serialize | TerminalSessionChange_Deserialize;
+
+export type TerminalSessionChange_Deserialize = 
+/**  `None` for no project. Folders do not fill it in again once set by hand. */
+({ project_id?: string | null }) & { task_id?: never } | ({ task_id?: string | null }) & { project_id?: never };
+
+export type TerminalSessionChange_Serialize = 
+/**  `None` for no project. Folders do not fill it in again once set by hand. */
+({ project_id: string | null }) & { task_id?: never } | ({ task_id: string | null }) & { project_id?: never };
+
+/**  A terminal session as its transcript reads now. Recording it again updates the row. */
+export type TerminalSessionRecord = TerminalSessionRecord_Serialize | TerminalSessionRecord_Deserialize;
+
+/**  A terminal session as its transcript reads now. Recording it again updates the row. */
+export type TerminalSessionRecord_Deserialize = {
+	/**  Used when the session is new; a fresh one when `None`. */
+	id?: string | null,
+	claude_session_id: string,
+	folder: string,
+	title?: string | null,
+	model?: string | null,
+	started_at: number,
+	ended_at: number,
+	cost_usd_micros?: number | null,
+	duration_ms?: number | null,
+	turns?: number | null,
+};
+
+/**  A terminal session as its transcript reads now. Recording it again updates the row. */
+export type TerminalSessionRecord_Serialize = {
+	/**  Used when the session is new; a fresh one when `None`. */
+	id: string | null,
+	claude_session_id: string,
+	folder: string,
+	title: string | null,
+	model: string | null,
+	started_at: number,
+	ended_at: number,
+	cost_usd_micros: number | null,
+	duration_ms: number | null,
+	turns: number | null,
+};
+
+/**
+ *  A Claude Code session run in a terminal, outside the app (M21, ADR 028), read from the
+ *  transcript Claude Code keeps. Counted with [`AgentSession`]s on the Agents page.
+ */
+export type TerminalSession_Deserialize = {
+	id: string,
+	/**  Claude Code's session id (the transcript's file name). */
+	claude_session_id: string,
+	/**  The device whose transcript it is; only that device records it. */
+	device_id: string,
+	/**  Working directory, as Claude Code saw it. */
+	folder: string,
+	/**  From the folder (the project whose folder holds it), or set by hand. */
+	project_id?: string | null,
+	/**  Set by hand. */
+	task_id?: string | null,
+	/**  Claude Code's title for the conversation. */
+	title?: string | null,
+	/**  The model that wrote most of it. */
+	model?: string | null,
+	started_at: number,
+	/**  The last message so far. */
+	ended_at: number,
+	/**  Claude Code's own total, in millionths of a dollar; `None` when it recorded none. */
+	cost_usd_micros?: number | null,
+	/**  Time Claude worked (its turns), in ms, not the time the session sat open. */
+	duration_ms?: number | null,
+	/**  Requests to the model. */
+	turns?: number | null,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**
+ *  A Claude Code session run in a terminal, outside the app (M21, ADR 028), read from the
+ *  transcript Claude Code keeps. Counted with [`AgentSession`]s on the Agents page.
+ */
+export type TerminalSession_Serialize = {
+	id: string,
+	/**  Claude Code's session id (the transcript's file name). */
+	claude_session_id: string,
+	/**  The device whose transcript it is; only that device records it. */
+	device_id: string,
+	/**  Working directory, as Claude Code saw it. */
+	folder: string,
+	/**  From the folder (the project whose folder holds it), or set by hand. */
+	project_id: string | null,
+	/**  Set by hand. */
+	task_id: string | null,
+	/**  Claude Code's title for the conversation. */
+	title: string | null,
+	/**  The model that wrote most of it. */
+	model: string | null,
+	started_at: number,
+	/**  The last message so far. */
+	ended_at: number,
+	/**  Claude Code's own total, in millionths of a dollar; `None` when it recorded none. */
+	cost_usd_micros: number | null,
+	/**  Time Claude worked (its turns), in ms, not the time the session sat open. */
+	duration_ms: number | null,
+	/**  Requests to the model. */
+	turns: number | null,
+	created_at: number,
+	updated_at: number,
+	deleted_at: number | null,
+};
+
 /**  A task placed on the calendar, from `start_at` to `end_at`. */
 export type TimeBlock = TimeBlock_Serialize | TimeBlock_Deserialize;
 
@@ -1621,6 +2724,66 @@ export type TimeBlock_Serialize = {
 	/**  After `start_at`. */
 	end_at: number,
 	outcome: BlockOutcome,
+	created_at: number,
+	updated_at: number,
+	deleted_at: number | null,
+};
+
+/**  A transcript line matching a search. */
+export type TranscriptHit = {
+	meeting_id: string,
+	segment_id: string,
+	start_ms: number,
+	speaker: string,
+	/**  The segment's text with the matches between `[` and `]`, shortened around them. */
+	snippet: string,
+};
+
+/**
+ *  One stretch of a meeting's transcript (Scribe, M20): who spoke from when to when, and
+ *  what they said. Times count from the start of the recording.
+ */
+export type TranscriptSegment = TranscriptSegment_Serialize | TranscriptSegment_Deserialize;
+
+/**
+ *  One stretch of a meeting's transcript (Scribe, M20): who spoke from when to when, and
+ *  what they said. Times count from the start of the recording.
+ */
+export type TranscriptSegment_Deserialize = {
+	id: string,
+	meeting_id: string,
+	start_ms: number,
+	end_ms: number,
+	/**
+	 *  `"me"` (this device's microphone) or `"s1"`, `"s2"`, … (voices on the computer's
+	 *  sound).
+	 */
+	speaker: string,
+	text: string,
+	/**  The user corrected the text. */
+	edited: boolean,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**
+ *  One stretch of a meeting's transcript (Scribe, M20): who spoke from when to when, and
+ *  what they said. Times count from the start of the recording.
+ */
+export type TranscriptSegment_Serialize = {
+	id: string,
+	meeting_id: string,
+	start_ms: number,
+	end_ms: number,
+	/**
+	 *  `"me"` (this device's microphone) or `"s1"`, `"s2"`, … (voices on the computer's
+	 *  sound).
+	 */
+	speaker: string,
+	text: string,
+	/**  The user corrected the text. */
+	edited: boolean,
 	created_at: number,
 	updated_at: number,
 	deleted_at: number | null,
@@ -1696,6 +2859,12 @@ export type ViewSpec_Deserialize = {
 	show_cancelled?: boolean,
 	/**  Agents' own tasks (ADR 017) are hidden unless set. */
 	show_agent_tasks?: boolean,
+	/**
+	 *  Set for a saved Lineage canvas (ADR 022): it opens on the Lineage page instead of a
+	 *  list or board. Its project, epic and tag filters are `filter`'s (one project at
+	 *  most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
+	 */
+	lineage?: LineageSpec_Deserialize | null,
 };
 
 /**
@@ -1714,6 +2883,12 @@ export type ViewSpec_Serialize = {
 	show_cancelled: boolean,
 	/**  Agents' own tasks (ADR 017) are hidden unless set. */
 	show_agent_tasks: boolean,
+	/**
+	 *  Set for a saved Lineage canvas (ADR 022): it opens on the Lineage page instead of a
+	 *  list or board. Its project, epic and tag filters are `filter`'s (one project at
+	 *  most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
+	 */
+	lineage: LineageSpec_Serialize | null,
 };
 
 /**  A saved board or list: a name plus a [`ViewSpec`]. */

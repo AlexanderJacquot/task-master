@@ -1,11 +1,23 @@
 import type {
+  Levels,
+  MeetingAudio,
+  ModelInfo,
+  ModelProgress,
+  Progress,
+  ScribeApi,
+  ScribeSettings,
+  ScribeStatus,
+} from "../lib/scribe";
+import type {
   AgentSession,
   Attachment,
   Capture,
+  Meeting,
   Project,
   Snapshot,
   Status,
   Task,
+  TerminalSession,
   TimeBlock,
 } from "../lib/types";
 
@@ -144,6 +156,7 @@ export function attachment(overrides: Partial<Attachment> = {}): Attachment {
   return {
     id: `0192f0c4-0000-7000-8000-${String(counter).padStart(12, "0")}`,
     task_id: "t0",
+    meeting_id: null,
     hash: "a".repeat(64),
     name: `file-${counter}.png`,
     mime: "image/png",
@@ -191,7 +204,58 @@ export function agentSession(overrides: Partial<AgentSession> = {}): AgentSessio
     summary: null,
     cost_usd_micros: null,
     turns: null,
+    duration_ms: null,
     error: null,
+    created_at: counter,
+    updated_at: counter,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
+/** A Claude Code session run in a terminal (M21), without a project unless given one. */
+export function terminalSession(overrides: Partial<TerminalSession> = {}): TerminalSession {
+  counter += 1;
+  return {
+    id: `ts${counter}`,
+    claude_session_id: `tc${counter}`,
+    device_id: "this-device",
+    folder: "/home/me/code/site",
+    project_id: null,
+    task_id: null,
+    title: `Terminal session ${counter}`,
+    model: "claude-opus-5-5",
+    started_at: 1_000 + counter,
+    ended_at: 61_000 + counter,
+    cost_usd_micros: null,
+    duration_ms: null,
+    turns: null,
+    created_at: counter,
+    updated_at: counter,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
+/** A held meeting of one hour, 2026-11-05 10:00 local unless overridden. */
+export function meeting(overrides: Partial<Meeting> = {}): Meeting {
+  counter += 1;
+  const started_at = overrides.started_at ?? new Date(2026, 10, 5, 10).getTime();
+  return {
+    id: `0192f0c6-0000-7000-8000-${String(counter).padStart(12, "0")}`,
+    title: `Meeting ${counter}`,
+    started_at,
+    ended_at: started_at + 3_600_000,
+    project_id: null,
+    epic_id: null,
+    task_id: null,
+    state: "held",
+    participants: [],
+    notes: "",
+    summary: null,
+    transcribed_at: null,
+    validated_at: null,
+    speakers: {},
     created_at: counter,
     updated_at: counter,
     deleted_at: null,
@@ -210,6 +274,8 @@ export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     attachments: [],
     time_blocks: [],
     agent_sessions: [],
+    meetings: [],
+    terminal_sessions: [],
     ...overrides,
   };
 }
@@ -248,4 +314,199 @@ export function fakeParse(text: string, snap: Partial<Snapshot> = {}): Capture {
   }
   capture.title = title.join(" ");
   return capture;
+}
+
+/** A fake recording backend (Scribe, M19): records calls, emits levels and changes. */
+export function fakeScribe(overrides: Partial<ScribeApi> = {}) {
+  type Api = ScribeApi;
+  type Status = ScribeStatus;
+  type Audio = MeetingAudio;
+  const calls: string[] = [];
+  const levelHandlers: Array<(l: Levels) => void> = [];
+  const progressHandlers: Array<(p: Progress) => void> = [];
+  const modelHandlers: Array<(p: ModelProgress) => void> = [];
+  let models: ModelInfo[] = [
+    {
+      id: "large-v3-turbo",
+      label: "Accurate (large-v3-turbo)",
+      description: "Best results.",
+      download_bytes: 1_657_963_836,
+      installed: false,
+      active: false,
+      downloading: null,
+    },
+    {
+      id: "small",
+      label: "Fast (small)",
+      description: "Faster.",
+      download_bytes: 521_010_528,
+      installed: false,
+      active: false,
+      downloading: null,
+    },
+  ];
+  const changedHandlers: Array<(id: string) => void> = [];
+  const audio: Record<string, Audio | null> = {};
+  let status: Status = {
+    support: { recording: true, system_audio: true, note: null },
+    transcription: true,
+    live: null,
+  };
+  let settings: ScribeSettings = {
+    mic_device: null,
+    capture_system: true,
+    consent_reminder: true,
+    model: null,
+    language: null,
+    auto_transcribe: true,
+    retention_days: 10,
+  };
+  const api: Api = {
+    status: async () => status,
+    devices: async () => [{ id: "mic-1", name: "Desk mic", is_default: true }],
+    settings: async () => settings,
+    saveSettings: async (next) => {
+      calls.push(`save:${next.mic_device ?? ""}:${next.capture_system}`);
+      settings = next;
+      return next;
+    },
+    start: async (meetingId) => {
+      calls.push(`start:${meetingId}`);
+      status = {
+        ...status,
+        live: {
+          meeting_id: meetingId,
+          started_at: Date.now(),
+          mic: "Desk mic",
+          system: "Speakers",
+        },
+      };
+      audio[meetingId] = {
+        state: "recording",
+        started_at: Date.now(),
+        duration_ms: 0,
+        bytes: 44,
+        tracks: [],
+        warnings: [],
+        job: null,
+        purge_at: null,
+      };
+      return status;
+    },
+    stop: async () => {
+      const id = status.live?.meeting_id;
+      calls.push(`stop:${id}`);
+      status = { ...status, live: null };
+      if (id) {
+        audio[id] = {
+          state: "encoding",
+          started_at: 0,
+          duration_ms: 65_000,
+          bytes: 2_000_000,
+          tracks: [
+            { track: "mic", path: `meeting-audio/${id}/mic` },
+            { track: "system", path: `meeting-audio/${id}/system` },
+          ],
+          warnings: [],
+          job: null,
+          purge_at: null,
+        };
+      }
+      return status;
+    },
+    audio: async (meetingId) => audio[meetingId] ?? null,
+    recover: async (meetingId, keep) => {
+      calls.push(`recover:${meetingId}:${keep}`);
+      audio[meetingId] = keep
+        ? {
+            state: "ready",
+            started_at: 0,
+            duration_ms: 30_000,
+            bytes: 100_000,
+            tracks: [{ track: "mic", path: `meeting-audio/${meetingId}/mic` }],
+            warnings: ["The recording was interrupted; what was recorded was kept."],
+            job: null,
+            purge_at: null,
+          }
+        : null;
+    },
+    purge: async (meetingId) => {
+      calls.push(`purge:${meetingId}`);
+      audio[meetingId] = null;
+    },
+    usage: async () =>
+      Object.entries(audio)
+        .filter((e): e is [string, Audio] => e[1] !== null)
+        .map(([meeting_id, a]) => ({ meeting_id, bytes: a.bytes, duration_ms: a.duration_ms })),
+    url: (path) => `tm://localhost/${path}`,
+    onLevels: async (handler) => {
+      levelHandlers.push(handler);
+      return () => undefined;
+    },
+    onChanged: async (handler) => {
+      changedHandlers.push(handler);
+      return () => undefined;
+    },
+    models: async () => models,
+    downloadModel: async (id) => {
+      calls.push(`download:${id}`);
+      models = models.map((m) => (m.id === id ? { ...m, downloading: 0 } : m));
+    },
+    cancelDownload: async () => {
+      calls.push("cancel-download");
+    },
+    deleteModel: async (id) => {
+      calls.push(`delete-model:${id}`);
+      models = models.map((m) => (m.id === id ? { ...m, installed: false, active: false } : m));
+      return models;
+    },
+    process: async (meetingId) => {
+      calls.push(`process:${meetingId}`);
+      const current = audio[meetingId];
+      if (current) {
+        audio[meetingId] = {
+          ...current,
+          job: { state: "queued", step: null, fraction: 0, error: null },
+        };
+      }
+    },
+    cancelProcess: async (meetingId) => {
+      calls.push(`cancel-process:${meetingId}`);
+      const current = audio[meetingId];
+      if (current) audio[meetingId] = { ...current, job: null };
+    },
+    onProgress: async (handler) => {
+      progressHandlers.push(handler);
+      return () => undefined;
+    },
+    onModelProgress: async (handler) => {
+      modelHandlers.push(handler);
+      return () => undefined;
+    },
+    ...overrides,
+  };
+  return {
+    api,
+    calls,
+    audio,
+    setStatus: (s: Status) => {
+      status = s;
+    },
+    emitLevels: (l: Levels) => {
+      for (const h of levelHandlers) h(l);
+    },
+    emitChanged: (id: string) => {
+      for (const h of changedHandlers) h(id);
+    },
+    emitProgress: (p: Progress) => {
+      for (const h of progressHandlers) h(p);
+    },
+    emitModelProgress: (p: ModelProgress) => {
+      for (const h of modelHandlers) h(p);
+    },
+    setModels: (next: ModelInfo[]) => {
+      models = next;
+    },
+    models: () => models,
+  };
 }

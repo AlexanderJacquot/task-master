@@ -72,3 +72,47 @@ jobs:
       # builds the MCP server and bundles it next to the app (ADR 017).
       - name: Tauri build
         run: pnpm --filter desktop tauri build --bundles deb --config src-tauri/tauri.sidecar.conf.json
+
+  # Scribe's audio capture (ADR 026) only compiles on Windows and macOS: lint and test the
+  # desktop crate there too, so a break shows before a release tag.
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
+    env:
+      CARGO_TERM_COLOR: always
+      # What tauri-cli builds the release for (`minimumSystemVersion`): whisper.cpp needs
+      # 10.15. Ignored on Windows.
+      MACOSX_DEPLOYMENT_TARGET: "10.15"
+    steps:
+      - uses: actions/checkout@v6.1.0
+
+      - name: Rust toolchain
+        shell: bash
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          if [ "$RUNNER_OS" = macOS ]; then rustup target add x86_64-apple-darwin; fi
+
+      # v2: caches from before MACOSX_DEPLOYMENT_TARGET recompile sherpa-onnx-sys without
+      # its build script, whose downloaded libraries rust-cache does not keep.
+      - uses: swatinem/rust-cache@v2.9.2
+        with:
+          key: native-v2-${{ matrix.platform }}
+
+      # `generate_context!` wants the frontend folder; the UI itself is not needed here.
+      - name: Frontend placeholder
+        shell: bash
+        run: mkdir -p apps/desktop/dist
+
+      - name: Rust lint (desktop)
+        run: cargo clippy -p taskmaster-desktop --all-targets --locked -- -D warnings
+
+      - name: Rust tests (desktop)
+        run: cargo test -p taskmaster-desktop --locked
+
+      # The Intel release is cross-built on this Arm runner: build its native code too.
+      - name: Rust check (desktop, Intel macOS)
+        if: runner.os == 'macOS'
+        run: cargo check -p taskmaster-desktop --locked --target x86_64-apple-darwin

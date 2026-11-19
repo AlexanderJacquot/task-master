@@ -14,8 +14,8 @@ use crate::events::{Changed, EntityRef, EventBus};
 use crate::files::FileStore;
 use crate::history::{self, History};
 use crate::model::{
-    AgentNote, AgentRuntime, AgentSession, Attachment, Epic, Id, Project, ProjectFolder,
-    SessionState, Snapshot, Status, Tag, Task, TimeBlock, View,
+    AgentNote, AgentRuntime, AgentSession, Attachment, Epic, Id, Meeting, Project, ProjectFolder,
+    SessionState, Snapshot, Status, Tag, Task, TerminalSession, TimeBlock, TranscriptSegment, View,
 };
 use crate::ops::{Batch, EntityKind};
 use crate::sync::{self, Merged, OpsPage, SyncOp};
@@ -39,12 +39,40 @@ pub struct Changes {
     pub time_blocks: Vec<TimeBlock>,
     pub agent_sessions: Vec<AgentSession>,
     pub agent_notes: Vec<AgentNote>,
+    pub meetings: Vec<Meeting>,
+    /// Transcript segments written (Scribe): not in the snapshot, read per meeting.
+    #[serde(default)]
+    pub transcript_segments: Vec<TranscriptSegment>,
+    #[serde(default)]
+    pub terminal_sessions: Vec<TerminalSession>,
 }
 
 impl Changes {
     pub fn is_empty(&self) -> bool {
         self.batch_id.is_none()
     }
+}
+
+/// A file in this replica's attachment folder (Settings → Files, ADR 023).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct StoredFileInfo {
+    pub hash: String,
+    pub size: i64,
+    pub stored_at: i64,
+    /// A live attachment of a live task uses it.
+    pub in_use: bool,
+}
+
+/// What [`Store::purge_files`] did.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct PurgeReport {
+    /// Files deleted from this folder.
+    pub removed: u32,
+    pub freed_bytes: i64,
+    /// Files left because a live attachment still uses them.
+    pub in_use: u32,
 }
 
 /// Owns the database connection. Not thread-safe by itself: adapters wrap it in a mutex.
@@ -277,6 +305,48 @@ impl Store {
         Ok(Some(changes))
     }
 
+    /// Reverts one earlier batch (a change an agent reports, by its `batch_id`) as a new
+    /// batch, outside the undo history. Refused when the batch is unknown, or when a later
+    /// op (from any batch or device) touched a row it changed: reverting would undo that
+    /// later edit too. Revert newer changes first. A batch already reverted counts as
+    /// changed since.
+    pub fn revert_batch(&mut self, batch_id: &str) -> Result<Changes> {
+        let (count, last): (i64, Option<i64>) = self.conn.query_row(
+            "SELECT COUNT(*), MAX(seq) FROM ops WHERE batch_id = ?1",
+            [batch_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        let Some(last) = last.filter(|_| count > 0) else {
+            return Err(Error::not_found("change", batch_id));
+        };
+        let changed: Vec<(String, String)> = {
+            let mut stmt = self.conn.prepare(
+                "SELECT DISTINCT later.entity, later.entity_id FROM ops later
+                 WHERE later.seq > ?2 AND later.batch_id IS NOT ?1
+                   AND EXISTS (SELECT 1 FROM ops mine WHERE mine.batch_id = ?1
+                               AND mine.entity = later.entity
+                               AND mine.entity_id = later.entity_id)
+                 ORDER BY later.entity, later.entity_id",
+            )?;
+            let rows = stmt.query_map(rusqlite::params![batch_id, last], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?;
+            rows.collect::<rusqlite::Result<_>>()?
+        };
+        if !changed.is_empty() {
+            let names: Vec<String> = changed
+                .iter()
+                .map(|(entity, id)| format!("{entity} {id}"))
+                .collect();
+            return Err(Error::invalid(format!(
+                "cannot undo change {batch_id}: {} changed since (or it was already undone); \
+                 undo the newer changes first",
+                names.join(", ")
+            )));
+        }
+        self.write(|b| history::invert_batch(b, batch_id))
+    }
+
     /// Every live entity, for hydrating a front end.
     pub fn snapshot(&self) -> Result<Snapshot> {
         query::snapshot(&self.conn)
@@ -303,6 +373,28 @@ impl Store {
     /// Live task ids matching all words of `text` (prefix match), best first.
     pub fn search(&self, text: &str, limit: u32) -> Result<Vec<Id>> {
         query::search(&self.conn, text, limit)
+    }
+
+    /// One meeting, deleted ones included.
+    pub fn meeting(&self, id: &str) -> Result<Meeting> {
+        query::meeting(&self.conn, id)
+    }
+
+    /// A meeting's transcript, in time order (Scribe; not part of the snapshot).
+    pub fn transcript(&self, meeting_id: &str) -> Result<Vec<TranscriptSegment>> {
+        query::meeting(&self.conn, meeting_id)?;
+        query::transcript(&self.conn, meeting_id)
+    }
+
+    /// Transcript lines of live meetings matching every word of `text`, best first.
+    pub fn search_transcripts(&self, text: &str, limit: u32) -> Result<Vec<query::TranscriptHit>> {
+        query::search_transcripts(&self.conn, text, limit)
+    }
+
+    /// Live meetings by start; with `link` (`("project" | "epic" | "task", id)`), only
+    /// those linked to it.
+    pub fn meetings(&self, link: Option<(&str, &str)>) -> Result<Vec<Meeting>> {
+        query::meetings(&self.conn, link)
     }
 
     /// One attachment (deleted ones included), e.g. to serve or open its file.
@@ -336,6 +428,76 @@ impl Store {
             }
         }
         Ok(missing)
+    }
+
+    /// Whether a live attachment of a live task or meeting uses the content with `hash`. A
+    /// file only used by deleted attachments, or by attachments of deleted tasks and
+    /// meetings, can be purged.
+    pub fn file_in_use(&self, hash: &str) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM attachments a \
+             LEFT JOIN tasks t ON t.id = a.task_id \
+             LEFT JOIN meetings m ON m.id = a.meeting_id \
+             WHERE a.hash = ?1 AND a.deleted_at IS NULL \
+               AND (t.id IS NOT NULL AND t.deleted_at IS NULL \
+                    OR m.id IS NOT NULL AND m.deleted_at IS NULL))",
+            [hash],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// The files stored here, with whether a live attachment uses each (Settings → Files).
+    pub fn stored_files(&self) -> Result<Vec<StoredFileInfo>> {
+        let entries = self.files()?.entries()?;
+        let mut out = Vec::with_capacity(entries.len());
+        for entry in entries {
+            let in_use = self.file_in_use(&entry.hash)?;
+            out.push(StoredFileInfo {
+                hash: entry.hash,
+                size: entry.size,
+                stored_at: entry.stored_at,
+                in_use,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Permanently deletes the content of `hashes` that nothing live uses, and marks each
+    /// purged (ADR 023). Content still in use is left and counted as `in_use`.
+    pub fn purge_files(&self, hashes: &[String]) -> Result<PurgeReport> {
+        let files = self.files()?;
+        let mut report = PurgeReport::default();
+        for hash in hashes {
+            if !crate::files::is_hash(hash) {
+                return Err(Error::invalid(format!("'{hash}' is not a file hash")));
+            }
+            if self.file_in_use(hash)? {
+                report.in_use += 1;
+                continue;
+            }
+            if let Some(size) = files.remove(hash)? {
+                report.removed += 1;
+                report.freed_bytes += size;
+            }
+            files.mark_purged(hash)?;
+        }
+        Ok(report)
+    }
+
+    /// Drops this device's copy of content purged elsewhere (the server's list), unless a
+    /// live attachment here still uses it. Returns how many files were removed.
+    pub fn drop_purged(&self, hashes: &[String]) -> Result<u32> {
+        let files = self.files()?;
+        let mut removed = 0;
+        for hash in hashes {
+            if !crate::files::is_hash(hash) || self.file_in_use(hash)? {
+                continue;
+            }
+            if files.remove(hash)?.is_some() {
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     /// Writes a consistent copy of the database to `target` (replacing it).
@@ -700,6 +862,15 @@ fn load_changes(
                 changes.agent_sessions.push(query::agent_session(conn, id)?);
             }
             EntityKind::AgentNote => changes.agent_notes.push(query::agent_note(conn, id)?),
+            EntityKind::Meeting => changes.meetings.push(query::meeting(conn, id)?),
+            EntityKind::TranscriptSegment => {
+                changes.transcript_segments.push(query::segment(conn, id)?);
+            }
+            EntityKind::TerminalSession => {
+                changes
+                    .terminal_sessions
+                    .push(query::terminal_session(conn, id)?);
+            }
         }
     }
     Ok(changes)

@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/bindings.ts", "!**/src-tauri/gen", "!docs", "!design"]
+    "includes": ["**", "!**/bindings.ts", "!**/src-tauri/gen", "!**/.build", "!docs", "!design"]
   },
   "formatter": {
     "indentStyle": "space",

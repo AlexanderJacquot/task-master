@@ -10,12 +10,15 @@ import type {
   Changes,
   Command,
   Epic,
+  Meeting,
   Project,
   Snapshot,
   Status,
   Tag,
   Task,
+  TerminalSession,
   TimeBlock,
+  TranscriptSegment,
   View,
 } from "../lib/types";
 
@@ -36,6 +39,12 @@ export interface Entities {
   time_blocks: ById<TimeBlock>;
   /** Agent sessions of live tasks, every device's (ADR 017). */
   agent_sessions: ById<AgentSession>;
+  /** Live meetings (Scribe, ADR 025). */
+  meetings: ById<Meeting>;
+  /** Transcript segments of the meetings opened so far (not in the snapshot). */
+  transcript_segments: ById<TranscriptSegment>;
+  /** Claude Code sessions run in a terminal, read from their transcripts (M21). */
+  terminal_sessions: ById<TerminalSession>;
 }
 
 /** Local edits shown before the core confirms them. */
@@ -50,6 +59,9 @@ export interface Optimistic {
     attachments?: Attachment[];
     time_blocks?: TimeBlock[];
     agent_sessions?: AgentSession[];
+    meetings?: Meeting[];
+    transcript_segments?: TranscriptSegment[];
+    terminal_sessions?: TerminalSession[];
   };
   remove?: {
     tasks?: string[];
@@ -61,6 +73,9 @@ export interface Optimistic {
     attachments?: string[];
     time_blocks?: string[];
     agent_sessions?: string[];
+    meetings?: string[];
+    transcript_segments?: string[];
+    terminal_sessions?: string[];
   };
 }
 
@@ -82,6 +97,8 @@ export interface TaskStoreState extends Entities {
   connect(): Promise<() => void>;
   /** Applies entities written outside `execute` (an agent session the shell recorded). */
   record(changes: Changes | null): void;
+  /** Reads a meeting's transcript; kept up to date from then on. */
+  loadTranscript(meetingId: string): Promise<void>;
 }
 
 export type TaskStore = StoreApi<TaskStoreState>;
@@ -95,7 +112,10 @@ type Kind =
   | "statuses"
   | "attachments"
   | "time_blocks"
-  | "agent_sessions";
+  | "agent_sessions"
+  | "meetings"
+  | "transcript_segments"
+  | "terminal_sessions";
 const KINDS: Kind[] = [
   "tasks",
   "projects",
@@ -106,6 +126,9 @@ const KINDS: Kind[] = [
   "attachments",
   "time_blocks",
   "agent_sessions",
+  "meetings",
+  "transcript_segments",
+  "terminal_sessions",
 ];
 
 /** Statuses are kept as an array in workflow order; every other kind as a map by id. */
@@ -125,7 +148,8 @@ function byId<T extends { id: string }>(list: T[]): ById<T> {
   return Object.fromEntries(list.map((item) => [item.id, item]));
 }
 
-function fromSnapshot(snapshot: Snapshot): Entities {
+/** Everything but transcripts, which load per meeting. */
+function fromSnapshot(snapshot: Snapshot): Omit<Entities, "transcript_segments"> {
   return {
     tasks: byId(snapshot.tasks),
     projects: byId(snapshot.projects),
@@ -136,6 +160,8 @@ function fromSnapshot(snapshot: Snapshot): Entities {
     attachments: byId(snapshot.attachments),
     time_blocks: byId(snapshot.time_blocks),
     agent_sessions: byId(snapshot.agent_sessions),
+    meetings: byId(snapshot.meetings),
+    terminal_sessions: byId(snapshot.terminal_sessions ?? []),
   };
 }
 
@@ -164,6 +190,8 @@ export function createTaskStore(api: Api): TaskStore {
   let queue: Promise<unknown> = Promise.resolve();
   const ownBatches = new Set<string>();
   const unseenBatches = new Set<string>();
+  // Meetings whose transcript was read: re-read when the data is.
+  const transcripts = new Set<string>();
 
   const store = createStore<TaskStoreState>()((set, get) => {
     const record = (changes: Changes | null) => {
@@ -202,6 +230,24 @@ export function createTaskStore(api: Api): TaskStore {
       });
     };
 
+    /** Replaces the cached segments of these meetings with the core's. */
+    const readTranscripts = async (meetingIds: string[]) => {
+      const read = api.transcript;
+      if (!read || meetingIds.length === 0) return;
+      const fetched = await Promise.all(
+        meetingIds.map(async (id) => [id, await read(id)] as const),
+      );
+      set((s) => {
+        const ids = new Set(meetingIds);
+        const map: ById<TranscriptSegment> = {};
+        for (const seg of Object.values(s.transcript_segments)) {
+          if (!ids.has(seg.meeting_id)) map[seg.id] = seg;
+        }
+        for (const [, list] of fetched) for (const seg of list) map[seg.id] = seg;
+        return { transcript_segments: map };
+      });
+    };
+
     return {
       tasks: {},
       projects: {},
@@ -212,6 +258,9 @@ export function createTaskStore(api: Api): TaskStore {
       attachments: {},
       time_blocks: {},
       agent_sessions: {},
+      meetings: {},
+      transcript_segments: {},
+      terminal_sessions: {},
       agentActivity: {},
       ready: false,
       loadError: null,
@@ -222,6 +271,8 @@ export function createTaskStore(api: Api): TaskStore {
         try {
           const snapshot = await api.snapshot();
           set({ ...fromSnapshot(snapshot), ready: true, loadError: null });
+          // Transcripts are not in the snapshot: read the open ones again.
+          await readTranscripts([...transcripts]).catch(() => undefined);
         } catch (err) {
           set({ loadError: message(err) });
         }
@@ -298,6 +349,15 @@ export function createTaskStore(api: Api): TaskStore {
         }),
 
       dismissError: () => set({ lastError: null }),
+
+      async loadTranscript(meetingId) {
+        transcripts.add(meetingId);
+        try {
+          await readTranscripts([meetingId]);
+        } catch (err) {
+          set({ lastError: message(err) });
+        }
+      },
 
       async connect() {
         const stopChanges = await api.onChanged((event) => {

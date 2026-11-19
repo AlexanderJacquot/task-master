@@ -1,10 +1,11 @@
 // Settings → Agents (ADR 017): how this device runs the agent for "Send to agent".
 
 import { useEffect, useState } from "react";
-import { Button, cx, INPUT, Select } from "../../components/ui";
+import { Button, Checkbox, cx, INPUT, Select } from "../../components/ui";
 import type { ClaudeCheck, AgentSettings as Settings } from "../../lib/types";
 import { useApi, useStoreState } from "../../store/context";
 import { PERMISSION_MODES } from "../agents/sessions";
+import { dollarsText, parseDollars } from "../agents/usage";
 import { Section } from "./SettingsPage";
 
 function message(err: unknown): string {
@@ -196,6 +197,63 @@ export function AgentSettings() {
         The app moves the task itself: to the first status when it is sent to an agent, to the
         second when the agent reports it done (a task you closed stays closed).
       </p>
+      <Row label="Edit my tasks">
+        <Checkbox
+          checked={draft.edit_user_tasks}
+          onChange={() => edit({ edit_user_tasks: !draft.edit_user_tasks })}
+          label="Let agents edit my tasks"
+        />
+        <span className="text-xs text-ink-3">
+          Anything you can do here: edit, move, tag and delete your tasks, projects, epics and tags,
+          plan your calendar, attach files, undo
+        </span>
+      </Row>
+      <p className="pl-28 text-xs text-ink-3">
+        Off: an agent can only move its own task and that task's subtasks between statuses. Takes
+        effect for sessions started or resumed from now on.
+      </p>
+      <Row label="Terminal">
+        <Checkbox
+          checked={draft.import_terminal_sessions}
+          onChange={() => edit({ import_terminal_sessions: !draft.import_terminal_sessions })}
+          label="Count sessions I run in a terminal"
+        />
+        <span className="text-xs text-ink-3">
+          Reads Claude Code's transcripts where agents run every 5 minutes, for the Agents page's
+          cost and time
+        </span>
+      </Row>
+      <div className="flex items-start gap-2 text-xs">
+        <span className="w-26 shrink-0 pt-1.5 text-ink-3">Directive</span>
+        <textarea
+          value={draft.directive ?? ""}
+          onChange={(e) => edit({ directive: e.target.value || null })}
+          placeholder="Standing instructions for every agent, e.g. “Commit on a new branch, never on main.”"
+          aria-label="Directive for every agent"
+          rows={4}
+          className={cx(INPUT, "w-[28rem] resize-y py-1 text-[13px]")}
+        />
+      </div>
+      <p className="pl-28 text-xs text-ink-3">
+        Added to the system prompt of every agent you start from now on, after the app's own rules.
+        A running session keeps the directive it started with.
+      </p>
+      <Row label="Spend limits">
+        {(["day", "week", "month"] as const).map((period) => (
+          <LimitInput
+            key={period}
+            label={`per ${period}`}
+            micros={draft.limits[LIMIT_KEY[period]]}
+            onChange={(micros) =>
+              edit({ limits: { ...draft.limits, [LIMIT_KEY[period]]: micros } })
+            }
+          />
+        ))}
+      </Row>
+      <p className="pl-28 text-xs text-ink-3">
+        In dollars, over every device's sessions; blank for no limit. The Agents page shows what is
+        left, and Send to agent asks before starting once one is spent.
+      </p>
       {isLinux && (
         <Row label="Terminal">
           <input
@@ -219,6 +277,46 @@ export function AgentSettings() {
         )}
       </div>
     </Section>
+  );
+}
+
+const LIMIT_KEY = {
+  day: "day_usd_micros",
+  week: "week_usd_micros",
+  month: "month_usd_micros",
+} as const;
+
+/** A dollar amount; keeps what is typed (e.g. `12.`) while the saved value is in micros. */
+function LimitInput({
+  label,
+  micros,
+  onChange,
+}: {
+  label: string;
+  micros: number | null;
+  onChange(micros: number | null): void;
+}) {
+  const [text, setText] = useState(() => dollarsText(micros));
+  // Follow outside changes (load, save) without fighting the field while typing.
+  useEffect(() => {
+    setText((t) => (parseDollars(t) === micros ? t : dollarsText(micros)));
+  }, [micros]);
+  return (
+    <span className="flex items-center gap-1 text-ink-3">
+      $
+      <input
+        value={text}
+        inputMode="decimal"
+        onChange={(e) => {
+          setText(e.target.value);
+          onChange(parseDollars(e.target.value));
+        }}
+        placeholder="none"
+        aria-label={`Spend limit ${label}`}
+        className={cx(INPUT, "w-20 py-1 text-[13px] tabular-nums")}
+      />
+      <span className="mr-2">{label}</span>
+    </span>
   );
 }
 

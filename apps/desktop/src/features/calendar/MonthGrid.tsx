@@ -17,6 +17,7 @@ import {
 } from "../../lib/calendar";
 import type { CalendarEvent, Task, TimeBlock } from "../../lib/types";
 import { EventChip } from "./events";
+import { MeetingChip, type MeetingSpan, useMeetingSpans } from "./meetings";
 import { blockStyle, DayChip, type DragData, dayTasks, projectColor, useCalendar } from "./shared";
 
 /** Items shown in a cell before "+N more". */
@@ -88,15 +89,18 @@ function MonthCell({
   spans: EventSpan[];
   onPickDay(iso: string): void;
 }) {
-  const { statuses, today } = useCalendar();
+  const { statuses, today, now } = useCalendar();
+  const meetings = useMeetingSpans(now);
   const { setNodeRef, isOver } = useDroppable({ id: dropId.day(iso) });
-  // Blocks and timed events by start time; an item spanning midnight shows on its first day.
+  // Blocks, meetings and timed events by start time; an item spanning midnight shows on its
+  // first day.
   const timed = useMemo(
     () =>
-      segmentsOn<TimeBlock | EventSpan>([...blocks, ...spans], iso).filter(
-        (s) => !s.continuesBefore,
-      ),
-    [blocks, spans, iso],
+      segmentsOn<TimeBlock | EventSpan | MeetingSpan>(
+        [...blocks, ...meetings, ...spans],
+        iso,
+      ).filter((s) => !s.continuesBefore),
+    [blocks, meetings, spans, iso],
   );
   const allDay = useMemo(() => allDayOn(events, iso), [events, iso]);
   const { planned, due } = useMemo(() => dayTasks(tasks, iso, statuses), [tasks, iso, statuses]);
@@ -105,6 +109,8 @@ function MonthCell({
     ...timed.map((s) =>
       "event" in s.item ? (
         <EventChip key={s.item.id} event={s.item.event} />
+      ) : "meeting" in s.item ? (
+        <MeetingChip key={s.item.id} meeting={s.item.meeting} />
       ) : (
         <MonthBlock key={s.item.id} block={s.item} />
       ),
@@ -174,6 +180,7 @@ function MonthBlock({ block }: { block: TimeBlock }) {
       className={cx(
         "flex w-full min-w-0 items-center gap-1.5 rounded-md border-l-[3px] px-1.5 text-left text-[12px] leading-5",
         block.outcome === "cancelled" && "text-ink-3 line-through",
+        block.outcome === "missed" && "text-ink-3",
         isDragging && "opacity-40",
         FOCUS,
       )}

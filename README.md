@@ -129,6 +129,10 @@ sudo apt install build-essential curl file pkg-config libssl-dev \
   libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
 ```
 
+With [devenv](https://devenv.sh) (Nix), `devenv shell` (or direnv, through `.envrc`)
+provides the pinned Rust toolchain, Node and pnpm instead, and keeps their caches in
+`.devenv/` inside the checkout. On Linux it also brings the WebKitGTK libraries.
+
 Then:
 
 ```sh
@@ -141,10 +145,6 @@ pnpm build                      # installers for this system
 Before sending a change, run `cargo clippy -- -D warnings`, `cargo test`,
 `pnpm biome check` and `pnpm test`. CI runs the same checks on every push.
 
-On Forgejo, commenting `@claude` on a pull request asks Claude for a review (only the
-maintainer's comments trigger it; see `.forgejo/workflows/claude.yml` and
-[alex/claude-ci](https://harbor.solarnexus.space/alex/claude-ci)).
-
 The project is built as a Rust core (`crates/core`) that owns all data and every change,
 a thin Tauri shell, and a React UI. The sync server and the MCP server reuse the same
 core. Read [docs/plan.md](docs/plan.md) for the design,
@@ -155,6 +155,14 @@ The screenshots above come from a development-only demo page that runs the real 
 sample data: run `pnpm -C apps/desktop dev` and open
 `http://localhost:1420/showcase.html#/today` (add `?theme=light` before the `#` for the
 light theme).
+
+## Contributing
+
+Bug reports, questions and ideas are welcome in
+[GitHub issues](https://github.com/AlexanderJacquot/task-master/issues). The GitHub
+repository mirrors the maintainer's working repository; CI and releases run here on
+GitHub. The conventions contributors (and coding agents) follow are in
+[CLAUDE.md](CLAUDE.md).
 
 ## License
 

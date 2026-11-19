@@ -376,6 +376,24 @@ fn local_changes_are_pushed() {
     assert!(server.event(&server.target(), &event_id).cancelled);
     assert!(server.live(&server.target()).is_empty());
 
+    // Planned again, it comes back; missed (not worked on), it goes away like cancelled.
+    s.borrow_mut()
+        .execute(Command::UpdateTimeBlock {
+            id: block.id.clone(),
+            changes: vec![TimeBlockChange::Outcome(BlockOutcome::Planned)],
+        })
+        .unwrap();
+    run(&s, &mut server);
+    assert_eq!(server.live(&server.target()).len(), 1);
+    s.borrow_mut()
+        .execute(Command::UpdateTimeBlock {
+            id: block.id.clone(),
+            changes: vec![TimeBlockChange::Outcome(BlockOutcome::Missed)],
+        })
+        .unwrap();
+    assert_eq!(run(&s, &mut server).deleted, 1);
+    assert!(server.live(&server.target()).is_empty());
+
     // Renaming the task updates its events.
     s.borrow_mut()
         .execute(Command::UpdateTimeBlock {
@@ -647,4 +665,115 @@ fn reconnecting_reuses_the_existing_calendar() {
             .unwrap()
             .is_some()
     );
+}
+
+#[test]
+fn meetings_are_pushed_followed_and_come_back_when_deleted_there() {
+    let (s, mut server) = setup();
+    let project = s
+        .borrow_mut()
+        .execute(Command::CreateProject {
+            project: NewProject {
+                name: "Client".into(),
+                ..NewProject::default()
+            },
+        })
+        .unwrap()
+        .projects
+        .remove(0);
+    let create = |meeting: NewMeeting| {
+        s.borrow_mut()
+            .execute(Command::CreateMeeting { meeting })
+            .unwrap()
+            .meetings
+            .remove(0)
+    };
+    let meeting = create(NewMeeting {
+        title: "Kick-off".into(),
+        started_at: NOW,
+        ended_at: Some(NOW + HOUR),
+        project_id: Some(project.id.clone()),
+        participants: vec!["Ada".into(), "Grace".into()],
+        ..NewMeeting::default()
+    });
+    let _recording = create(NewMeeting {
+        title: "Still recording".into(),
+        started_at: NOW,
+        state: Some(MeetingState::Recording),
+        ..NewMeeting::default()
+    });
+    assert_eq!(
+        run(&s, &mut server).created,
+        1,
+        "not the one without an end"
+    );
+    let key = format!("meeting:{}", meeting.id);
+    let event = event_of(&s, &server, &key);
+    assert_eq!(event.title, "Kick-off");
+    assert_eq!(
+        event.when,
+        Some(When::Timed {
+            start_at: NOW,
+            end_at: NOW + HOUR
+        })
+    );
+    run(&s, &mut server);
+    assert!(
+        server.writes.is_empty(),
+        "unchanged meetings are not rewritten"
+    );
+
+    // Notes do not change the event; participants do.
+    let update = |changes| {
+        s.borrow_mut()
+            .execute(Command::UpdateMeeting {
+                id: meeting.id.clone(),
+                changes,
+            })
+            .unwrap();
+    };
+    update(vec![MeetingChange::Notes("private".into())]);
+    run(&s, &mut server);
+    assert!(server.writes.is_empty());
+    update(vec![MeetingChange::Participants(vec!["Ada".into()])]);
+    run(&s, &mut server);
+    assert_eq!(server.writes.len(), 1);
+
+    // A move made in the calendar moves the meeting.
+    let target = server.target();
+    server.user_edit(&target, &event.id, |e| {
+        e.when = Some(When::Timed {
+            start_at: NOW + 2 * HOUR,
+            end_at: NOW + 3 * HOUR,
+        });
+    });
+    assert_eq!(run(&s, &mut server).pulled, 1);
+    let moved = s.borrow().meeting(&meeting.id).unwrap();
+    assert_eq!(
+        (moved.started_at, moved.ended_at),
+        (NOW + 2 * HOUR, Some(NOW + 3 * HOUR))
+    );
+
+    // Deleted there, the meeting stays and its event is created again.
+    server.delete(&target, &event.id).unwrap();
+    run(&s, &mut server);
+    assert!(
+        s.borrow()
+            .meeting(&meeting.id)
+            .unwrap()
+            .deleted_at
+            .is_none()
+    );
+    run(&s, &mut server);
+    let again = event_of(&s, &server, &key);
+    assert_ne!(again.id, event.id);
+
+    // Deleted here, its event goes.
+    s.borrow_mut()
+        .execute(Command::DeleteMeeting {
+            id: meeting.id.clone(),
+        })
+        .unwrap();
+    run(&s, &mut server);
+    assert!(server.live(&target).iter().all(|e| e.id != again.id));
 }

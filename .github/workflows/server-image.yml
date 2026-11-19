@@ -1,8 +1,8 @@
 # Sync server image (ADR 015, ADR 016, docs/server.md). Runs on the GitHub mirror, like
 # release.yml: Forgejo reads .forgejo/workflows and ignores this folder while that exists.
 #
-# A v* tag pushes ghcr.io/<owner>/task-master-server:<version> and :latest; Renovate in the
-# homelab repo then bumps the deployed version. The package must be public (hosts pull
+# A v* tag pushes ghcr.io/<owner>/task-master-server:<version> and :latest. The package
+# must be public (hosts pull
 # without logging in): set it once in the package settings after its first push.
 #
 # Manual run: no input pushes `latest` from the chosen branch; `version: vX.Y.Z` rebuilds

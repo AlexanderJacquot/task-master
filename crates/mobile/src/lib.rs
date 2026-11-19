@@ -462,6 +462,7 @@ impl Core {
             show_subtasks: false,
             show_cancelled: false,
             show_agent_tasks: false,
+            lineage: None,
         };
         let options = ViewOptions {
             today: day.today.clone(),

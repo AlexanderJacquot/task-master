@@ -1,5 +1,7 @@
 # Claude sessions from a task
 
+To use task-master's tools in your own Claude conversations instead, see docs/mcp.md.
+
 **Send to Claude** starts Claude Code in the background on a task: in a folder you pick,
 with the task's context, and with task-master's own tools so Claude can report what it is
 doing. You follow it on the task, answer it with a follow-up, or open it in a terminal.
@@ -50,6 +52,23 @@ On a task (side panel or page), the **Claude** section → **Send to Claude**:
 
 **Start**. The task's card and row get a chip with what Claude is doing ("Editing
 store.rs", "Running `cargo test`"), and the **Agents** page in the sidebar lists it.
+
+**Run → In the Claude desktop app** (macOS and Windows, with agents on this computer, not
+WSL; ADR 029): **Open in Claude** opens a new Code session in the Claude desktop app, in
+the folder, with the task and the app's rules typed in. You press send, and pick the
+permissions and model there. The session shows **In desktop app** until Claude records
+its summary or you click **Mark done**. Its notes and summary reach the task only if the
+desktop app has task-master's MCP (the claude.ai connector, or the local server added by
+hand): the prompt gives Claude the session id to pass. Its time and turns come from its
+transcript (Agents page, every 5 minutes) once Claude has used a task-master tool from
+the local server, which records the conversation's id; its cost too, once the desktop
+app has written it there, which it does only now and then. The first time a folder is
+opened there, the desktop app asks to trust it: send the prompt again after that. The
+choice is remembered. Click **In desktop app** (on the task's session or the Agents page)
+to go back to the conversation there: the app finds the desktop app's session that runs
+it, by the conversation's id, or else by the transcript whose first prompt names the
+session. It cannot before the prompt is sent, for an archived conversation, or on
+another device.
 
 ## 3. Follow and continue
 
@@ -115,9 +134,17 @@ are when Claude finishes.
   (`task-master-mcp`, installed next to the app) in its `--mcp-config`. Files per session
   are in the app's data folder, `agents/<session id>/` (`mcp.json`, `rules.md`).
 - The MCP server opens this device's database directly, so what Claude writes appears at
-  once, syncs, and is in the task's activity. Its tools: `get_task`, `list_tasks`,
-  `list_projects`, `search`, `create_task`, `update_task`, `add_note`,
-  `complete_session`.
+  once, syncs, and is in the task's activity. Its tools cover what the user can do in
+  the app except board columns and saved views: tasks (`get_task`, `list_tasks`,
+  `search`, `create_task`, `update_task`, `delete_task`), projects and epics
+  (`list_projects`, `create_/update_/delete_project`, `create_/update_/delete_epic`),
+  tags (`list_tags`, `update_tag`, `delete_tag`), the calendar (`get_calendar`,
+  `schedule_block`, `update_block`), the lineage (`get_lineage`, `link_tasks`),
+  attachments (`list_attachments`, `attach_file`, `read_attachment`,
+  `rename_attachment`, `remove_attachment`), sessions (`add_note`, `complete_session`,
+  `list_agent_sessions`, `remove_agent_session`) and `undo` (by a write's `change_id`).
+  See docs/mcp.md and ADR 017 for what Settings → Agents → *Let agents edit my tasks*
+  allows.
 - Under WSL, Claude Code runs the Windows `task-master-mcp.exe` through WSL interop, so
   the database stays on the Windows side.
 

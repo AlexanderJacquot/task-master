@@ -251,7 +251,7 @@ fn cycle_locked(state: &AppState, provider: &mut impl CalendarProvider) -> ApiRe
     }
     state.calendar.report.lock().unwrap().syncing = true;
     let now = now_ms();
-    let result = taskmaster_core::calendar::sync(&state.store, provider, now, &utc_date(now));
+    let result = taskmaster_core::calendar::sync(&*state.store, provider, now, &utc_date(now));
     let mut report = state.calendar.report.lock().unwrap();
     report.syncing = false;
     match result {

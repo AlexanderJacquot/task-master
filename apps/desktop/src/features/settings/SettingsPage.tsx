@@ -1,7 +1,7 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
 // Database, Info and Keyboard have no glyph in the app's icon set yet.
-import { Database, Info, Keyboard } from "lucide-react";
+import { Database, HardDrive, Info, Keyboard } from "lucide-react";
 import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import {
   AgentsIcon,
@@ -9,6 +9,7 @@ import {
   ColumnsIcon,
   OptionsIcon,
   RefreshIcon,
+  ScribeIcon,
 } from "../../components/TaskIcons";
 import { Button, cx, Dot, InlineInput, Select } from "../../components/ui";
 import {
@@ -20,6 +21,7 @@ import {
 import { formatAgo, isoDate } from "../../lib/dates";
 import { useOrnaments } from "../../lib/ornaments";
 import { settingsApi } from "../../lib/settingsApi";
+import { loadSoundsOn, playSound, saveSoundsOn } from "../../lib/sounds";
 import {
   type LightTheme,
   loadLightTheme,
@@ -51,6 +53,8 @@ import { HeaderButton } from "../shell/ViewPage";
 import { About } from "./About";
 import { AgentSettings } from "./AgentSettings";
 import { CalendarSettings } from "./CalendarSettings";
+import { FilesSettings } from "./FilesSettings";
+import { ScribeSettings } from "./ScribeSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SyncSettings } from "./SyncSettings";
 
@@ -256,6 +260,7 @@ function Appearance() {
         ornaments. Clean is plain and quiet: sans-serif type, simple line icons, no textures.
       </p>
       {!clean && <WeatheringChoice dark={theme === "dark"} />}
+      {!clean && <PaperSounds dark={theme === "dark"} />}
       {import.meta.env.DEV && (
         <div className="flex items-center gap-3">
           <Button size="sm" onClick={() => useOrnaments.getState().setOpen(true)}>
@@ -301,6 +306,28 @@ function WeatheringChoice({ dark }: { dark: boolean }) {
   );
 }
 
+/** Crumple, scribble and burn sounds on the parchment theme. */
+function PaperSounds({ dark }: { dark: boolean }) {
+  const [on, setOn] = useState(loadSoundsOn);
+  return (
+    <label className="mt-1 flex items-center gap-1.5">
+      <input
+        type="checkbox"
+        checked={on}
+        onChange={(e) => {
+          setOn(e.target.checked);
+          saveSoundsOn(e.target.checked);
+          if (e.target.checked) playSound("scribble");
+        }}
+        className="accent-accent"
+      />
+      Paper sounds: a sheet crumples when a task opens, a quill scribbles when one is created, it
+      burns when one is deleted
+      {dark && <span className="text-neutral-500"> (with the Parchment theme)</span>}
+    </label>
+  );
+}
+
 function AddingTasks() {
   const [open, setOpen] = useState(loadOpenInPanel);
   const [projectId, setProjectId] = useState(loadDefaultProject);
@@ -322,26 +349,23 @@ function AddingTasks() {
         />
         Open a task added from a view's top row in the side panel, ready to describe
       </label>
-      <label className="flex items-center gap-2">
+      <div className="flex items-center gap-2">
         Default project
-        <select
+        <Select
           aria-label="Default project"
           value={projectId ?? ""}
-          onChange={(e) => {
-            const id = e.target.value || null;
+          onValueChange={(value) => {
+            const id = value || null;
             setProjectId(id);
             saveDefaultProject(id);
           }}
-          className="rounded border border-border bg-transparent px-2 py-1"
-        >
-          <option value="">Inbox (no project)</option>
-          {choices.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          className="w-56 border-line"
+          options={[
+            { value: "", label: "Inbox (no project)" },
+            ...choices.map((p) => ({ value: p.id, label: p.name, icon: <Dot color={p.color} /> })),
+          ]}
+        />
+      </div>
     </Section>
   );
 }
@@ -476,7 +500,9 @@ function Data() {
           )}
         </dl>
         <div className="flex gap-2">
-          <HeaderButton
+          <Button
+            size="sm"
+            busy={busy}
             onClick={() =>
               void run(async () => {
                 setStatus(await settingsApi.backupNow());
@@ -484,8 +510,8 @@ function Data() {
               })
             }
           >
-            {busy ? "Working…" : "Back up now"}
-          </HeaderButton>
+            {busy ? "Backing up…" : "Back up now"}
+          </Button>
         </div>
       </Section>
 
@@ -576,9 +602,9 @@ function RemoteBackupForm({
   const r = config.remote;
   const [form, setForm] = useState<RemoteInput>({
     enabled: r?.enabled ?? false,
-    endpoint: r?.endpoint ?? "https://s3.solarnexus.space",
+    endpoint: r?.endpoint ?? "",
     bucket: r?.bucket ?? "task-master",
-    region: r?.region ?? "garage",
+    region: r?.region ?? "us-east-1",
     access_key: r?.access_key ?? "",
     secret_key: "",
     prefix: r?.prefix ?? "backups",
@@ -590,7 +616,13 @@ function RemoteBackupForm({
       <input
         type={type}
         value={String(form[key])}
-        placeholder={key === "secret_key" && r?.has_secret ? "stored (leave empty to keep)" : ""}
+        placeholder={
+          key === "secret_key" && r?.has_secret
+            ? "stored (leave empty to keep)"
+            : key === "endpoint"
+              ? "https://s3.example.com"
+              : ""
+        }
         onChange={(e) => setForm({ ...form, [key]: e.target.value })}
         className="w-80 rounded border border-neutral-300 bg-transparent px-1.5 py-0.5 dark:border-neutral-700"
       />
@@ -599,7 +631,7 @@ function RemoteBackupForm({
   return (
     <Section
       title="Remote backup"
-      hint="Uploads each daily backup to an S3-compatible bucket (Garage in the homelab) whenever it is reachable; off the network, it retries later. One-way: restore by importing or by copying a backup back."
+      hint="Uploads each daily backup to an S3-compatible bucket (AWS S3, Backblaze B2, Cloudflare R2, MinIO, Garage, ...) whenever it is reachable; otherwise it retries later. One-way: restore by importing or by copying a backup back."
     >
       <label className="flex items-center gap-2 text-sm">
         <input
@@ -697,7 +729,9 @@ const SETTINGS_CATEGORIES: SettingsCategory[] = [
   { id: "sync", label: "Sync", icon: RefreshIcon, render: () => <SyncSettings /> },
   { id: "calendar", label: "Calendar", icon: CalendarIcon, render: () => <CalendarSettings /> },
   { id: "agents", label: "Agents", icon: AgentsIcon, render: () => <AgentSettings /> },
+  { id: "scribe", label: "Scribe", icon: ScribeIcon, render: () => <ScribeSettings /> },
   { id: "data", label: "Data and backups", icon: Database, render: () => <Data /> },
+  { id: "files", label: "Files", icon: HardDrive, render: () => <FilesSettings /> },
   { id: "about", label: "About", icon: Info, render: () => <About /> },
 ];
 
@@ -737,7 +771,7 @@ export function SettingsPage() {
         </nav>
         {/* Keyed so a new category starts scrolled to its top. */}
         <div key={current.id} className="min-h-0 flex-1 overflow-y-auto">
-          <div className="max-w-3xl px-10 pb-10 md:pl-6">{current.render()}</div>
+          <div className="relative max-w-3xl px-10 pb-10 md:pl-6">{current.render()}</div>
         </div>
       </div>
     </div>

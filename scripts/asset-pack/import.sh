@@ -29,7 +29,9 @@ convert() {
     -quality 86 "$dst"
 }
 
-for f in "$src"/app-icons/*.png; do
+# Icons added outside the zip live in scripts/asset-pack/extra/app-icons (already trimmed).
+extra="$root/scripts/asset-pack/extra"
+for f in "$src"/app-icons/*.png "$extra"/app-icons/*.png; do
   n=$(basename "$f" .png)
   # Square, centred, transparent: the tiles are not all exactly square after trimming.
   convert "$f" "$out/app-icons/$n.webp" 256x256 -background none -gravity center \
@@ -52,7 +54,7 @@ done
 
 # Full-size sources for the native app icon (scripts/asset-pack/set-app-icon.sh).
 mkdir -p "$out/app-icons/source"
-for f in "$src"/app-icons/*.png; do
+for f in "$src"/app-icons/*.png "$extra"/app-icons/*.png; do
   magick "$f" -trim +repage -background none -gravity center \
     -extent "%[fx:max(w,h)]x%[fx:max(w,h)]" -resize 1024x1024 -strip \
     "$out/app-icons/source/$(basename "$f")"

@@ -8,6 +8,7 @@ pub mod auth;
 pub mod backup;
 pub mod calendar;
 pub mod config;
+pub mod mcp;
 
 use std::convert::Infallible;
 use std::path::PathBuf;
@@ -25,8 +26,8 @@ use axum::routing::{get, post};
 use futures_util::Stream;
 use serde::Deserialize;
 use taskmaster_core::{
-    AuthMode, IssuedToken, MAX_ATTACHMENT_BYTES, OidcExchange, PullPage, PushRequest, PushResult,
-    ServerInfo, Store, is_hash, now_ms,
+    AuthMode, BlobList, IssuedToken, MAX_ATTACHMENT_BYTES, OidcExchange, PullPage, PushRequest,
+    PushResult, ServerInfo, Store, is_hash, now_ms,
 };
 use tokio::sync::broadcast;
 
@@ -41,7 +42,8 @@ const MAX_PULL: u32 = 1_000;
 
 pub struct AppState {
     pub config: Config,
-    pub store: Mutex<Store>,
+    /// Shared with the remote MCP tools (ADR 024), which write through the same connection.
+    pub store: Arc<Mutex<Store>>,
     pub tokens: Tokens,
     pub calendar: calendar::Runtime,
     oidc: Option<Oidc>,
@@ -73,7 +75,7 @@ impl AppState {
         let (heads, _) = broadcast::channel(16);
         Arc::new(Self {
             config,
-            store: Mutex::new(store),
+            store: Arc::new(Mutex::new(store)),
             tokens,
             calendar: calendar::Runtime::default(),
             oidc,
@@ -83,6 +85,15 @@ impl AppState {
 
     pub fn store(&self) -> MutexGuard<'_, Store> {
         self.store.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Tells `/events` listeners about new ops written here (not by a push), and wakes the
+    /// calendar runner.
+    pub fn announce(&self) {
+        if let Ok(head) = self.store().last_seq() {
+            let _ = self.heads.send(head);
+        }
+        self.calendar.kick();
     }
 
     pub fn backup_dir(&self) -> PathBuf {
@@ -155,20 +166,22 @@ fn authorize(state: &AppState, headers: &HeaderMap, needed: Scope) -> ApiResult<
 
 pub fn router(state: Arc<AppState>) -> Router {
     let blob_limit = usize::try_from(MAX_ATTACHMENT_BYTES).unwrap_or(usize::MAX) + 1024;
-    Router::new()
-        .route("/health", get(|| async { "ok" }))
-        .route("/info", get(info))
+    // Everything a device does. The token is checked before the body is read, so an
+    // anonymous caller cannot make the server buffer a 64 MB push or an attachment.
+    let sync = Router::new()
         .route(
             "/sync/push",
             post(push).layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
         )
         .route("/sync/pull", get(pull))
         .route("/events", get(events))
+        .route("/blobs", get(list_blobs))
         .route(
             "/blobs/{hash}",
             get(get_blob)
                 .head(head_blob)
                 .put(put_blob)
+                .delete(delete_blob)
                 .layer(DefaultBodyLimit::max(blob_limit)),
         )
         .route("/calendar/status", get(calendar::get_status))
@@ -177,8 +190,30 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/calendar/sync", post(calendar::sync_now))
         .route("/calendar/shown", post(calendar::shown))
         .route("/calendar/events", get(calendar::events))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_sync,
+        ));
+    Router::new()
+        .route("/health", get(|| async { "ok" }))
+        .route("/info", get(info))
         .route("/auth/oidc", post(oidc_exchange))
-        .with_state(state)
+        .merge(sync)
+        .with_state(state.clone())
+        .merge(mcp::routes(state))
+}
+
+/// Refuses a request without a `sync` token before its body is read. The handlers check
+/// again (cheap), so a route moved out of this group stays protected.
+async fn require_sync(
+    State(state): State<Arc<AppState>>,
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    match authorize(&state, request.headers(), Scope::Sync) {
+        Ok(()) => next.run(request).await,
+        Err(refusal) => refusal.into_response(),
+    }
 }
 
 fn server_info(state: &AppState) -> ApiResult<ServerInfo> {
@@ -348,6 +383,45 @@ async fn put_blob(
             return Err(ApiError::new(
                 StatusCode::BAD_REQUEST,
                 format!("the content's hash is {}, not {hash}", stored.hash),
+            ));
+        }
+        Ok(StatusCode::NO_CONTENT)
+    })
+    .await
+}
+
+/// `GET /blobs`: the content held here and the purged hashes (Settings → Files, ADR 023).
+async fn list_blobs(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> ApiResult<Json<BlobList>> {
+    authorize(&state, &headers, Scope::Sync)?;
+    blocking(move || {
+        let store = state.store();
+        let files = store.files()?;
+        Ok(Json(BlobList {
+            files: files.entries()?,
+            purged: files.purged()?,
+        }))
+    })
+    .await
+}
+
+/// `DELETE /blobs/{hash}`: purges content no live attachment uses and keeps a tombstone,
+/// so the other devices drop their copy. 409 while an attachment still uses it.
+async fn delete_blob(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(hash): Path<String>,
+) -> ApiResult<StatusCode> {
+    authorize(&state, &headers, Scope::Sync)?;
+    blob_path(&state, &hash)?;
+    blocking(move || {
+        let report = state.store().purge_files(std::slice::from_ref(&hash))?;
+        if report.in_use > 0 {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "a live attachment still uses this file",
             ));
         }
         Ok(StatusCode::NO_CONTENT)

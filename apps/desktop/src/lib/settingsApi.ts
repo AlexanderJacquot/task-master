@@ -1,7 +1,7 @@
 // Settings-screen calls (data folder, backups, export/import). Desktop-only, so they are
 // not part of the injected `Api` the store and its tests use.
 
-import { commands } from "../bindings";
+import { commands, type FilesOverview_Serialize, type PurgeReport } from "../bindings";
 import { ApiError } from "./api";
 import type {
   BackupStatus,
@@ -32,6 +32,10 @@ export const settingsApi = {
   backupNow: (): Promise<BackupStatus> => unwrap(commands.backupNow()),
   exportTo: (path: string): Promise<null> => unwrap(commands.exportTo(path)),
   importFrom: (path: string): Promise<ImportSummary> => unwrap(commands.importFrom(path)),
+  /** Files on this device and on the sync server (Settings → Files, ADR 023). */
+  filesOverview: (): Promise<FilesOverview_Serialize> => unwrap(commands.filesOverview()),
+  /** Permanently deletes unused content here, then everywhere at the next sync. */
+  purgeFiles: (hashes: string[]): Promise<PurgeReport> => unwrap(commands.purgeFiles(hashes)),
   /** Copies the data there (unless a database already exists) and restarts the app. */
   setDataDir: (path: string | null): Promise<null> => unwrap(commands.setDataDir(path)),
 };
