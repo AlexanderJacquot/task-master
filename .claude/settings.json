@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && [ -n \"$CLAUDE_ENV_FILE\" ] && command -v direnv >/dev/null && direnv export bash >> \"$CLAUDE_ENV_FILE\" 2>/dev/null || true",
+            "timeout": 300,
+            "statusMessage": "Loading the devenv shell"
+          }
+        ]
+      }
+    ]
+  }
+}

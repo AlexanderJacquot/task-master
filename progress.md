@@ -17,6 +17,13 @@ command `agent_device` (this device's id; bindings regenerated), `defaultFolder`
 Checks: biome, typecheck, `pnpm test` (549 passed, 2 skipped), clippy, `cargo test
 --workspace` (328 passed, 8 ignored). Not yet tried in the running app.
 
+**devenv for agents** (2026-11-19, on `main`): `.envrc` loads `devenv direnvrc` before
+`use devenv` (direnv's own library had no `use_devenv` on this Mac); devenv provides `cmake`
+on every platform (whisper-rs-sys), so `nix shell nixpkgs#cmake` is no longer needed; a
+SessionStart hook in `.claude/settings.json` appends `direnv export bash` to
+`$CLAUDE_ENV_FILE`, so Claude Code's shell has cargo, cmake and pnpm. Checked by running
+the hook's command by hand; it takes effect in the next session.
+
 **Fold the sidebar's projects** (2026-11-19, on `main`): the Projects header
 is a fold toggle like Epics (open by default, remembered per machine as `projects` in
 `task-master.sidebar-sections`; `useOpenSection` is shared with `Collapsible`); New

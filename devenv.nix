@@ -33,8 +33,9 @@ in
     corepack.enable = true;
   };
 
-  # Tauri on Linux needs WebKitGTK and friends; macOS uses the system frameworks.
-  packages = lib.optionals pkgs.stdenv.isLinux (with pkgs; [
+  # whisper-rs-sys builds whisper.cpp with CMake on every platform. Tauri on Linux needs
+  # WebKitGTK and friends; macOS uses the system frameworks.
+  packages = [ pkgs.cmake ] ++ lib.optionals pkgs.stdenv.isLinux (with pkgs; [
     pkg-config
     openssl
     webkitgtk_4_1
