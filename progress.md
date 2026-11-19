@@ -12,6 +12,21 @@ folders only from this device's sessions, devenv for agents. Schema 17, unchange
 sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
 Schema 17: update the sync server with the app.
 
+**devenv builds with Xcode, and for iOS** (2026-11-19, on `main`): this Mac now has Xcode
+27.2 and the iOS 27.2 simulators (from the App Store, in the nix-darwin config with
+xcodegen, xcbeautify, swiftlint and XcodeBuildMCP; Claude Code has the `xcode` and
+`XcodeBuildMCP` MCP servers and Xcode's agent skills in `~/.claude/skills`). `devenv.nix`:
+`apple.sdk = null` on macOS, so the shell no longer sets `DEVELOPER_DIR`/`SDKROOT` to a Nix
+macOS 14.4 SDK or puts xcbuild's stand-in `xcrun` first (they hid Xcode and the iOS SDKs);
+Rust targets `aarch64-apple-ios` and `aarch64-apple-ios-sim`; for those two targets cc-rs
+and cargo use `/usr/bin/clang` and `/usr/bin/ar` (the Nix clang wrapper adds
+`-mmacos-version-min`, which clang rejects next to an iOS target). Checks in a fresh devenv
+shell without the Nix SDK: clippy, `cargo test --workspace` (332 passed, 8 ignored), biome,
+typecheck, `pnpm test` (550 passed, 2 skipped); `taskmaster-core` builds for both iOS
+targets. A shell entered before this change keeps the old variables: reload it. Later:
+`scripts/ios/build-xcframework.sh` on `p1-ios-walking-skeleton` calls `rustup target add`,
+and devenv's Rust has no rustup (the targets come from `devenv.nix`).
+
 **Back to the desktop app's conversation** (2026-11-19, on `main` from branch `desktop-open-session`;
 ADR 029 second amendment): the "In desktop app" state (session card, Agents page) is a
 button. `agent_open_desktop` (shell `agents/desktop.rs`) finds the desktop app's session
