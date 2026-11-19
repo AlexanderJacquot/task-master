@@ -6,12 +6,14 @@ Running log for task-master. Read at the start of every session; update at the e
 
 **iPhone app** (plan agreed 2026-11-10; `docs/ios-plan.md`, ADR 030): a SwiftUI app over
 the Rust core through UniFFI (`crates/mobile`), the phone as one more sync replica, iOS 26
-and later. Built from Linux with macOS CI runners (simulator, screenshots, videos); no
-Apple developer account and no Mac yet, so nothing runs on a real iPhone until one of the
-two exists. Milestones P0 (core preparation) to P8 (App Store). **P0 is done** on
-`p0-phone-core` (desktop sync needs a hands-on check before merging). **P1** is done on
-`p1-ios-walking-skeleton` and green on CI (the app runs in the simulator and syncs). Next: P2, starting
-with phone mockups of the read screens.
+and later. Milestones P0 (core preparation) to P8 (App Store). P0 (`p0-phone-core`) and P1
+(`p1-ios-walking-skeleton`) were built on Linux and green on CI. **Now on this Mac**:
+branch `p1-ios-mac` = P1 with `main` (0.25.0, schema 17) merged in; the app builds with
+Xcode 27.2 and runs in the iOS 27.2 simulator, and its UI test passes there (2026-11-19,
+see Done). Not merged into `main` and not pushed. Before it merges: the hands-on desktop
+sync check (P0 moved the desktop's sync loop into `crates/client`), and a CI run of
+`ios.yml` on the mirror. No Apple developer account yet, so no real iPhone. Next: P2,
+starting with phone mockups of the read screens.
 
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
@@ -789,6 +791,51 @@ GitHub mirror setup and hands-on checks. The MVP milestones are complete; next i
 the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
+
+### P1 on the Mac: walking skeleton brought up to `main` and run in the simulator (2026-11-19, branch `p1-ios-mac`)
+
+- Branch `p1-ios-mac` from `origin/p1-ios-walking-skeleton` (on `p0-phone-core`), `main`
+  merged in. The iPhone ADR is now **ADR 030** (`main`'s ADR 022 is saved Lineage views);
+  references renamed.
+- Merge: the sync round keeps `main`'s purges (sent after the push, dropped after the
+  pull) and downloads content only with `Files::All` (the phone fetches on demand);
+  Settings → Files on the desktop (`files_overview`) reads the account through the
+  engine's `Host`. The desktop keeps `main`'s behaviour otherwise; the desktop sync loop
+  is still the moved one from P0, **not yet checked by hand**.
+- Views in the core caught up with 0.15.0's nested subtasks: rows at any depth,
+  `expanded` per row, `ViewOptions::expanded_tasks`, `show_subtasks`. The shared vectors
+  encode `expanded`, have three new nesting cases and the snapshot's new `meetings` and
+  `terminal_sessions`; desktop and core agree (50 vector tests each side).
+- Sync engine fix (`crates/client/src/engine.rs`): the watcher drops announcements while
+  a round runs, so a push that landed after the round's pull waited for the next cycle.
+  A round now notes the heads announced while it ran and goes again when one is newer
+  than what it pulled. Found by `crates/mobile`'s two-phones test, which failed on macOS
+  every time (two loops' rounds overlapped); applies to the desktop too.
+- `scripts/ios/build-xcframework.sh` calls `rustup` only where it exists (CI); in
+  devenv it checks the target's std is installed. `scripts/ios/test-kit.sh` also runs on
+  macOS: the package tests on the booted simulator, with a clean PATH (devenv's Nix `ld`
+  breaks `xcodebuild`: `-objc_abi_version '-Xlinker' not supported`).
+- `apps/ios/project.yml` for Xcode 27: `EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64`
+  (the Rust slice is arm64; a generic simulator build failed to find `TaskMasterKit`),
+  `PRODUCT_NAME` on the UI test target (Xcode 27 left it empty:
+  `-Runner.app/PlugIns/.xctest`), `ALWAYS_SEARCH_USER_PATHS = NO`.
+- Run here: `scripts/ios/generate-bindings.sh`, `scripts/ios/build-xcframework.sh sim`,
+  `xcodegen` in `apps/ios`, the app on the iPhone 18 Pro simulator (XcodeBuildMCP)
+  against a local server seeded by `crates/mobile/examples/replica.rs` like CI: the
+  Inbox shows the seeded tasks, sync reads "up to date". UI test
+  `testSyncsWithTheServerAndAddsATask` passes and the server has the phone's task;
+  TaskMasterKit tests pass on the simulator (4). The SwiftUI code compiled unchanged.
+- **devenv on macOS, a clean build of the desktop fails** (affects `main` too, where the
+  checks probably passed on a warm `target/`): the Nix clang wrapper still compiles and
+  links with its macOS 14.4 SDK, whisper.cpp's CMake picks Xcode's SDK, clang 21 rejects
+  those headers, and with Xcode's clang the link misses `MTLResidencySetDescriptor`
+  (macOS 15 Metal). Workaround used for every check here:
+  `CC=/usr/bin/clang CXX=/usr/bin/clang++ CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/clang`.
+  The fix belongs in `devenv.nix` on `main` (see Later).
+- Checks pass (with that workaround): fmt, clippy, `cargo test --workspace` (342 passed,
+  8 ignored), biome, typecheck, `pnpm test` (600 passed, 2 skipped), TaskMasterKit (4 on
+  the simulator), the UI test. Under the cargo build's load many frontend tests time out
+  at 5 s; run them on an idle machine.
 
 ### Task detail: property order (2026-11-11, released in 0.16.0)
 
@@ -2386,6 +2433,11 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- devenv on macOS: build the desktop with Xcode's clang (`CC`, `CXX` and
+  `CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER` = `/usr/bin/clang(++)`, like the iOS targets),
+  or a clean `target/` fails on whisper.cpp (see P1 on the Mac in Done).
+- iOS: the `ios.yml` macOS job still uses `macos-26`/Xcode 26; this Mac has Xcode 27.2.
+  Check the project.yml changes (PRODUCT_NAME, EXCLUDED_ARCHS) on CI.
 - From the macOS run (2026-11-19, see Current milestone): `spellcheck`/autocorrect off
   and no smart punctuation on path inputs; add `cmake` to `devenv.nix` (whisper.cpp,
   sherpa-onnx); a session with both the claude.ai connector and the local server has two
