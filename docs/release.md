@@ -63,7 +63,13 @@ together with their desktops.
    and `apps/desktop/package.json` on `main`. The version must grow: the app only offers
    a release newer than itself. Regenerate `Cargo.lock` with `cargo check` so workspace
    package versions match.
-2. `git tag -a v0.24.0 -m … && git push origin v0.24.0`. The mirror forwards the tag to GitHub.
+2. `git tag -a v0.24.0 -m … && git push origin main v0.24.0`: `main` and the tag in **one**
+   push. The mirror forwards the tag to GitHub. Pushed one after the other (v0.24.0), the
+   mirror's sync for `main` finished last and dropped the tag from GitHub: the tag-triggered
+   runs then fail at checkout ("couldn't find remote ref refs/tags/…") and publish nothing.
+   If that happens, push the tag to GitHub directly (`git push
+   https://github.com/AlexanderJacquot/task-master.git refs/tags/v0.24.0`), which starts new
+   runs.
 3. The tag push starts the *release* workflow on GitHub (it did for v0.2.0 and v0.3.0;
    check `gh run list -R AlexanderJacquot/task-master -L 3`). Only if no run appears,
    start it by hand: `gh workflow run release.yml -R AlexanderJacquot/task-master --ref
