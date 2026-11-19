@@ -4,6 +4,10 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
+desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
+folders only from this device's sessions, devenv for agents. Schema 17, unchanged.
+
 **Release 0.24.0** (2026-11-19, on `main`; notes `docs/releases/0.24.0.md`): M21 terminal
 sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
 Schema 17: update the sync server with the app.

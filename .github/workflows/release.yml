@@ -89,11 +89,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Claude Code sessions you run in a terminal now count on the Agents page with the app's own (cost, time, requests), filed under the project whose folder holds them. Send to agent can open a task in the Claude desktop app (macOS and Windows): you press Send there, and notes and the summary come back through task-master's MCP. Fixes: Open in terminal on macOS no longer ends the session at once when Terminal was not running.
+            Click "In desktop app" on an agent session to go back to its conversation in the Claude desktop app (macOS and Windows). The sidebar's Projects section folds like Epics. Fix: Send to agent no longer prefills a folder from another computer's sessions.
 
-            Database schema 17: update desktops and the sync server together. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.24.0.
+            Database schema 17, as in 0.24.0: a 0.24 sync server keeps working. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.25.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.24.0/docs/releases/0.24.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.25.0/docs/releases/0.25.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.
