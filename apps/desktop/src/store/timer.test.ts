@@ -4,7 +4,16 @@ import type { Api } from "../lib/api";
 import { getTimers, type RunningTimer, setTimers } from "../lib/timer";
 import type { AgentSession, Changes, Command, Task } from "../lib/types";
 import { agentSession, fakeParse, STATUS, snapshot, task } from "../test/fixtures";
-import { agentTimerEnd, followAgentTimer, logWork, startTimer, stopTimer } from "./actions";
+import {
+  agentTimerEnd,
+  followAgentTimer,
+  logWork,
+  startTimer,
+  stopTimer,
+  stopTimersOnFinish,
+  toggleDone,
+  updateTask,
+} from "./actions";
 import { createTaskStore } from "./store";
 
 /** The single running timer, for the tests that run one. */
@@ -206,5 +215,55 @@ describe("work timer of an agent session", () => {
     await startTimer(store, t.id, NINE);
     await startTimer(store, t.id, NINE + 5 * MIN, "s9");
     expect(getTimer()).toEqual({ task_id: t.id, started_at: NINE, session_id: "s9" });
+  });
+});
+
+describe("work timer of a task marked finished", () => {
+  beforeEach(() => setTimer(null));
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it.each([
+    ["done", STATUS.done],
+    ["cancelled", STATUS.cancelled],
+  ])("stops and logs the run when the task is marked %s", async (_, status) => {
+    const t = task({ status_id: STATUS.inProgress });
+    const { store, executed, ready } = setup([t]);
+    await ready;
+    const stop = stopTimersOnFinish(store);
+    const started = Date.now() - 25 * MIN;
+    await startTimer(store, t.id, started);
+
+    await updateTask(store, t.id, [{ status_id: status }]);
+    await flush();
+    expect(getTimer()).toBeNull();
+    const logged = executed.flat().filter((c) => c.type === "create_time_block");
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toMatchObject({
+      block: { task_id: t.id, start_at: started, outcome: "worked" },
+    });
+    stop();
+  });
+
+  it("stops only the finished task's timer, and keeps one started on a finished task", async () => {
+    const a = task({ status_id: STATUS.inProgress });
+    const b = task({ status_id: STATUS.inProgress });
+    const done = task({ status_id: STATUS.done });
+    const { store, ready } = setup([a, b, done]);
+    await ready;
+    const stop = stopTimersOnFinish(store);
+    const now = Date.now();
+    await startTimer(store, a.id, now);
+    await startTimer(store, b.id, now);
+    await startTimer(store, done.id, now);
+
+    await toggleDone(store, a.id);
+    await flush();
+    expect(getTimers().map((x) => x.task_id)).toEqual([b.id, done.id]);
+
+    await updateTask(store, b.id, [{ status_id: STATUS.waiting }]);
+    await updateTask(store, done.id, [{ title: "Renamed" }]);
+    await flush();
+    expect(getTimers().map((x) => x.task_id)).toEqual([b.id, done.id]);
+    stop();
   });
 });

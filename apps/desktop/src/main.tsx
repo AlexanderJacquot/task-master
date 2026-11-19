@@ -11,7 +11,7 @@ import { applyAppearance, followAppearance } from "./lib/appearance";
 import { createScribeStore, ScribeProvider, tauriScribe } from "./lib/scribe";
 import { createUpdateStore, tauriUpdates, UpdateProvider } from "./lib/updater";
 import { createAppRouter } from "./router";
-import { followAgentTimer } from "./store/actions";
+import { followAgentTimer, stopTimersOnFinish } from "./store/actions";
 import { StoreProvider } from "./store/context";
 import { createTaskStore } from "./store/store";
 
@@ -36,9 +36,11 @@ if (isCapture) document.documentElement.classList.add("capture-window");
 // appearance again each time the hotkey shows it, so a theme changed since then applies.
 if (isCapture) void events.captureOpened.listen(() => applyAppearance());
 
-// A timer started by sending a task to an agent stops when the session ends (main window
-// only, so the run is logged once).
+// A timer started by sending a task to an agent stops when the session ends, and any timer
+// stops when its task is marked done or cancelled (main window only, so the run is logged
+// once).
 if (!isCapture) followAgentTimer(store);
+if (!isCapture) stopTimersOnFinish(store);
 if (!isCapture) void scribe.getState().connect();
 
 // Agent runs are children of the app (ADR 017): ask before quitting stops them.

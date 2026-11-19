@@ -20,6 +20,13 @@ this computer (`lib/detailPrefs.ts`, on by default). The quick-capture window is
 unchanged. Test: `task-detail/closeOnDone.test.tsx` (3). Checks: biome, typecheck,
 `pnpm test` (551 passed; the 2 `DatePicker.test.tsx` failures also fail on `main` today,
 likely date-dependent). No Rust changes. Not yet tried in the running app.
+Same branch: a running work timer stops (and logs its run) when its task moves to a done
+or cancelled status, from anywhere (panel, board, list, agent, sync): `stopTimersOnFinish`
+in `store/actions.ts`, mounted in the main window next to `followAgentTimer`. Only the
+move stops it, so a timer started on a task already finished keeps running; undoing the
+move does not restart the timer. Tests: 3 in `store/timer.test.ts`, written but NOT RUN
+yet (the session could not get approval to run pnpm); run `pnpm biome check`,
+typecheck and `pnpm test` before merging.
 
 **Back to the desktop app's conversation** (2026-11-19, on `main` from branch `desktop-open-session`;
 ADR 029 second amendment): the "In desktop app" state (session card, Agents page) is a
