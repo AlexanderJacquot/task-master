@@ -155,6 +155,9 @@ pub trait Host {
 #[derive(Default)]
 struct Run {
     syncing: bool,
+    /// The newest head the server announced since the current round started. One newer
+    /// than what that round pulled makes it run again.
+    announced: i64,
     last_sync_at: Option<i64>,
     last_error: Option<String>,
     last_report: Option<SyncReport>,
@@ -282,7 +285,8 @@ impl Engine {
     }
 
     /// Runs rounds until one ends with nothing left to push (edits made during a round
-    /// are not kicked, see [`Engine::local_change`]) or fails. Does nothing before the
+    /// are not kicked, see [`Engine::local_change`]) and no newer ops announced while it
+    /// ran (the watcher does not kick during a round), or fails. Does nothing before the
     /// device has joined. For shells without the [`Engine::run`] loop, and for a round
     /// the app waits on (the phone's background refresh).
     pub fn sync_now(&self, host: &impl Host) -> SyncStatus {
@@ -291,27 +295,32 @@ impl Engine {
             let Some(account) = host.account().filter(|a| a.joined) else {
                 break;
             };
-            lock(&self.run).syncing = true;
+            {
+                let mut run = lock(&self.run);
+                run.syncing = true;
+                run.announced = 0;
+            }
             self.announce(host);
             let result = crate::sync_with(&client_for(&account), host.store(), host.files());
-            let again = {
+            let (again, behind) = {
                 let mut run = lock(&self.run);
                 run.syncing = false;
                 match result {
                     Ok(report) => {
+                        let behind = run.announced > report.head;
                         run.last_sync_at = Some(now_ms());
                         run.last_error = None;
                         run.last_report = Some(report);
-                        true
+                        (true, behind)
                     }
                     Err(e) => {
                         run.last_error = Some(e.to_string());
-                        false
+                        (false, false)
                     }
                 }
             };
             self.announce(host);
-            if !(again && pending(host) > 0) {
+            if !(again && (pending(host) > 0 || behind)) {
                 break;
             }
         }
@@ -352,7 +361,10 @@ impl Engine {
                     return false;
                 }
                 let cursor = lock(host.store()).sync_cursor().unwrap_or(0);
-                if head > cursor && !lock(&self.run).syncing {
+                let mut run = lock(&self.run);
+                run.announced = run.announced.max(head);
+                // During a round, the round itself looks at `announced` when it ends.
+                if head > cursor && !run.syncing {
                     self.kick();
                 }
                 true
