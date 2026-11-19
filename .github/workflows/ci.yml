@@ -17,6 +17,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-22.04
+    # whisper-rs-sys generates its bindings here with the runner's preinstalled libclang
+    # (clang 13-15 ship on ubuntu-22.04), like release.yml; local Linux builds use its
+    # shipped bindings instead (devenv.nix, .cargo/config.toml).
     env:
       CARGO_TERM_COLOR: always
     steps:
