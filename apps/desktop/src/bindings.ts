@@ -150,6 +150,11 @@ export const commands = {
 	claudePlanUsage: () => typedError<PlanUsage_Serialize, CommandError>(__TAURI_INVOKE("claude_plan_usage")),
 	/**  Installed WSL distributions (Windows only; empty elsewhere or without WSL). */
 	listWslDistros: () => __TAURI_INVOKE<string[]>("list_wsl_distros"),
+	/**
+	 *  This device's id: the agent sessions with it ran here, so their folders are paths on
+	 *  this computer (sessions sync from every device).
+	 */
+	agentDevice: () => typedError<string, CommandError>(__TAURI_INVOKE("agent_device")),
 	projectFolders: () => typedError<ProjectFolder[], CommandError>(__TAURI_INVOKE("project_folders")),
 	/**
 	 *  Sets (or clears, with `None`) this device's folder for a project, as the current

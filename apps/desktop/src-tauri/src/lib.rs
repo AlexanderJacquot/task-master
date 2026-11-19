@@ -662,6 +662,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             agents::detect_claude,
             agents::claude_plan_usage,
             agents::list_wsl_distros,
+            agents::agent_device,
             agents::project_folders,
             agents::set_project_folder,
             agents::project_git,

@@ -14,7 +14,9 @@ in the same space without cluttering the user's views. Decided with the user:
 - **Headless runs**, with "Open in terminal" doing `claude --resume <id>` in a real terminal.
   No embedded PTY or terminal emulator.
 - **Working directory**: a per-device default folder on the project, and a picker on spawn
-  prefilled with the task's last folder, then the project's, then recent ones.
+  prefilled with the task's last folder, then the project's, then recent ones. Sessions
+  sync from every device, so the picker only takes folders of this device's sessions
+  (amended 2026-11-19: `agent_device` gives the UI this device's id).
 - **Agent tasks** carry `owner = agent` and are hidden from the user's views by default;
   an Agents section in the sidebar shows them with the sessions.
 
@@ -66,7 +68,7 @@ in the same space without cluttering the user's views. Decided with the user:
   folder, permission_mode?, prompt})`, `agent_send(session_id, message)` (a follow-up turn
   after a run ended), `agent_cancel`, `agent_open_terminal`, `agent_live` (activity of
   running sessions, for a window that just opened), and reads/settings: `agent_brief`,
-  `agent_notes`, `agent_settings`, `set_agent_settings`, `detect_claude`,
+  `agent_notes`, `agent_settings`, `set_agent_settings`, `agent_device`, `detect_claude`,
   `list_wsl_distros`, `project_folders`, `set_project_folder`. One event,
   `AgentActivity { session_id, activity }` (`None` when a run stopped). CLAUDE.md's IPC
   list names the group.

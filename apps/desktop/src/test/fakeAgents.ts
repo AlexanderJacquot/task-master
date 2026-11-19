@@ -90,6 +90,7 @@ export function fakeAgents(
       return { read: 0, recorded: 0 };
     },
     distros: async () => [],
+    device: async () => "this-device",
     folders: async () => folders,
     setFolder: async (project_id, path) => {
       calls.push(`folder ${project_id} ${path}`);

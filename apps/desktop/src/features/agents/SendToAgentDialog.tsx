@@ -78,6 +78,8 @@ export function SendToAgentDialog({
   const tasks = useStoreState((s) => s.tasks);
   const [settings, setSettings] = useState<AgentSettings | null>(null);
   const [folders, setFolders] = useState<ProjectFolder[]>([]);
+  // This device's id: only its sessions' folders are paths on this computer.
+  const [device, setDevice] = useState("");
   const [folder, setFolder] = useState("");
   const [mode, setMode] = useState("acceptEdits");
   const [model, setModel] = useState(DEFAULT_MODEL);
@@ -99,14 +101,15 @@ export function SendToAgentDialog({
     setPrompt("");
     setConfirmAll(false);
     setConfirmOver(false);
-    Promise.all([api.settings(), api.folders()]).then(
-      ([s, f]) => {
+    Promise.all([api.settings(), api.folders(), api.device()]).then(
+      ([s, f, d]) => {
         if (!live) return;
         setSettings(s);
         setFolders(f);
+        setDevice(d);
         setMode(s.permission_mode);
         setModel(s.model && MODELS.some((m) => m.value === s.model) ? s.model : DEFAULT_MODEL);
-        setFolder(defaultFolder(task, sessions, f, projects, s.runtime));
+        setFolder(defaultFolder(task, sessions, f, projects, s.runtime, d));
       },
       (e) => live && setError(message(e)),
     );
@@ -116,7 +119,7 @@ export function SendToAgentDialog({
   }, [open, api, task.id]);
 
   if (!api) return null;
-  const recents = settings ? recentFolders(sessions, settings.runtime) : [];
+  const recents = settings ? recentFolders(sessions, settings.runtime, device) : [];
   const projectFolder = folders.find((f) => f.project_id === task.project_id)?.path;
   const counted = countedSessions(
     Object.values(sessions),

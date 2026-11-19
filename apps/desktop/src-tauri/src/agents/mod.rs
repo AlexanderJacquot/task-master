@@ -1729,6 +1729,14 @@ pub fn list_wsl_distros() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// This device's id: the agent sessions with it ran here, so their folders are paths on
+/// this computer (sessions sync from every device).
+#[tauri::command]
+#[specta::specta]
+pub fn agent_device(state: State<'_, AppState>) -> CommandResult<String> {
+    with_store(&state, |s| Ok(s.device_id().to_owned()))
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn project_folders(state: State<'_, AppState>) -> CommandResult<Vec<ProjectFolder>> {

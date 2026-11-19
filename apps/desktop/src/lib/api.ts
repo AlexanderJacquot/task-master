@@ -99,6 +99,8 @@ export interface AgentsApi {
   scanTerminal(): Promise<TerminalScan>;
   /** Installed WSL distributions (empty outside Windows). */
   distros(): Promise<string[]>;
+  /** This device's id: sessions with it ran here, so their folders exist here. */
+  device(): Promise<string>;
   folders(): Promise<ProjectFolder[]>;
   setFolder(projectId: string, path: string | null): Promise<ProjectFolder[]>;
   /** Where the project folder's git repository stands; null when it is not one. */
@@ -129,6 +131,7 @@ export const tauriAgents: AgentsApi = {
   planUsage: () => unwrap(commands.claudePlanUsage()),
   scanTerminal: () => unwrap(commands.scanTerminalSessions()),
   distros: () => commands.listWslDistros(),
+  device: () => unwrap(commands.agentDevice()),
   folders: () => unwrap(commands.projectFolders()),
   setFolder: (projectId, path) => unwrap(commands.setProjectFolder(projectId, path)),
   projectGit: (projectId) => unwrap(commands.projectGit(projectId)),

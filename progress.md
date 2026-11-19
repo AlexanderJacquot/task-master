@@ -8,6 +8,15 @@ Running log for task-master. Read at the start of every session; update at the e
 sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
 Schema 17: update the sync server with the app.
 
+**Agent folder from another device** (2026-11-19, on `main`, ADR 017 amended): Send to
+Claude prefilled the task's last session folder (and recent folders) from sessions synced
+from another computer, so a macOS start got `/home/alex/...` and failed with "the folder
+... does not exist". The picker now takes folders only from this device's sessions: shell
+command `agent_device` (this device's id; bindings regenerated), `defaultFolder` and
+`recentFolders` take it. Test: `ignores folders of sessions that ran on another device`.
+Checks: biome, typecheck, `pnpm test` (549 passed, 2 skipped), clippy, `cargo test
+--workspace` (328 passed, 8 ignored). Not yet tried in the running app.
+
 **Fold the sidebar's projects** (2026-11-19, on `main`): the Projects header
 is a fold toggle like Epics (open by default, remembered per machine as `projects` in
 `task-master.sidebar-sections`; `useOpenSection` is shared with `Collapsible`); New

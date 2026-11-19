@@ -15,6 +15,8 @@ import {
 } from "./sessions";
 
 const byId = (list: AgentSession[]) => Object.fromEntries(list.map((s) => [s.id, s]));
+/** The fixtures' device. */
+const HERE = "this-device";
 
 function folder(project_id: string, path: string, runtime: "native" | "wsl" = "native") {
   return { project_id, path, runtime, updated_at: 1 } satisfies ProjectFolder;
@@ -55,19 +57,43 @@ describe("where a new session starts", () => {
     const own = agentSession({ task_id: t.id, folder: "/own", started_at: 10 });
     const folders = [folder("p", "/project"), folder("area", "/area")];
 
-    expect(defaultFolder(t, byId([own, elsewhere]), folders, projects, "native")).toBe("/own");
-    expect(defaultFolder(t, byId([elsewhere]), folders, projects, "native")).toBe("/project");
-    expect(defaultFolder(t, byId([elsewhere]), folders.slice(1), projects, "native")).toBe("/area");
-    expect(defaultFolder(t, byId([elsewhere]), [], projects, "native")).toBe("/recent");
-    expect(defaultFolder(t, {}, [], projects, "native")).toBe("");
+    expect(defaultFolder(t, byId([own, elsewhere]), folders, projects, "native", HERE)).toBe(
+      "/own",
+    );
+    expect(defaultFolder(t, byId([elsewhere]), folders, projects, "native", HERE)).toBe("/project");
+    expect(defaultFolder(t, byId([elsewhere]), folders.slice(1), projects, "native", HERE)).toBe(
+      "/area",
+    );
+    expect(defaultFolder(t, byId([elsewhere]), [], projects, "native", HERE)).toBe("/recent");
+    expect(defaultFolder(t, {}, [], projects, "native", HERE)).toBe("");
   });
 
   it("ignores folders of the other runtime", () => {
     const t = task({ project_id: "p" });
     const wsl = agentSession({ task_id: t.id, folder: "/home/me/app", runtime: "wsl" });
     const folders = [folder("p", "C:\\code\\app", "native"), folder("p", "/srv/app", "wsl")];
-    expect(defaultFolder(t, byId([wsl]), folders, projects, "native")).toBe("C:\\code\\app");
-    expect(defaultFolder(t, {}, folders, projects, "wsl")).toBe("/srv/app");
+    expect(defaultFolder(t, byId([wsl]), folders, projects, "native", HERE)).toBe("C:\\code\\app");
+    expect(defaultFolder(t, {}, folders, projects, "wsl", HERE)).toBe("/srv/app");
+  });
+
+  it("ignores folders of sessions that ran on another device", () => {
+    const t = task({ project_id: "p" });
+    const linux = { device_id: "linux-box", folder: "/home/me/app", started_at: 50 };
+    const ownThere = agentSession({ ...linux, task_id: t.id });
+    const recentThere = agentSession({ ...linux, task_id: "x" });
+    const ownHere = agentSession({ task_id: t.id, folder: "/Users/me/app", started_at: 10 });
+    const folders = [folder("p", "/Users/me/project")];
+
+    expect(defaultFolder(t, byId([ownThere, ownHere]), folders, projects, "native", HERE)).toBe(
+      "/Users/me/app",
+    );
+    expect(defaultFolder(t, byId([ownThere, recentThere]), folders, projects, "native", HERE)).toBe(
+      "/Users/me/project",
+    );
+    expect(defaultFolder(t, byId([ownThere, recentThere]), [], projects, "native", HERE)).toBe("");
+    expect(recentFolders(byId([ownThere, recentThere, ownHere]), "native", HERE)).toEqual([
+      "/Users/me/app",
+    ]);
   });
 
   it("offers recent folders newest first, once each", () => {
@@ -77,8 +103,8 @@ describe("where a new session starts", () => {
       agentSession({ folder: "/a", started_at: 3 }),
       agentSession({ folder: "/w", started_at: 4, runtime: "wsl" }),
     ];
-    expect(recentFolders(byId(list), "native")).toEqual(["/a", "/b"]);
-    expect(recentFolders(byId(list), "native", 1)).toEqual(["/a"]);
+    expect(recentFolders(byId(list), "native", HERE)).toEqual(["/a", "/b"]);
+    expect(recentFolders(byId(list), "native", HERE, 1)).toEqual(["/a"]);
   });
 });
 

@@ -84,15 +84,20 @@ export function formatDayHeading(day: string, today: string): string {
   });
 }
 
-/** Folders of earlier sessions for this runtime, newest first, without repeats. */
+/**
+ * Folders of earlier sessions on this device (`device`) for this runtime, newest first,
+ * without repeats. Sessions sync from every device, and another one's folders are paths on
+ * that computer.
+ */
 export function recentFolders(
   sessions: Record<string, AgentSession>,
   runtime: AgentRuntime,
+  device: string,
   limit = 6,
 ): string[] {
   const out: string[] = [];
   for (const s of Object.values(sessions).sort((a, b) => b.started_at - a.started_at)) {
-    if (s.runtime !== runtime || out.includes(s.folder)) continue;
+    if (s.device_id !== device || s.runtime !== runtime || out.includes(s.folder)) continue;
     out.push(s.folder);
     if (out.length === limit) break;
   }
@@ -100,8 +105,9 @@ export function recentFolders(
 }
 
 /**
- * Where a new session on `task` starts: the folder of its last session, else its project's
- * folder on this device (or its area's), else the most recent folder, else nothing.
+ * Where a new session on `task` starts: the folder of its last session on this device
+ * (`device`), else its project's folder on this device (or its area's), else the most
+ * recent folder on this device, else nothing.
  */
 export function defaultFolder(
   task: Task,
@@ -109,8 +115,11 @@ export function defaultFolder(
   folders: ProjectFolder[],
   projects: Record<string, Project>,
   runtime: AgentRuntime,
+  device: string,
 ): string {
-  const own = sessionsOf(sessions, task.id).find((s) => s.runtime === runtime);
+  const own = sessionsOf(sessions, task.id).find(
+    (s) => s.device_id === device && s.runtime === runtime,
+  );
   if (own) return own.folder;
   const byProject = new Map(
     folders.filter((f) => f.runtime === runtime).map((f) => [f.project_id, f.path]),
@@ -122,7 +131,7 @@ export function defaultFolder(
     const fromArea = area ? byProject.get(area) : undefined;
     if (fromArea) return fromArea;
   }
-  return recentFolders(sessions, runtime, 1)[0] ?? "";
+  return recentFolders(sessions, runtime, device, 1)[0] ?? "";
 }
 
 export const STATE_LABEL: Record<SessionState, string> = {
