@@ -15,6 +15,9 @@ settings:
     MARKETING_VERSION: "0.14.0"
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "1"
+    # The Rust library has an arm64 simulator slice only (Apple silicon).
+    "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+    ALWAYS_SEARCH_USER_PATHS: "NO"
 targets:
   TaskMaster:
     type: application
@@ -47,6 +50,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: space.solarnexus.taskmaster.uitests
+        # Xcode 27 leaves it empty otherwise ("-Runner.app/PlugIns/.xctest").
+        PRODUCT_NAME: TaskMasterUITests
         TEST_TARGET_NAME: TaskMaster
 schemes:
   TaskMaster:
