@@ -22,6 +22,8 @@ export function fakeAgents(
     notes?: AgentNote[];
     live?: AgentActivity[];
     planUsage?: PlanUsage | Error;
+    /** Why opening a conversation in the desktop app fails. */
+    openDesktop?: Error;
     /** The repository found in each folder (by path); none elsewhere. */
     repos?: Record<string, GitInfo>;
   } = {},
@@ -69,6 +71,10 @@ export function fakeAgents(
     },
     openTerminal: async (id) => {
       calls.push(`terminal ${id}`);
+    },
+    openDesktop: async (id) => {
+      calls.push(`desktop ${id}`);
+      if (opts.openDesktop instanceof Error) throw opts.openDesktop;
     },
     live: async () => opts.live ?? [],
     brief: async (taskId) => `# Brief of ${taskId}`,

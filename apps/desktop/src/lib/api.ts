@@ -84,6 +84,8 @@ export interface AgentsApi {
   send(sessionId: string, message: string): Promise<void>;
   cancel(sessionId: string): Promise<void>;
   openTerminal(sessionId: string): Promise<void>;
+  /** Brings up a session's conversation in the Claude desktop app (ADR 029). */
+  openDesktop(sessionId: string): Promise<void>;
   /** What running sessions are doing now. */
   live(): Promise<AgentActivity[]>;
   /** The opening context a session on this task would get. */
@@ -121,6 +123,9 @@ export const tauriAgents: AgentsApi = {
   },
   openTerminal: async (sessionId) => {
     await unwrap(commands.agentOpenTerminal(sessionId));
+  },
+  openDesktop: async (sessionId) => {
+    await unwrap(commands.agentOpenDesktop(sessionId));
   },
   live: () => unwrap(commands.agentLive()),
   brief: (taskId) => unwrap(commands.agentBrief(taskId)),

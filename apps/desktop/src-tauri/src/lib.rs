@@ -654,6 +654,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             agents::agent_send,
             agents::agent_cancel,
             agents::agent_open_terminal,
+            agents::agent_open_desktop,
             agents::agent_live,
             agents::agent_brief,
             agents::agent_notes,

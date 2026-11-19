@@ -309,6 +309,11 @@ fn projects_dir(settings: &AgentSettings) -> Result<PathBuf, String> {
         }
         return Ok(PathBuf::from(path));
     }
+    local_projects_dir()
+}
+
+/// Claude Code's `projects` folder on this computer.
+pub(super) fn local_projects_dir() -> Result<PathBuf, String> {
     let config = std::env::var_os("CLAUDE_CONFIG_DIR")
         .filter(|d| !d.is_empty())
         .map(PathBuf::from)
@@ -322,7 +327,7 @@ fn projects_dir(settings: &AgentSettings) -> Result<PathBuf, String> {
 }
 
 /// Every `<folder>/<session>.jsonl` (not the sub-agents' transcripts in subfolders).
-fn transcripts(root: &Path) -> Vec<(PathBuf, u64, u64)> {
+pub(super) fn transcripts(root: &Path) -> Vec<(PathBuf, u64, u64)> {
     let Ok(folders) = std::fs::read_dir(root) else {
         return Vec::new();
     };
@@ -352,7 +357,7 @@ fn transcripts(root: &Path) -> Vec<(PathBuf, u64, u64)> {
 }
 
 /// The session id a transcript is named after, when it is one.
-fn session_id(path: &Path) -> Option<String> {
+pub(super) fn session_id(path: &Path) -> Option<String> {
     let stem = path.file_stem()?.to_str()?;
     let uuid = stem.len() == 36
         && stem.char_indices().all(|(i, c)| {

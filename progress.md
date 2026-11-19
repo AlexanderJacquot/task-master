@@ -8,6 +8,18 @@ Running log for task-master. Read at the start of every session; update at the e
 sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
 Schema 17: update the sync server with the app.
 
+**Back to the desktop app's conversation** (2026-11-19, on `main` from branch `desktop-open-session`;
+ADR 029 second amendment): the "In desktop app" state (session card, Agents page) is a
+button. `agent_open_desktop` (shell `agents/desktop.rs`) finds the desktop app's session
+record (`<app data>/Claude/claude-code-sessions/*/*/local_*.json`, `cliSessionId` or
+`lastAssistantCliSessionId`) for the recorded conversation id, else for the transcript
+since the session's start whose first lines name the session id, and opens
+`claude://code/continue?session=local_<id>`. Refused (reason on the card/row) on Linux,
+for another device's session, when not found, or when archived there. Tests: shell
+`desktop::tests` (4), `agents.test.tsx` (click on the card; the error on the Agents page).
+Found by reading the desktop app 6.6395's link handler. Later: offer the same on ended
+sessions that ran in the desktop app (no marker of that once they are done).
+
 **Agent folder from another device** (2026-11-19, on `main`, ADR 017 amended): Send to
 Claude prefilled the task's last session folder (and recent folders) from sessions synced
 from another computer, so a macOS start got `/home/alex/...` and failed with "the folder

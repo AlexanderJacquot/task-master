@@ -130,6 +130,12 @@ export const commands = {
 	 *  closes (when it can be followed). Async: stopping a run waits for it, off the UI thread.
 	 */
 	agentOpenTerminal: (sessionId: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_open_terminal", { sessionId })),
+	/**
+	 *  Brings up the session's conversation in the Claude desktop app (ADR 029 amendment): the
+	 *  desktop session that runs its recorded conversation, else the one whose first prompt
+	 *  names the session. Async: it may read transcripts, off the UI thread.
+	 */
+	agentOpenDesktop: (sessionId: string) => typedError<null, CommandError>(__TAURI_INVOKE("agent_open_desktop", { sessionId })),
 	/**  What each running session is doing, for a window that just opened. */
 	agentLive: () => typedError<AgentActivity_Serialize[], CommandError>(__TAURI_INVOKE("agent_live")),
 	/**  The brief a session on this task would start with (for the dialog's preview). */
