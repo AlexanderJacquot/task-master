@@ -13,7 +13,13 @@ out=apps/ios/TaskMasterKit/Frameworks/TaskMasterMobile.xcframework
 rm -rf "$out"
 args=()
 for target in "${targets[@]}"; do
-  rustup target add "$target"
+  # rustup on the CI runner; in devenv (no rustup) devenv.nix provides the iOS targets.
+  if command -v rustup > /dev/null; then
+    rustup target add "$target"
+  elif [ ! -d "$(rustc --print sysroot)/lib/rustlib/$target" ]; then
+    echo "The Rust standard library for $target is missing: add it to devenv.nix" >&2
+    exit 1
+  fi
   cargo build --release -p taskmaster-mobile --target "$target"
   args+=(-library "target/$target/release/libtaskmaster_mobile.a" -headers apps/ios/build/headers)
 done
