@@ -4,6 +4,12 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Send to agent: Cmd/Ctrl+Enter starts it** (2026-11-19, branch
+`worktree-send-to-agent-cmd-enter`): in the Send to agent dialog, Cmd+Enter (Ctrl+Enter on
+Windows/Linux) from any field starts the session, same as Start / Open in Claude, and does
+nothing while Start is disabled. The button's tooltip names the shortcut. Test in
+`agents.test.tsx`. Tests and biome not run in the session (installing deps was not allowed).
+
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
 folders only from this device's sessions, devenv for agents. Schema 17, unchanged.
