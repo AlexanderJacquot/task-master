@@ -16,6 +16,7 @@ interface Vectors {
     spec: ViewSpec;
     collapsed_groups: string[];
     collapsed_tasks: string[];
+    expanded_tasks?: string[];
     expected: string[];
   }>;
   board_cases: Array<{ name: string; spec: ViewSpec; expected: string[] }>;
@@ -38,7 +39,7 @@ function encodeRows(rows: Row[]): string[] {
   return rows.map((row) =>
     row.type === "group"
       ? `g|${row.group.key}|${row.group.label}|${row.group.color ?? "-"}|${row.count}|${row.collapsed ? 1 : 0}`
-      : `t|${row.task.id}|${row.depth}|${row.childCount}|${row.childDone}|${row.visibleChildren}`,
+      : `t|${row.task.id}|${row.depth}|${row.childCount}|${row.childDone}|${row.visibleChildren}|${row.expanded ? 1 : 0}`,
   );
 }
 
@@ -61,6 +62,7 @@ const listRows = (c: Vectors["list_cases"][number]) =>
     buildRows(tasks, c.spec, ctx, statuses, {
       collapsedGroups: new Set(c.collapsed_groups),
       collapsedTasks: new Set(c.collapsed_tasks),
+      expandedTasks: new Set(c.expanded_tasks),
     }),
   );
 const boardRows = (c: Vectors["board_cases"][number]) =>

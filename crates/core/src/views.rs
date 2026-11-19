@@ -28,9 +28,12 @@ pub struct ViewOptions {
     /// Group keys shown as a header only (lists only).
     #[serde(default)]
     pub collapsed_groups: Vec<String>,
-    /// Tasks whose subtasks are hidden (lists only).
+    /// Tasks folded by hand (lists only; overrides the default).
     #[serde(default)]
     pub collapsed_tasks: Vec<Id>,
+    /// Tasks unrolled by hand (lists only; overrides the default).
+    #[serde(default)]
+    pub expanded_tasks: Vec<Id>,
 }
 
 /// A heading in a list. `key` is stable within a grouping: a status, project or epic id,
@@ -53,13 +56,15 @@ pub enum ViewRow {
     },
     Task {
         task: Box<Task>,
-        /// 0, or 1 for a subtask under its parent.
-        depth: u8,
+        /// 0 for a top-level row, 1 for its subtasks, and so on.
+        depth: u32,
         /// Subtask progress over all live children.
         child_count: u32,
         child_done: u32,
-        /// Children shown under this row in the view.
+        /// Children in the view under this row (shown or folded).
         visible_children: u32,
+        /// Its subtasks are unrolled under it.
+        expanded: bool,
     },
 }
 
@@ -408,10 +413,23 @@ fn count(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
+/// Whether a row's subtasks are unrolled: a hand choice wins; otherwise top-level rows
+/// are, and deeper ones only with "Show subtasks".
+pub fn is_row_expanded(id: &str, depth: u32, show_subtasks: bool, options: &ViewOptions) -> bool {
+    if options.collapsed_tasks.iter().any(|t| t == id) {
+        return false;
+    }
+    if options.expanded_tasks.iter().any(|t| t == id) {
+        return true;
+    }
+    show_subtasks || depth == 0
+}
+
 /// Rows for a list: grouped (status in workflow order by default), top-level tasks sorted
 /// by the spec, each followed by its visible subtasks in manual order. A task whose parent
-/// is not in the view is shown at the top level. Two levels are shown. Cancelled tasks
-/// only show when asked for.
+/// is not in the view is shown at the top level. Subtasks nest at any depth: a top-level
+/// row is unrolled by default, deeper ones when `show_subtasks` is on, and any row can be
+/// folded or unrolled by hand. Cancelled tasks only show when asked for.
 pub fn list_rows(snapshot: &Snapshot, spec: &ViewSpec, options: &ViewOptions) -> Vec<ViewRow> {
     let ctx = Ctx::new(snapshot, options);
     let children = children_by_parent(&snapshot.tasks);
@@ -443,26 +461,18 @@ pub fn list_rows(snapshot: &Snapshot, spec: &ViewSpec, options: &ViewOptions) ->
             .push(task);
     }
 
-    let task_row = |task: &Task, depth: u8, visible_children: usize| {
-        let kids = children
-            .get(task.id.as_str())
-            .map_or(&[][..], Vec::as_slice);
-        ViewRow::Task {
-            task: Box::new(task.clone()),
-            depth,
-            child_count: count(kids.len()),
-            child_done: count(kids.iter().filter(|k| !ctx.is_open(k)).count()),
-            visible_children: count(visible_children),
-        }
-    };
-
     let collapsed_groups: HashSet<&str> = options
         .collapsed_groups
         .iter()
         .map(String::as_str)
         .collect();
-    let collapsed_tasks: HashSet<&str> =
-        options.collapsed_tasks.iter().map(String::as_str).collect();
+    let tree = Tree {
+        ctx: &ctx,
+        children: &children,
+        visible: &visible,
+        show_subtasks: spec.show_subtasks,
+        options,
+    };
 
     let mut rows = Vec::new();
     for group in groups(spec.group_by, snapshot) {
@@ -480,23 +490,57 @@ pub fn list_rows(snapshot: &Snapshot, spec: &ViewSpec, options: &ViewOptions) ->
             continue;
         }
         for task in list {
-            let kids: Vec<&Task> = children
-                .get(task.id.as_str())
-                .into_iter()
-                .flatten()
-                .copied()
-                .filter(|c| visible.contains(c.id.as_str()))
-                .collect();
-            rows.push(task_row(task, 0, kids.len()));
-            if collapsed_tasks.contains(task.id.as_str()) {
-                continue;
-            }
-            for child in kids {
-                rows.push(task_row(child, 1, 0));
-            }
+            tree.push(task, 0, &mut HashSet::new(), &mut rows);
         }
     }
     rows
+}
+
+/// What [`list_rows`] needs to unroll a task's subtasks.
+struct Tree<'a> {
+    ctx: &'a Ctx<'a>,
+    children: &'a HashMap<&'a str, Vec<&'a Task>>,
+    visible: &'a HashSet<&'a str>,
+    show_subtasks: bool,
+    options: &'a ViewOptions,
+}
+
+impl<'a> Tree<'a> {
+    /// Depth first; `path` guards against a parent cycle in corrupt data.
+    fn push(
+        &self,
+        task: &'a Task,
+        depth: u32,
+        path: &mut HashSet<&'a str>,
+        rows: &mut Vec<ViewRow>,
+    ) {
+        let kids = self
+            .children
+            .get(task.id.as_str())
+            .map_or(&[][..], Vec::as_slice);
+        let shown: Vec<&Task> = kids
+            .iter()
+            .copied()
+            .filter(|c| self.visible.contains(c.id.as_str()) && !path.contains(c.id.as_str()))
+            .collect();
+        let expanded = is_row_expanded(&task.id, depth, self.show_subtasks, self.options);
+        rows.push(ViewRow::Task {
+            task: Box::new(task.clone()),
+            depth,
+            child_count: count(kids.len()),
+            child_done: count(kids.iter().filter(|k| !self.ctx.is_open(k)).count()),
+            visible_children: count(shown.len()),
+            expanded,
+        });
+        if !expanded {
+            return;
+        }
+        path.insert(task.id.as_str());
+        for child in shown {
+            self.push(child, depth + 1, path, rows);
+        }
+        path.remove(task.id.as_str());
+    }
 }
 
 struct LaneSpec {
@@ -700,6 +744,8 @@ mod tests {
         collapsed_groups: Vec<String>,
         #[serde(default)]
         collapsed_tasks: Vec<Id>,
+        #[serde(default)]
+        expanded_tasks: Vec<Id>,
         expected: Vec<String>,
     }
 
@@ -731,9 +777,11 @@ mod tests {
                     child_count,
                     child_done,
                     visible_children,
+                    expanded,
                 } => format!(
-                    "t|{}|{depth}|{child_count}|{child_done}|{visible_children}",
-                    task.id
+                    "t|{}|{depth}|{child_count}|{child_done}|{visible_children}|{}",
+                    task.id,
+                    u8::from(*expanded)
                 ),
             })
             .collect()
@@ -776,6 +824,7 @@ mod tests {
             let options = ViewOptions {
                 collapsed_groups: case.collapsed_groups,
                 collapsed_tasks: case.collapsed_tasks,
+                expanded_tasks: case.expanded_tasks,
                 ..vectors.options.clone()
             };
             let rows = list_rows(&vectors.snapshot, &case.spec, &options);

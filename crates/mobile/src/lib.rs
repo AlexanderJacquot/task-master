@@ -172,8 +172,8 @@ pub struct TaskRow {
     pub project_name: Option<String>,
     pub project_color: Option<String>,
     pub has_description: bool,
-    /// 0, or 1 for a subtask shown under its parent.
-    pub depth: u8,
+    /// 0, or 1 for a subtask shown under its parent (the phone's lists unroll one level).
+    pub depth: u32,
     /// Subtask progress over all live subtasks.
     pub child_count: u32,
     pub child_done: u32,
@@ -340,7 +340,7 @@ impl Host for Inner {
 
 fn task_row(
     task: &Task,
-    depth: u8,
+    depth: u32,
     child_count: u32,
     child_done: u32,
     s: &Snapshot,
