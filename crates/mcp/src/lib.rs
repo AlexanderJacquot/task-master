@@ -174,7 +174,7 @@ impl TaskServer {
             };
         }
         let id = given.ok_or_else(|| {
-            "this MCP server was started without a session: pass the session_id given in              your opening message"
+            "this MCP server was started without a session: pass the session_id given in your opening message"
                 .to_owned()
         })?;
         let session = self
