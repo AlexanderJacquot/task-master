@@ -2074,6 +2074,62 @@ export type RemoteView = {
 	has_secret: boolean,
 };
 
+/**  The rows of a roadmap: grouped under their epic or project, or one list. */
+export type RoadmapGroup = "epic" | "project" | "none";
+
+/**
+ *  A saved Roadmap: the page's filters beyond [`ViewFilter`], its timescale, and where
+ *  bars start. A bar ends on its task's due date, which is the task's own field; tasks
+ *  have no start date, so the start is part of the roadmap. The bars are whatever the
+ *  filters match when it opens.
+ */
+export type RoadmapSpec = RoadmapSpec_Serialize | RoadmapSpec_Deserialize;
+
+/**
+ *  A saved Roadmap: the page's filters beyond [`ViewFilter`], its timescale, and where
+ *  bars start. A bar ends on its task's due date, which is the task's own field; tasks
+ *  have no start date, so the start is part of the roadmap. The bars are whatever the
+ *  filters match when it opens.
+ */
+export type RoadmapSpec_Deserialize = {
+	completion?: LineageCompletion,
+	group?: RoadmapGroup,
+	zoom?: RoadmapZoom,
+	/**
+	 *  The first day of each bar, by task id (`YYYY-MM-DD`). A bar without one starts as
+	 *  many working days before its end as its estimate takes (one day without).
+	 */
+	starts?: { [key in string]: string },
+	/**  Folded groups: epic or project ids, or [`FILTER_NONE`]. */
+	collapsed?: string[],
+	/**  Leave out tasks without a due date (they show as empty rows to draw a bar on). */
+	hide_unscheduled?: boolean,
+};
+
+/**
+ *  A saved Roadmap: the page's filters beyond [`ViewFilter`], its timescale, and where
+ *  bars start. A bar ends on its task's due date, which is the task's own field; tasks
+ *  have no start date, so the start is part of the roadmap. The bars are whatever the
+ *  filters match when it opens.
+ */
+export type RoadmapSpec_Serialize = {
+	completion: LineageCompletion,
+	group: RoadmapGroup,
+	zoom: RoadmapZoom,
+	/**
+	 *  The first day of each bar, by task id (`YYYY-MM-DD`). A bar without one starts as
+	 *  many working days before its end as its estimate takes (one day without).
+	 */
+	starts: { [key in string]: string },
+	/**  Folded groups: epic or project ids, or [`FILTER_NONE`]. */
+	collapsed: string[],
+	/**  Leave out tasks without a due date (they show as empty rows to draw a bar on). */
+	hide_unscheduled: boolean,
+};
+
+/**  How much time a roadmap's width shows. */
+export type RoadmapZoom = "day" | "week" | "month" | "quarter";
+
 /**  How often the background workers run on this device, in minutes. */
 export type Schedule = Schedule_Serialize | Schedule_Deserialize;
 
@@ -2865,6 +2921,11 @@ export type ViewSpec_Deserialize = {
 	 *  most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
 	 */
 	lineage?: LineageSpec_Deserialize | null,
+	/**
+	 *  Set for a saved Roadmap (ADR 030): it opens on the Roadmap page. Its filters are
+	 *  kept like a lineage view's (one project at most, scope `All`).
+	 */
+	roadmap?: RoadmapSpec_Deserialize | null,
 };
 
 /**
@@ -2889,6 +2950,11 @@ export type ViewSpec_Serialize = {
 	 *  most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
 	 */
 	lineage: LineageSpec_Serialize | null,
+	/**
+	 *  Set for a saved Roadmap (ADR 030): it opens on the Roadmap page. Its filters are
+	 *  kept like a lineage view's (one project at most, scope `All`).
+	 */
+	roadmap: RoadmapSpec_Serialize | null,
 };
 
 /**  A saved board or list: a name plus a [`ViewSpec`]. */

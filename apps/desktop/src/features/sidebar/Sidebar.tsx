@@ -26,6 +26,7 @@ import {
   EditIcon as Pencil,
   AddIcon as Plus,
   ProjectsIcon,
+  RoadmapIcon,
   ScribeIcon,
   SearchIcon as Search,
   SettingsIcon as Settings2,
@@ -628,6 +629,9 @@ export function Sidebar({
         <RailLink to="/lineage" label="Lineage">
           <GitBranch size={18} className="text-green-700 dark:text-green-300 clean:text-ink-2" />
         </RailLink>
+        <RailLink to="/roadmap" label="Roadmap">
+          <RoadmapIcon size={18} className="text-sky-700 dark:text-sky-300 clean:text-ink-2" />
+        </RailLink>
         <RailLink to="/scribe" label="Scribe">
           <ScribeIcon size={18} className="text-amber-800 dark:text-amber-200 clean:text-ink-2" />
         </RailLink>
@@ -786,6 +790,17 @@ export function Sidebar({
             }
           >
             Lineage
+          </NavItem>
+          <NavItem
+            to="/roadmap"
+            icon={
+              <RoadmapIcon
+                size={17}
+                className="shrink-0 text-sky-700 dark:text-sky-300 clean:text-ink-2"
+              />
+            }
+          >
+            Roadmap
           </NavItem>
           <NavItem
             to="/scribe"
@@ -977,6 +992,8 @@ export function Sidebar({
               icon={
                 view.spec.lineage ? (
                   <GitBranch size={14} className="shrink-0" />
+                ) : view.spec.roadmap ? (
+                  <RoadmapIcon size={14} className="shrink-0" />
                 ) : (
                   <Bookmark size={14} className="shrink-0" />
                 )
@@ -987,7 +1004,7 @@ export function Sidebar({
           ))}
           {viewList.length === 0 && (
             <p className="px-2.5 py-1 text-[12.5px] text-ink-3">
-              Use "Save as view" in any view's Display menu, or on the Lineage page
+              Use "Save as view" in any view's Display menu, or on the Lineage or Roadmap page
             </p>
           )}
         </Collapsible>

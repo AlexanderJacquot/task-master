@@ -133,6 +133,13 @@ export function CommandPalette({
       },
       { key: "view:all", group: "Views", label: "All tasks", hint: "g a", run: () => go("/all") },
       {
+        key: "view:roadmap",
+        group: "Views",
+        label: "Roadmap",
+        keywords: "gantt timeline plan schedule milestones",
+        run: () => go("/roadmap"),
+      },
+      {
         key: "view:metrics",
         group: "Views",
         label: "Metrics",
@@ -153,7 +160,11 @@ export function CommandPalette({
         key: `view:${v.id}`,
         group: "Views",
         label: v.name,
-        hint: v.spec.lineage ? "saved lineage view" : "saved view",
+        hint: v.spec.lineage
+          ? "saved lineage view"
+          : v.spec.roadmap
+            ? "saved roadmap view"
+            : "saved view",
         run: () => go("/view/$viewId", { viewId: v.id }),
       });
     }

@@ -447,7 +447,12 @@ function ViewBody({
       clearLaneChoices(boardModel.lanes.map((l) => l.key));
       setBoardEpoch((n) => n + 1);
     }
-    setDisplay({ ...DEFAULT_DISPLAY, layout: display.layout, lineage: display.lineage });
+    setDisplay({
+      ...DEFAULT_DISPLAY,
+      layout: display.layout,
+      lineage: display.lineage,
+      roadmap: display.roadmap,
+    });
     setSearchText("");
     setQuery("");
     setShowFilters(false);

@@ -1469,6 +1469,22 @@ fn view_spec_json(b: &Batch<'_, '_>, spec: &ViewSpec) -> Result<String> {
             live_task(b, id)?;
         }
     }
+    if let Some(roadmap) = &spec.roadmap {
+        // The Roadmap page filters like the Lineage page; a view opens on one page.
+        if spec.scope != ViewScope::All || f.project_ids.len() > 1 {
+            return Err(Error::invalid(
+                "a roadmap view covers all tasks and at most one project",
+            ));
+        }
+        if spec.lineage.is_some() {
+            return Err(Error::invalid(
+                "a view is either a lineage view or a roadmap view",
+            ));
+        }
+        for start in roadmap.starts.values() {
+            check_date("roadmap start", start)?;
+        }
+    }
     Ok(serde_json::to_string(spec)?)
 }
 

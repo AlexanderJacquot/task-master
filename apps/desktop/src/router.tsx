@@ -16,6 +16,7 @@ import { MetricsPage } from "./features/metrics/MetricsPage";
 import { EpicPage } from "./features/organize/EpicPage";
 import { ProjectPage } from "./features/organize/ProjectPage";
 import { TagMenu } from "./features/organize/TagMenu";
+import { RoadmapPage, SavedRoadmapPage } from "./features/roadmap/RoadmapPage";
 import { MeetingPage } from "./features/scribe/MeetingPage";
 import { ScribePage } from "./features/scribe/ScribePage";
 import { SettingsPage } from "./features/settings/SettingsPage";
@@ -83,6 +84,12 @@ const lineageRoute = createRoute({
     // Remount per task so the selection and the fitted view start from it.
     return <LineagePage key={around ?? ""} {...(around && { around })} />;
   },
+});
+
+const roadmapRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "roadmap",
+  component: () => <RoadmapPage />,
 });
 
 const agentsRoute = createRoute({
@@ -192,6 +199,7 @@ const savedViewRoute = createRoute({
     // Remount when the stored view changes (save, rename, undo) so the draft starts from it.
     const key = `${view.id}:${view.updated_at}`;
     if (view.spec.lineage) return <SavedLineagePage key={key} view={view} />;
+    if (view.spec.roadmap) return <SavedRoadmapPage key={key} view={view} />;
     return <SavedViewPage key={key} view={view} />;
   },
 });
@@ -223,6 +231,7 @@ const routeTree = rootRoute.addChildren([
   calendarRoute,
   metricsRoute,
   lineageRoute,
+  roadmapRoute,
   agentsRoute,
   scribeRoute,
   meetingRoute,

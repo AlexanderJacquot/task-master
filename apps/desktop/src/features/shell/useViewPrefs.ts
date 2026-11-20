@@ -15,6 +15,7 @@ export const DEFAULT_DISPLAY: ViewDisplay = {
   show_cancelled: false,
   show_agent_tasks: false,
   lineage: null,
+  roadmap: null,
 };
 
 export const SPEC_VERSION = 1;

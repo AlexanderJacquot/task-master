@@ -4,6 +4,24 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Roadmap** (2026-11-20, branch `roadmap`; ADR 030, proposed): a Roadmap page (Gantt) under
+Lineage in the sidebar, the rail and the palette (`features/roadmap/`). Tasks are bars
+grouped by epic, project or not at all, on a days/weeks/months/quarters scale. A bar ends on
+the task's due date: dragging or ←/→ edits it through `execute`; its start belongs to the
+roadmap (this machine's `task-master.roadmap-layout`, or the saved view), defaulting to the
+estimate in working days. Drag across an unscheduled task's empty row, or its Schedule
+button, to give it a bar. Dependency arrows; a dependent starting before its prerequisite
+ends is flagged. An epic's target date is a draggable milestone. Saved roadmap views:
+`ViewSpec.roadmap` (`RoadmapSpec`: completion, group, zoom, starts, collapsed,
+hide_unscheduled), validated in core (scope All, one project, not with `lineage`, dates);
+bindings regenerated; new `roadmap` glyph (`paths.json`, lucide `ChartGantt` in clean).
+Tests: core `roadmap_views_keep_their_starts_and_are_validated`,
+`roadmap_specs_parse_with_defaults`; `timeline.test.ts`, `saved.test.ts`,
+`RoadmapPage.test.tsx`. Checks: clippy, `cargo test --workspace` (334 passed, 8 ignored),
+biome, typecheck, `pnpm test` (567 passed, 2 skipped). Tried in the browser showcase
+(`showcase.html#/roadmap`, dark and light): drag, resize, draw, late links, Days zoom. Not
+yet tried in the Tauri app.
+
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
 folders only from this device's sessions, devenv for agents. Schema 17, unchanged.
@@ -2307,6 +2325,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- Roadmap (ADR 030): an MCP tool to read a roadmap (bars, late links); "push dependents"
+  when a bar moves past them; epics with a target date but no tasks as their own rows; a
+  task `start_date` if starts matter outside the roadmap.
 - From the macOS run (2026-11-19, see Current milestone): `spellcheck`/autocorrect off
   and no smart punctuation on path inputs; add `cmake` to `devenv.nix` (whisper.cpp,
   sherpa-onnx); a session with both the claude.ai connector and the local server has two
