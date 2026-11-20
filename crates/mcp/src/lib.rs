@@ -11,7 +11,10 @@
 //! deletes and undo) is open to it while Settings → Agents → _Let agents edit my tasks_
 //! is on (the default); turned off, only the status of the session's task tree changes.
 //! Always kept: the session's task is never closed, cancelled or deleted by its agent.
-//! Notes and the session summary need a session. Projects and epics have no owner: those
+//! Progress notes (`add_note`) and the session summary need a session. The user's Notes
+//! pages (ADR 032) are read and written with `list_notes`, `get_note`, `create_note`,
+//! `update_note` and `delete_note`: writing one is always allowed, changing the user's
+//! follows the setting. Projects and epics have no owner: those
 //! an agent creates are the user's, so creating one returns an existing one of the same
 //! name in the same place instead of a duplicate. Every write reports its change id;
 //! `undo` reverts it.
@@ -21,6 +24,7 @@ mod edit;
 mod lineage;
 pub mod locate;
 mod meetings;
+mod notes;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -62,6 +66,8 @@ pub struct TaskServer {
     local_files: bool,
     /// Batches this server wrote: `undo` reverts them even with editing turned off.
     written: Arc<Mutex<HashSet<Id>>>,
+    /// Notes this server wrote: they stay editable with editing turned off.
+    created_notes: Arc<Mutex<HashSet<Id>>>,
     on_write: Option<WriteHook>,
     tool_router: ToolRouter<Self>,
 }
@@ -85,8 +91,9 @@ impl TaskServer {
             edit_user_tasks: true,
             local_files: true,
             written: Arc::default(),
+            created_notes: Arc::default(),
             on_write: None,
-            tool_router: Self::tool_router() + Self::edit_router(),
+            tool_router: Self::tool_router() + Self::edit_router() + Self::notes_router(),
         })
     }
 
@@ -100,8 +107,9 @@ impl TaskServer {
             edit_user_tasks: true,
             local_files: false,
             written: Arc::default(),
+            created_notes: Arc::default(),
             on_write: None,
-            tool_router: Self::tool_router() + Self::edit_router(),
+            tool_router: Self::tool_router() + Self::edit_router() + Self::notes_router(),
         }
     }
 
@@ -973,11 +981,20 @@ impl TaskServer {
         ))
     }
 
-    #[tool(description = "Find tasks by words in their title or description, best first.")]
+    #[tool(
+        description = "Find tasks by words in their title or description, best first; \
+                       notes whose title or body match follow (list_notes searches only \
+                       notes)."
+    )]
     pub fn search(&self, Parameters(p): Parameters<Search>) -> ToolResult {
         let limit = list_limit(p.limit);
-        let (ids, snapshot) =
-            self.with_store(|s| Ok((s.search(&p.query, limit)?, s.snapshot()?)))?;
+        let (ids, note_hits, snapshot) = self.with_store(|s| {
+            Ok((
+                s.search(&p.query, limit)?,
+                s.search_notes(&p.query, limit.min(10))?,
+                s.snapshot()?,
+            ))
+        })?;
         let statuses = by_id(&snapshot.statuses);
         let tasks: HashMap<&str, &Task> =
             snapshot.tasks.iter().map(|t| (t.id.as_str(), t)).collect();
@@ -986,7 +1003,23 @@ impl TaskServer {
             .filter_map(|id| tasks.get(id.as_str()))
             .map(|task| task_line(&statuses, task))
             .collect();
-        Ok(listing(lines, 0, "No tasks match."))
+        let mut out = listing(lines, 0, "No tasks match.");
+        let notes: Vec<String> = note_hits
+            .iter()
+            .filter_map(|hit| {
+                let note = snapshot.notes.iter().find(|n| n.id == hit.note_id)?;
+                Some(format!(
+                    "- {} (`{}`): {}",
+                    notes::title(note),
+                    note.id,
+                    hit.snippet.replace('\n', " ")
+                ))
+            })
+            .collect();
+        if !notes.is_empty() {
+            out.push_str(&format!("\n\nNotes:\n{}", notes.join("\n")));
+        }
+        Ok(out)
     }
 
     #[tool(
@@ -1639,7 +1672,10 @@ impl TaskServer {
         const VIEWS: &str = " get_calendar shows the user's time blocks, meetings and events \
                              (schedule_block plans time); list_meetings and get_meeting read \
                              the user's meetings and their notes; get_lineage shows which \
-                             tasks wait on which (link_tasks adds a link).";
+                             tasks wait on which (link_tasks adds a link). The user's Notes \
+                             (markdown pages in folders, linked to tasks) are read with \
+                             list_notes and get_note and written with create_note and \
+                             update_note; add_note is only your progress note on a task.";
         let edit = if self.edit_user_tasks {
             "You may do anything the user can do in the app when they ask: edit their tasks \
              (update_task: status, fields, project, epic, parent, tags, order), create tasks of \

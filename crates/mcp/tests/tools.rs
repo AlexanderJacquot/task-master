@@ -154,20 +154,24 @@ async fn lists_its_tools_and_names_the_session_task() {
             "attach_file",
             "complete_session",
             "create_epic",
+            "create_note",
             "create_project",
             "create_task",
             "delete_epic",
+            "delete_note",
             "delete_project",
             "delete_tag",
             "delete_task",
             "get_calendar",
             "get_lineage",
             "get_meeting",
+            "get_note",
             "get_task",
             "link_tasks",
             "list_agent_sessions",
             "list_attachments",
             "list_meetings",
+            "list_notes",
             "list_projects",
             "list_tags",
             "list_tasks",
@@ -180,6 +184,7 @@ async fn lists_its_tools_and_names_the_session_task() {
             "undo",
             "update_block",
             "update_epic",
+            "update_note",
             "update_project",
             "update_tag",
             "update_task"
@@ -1910,5 +1915,182 @@ async fn meetings_are_listed_read_in_full_and_on_the_calendar() {
         )),
         "{shown}"
     );
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn notes_are_listed_searched_read_and_written() {
+    let f = fixture();
+    let (task, project) = (f.task.clone(), f.project.clone());
+    let store = f.store.with_files(temp_dir("note-files"));
+    let server = TaskServer::new(store, Some(&f.session)).unwrap();
+    let client = connect(server.clone()).await;
+    let instructions = client.peer_info().unwrap().instructions.clone().unwrap();
+    assert!(instructions.contains("list_notes"), "{instructions}");
+    assert_eq!(
+        ok(&client, "list_notes", json!({})).await,
+        "No notes match."
+    );
+
+    // A new folder is made for a name nobody uses; the note links a task and a project.
+    let made = ok(
+        &client,
+        "create_note",
+        json!({
+            "title": "Design notes",
+            "body": format!("Plan for [the spawn](task:{task}) in [tm](project:{project})."),
+            "folder": "Research",
+            "task_id": task,
+        }),
+    )
+    .await;
+    assert!(made.starts_with("Wrote note Design notes"), "{made}");
+    let id = id_in(&made);
+    let snap = server_snapshot(&server);
+    assert_eq!(snap.note_folders.len(), 1);
+    assert_eq!(
+        snap.notes[0].folder_id.as_ref(),
+        Some(&snap.note_folders[0].id)
+    );
+    assert_eq!(snap.notes[0].task_id.as_deref(), Some(task.as_str()));
+    // The same folder name (any case) reuses it.
+    let second = ok(
+        &client,
+        "create_note",
+        json!({ "title": "Loose", "folder": "research" }),
+    )
+    .await;
+    assert_eq!(server_snapshot(&server).note_folders.len(), 1);
+
+    let all = ok(&client, "list_notes", json!({})).await;
+    assert!(
+        all.contains("Design notes (in Research, on task Spawn Claude sessions"),
+        "{all}"
+    );
+    assert!(all.contains("Folders: Research"), "{all}");
+    let about = ok(&client, "list_notes", json!({ "task_id": task })).await;
+    assert!(
+        about.contains("Design notes") && !about.contains("Loose"),
+        "{about}"
+    );
+    let found = ok(&client, "list_notes", json!({ "query": "spaw" })).await;
+    assert!(found.contains("[spawn]"), "{found}");
+    let searched = ok(&client, "search", json!({ "query": "plan" })).await;
+    assert!(searched.contains("Notes:\n- Design notes"), "{searched}");
+    let outside = ok(&client, "list_notes", json!({ "folder": "" })).await;
+    assert_eq!(outside, "No notes match.");
+
+    let page = ok(&client, "get_note", json!({ "note_id": id })).await;
+    assert!(page.starts_with("# Design notes"), "{page}");
+    assert!(page.contains("- Folder: Research"), "{page}");
+    assert!(
+        page.contains("- Attached to task: Spawn Claude sessions"),
+        "{page}"
+    );
+    assert!(page.contains("- Links projects: task-master"), "{page}");
+    assert!(
+        page.ends_with(
+            "in [tm](project:{project}).\n"
+                .replace("{project}", &project)
+                .as_str()
+        )
+    );
+
+    ok(
+        &client,
+        "update_note",
+        json!({ "note_id": id, "append_body": "- [ ] Next step", "folder": "", "task_id": "" }),
+    )
+    .await;
+    let note = server_snapshot(&server)
+        .notes
+        .into_iter()
+        .find(|n| n.id == id)
+        .unwrap();
+    assert!(
+        note.body.ends_with(").\n\n- [ ] Next step"),
+        "{}",
+        note.body
+    );
+    assert_eq!((note.folder_id, note.task_id), (None, None));
+    refused(
+        &client,
+        "update_note",
+        json!({ "note_id": id, "body": "a", "append_body": "b" }),
+    )
+    .await;
+    refused(&client, "update_note", json!({ "note_id": id })).await;
+
+    // Files on a note.
+    let file = ok(
+        &client,
+        "attach_file",
+        json!({ "note_id": id, "name": "sketch.txt", "text": "boxes" }),
+    )
+    .await;
+    assert!(file.contains("to note Design notes"), "{file}");
+    let listed = ok(&client, "list_attachments", json!({ "note_id": id })).await;
+    assert!(
+        listed.contains("sketch.txt") && listed.contains("on note Design notes"),
+        "{listed}"
+    );
+    assert!(
+        ok(&client, "get_note", json!({ "note_id": id }))
+            .await
+            .contains("- Attachments: sketch.txt")
+    );
+    refused(
+        &client,
+        "attach_file",
+        json!({ "task_id": task, "note_id": id, "name": "x", "text": "a" }),
+    )
+    .await;
+
+    ok(&client, "delete_note", json!({ "note_id": id_in(&second) })).await;
+    assert_eq!(server_snapshot(&server).notes.len(), 1);
+    client.cancel().await.unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn with_editing_turned_off_only_its_own_notes_change() {
+    let mut f = fixture();
+    let users = f
+        .store
+        .execute(Command::CreateNote {
+            note: NewNote {
+                title: "Mine".into(),
+                ..NewNote::default()
+            },
+        })
+        .unwrap()
+        .notes
+        .remove(0)
+        .id;
+    let server = TaskServer::new(f.store, Some(&f.session))
+        .unwrap()
+        .with_edit_user_tasks(false);
+    let client = connect(server).await;
+    let message = refused(
+        &client,
+        "update_note",
+        json!({ "note_id": users, "title": "Theirs" }),
+    )
+    .await;
+    assert!(message.contains("turned off"), "{message}");
+    refused(&client, "delete_note", json!({ "note_id": users })).await;
+    // Reading is fine, and so is writing and then changing a note of its own.
+    assert!(
+        ok(&client, "get_note", json!({ "note_id": users }))
+            .await
+            .starts_with("# Mine")
+    );
+    let own = id_in(&ok(&client, "create_note", json!({ "title": "Findings" })).await);
+    ok(
+        &client,
+        "update_note",
+        json!({ "note_id": own, "append_body": "More." }),
+    )
+    .await;
+    ok(&client, "delete_note", json!({ "note_id": own })).await;
     client.cancel().await.unwrap();
 }

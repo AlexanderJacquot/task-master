@@ -96,15 +96,24 @@ pub struct DeleteEpic {
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct ListAttachments {
-    /// Only this task's. All tasks' when absent.
+    /// Only this task's. All tasks' and notes' when neither this nor note_id is given.
     #[serde(default)]
     pub task_id: Option<String>,
+    /// Only this note's.
+    #[serde(default)]
+    pub note_id: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct AttachFile {
-    pub task_id: String,
-    /// File name shown on the task. Defaults to the name in `path`.
+    /// The task to attach it to; or give note_id.
+    #[serde(default)]
+    pub task_id: Option<String>,
+    /// The note to attach it to (show it in the note's body with `![name](attachment:<id>)`
+    /// for an image, `[name](attachment:<id>)` for a file).
+    #[serde(default)]
+    pub note_id: Option<String>,
+    /// File name shown on the task or note. Defaults to the name in `path`.
     #[serde(default)]
     pub name: Option<String>,
     /// A file on this device to attach (local server only).
@@ -369,22 +378,40 @@ impl TaskServer {
         ))
     }
 
-    #[tool(description = "Attachments (files on tasks) with their ids, names, types and sizes.")]
+    #[tool(
+        description = "Attachments (files on tasks and notes) with their ids, names, types \
+                       and sizes."
+    )]
     pub fn list_attachments(&self, Parameters(p): Parameters<ListAttachments>) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;
         let lines: Vec<String> = snapshot
             .attachments
             .iter()
-            .filter(|a| a.task_id.is_some())
-            .filter(|a| p.task_id.is_none() || a.task_id == p.task_id)
+            .filter(|a| a.task_id.is_some() || a.note_id.is_some())
+            .filter(|a| match (&p.task_id, &p.note_id) {
+                (None, None) => true,
+                (task, note) => {
+                    (task.is_some() && a.task_id == *task) || (note.is_some() && a.note_id == *note)
+                }
+            })
             .map(|a| {
-                let task = snapshot
-                    .tasks
-                    .iter()
-                    .find(|t| Some(&t.id) == a.task_id.as_ref())
-                    .map_or("?", |t| t.title.as_str());
+                let owner = match (&a.task_id, &a.note_id) {
+                    (Some(id), _) => snapshot
+                        .tasks
+                        .iter()
+                        .find(|t| &t.id == id)
+                        .map_or("?".to_owned(), |t| t.title.clone()),
+                    (_, Some(id)) => snapshot
+                        .notes
+                        .iter()
+                        .find(|n| &n.id == id)
+                        .map_or("?".to_owned(), |n| {
+                            format!("note {}", super::notes::title(n))
+                        }),
+                    _ => "?".to_owned(),
+                };
                 format!(
-                    "- {} ({}, {}) on {task} (`{}`)",
+                    "- {} ({}, {}) on {owner} (`{}`)",
                     a.name,
                     a.mime,
                     size_text(a.size),
@@ -399,13 +426,28 @@ impl TaskServer {
     }
 
     #[tool(
-        description = "Attach a file to a task: text, base64 content, or (on this device's \
-                       server only) a file path. At most 50 MB."
+        description = "Attach a file to a task or a note: text, base64 content, or (on this \
+                       device's server only) a file path. At most 50 MB."
     )]
     pub fn attach_file(&self, Parameters(p): Parameters<AttachFile>) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;
-        let task = find_task(&snapshot, &p.task_id)?;
-        self.check_may_change(&snapshot, task)?;
+        let owner = match (p.task_id.as_deref(), p.note_id.as_deref()) {
+            (Some(task_id), None) => {
+                let task = find_task(&snapshot, task_id)?;
+                self.check_may_change(&snapshot, task)?;
+                Owner::Task(task)
+            }
+            (None, Some(note_id)) => {
+                let note = snapshot
+                    .notes
+                    .iter()
+                    .find(|n| n.id == note_id)
+                    .ok_or_else(|| format!("note {note_id} not found"))?;
+                self.check_may_edit_note(note)?;
+                Owner::Note(note)
+            }
+            _ => return Err("give task_id or note_id (one of them)".into()),
+        };
         let given = [p.path.is_some(), p.text.is_some(), p.base64.is_some()];
         if given.iter().filter(|g| **g).count() != 1 {
             return Err("give exactly one of path, text or base64".into());
@@ -442,9 +484,9 @@ impl TaskServer {
         let changes = self.write(vec![Command::CreateAttachment {
             attachment: NewAttachment {
                 id: Some(id.clone()),
-                task_id: Some(task.id.clone()),
+                task_id: owner.task_id(),
                 meeting_id: None,
-                note_id: None,
+                note_id: owner.note_id(),
                 hash: stored.hash,
                 name,
                 mime: None,
@@ -459,7 +501,7 @@ impl TaskServer {
             "Attached {} ({}) to {} (`{id}`){}",
             made.name,
             size_text(made.size),
-            task.title,
+            owner.label(),
             change_line(&changes)
         ))
     }
@@ -499,8 +541,11 @@ impl TaskServer {
     #[tool(description = "Rename an attachment.")]
     pub fn rename_attachment(&self, Parameters(p): Parameters<RenameAttachment>) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;
-        let (attachment, task) = attachment_and_task(&snapshot, &p.attachment_id)?;
-        self.check_may_change(&snapshot, task)?;
+        let (attachment, owner) = attachment_and_owner(&snapshot, &p.attachment_id)?;
+        match owner {
+            Owner::Task(task) => self.check_may_change(&snapshot, task)?,
+            Owner::Note(note) => self.check_may_edit_note(note)?,
+        }
         let changes = self.write(vec![Command::UpdateAttachment {
             id: attachment.id.clone(),
             changes: vec![AttachmentChange::Name(p.name)],
@@ -512,12 +557,16 @@ impl TaskServer {
         Ok(format!("Renamed it to {name}.{}", change_line(&changes)))
     }
 
-    #[tool(description = "Take an attachment off its task. Only when the user asks.")]
+    #[tool(description = "Take an attachment off its task or note. Only when the user asks.")]
     pub fn remove_attachment(&self, Parameters(p): Parameters<AttachmentId>) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;
-        let (attachment, task) = attachment_and_task(&snapshot, &p.attachment_id)?;
-        if task.owner != TaskOwner::Agent {
-            self.check_may_edit_users("this task's file")?;
+        let (attachment, owner) = attachment_and_owner(&snapshot, &p.attachment_id)?;
+        match owner {
+            Owner::Task(task) if task.owner != TaskOwner::Agent => {
+                self.check_may_edit_users("this task's file")?;
+            }
+            Owner::Task(_) => {}
+            Owner::Note(note) => self.check_may_edit_note(note)?,
         }
         let changes = self.write(vec![Command::DeleteAttachment {
             id: attachment.id.clone(),
@@ -525,7 +574,7 @@ impl TaskServer {
         Ok(format!(
             "Removed {} from {}.{}",
             attachment.name,
-            task.title,
+            owner.label(),
             change_line(&changes)
         ))
     }
@@ -607,20 +656,56 @@ fn find_tag<'a>(snapshot: &'a Snapshot, value: &str) -> Result<&'a Tag, String> 
         .ok_or_else(|| format!("no tag '{value}' (list_tags shows them)"))
 }
 
-fn attachment_and_task<'a>(
+/// What a file an agent may change hangs off: a task or a note (meetings' are read-only).
+enum Owner<'a> {
+    Task(&'a taskmaster_core::Task),
+    Note(&'a taskmaster_core::Note),
+}
+
+impl Owner<'_> {
+    fn task_id(&self) -> Option<String> {
+        match self {
+            Self::Task(t) => Some(t.id.clone()),
+            Self::Note(_) => None,
+        }
+    }
+
+    fn note_id(&self) -> Option<String> {
+        match self {
+            Self::Task(_) => None,
+            Self::Note(n) => Some(n.id.clone()),
+        }
+    }
+
+    fn label(&self) -> String {
+        match self {
+            Self::Task(t) => t.title.clone(),
+            Self::Note(n) => format!("note {}", super::notes::title(n)),
+        }
+    }
+}
+
+fn attachment_and_owner<'a>(
     snapshot: &'a Snapshot,
     id: &str,
-) -> Result<(&'a taskmaster_core::Attachment, &'a taskmaster_core::Task), String> {
+) -> Result<(&'a taskmaster_core::Attachment, Owner<'a>), String> {
     let attachment = snapshot
         .attachments
         .iter()
         .find(|a| a.id == id)
         .ok_or_else(|| format!("attachment {id} not found"))?;
-    let task_id = attachment
-        .task_id
-        .as_deref()
-        .ok_or_else(|| format!("attachment {id} is not on a task"))?;
-    Ok((attachment, find_task(snapshot, task_id)?))
+    if let Some(task_id) = attachment.task_id.as_deref() {
+        return Ok((attachment, Owner::Task(find_task(snapshot, task_id)?)));
+    }
+    if let Some(note_id) = attachment.note_id.as_deref() {
+        let note = snapshot
+            .notes
+            .iter()
+            .find(|n| n.id == note_id)
+            .ok_or_else(|| format!("note {note_id} not found"))?;
+        return Ok((attachment, Owner::Note(note)));
+    }
+    Err(format!("attachment {id} is not on a task or a note"))
 }
 
 fn is_text(mime: &str) -> bool {
