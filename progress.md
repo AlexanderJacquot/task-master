@@ -5,12 +5,13 @@ Running log for task-master. Read at the start of every session; update at the e
 ## Current milestone
 
 **Outlook calendar: explored, proposed** (2026-11-20, branch `outlook-calendar`; ADR 030
-proposed): local paths through the Outlook app do not cover both systems (classic Outlook
-COM is Windows only and being retired; the new Outlook and Outlook for Mac have no local
-API; macOS Calendar/EventKit reaches Microsoft 365 through EWS, off by default since
-2026-10-01). Proposed: a Microsoft Graph provider behind `CalendarProvider` (PKCE loopback
-sign-in like Google), one connected account at a time. Waiting on the user: who owns the
-Entra app registration, and one account or several. No code yet.
+proposed): the user's company Microsoft 365 account, no admin rights, Windows (classic and
+new Outlook). Decided: one calendar account at a time; blocks go to the main calendar.
+Proposed: a local provider through classic Outlook's COM object model (no sign-in, no
+tenant consent; Windows only; to verify on the user's PC, also with the New Outlook
+toggle on), with Microsoft Graph later for macOS (company consent may block it). Other
+local routes don't work (new Outlook and Outlook for Mac have no local API; macOS
+Calendar reaches Microsoft 365 through EWS, off since 2026-10-01). No code yet.
 
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
