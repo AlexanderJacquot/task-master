@@ -12,6 +12,22 @@ folders only from this device's sessions, devenv for agents. Schema 17, unchange
 sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
 Schema 17: update the sync server with the app.
 
+**Today panel on All tasks** (2026-11-20, branch `today-side-panel`): a "Today" toggle in
+the All tasks header opens a panel on the right (`features/today/TodayPanel.tsx`, open state
+remembered per machine as `task-master.today-panel`). It lists the Today view's tasks flat
+(`todayTasks` in `lib/views.ts`: open ones in the default order, then done; no cancelled or
+agent tasks), each with a check, a click to open, and "remove from today" for picked ones
+(due-only ones show their due date). The panel is a `taskDrop` target `{ kind: "today" }`,
+so board cards dropped on it get `today_on` = today. List rows are now draggable too
+(`TaskList`: dnd-kit, a 5 px start; a multi-selection drags together, `listDragGroup`):
+they drop on every `taskDrop` target (this panel, the sidebar's Today, projects and epics,
+the open task's panel), never inside the list. Inputs and portalled menus in a row do not
+start a drag. Tests: `todayTasks`, `listDragGroup`, app "the Today panel on All tasks"
+(toggle, remove, a real pointer drag of a row onto the panel). Checks: biome, typecheck,
+`pnpm test` (555 passed, 2 skipped); no Rust changes, so no cargo run. Tried in the
+showcase page (drag and click). To check: with the task panel open too, a narrow window
+leaves the list little room.
+
 **devenv: clean desktop builds on macOS** (2026-11-20, on `main`): the entry below was
 checked on a warm `target/`. A clean build of the desktop crate failed in whisper-rs-sys:
 the Nix clang wrapper (still on its own macOS 14.4 SDK) compiled whisper.cpp against

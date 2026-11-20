@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defaultsForPath } from "./features/shell/Layout";
 import type { Api } from "./lib/api";
+import { isoDate } from "./lib/dates";
 import { reloadKeymap } from "./lib/keymap";
 import type { Changes, Command, Task } from "./lib/types";
 import { createUpdateStore, UpdateProvider } from "./lib/updater";
@@ -1134,5 +1135,84 @@ describe("Task search", () => {
     await screen.findByText("Could not search tasks. Clear the search and try again.");
     fireEvent.change(input, { target: { value: "" } });
     await screen.findByRole("button", { name: "Renew passport" });
+  });
+});
+
+describe("the Today panel on All tasks", () => {
+  const today = isoDate();
+  const planned = task({ title: "Planned", status_id: STATUS.todo, today_on: today });
+  const later = task({ title: "Later", status_id: STATUS.todo });
+
+  beforeEach(async () => {
+    cleanup();
+    fake = fakeApi(() => store, [planned, later]);
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    const router = createAppRouter(createMemoryHistory({ initialEntries: ["/all"] }));
+    render(
+      <StoreProvider store={store} api={fake.api}>
+        <RouterProvider router={router} />
+      </StoreProvider>,
+    );
+    await screen.findByRole("heading", { name: "All tasks" });
+  });
+  afterEach(() => {
+    delete (document as { elementsFromPoint?: unknown }).elementsFromPoint;
+  });
+
+  const openPanel = async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Today", pressed: false }));
+    return screen.findByRole("complementary", { name: "Today panel" });
+  };
+
+  it("opens beside the list, is remembered, and lists today's tasks", async () => {
+    expect(screen.queryByRole("complementary", { name: "Today panel" })).toBeNull();
+    const panel = await openPanel();
+    expect(localStorage.getItem("task-master.today-panel")).toBe("1");
+    expect(within(panel).getByRole("button", { name: "Planned" })).toBeTruthy();
+    expect(within(panel).queryByRole("button", { name: "Later" })).toBeNull();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Remove Planned from today" }));
+    await waitFor(() =>
+      expect(fake.executed.at(-1)?.[0]).toMatchObject({
+        type: "update_task",
+        id: planned.id,
+        changes: [{ today_on: null }],
+      }),
+    );
+    expect(await within(panel).findByText(/Nothing planned yet/)).toBeTruthy();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Close the Today panel" }));
+    expect(screen.queryByRole("complementary", { name: "Today panel" })).toBeNull();
+    expect(localStorage.getItem("task-master.today-panel")).toBe("0");
+  });
+
+  it("plans a list row dragged onto it for today", async () => {
+    const panel = await openPanel();
+    const row = screen
+      .getAllByTestId("task-row")
+      .find((r) => within(r).queryByRole("button", { name: "Later" }));
+    if (!row) throw new Error("no row");
+    // jsdom has no layout: the pointer is over the panel wherever it is.
+    document.elementsFromPoint = () => [panel];
+    const at = (x: number) => ({
+      button: 0,
+      isPrimary: true,
+      pointerId: 1,
+      clientX: x,
+      clientY: 10,
+    });
+    fireEvent.pointerDown(within(row).getByRole("button", { name: "Later" }), at(10));
+    fireEvent.pointerMove(document, at(30));
+    fireEvent.pointerMove(document, at(40));
+    expect(await within(panel).findByText("Drop to plan for today")).toBeTruthy();
+    fireEvent.pointerUp(document, at(40));
+    await waitFor(() => expect(store.getState().tasks[later.id]?.today_on).toBe(today));
+    expect(fake.executed.at(-1)?.[0]).toMatchObject({
+      type: "update_task",
+      id: later.id,
+      changes: [{ today_on: today }],
+    });
+    expect(await within(panel).findByRole("button", { name: "Later" })).toBeTruthy();
   });
 });

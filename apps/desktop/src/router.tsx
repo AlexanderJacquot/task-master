@@ -68,7 +68,7 @@ const calendarRoute = createRoute({
 const allRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "all",
-  component: () => <ViewPage scope={{ kind: "all" }} title="All tasks" />,
+  component: () => <ViewPage scope={{ kind: "all" }} title="All tasks" todayPanel />,
 });
 
 const lineageRoute = createRoute({

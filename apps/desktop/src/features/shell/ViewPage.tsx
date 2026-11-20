@@ -9,6 +9,7 @@ import {
   UndoIcon as Reset,
   SearchIcon as Search,
   OptionsIcon as SlidersHorizontal,
+  TodayIcon as Sun,
 } from "../../components/TaskIcons";
 import { Button, cx, FOCUS, InlineInput, Select } from "../../components/ui";
 import { buildBoard, type Lane, laneFields } from "../../lib/board";
@@ -41,6 +42,7 @@ import { clearLaneChoices } from "../board/useCollapsedLanes";
 import { CAPTURE_HINT, CaptureBox } from "../capture/CaptureBox";
 import { TaskList } from "../list/TaskList";
 import { EmptyArt, TitleCrest, TitleFlourish } from "../ornaments/Ornaments";
+import { TodayPanel, useTodayPanelOpen } from "../today/TodayPanel";
 import { BulkBar } from "./BulkBar";
 import { EditableTitle } from "./EditableTitle";
 import { FilterBar } from "./FilterBar";
@@ -114,12 +116,15 @@ export function ViewPage({
   actions,
   details,
   eyebrow,
+  todayPanel,
 }: {
   scope: ViewScope;
   title: ReactNode;
   actions?: ReactNode;
   details?: ReactNode;
   eyebrow?: ReactNode;
+  /** Offer the Today panel beside the tasks (All tasks), to drag tasks into today. */
+  todayPanel?: boolean;
 }) {
   const [display, setDisplay] = useViewPrefs(scope);
   return (
@@ -131,6 +136,7 @@ export function ViewPage({
       setDisplay={setDisplay}
       actions={actions}
       details={details}
+      todayPanel={todayPanel}
     />
   );
 }
@@ -223,6 +229,7 @@ function ViewBody({
   actions,
   details,
   eyebrow,
+  todayPanel,
 }: {
   scope: ViewScope;
   title: ReactNode;
@@ -234,6 +241,8 @@ function ViewBody({
   actions?: ReactNode;
   /** Shown under the header (an epic's fields and progress). */
   details?: ReactNode;
+  /** Offer the Today panel (a header toggle) beside the tasks. */
+  todayPanel?: boolean;
 }) {
   const store = useTaskStore();
   const navigate = useNavigate();
@@ -254,6 +263,8 @@ function ViewBody({
   const [savingAs, setSavingAs] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const filtersShown = showFilters || !filterIsEmpty(display.filter);
+  const [todayOpen, setTodayOpen] = useTodayPanelOpen();
+  const showToday = !!todayPanel && todayOpen;
 
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
   // Subtasks folded or unrolled by hand in the list (over the default of the row's depth).
@@ -475,287 +486,302 @@ function ViewBody({
   );
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-end gap-x-4 gap-y-3 px-10 pt-7 pb-4">
-        <div className="min-w-0 flex-1">
-          {eyebrow && <div className="mb-0.5 text-[13px] text-ink-3">{eyebrow}</div>}
-          <h1 className="flex min-w-0 items-center gap-3 font-display text-[34px] leading-tight font-normal tracking-wide">
-            <TitleCrest />
-            {title}
-          </h1>
-          <TitleFlourish />
-          <div className="mt-1 text-[13.5px] text-ink-2">
-            {taskCount} {taskCount === 1 ? "task" : "tasks"}
+    <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-w-0 flex-1 flex-col">
+        <header className="flex flex-wrap items-end gap-x-4 gap-y-3 px-10 pt-7 pb-4">
+          <div className="min-w-0 flex-1">
+            {eyebrow && <div className="mb-0.5 text-[13px] text-ink-3">{eyebrow}</div>}
+            <h1 className="flex min-w-0 items-center gap-3 font-display text-[34px] leading-tight font-normal tracking-wide">
+              <TitleCrest />
+              {title}
+            </h1>
+            <TitleFlourish />
+            <div className="mt-1 text-[13.5px] text-ink-2">
+              {taskCount} {taskCount === 1 ? "task" : "tasks"}
+            </div>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <fieldset aria-label="Layout" className="flex rounded-[9px] bg-hover p-0.5 text-[13px]">
-            {(["list", "board"] as const).map((layout) => (
-              <button
-                key={layout}
-                type="button"
-                aria-pressed={display.layout === layout}
-                onClick={() => setDisplay({ layout })}
-                className={cx(
-                  "flex items-center gap-1.5 rounded-[7px] px-3 py-1 capitalize transition-colors",
-                  FOCUS,
-                  display.layout === layout
-                    ? "bg-selected text-ink shadow-sm"
-                    : "text-ink-2 hover:text-ink",
-                )}
-              >
-                {layout === "list" ? <List size={14} /> : <Columns3 size={14} />}
-                {layout}
-              </button>
-            ))}
-          </fieldset>
-          <Popover.Root>
-            <Popover.Trigger asChild>
-              <Button size="sm">
-                <SlidersHorizontal size={14} />
-                Display
-              </Button>
-            </Popover.Trigger>
-            <Popover.Portal>
-              <Popover.Content
-                align="end"
-                sideOffset={6}
-                className="z-40 flex w-64 flex-col gap-3 rounded-xl border border-line-strong bg-overlay p-3 text-sm shadow-xl"
-              >
-                {board ? (
-                  <DisplayRow label="Swimlanes">
-                    <Select
-                      aria-label="Swimlanes"
-                      value={display.swimlane}
-                      onValueChange={(swimlane) => setDisplay({ swimlane })}
-                      className="w-36 border-line-strong"
-                      options={SWIMLANES}
-                    />
-                  </DisplayRow>
-                ) : (
-                  <>
-                    <DisplayRow label="Group">
-                      <Select
-                        aria-label="Group by"
-                        value={display.group_by}
-                        onValueChange={(group_by) => setDisplay({ group_by })}
-                        className="w-36 border-line-strong"
-                        options={GROUPS}
-                      />
-                    </DisplayRow>
-                    <DisplayRow label="Sort">
-                      <Select
-                        aria-label="Sort"
-                        value={display.sort}
-                        onValueChange={(sort) => setDisplay({ sort })}
-                        className="w-36 border-line-strong"
-                        options={SORTS}
-                      />
-                    </DisplayRow>
-                  </>
-                )}
-                <label
-                  className="flex items-center justify-between gap-2 text-ink-2"
-                  title={
-                    board
-                      ? "Subtasks at every level get their own cards"
-                      : "Unroll subtasks at every level"
-                  }
+          <div className="flex flex-wrap items-center gap-2">
+            <fieldset aria-label="Layout" className="flex rounded-[9px] bg-hover p-0.5 text-[13px]">
+              {(["list", "board"] as const).map((layout) => (
+                <button
+                  key={layout}
+                  type="button"
+                  aria-pressed={display.layout === layout}
+                  onClick={() => setDisplay({ layout })}
+                  className={cx(
+                    "flex items-center gap-1.5 rounded-[7px] px-3 py-1 capitalize transition-colors",
+                    FOCUS,
+                    display.layout === layout
+                      ? "bg-selected text-ink shadow-sm"
+                      : "text-ink-2 hover:text-ink",
+                  )}
                 >
-                  Show subtasks
-                  <input
-                    type="checkbox"
-                    checked={display.show_subtasks}
-                    onChange={(e) => setShowSubtasks(e.target.checked)}
-                    className="accent-accent"
-                  />
-                </label>
-                <label className="flex items-center justify-between gap-2 text-ink-2">
-                  Show cancelled
-                  <input
-                    type="checkbox"
-                    checked={display.show_cancelled}
-                    onChange={(e) => setDisplay({ show_cancelled: e.target.checked })}
-                    className="accent-accent"
-                  />
-                </label>
-                <label className="flex items-center justify-between gap-2 text-ink-2">
-                  Show agent tasks
-                  <input
-                    type="checkbox"
-                    checked={display.show_agent_tasks}
-                    onChange={(e) => setDisplay({ show_agent_tasks: e.target.checked })}
-                    className="accent-accent"
-                  />
-                </label>
-                <div className="h-px bg-line" />
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={resetView}
-                  title={
-                    board
-                      ? "Clear filters and search; default display; every column open and sized to fit"
-                      : "Clear filters and search; default grouping, sort and display"
-                  }
-                >
-                  <Reset size={14} />
-                  Reset view
+                  {layout === "list" ? <List size={14} /> : <Columns3 size={14} />}
+                  {layout}
+                </button>
+              ))}
+            </fieldset>
+            <Popover.Root>
+              <Popover.Trigger asChild>
+                <Button size="sm">
+                  <SlidersHorizontal size={14} />
+                  Display
                 </Button>
-                {savingAs ? (
-                  <InlineInput
-                    initial=""
-                    autoFocus
-                    placeholder="Name of the new view"
-                    onCommit={async (name) => {
-                      setSavingAs(false);
-                      const id = await createView(store, name, spec);
-                      if (id) void navigate({ to: "/view/$viewId", params: { viewId: id } });
-                    }}
-                    onCancel={() => setSavingAs(false)}
-                  />
-                ) : (
-                  <Button size="sm" variant="ghost" onClick={() => setSavingAs(true)}>
-                    <Bookmark size={14} />
-                    Save as view
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  align="end"
+                  sideOffset={6}
+                  className="z-40 flex w-64 flex-col gap-3 rounded-xl border border-line-strong bg-overlay p-3 text-sm shadow-xl"
+                >
+                  {board ? (
+                    <DisplayRow label="Swimlanes">
+                      <Select
+                        aria-label="Swimlanes"
+                        value={display.swimlane}
+                        onValueChange={(swimlane) => setDisplay({ swimlane })}
+                        className="w-36 border-line-strong"
+                        options={SWIMLANES}
+                      />
+                    </DisplayRow>
+                  ) : (
+                    <>
+                      <DisplayRow label="Group">
+                        <Select
+                          aria-label="Group by"
+                          value={display.group_by}
+                          onValueChange={(group_by) => setDisplay({ group_by })}
+                          className="w-36 border-line-strong"
+                          options={GROUPS}
+                        />
+                      </DisplayRow>
+                      <DisplayRow label="Sort">
+                        <Select
+                          aria-label="Sort"
+                          value={display.sort}
+                          onValueChange={(sort) => setDisplay({ sort })}
+                          className="w-36 border-line-strong"
+                          options={SORTS}
+                        />
+                      </DisplayRow>
+                    </>
+                  )}
+                  <label
+                    className="flex items-center justify-between gap-2 text-ink-2"
+                    title={
+                      board
+                        ? "Subtasks at every level get their own cards"
+                        : "Unroll subtasks at every level"
+                    }
+                  >
+                    Show subtasks
+                    <input
+                      type="checkbox"
+                      checked={display.show_subtasks}
+                      onChange={(e) => setShowSubtasks(e.target.checked)}
+                      className="accent-accent"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 text-ink-2">
+                    Show cancelled
+                    <input
+                      type="checkbox"
+                      checked={display.show_cancelled}
+                      onChange={(e) => setDisplay({ show_cancelled: e.target.checked })}
+                      className="accent-accent"
+                    />
+                  </label>
+                  <label className="flex items-center justify-between gap-2 text-ink-2">
+                    Show agent tasks
+                    <input
+                      type="checkbox"
+                      checked={display.show_agent_tasks}
+                      onChange={(e) => setDisplay({ show_agent_tasks: e.target.checked })}
+                      className="accent-accent"
+                    />
+                  </label>
+                  <div className="h-px bg-line" />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={resetView}
+                    title={
+                      board
+                        ? "Clear filters and search; default display; every column open and sized to fit"
+                        : "Clear filters and search; default grouping, sort and display"
+                    }
+                  >
+                    <Reset size={14} />
+                    Reset view
                   </Button>
-                )}
-              </Popover.Content>
-            </Popover.Portal>
-          </Popover.Root>
-          <Button
-            size="sm"
-            aria-pressed={filtersShown}
-            onClick={() => setShowFilters((v) => !v)}
-            className={cx(!filterIsEmpty(display.filter) && "border-accent text-accent")}
-          >
-            <Filter size={14} />
-            Filter
-          </Button>
-          {actions}
-        </div>
-      </header>
-      {details}
-      {filtersShown && (
-        <FilterBar
-          filter={display.filter}
-          onChange={(filter) => setDisplay({ filter })}
-          statuses={statuses}
-          projects={projects}
-          epics={epics}
-          tags={tags}
-        />
-      )}
-      <div className="grid grid-cols-2 items-start gap-3 px-10 pt-1 pb-2">
-        <CaptureBox
-          id={NEW_TASK_INPUT_ID}
-          className="min-w-0"
-          defaults={withDefaultProject(
-            captureDefaults(scope, today),
-            projects,
-            scope.kind === "inbox",
-          )}
-          placeholder={`Add a task${typeof title === "string" ? ` to ${title}` : ""}…   ${CAPTURE_HINT}`}
-          onCaptured={(id, how) => {
-            if (how.open)
-              void navigate({
-                to: "/task/$taskId",
-                params: { taskId: id },
-                search: { focus: "description" },
-              });
-            // Settings → Adding tasks: the new task opens in the side panel, ready to write.
-            else if (loadOpenInPanel())
-              void navigate({
-                to: ".",
-                search: (prev: Record<string, unknown>) => ({
-                  ...prev,
-                  task: id,
-                  focus: "description" as const,
-                }),
-              });
-          }}
-        />
-        <form
-          aria-label="Search tasks"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setQuery(searchText.trim());
-          }}
-          className="flex min-w-0 flex-col gap-1.5"
-        >
-          <div className="flex items-center gap-3 rounded-[10px] border border-line-strong px-3.5 py-1.5 focus-within:border-accent focus-within:bg-raised/60">
-            <Search size={16} className="shrink-0 text-rubric" aria-hidden />
-            <input
-              type="search"
-              aria-label="Search tasks"
-              placeholder="Search task titles and descriptions…"
-              value={searchText}
-              onChange={(event) => {
-                setSearchText(event.target.value);
-              }}
-              className="min-w-0 flex-1 bg-transparent py-0.5 text-ink placeholder:text-ink-3 focus:outline-none"
-            />
-            <Button size="sm" type="submit">
-              Search
+                  {savingAs ? (
+                    <InlineInput
+                      initial=""
+                      autoFocus
+                      placeholder="Name of the new view"
+                      onCommit={async (name) => {
+                        setSavingAs(false);
+                        const id = await createView(store, name, spec);
+                        if (id) void navigate({ to: "/view/$viewId", params: { viewId: id } });
+                      }}
+                      onCancel={() => setSavingAs(false)}
+                    />
+                  ) : (
+                    <Button size="sm" variant="ghost" onClick={() => setSavingAs(true)}>
+                      <Bookmark size={14} />
+                      Save as view
+                    </Button>
+                  )}
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+            <Button
+              size="sm"
+              aria-pressed={filtersShown}
+              onClick={() => setShowFilters((v) => !v)}
+              className={cx(!filterIsEmpty(display.filter) && "border-accent text-accent")}
+            >
+              <Filter size={14} />
+              Filter
             </Button>
+            {todayPanel && (
+              <Button
+                size="sm"
+                aria-pressed={showToday}
+                onClick={() => setTodayOpen(!todayOpen)}
+                title="Show today's tasks beside the list; drag tasks onto it to plan them for today"
+                className={cx(showToday && "border-accent text-accent")}
+              >
+                <Sun size={14} />
+                Today
+              </Button>
+            )}
+            {actions}
           </div>
-          <div aria-live="polite" className="px-1 text-xs text-ink-3">
-            {searching
-              ? "Searching…"
-              : searchActive && !searchError
-                ? `${taskCount} matching ${taskCount === 1 ? "task" : "tasks"}`
-                : null}
-          </div>
-          {searchError && (
-            <p role="alert" className="px-1 text-xs text-danger">
-              Could not search tasks. Clear the search and try again.
-            </p>
-          )}
-        </form>
+        </header>
+        {details}
+        {filtersShown && (
+          <FilterBar
+            filter={display.filter}
+            onChange={(filter) => setDisplay({ filter })}
+            statuses={statuses}
+            projects={projects}
+            epics={epics}
+            tags={tags}
+          />
+        )}
+        <div className="grid grid-cols-2 items-start gap-3 px-10 pt-1 pb-2">
+          <CaptureBox
+            id={NEW_TASK_INPUT_ID}
+            className="min-w-0"
+            defaults={withDefaultProject(
+              captureDefaults(scope, today),
+              projects,
+              scope.kind === "inbox",
+            )}
+            placeholder={`Add a task${typeof title === "string" ? ` to ${title}` : ""}…   ${CAPTURE_HINT}`}
+            onCaptured={(id, how) => {
+              if (how.open)
+                void navigate({
+                  to: "/task/$taskId",
+                  params: { taskId: id },
+                  search: { focus: "description" },
+                });
+              // Settings → Adding tasks: the new task opens in the side panel, ready to write.
+              else if (loadOpenInPanel())
+                void navigate({
+                  to: ".",
+                  search: (prev: Record<string, unknown>) => ({
+                    ...prev,
+                    task: id,
+                    focus: "description" as const,
+                  }),
+                });
+            }}
+          />
+          <form
+            aria-label="Search tasks"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setQuery(searchText.trim());
+            }}
+            className="flex min-w-0 flex-col gap-1.5"
+          >
+            <div className="flex items-center gap-3 rounded-[10px] border border-line-strong px-3.5 py-1.5 focus-within:border-accent focus-within:bg-raised/60">
+              <Search size={16} className="shrink-0 text-rubric" aria-hidden />
+              <input
+                type="search"
+                aria-label="Search tasks"
+                placeholder="Search task titles and descriptions…"
+                value={searchText}
+                onChange={(event) => {
+                  setSearchText(event.target.value);
+                }}
+                className="min-w-0 flex-1 bg-transparent py-0.5 text-ink placeholder:text-ink-3 focus:outline-none"
+              />
+              <Button size="sm" type="submit">
+                Search
+              </Button>
+            </div>
+            <div aria-live="polite" className="px-1 text-xs text-ink-3">
+              {searching
+                ? "Searching…"
+                : searchActive && !searchError
+                  ? `${taskCount} matching ${taskCount === 1 ? "task" : "tasks"}`
+                  : null}
+            </div>
+            {searchError && (
+              <p role="alert" className="px-1 text-xs text-danger">
+                Could not search tasks. Clear the search and try again.
+              </p>
+            )}
+          </form>
+        </div>
+        {boardModel ? (
+          <BoardView
+            key={boardEpoch}
+            board={boardModel}
+            lookups={lookups}
+            selectedId={selectedId ?? null}
+            picked={selection.ids}
+            onOpen={onOpen}
+            onPick={onPick}
+            onAdd={addToLane}
+          />
+        ) : rows.length === 0 ? (
+          <EmptyArt>
+            {searchActive
+              ? searching
+                ? "Searching…"
+                : searchError
+                  ? "Search unavailable."
+                  : "No matching tasks."
+              : scope.kind === "inbox"
+                ? "Inbox zero. Nothing to triage."
+                : "No tasks here yet."}
+          </EmptyArt>
+        ) : (
+          <TaskList
+            rows={rows}
+            selectedId={selectedId ?? null}
+            picked={selection.ids}
+            onPick={onPick}
+            onToggleGroup={(id) => setCollapsedGroups((s) => toggle(s, id))}
+            onOpen={onOpen}
+            onOpenPage={onOpenPage}
+            onToggleDone={onToggleDone}
+            onToggleCollapse={onToggleCollapse}
+            onChange={onChange}
+            statuses={statuses}
+            projects={projects}
+            tags={tags}
+            today={today}
+            showProject={showProject}
+          />
+        )}
+        {picking && <BulkBar ids={selection.ids} onClear={clearSelection} />}
       </div>
-      {boardModel ? (
-        <BoardView
-          key={boardEpoch}
-          board={boardModel}
-          lookups={lookups}
-          selectedId={selectedId ?? null}
-          picked={selection.ids}
-          onOpen={onOpen}
-          onPick={onPick}
-          onAdd={addToLane}
-        />
-      ) : rows.length === 0 ? (
-        <EmptyArt>
-          {searchActive
-            ? searching
-              ? "Searching…"
-              : searchError
-                ? "Search unavailable."
-                : "No matching tasks."
-            : scope.kind === "inbox"
-              ? "Inbox zero. Nothing to triage."
-              : "No tasks here yet."}
-        </EmptyArt>
-      ) : (
-        <TaskList
-          rows={rows}
-          selectedId={selectedId ?? null}
-          picked={selection.ids}
-          onPick={onPick}
-          onToggleGroup={(id) => setCollapsedGroups((s) => toggle(s, id))}
-          onOpen={onOpen}
-          onOpenPage={onOpenPage}
-          onToggleDone={onToggleDone}
-          onToggleCollapse={onToggleCollapse}
-          onChange={onChange}
-          statuses={statuses}
-          projects={projects}
-          tags={tags}
-          today={today}
-          showProject={showProject}
-        />
-      )}
-      {picking && <BulkBar ids={selection.ids} onClear={clearSelection} />}
+      {showToday && <TodayPanel onClose={() => setTodayOpen(false)} />}
     </div>
   );
 }
