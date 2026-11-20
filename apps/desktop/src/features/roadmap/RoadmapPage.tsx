@@ -41,7 +41,7 @@ import {
 const control = "rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink";
 
 /**
- * A saved roadmap (ADR 030): of epics, or one epic's tasks. Its filters, timescale and bar
+ * A saved roadmap (ADR 031): of epics, or one epic's tasks. Its filters, timescale and bar
  * starts are a draft until "Save view"; "Revert" remounts the page from the stored view.
  */
 export function SavedRoadmapPage({ view }: { view: View }) {

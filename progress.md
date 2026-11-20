@@ -58,7 +58,7 @@ a scratch rustup toolchain with that target and a stand-in C compiler for SQLite
 script). **Not run against Outlook**: to check on the user's PC (ADR 030 lists what),
 also with the New Outlook toggle on. Later: Microsoft Graph for macOS (company consent
 may block it); write the event body if the object model guard allows it.
-**Roadmap** (2026-11-20, branch `roadmap`; ADR 030, proposed): a Roadmap page (Gantt) under
+**Roadmap** (2026-11-20, branch `roadmap`; ADR 031, proposed): a Roadmap page (Gantt) under
 Lineage in the sidebar, the rail and the palette (`features/roadmap/`), on two levels.
 `/roadmap`: the epics across projects, grouped by home project (projects multi-filter;
 epics without one show with their tasks' projects), each bar ending on the epic's target
@@ -2425,7 +2425,7 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
-- Roadmap (ADR 030): an MCP tool to read a roadmap (bars, late links); "push dependents"
+- Roadmap (ADR 031): an MCP tool to read a roadmap (bars, late links); "push dependents"
   when a bar moves past them; moving an epic's bar could offer to shift its tasks; a
   `start_date` on epics and tasks if starts matter outside the roadmap.
 - From the macOS run (2026-11-19, see Current milestone): `spellcheck`/autocorrect off

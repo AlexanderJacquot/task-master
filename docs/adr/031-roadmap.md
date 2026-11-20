@@ -1,4 +1,4 @@
-# ADR 030: Roadmap (Gantt) of epics and epic timelines, with saved views
+# ADR 031: Roadmap (Gantt) of epics and epic timelines, with saved views
 
 Date: 2026-11-20 · Status: proposed (implemented on branch `roadmap`)
 

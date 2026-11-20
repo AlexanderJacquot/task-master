@@ -115,10 +115,12 @@ export function subscribeTimers(l: () => void) {
       l();
     }
   };
-  window.addEventListener("storage", onStorage);
+  // No window (store code run outside a page, as in node tests): only this one's changes.
+  const target = typeof window === "undefined" ? null : window;
+  target?.addEventListener("storage", onStorage);
   return () => {
     listeners.delete(l);
-    window.removeEventListener("storage", onStorage);
+    target?.removeEventListener("storage", onStorage);
   };
 }
 

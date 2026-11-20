@@ -652,7 +652,7 @@ pub struct ViewSpec {
     /// most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
     #[serde(default)]
     pub lineage: Option<LineageSpec>,
-    /// Set for a saved Roadmap (ADR 030): it opens on the Roadmap page, on the epics of
+    /// Set for a saved Roadmap (ADR 031): it opens on the Roadmap page, on the epics of
     /// `filter.project_ids` (any number of projects; none is every project), or on one
     /// epic's task timeline. The scope is `All`.
     /// Boxed: it keeps `ViewSpec` (and so `Command`) small.

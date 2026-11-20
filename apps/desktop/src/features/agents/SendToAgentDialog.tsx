@@ -130,7 +130,7 @@ export function SendToAgentDialog({
   const limits = limitStatuses(counted, settings?.limits, Date.now());
   const spent = limits.filter((l) => l.over);
   const isMac = /Mac/.test(navigator.userAgent);
-  const desktopPossible =!!settings && desktopAppPossible(settings.runtime, navigator.userAgent);
+  const desktopPossible = !!settings && desktopAppPossible(settings.runtime, navigator.userAgent);
   const surface: AgentSurface = desktopPossible ? surfaceChoice : "background";
   const inDesktop = surface === "desktop";
   const needsConfirm =

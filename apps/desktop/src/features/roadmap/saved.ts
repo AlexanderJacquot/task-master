@@ -1,4 +1,4 @@
-// The Roadmap page's settings (ADR 030): kept on this machine for the plain pages, or in a
+// The Roadmap page's settings (ADR 031): kept on this machine for the plain pages, or in a
 // saved view's spec, which syncs and undoes like any other view.
 
 import type { RoadmapSpec, ViewSpec } from "../../lib/types";

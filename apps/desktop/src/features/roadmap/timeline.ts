@@ -1,4 +1,4 @@
-// The Roadmap's time arithmetic (ADR 030): calendar days as whole numbers, bars from due
+// The Roadmap's time arithmetic (ADR 031): calendar days as whole numbers, bars from due
 // dates and the roadmap's own starts, the visible range, the scale's ticks, and the rows.
 
 import type { Epic, RoadmapGroup, RoadmapZoom, Task } from "../../lib/types";
