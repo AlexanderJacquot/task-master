@@ -10,7 +10,8 @@ import { fakeParse, STATUS, snapshot } from "../../test/fixtures";
 import { type CaptureControls, CaptureWindow } from "./CaptureWindow";
 
 /** Records what the window was asked to do; plain functions, as CLAUDE.md asks. */
-function fakeControls() {
+/** `expanded` settles when the window has grown (at once by default). */
+function fakeControls(expanded: () => Promise<void> = async () => {}) {
   const calls: string[] = [];
   let blur: (() => void) | null = null;
   let opened: (() => void) | null = null;
@@ -20,6 +21,7 @@ function fakeControls() {
     },
     expand: async () => {
       calls.push("expand");
+      await expanded();
     },
     onOpened: async (handler) => {
       opened = handler;
@@ -33,7 +35,13 @@ function fakeControls() {
   return { controls, calls, blur: () => blur?.(), open: () => opened?.() };
 }
 
-async function renderWindow({ failDelete = false } = {}) {
+async function renderWindow({
+  failDelete = false,
+  expanded,
+}: {
+  failDelete?: boolean;
+  expanded?: () => Promise<void>;
+} = {}) {
   const executed: Command[][] = [];
   const api: Api = {
     snapshot: async () => snapshot(),
@@ -82,7 +90,7 @@ async function renderWindow({ failDelete = false } = {}) {
   };
   const store = createTaskStore(api);
   await store.getState().hydrate();
-  const fake = fakeControls();
+  const fake = fakeControls(expanded);
   render(
     <StoreProvider store={store} api={api}>
       <CaptureWindow controls={fake.controls} />
@@ -155,6 +163,36 @@ describe("the quick-capture window", () => {
 
     act(() => fake.blur());
     expect(fake.calls).toEqual(["expand"]);
+  });
+
+  it("opens the editor only once the window has grown, so the description keeps the cursor", async () => {
+    // On macOS growing the window takes the keyboard from the page for a moment; an
+    // editor already open would lose focus and close.
+    let grown = () => {};
+    const expanded = new Promise<void>((resolve) => {
+      grown = resolve;
+    });
+    const { fake, input } = await renderWindow({ expanded: () => expanded });
+    fireEvent.change(input, { target: { value: "Write the report" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    await waitFor(() => expect(fake.calls).toEqual(["expand"]));
+    expect(screen.queryByRole("region", { name: "Description" })).toBeNull();
+
+    await act(async () => grown());
+    const description = await screen.findByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
+  });
+
+  it("still opens the editor when the window cannot grow", async () => {
+    const { input } = await renderWindow({
+      expanded: async () => {
+        throw new Error("no resize");
+      },
+    });
+    fireEvent.change(input, { target: { value: "Write the report" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    const description = await screen.findByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
   });
 
   it("leaves a field on the first Esc, closes on the next, and opens small again", async () => {

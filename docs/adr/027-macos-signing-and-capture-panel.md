@@ -72,6 +72,12 @@ release-only behaviour on CI builds. `pnpm dev` works.
   needed two fixes found on the way: the capture window now mounts `useFileDrop`, and on
   macOS drag positions are taken as CSS pixels (wry reports points, which Tauri labels
   physical), in the main window too.
+- Every style-mask change (`set_resizable`, on each opening and on Shift+Enter) makes
+  tao's own view the first responder, so the page loses the keyboard, and the panel
+  never activates the app to get it back. After one, focus the webview
+  (`Webview::set_focus` / `getCurrentWebview().setFocus()`, a `makeFirstResponder` that
+  activates nothing), never the window. The description editor closes on blur, so the
+  capture editor mounts only after the window has grown (fixed 2026-11-20).
 - If a tao update gives `TaoWindow` behaviour the panel class drops (today:
   `canBecomeKeyWindow`, `canBecomeMainWindow`, a `sendEvent:` override for
   drag-by-background, unused by the capture window), re-check this crate.
