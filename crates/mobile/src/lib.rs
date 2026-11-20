@@ -19,6 +19,19 @@ use taskmaster_core::{
 
 uniffi::setup_scaffolding!();
 
+mod account;
+mod browse;
+mod edit;
+mod plan;
+
+pub use account::{AttachmentFile, SignIn};
+pub use browse::{
+    ActivityItem, AttachmentItem, BoardColumn, Counts, EpicItem, EpicStage, FieldEdit, Navigation,
+    ProjectItem, SavedView, StatusItem, TagItem, TaskDetail, TaskRef, ViewLayout,
+};
+pub use edit::{NewTaskInput, Placement, TaskEdit, UndoState};
+pub use plan::{BlockItem, Outcome, Reminder, ReminderKind};
+
 const DATABASE: &str = "tasks.sqlite";
 const ACCOUNT: &str = "account.json";
 const BACKUPS: &str = "backups";
@@ -91,27 +104,68 @@ pub struct Day {
     pub utc_offset_min: i32,
 }
 
-/// The task set a list shows.
+/// The task set a list (or board) shows.
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum Scope {
     Inbox,
     Today,
     All,
-    Project { id: String },
-    Epic { id: String },
-    Tag { id: String },
+    Project {
+        id: String,
+    },
+    Epic {
+        id: String,
+    },
+    Tag {
+        id: String,
+    },
+    /// A view saved on the desktop: its scope, filters, grouping and order.
+    View {
+        id: String,
+    },
 }
 
-impl From<Scope> for ViewScope {
-    fn from(scope: Scope) -> Self {
-        match scope {
-            Scope::Inbox => Self::Inbox,
-            Scope::Today => Self::Today,
-            Scope::All => Self::All,
-            Scope::Project { id } => Self::Project { id },
-            Scope::Epic { id } => Self::Epic { id },
-            Scope::Tag { id } => Self::Tag { id },
+/// What a scope shows: a saved view's own spec, else the default one (grouped by status,
+/// default order, no subtasks unrolled beyond one level, no cancelled or agent tasks).
+fn spec_for(scope: Scope, snapshot: &Snapshot) -> AppResult<ViewSpec> {
+    let scope = match scope {
+        Scope::Inbox => ViewScope::Inbox,
+        Scope::Today => ViewScope::Today,
+        Scope::All => ViewScope::All,
+        Scope::Project { id } => ViewScope::Project { id },
+        Scope::Epic { id } => ViewScope::Epic { id },
+        Scope::Tag { id } => ViewScope::Tag { id },
+        Scope::View { id } => {
+            return snapshot
+                .views
+                .iter()
+                .find(|v| v.id == id)
+                .map(|v| v.spec.clone())
+                .ok_or_else(|| AppError::NotFound {
+                    message: "that view was deleted".into(),
+                });
         }
+    };
+    Ok(ViewSpec {
+        version: VIEW_SPEC_VERSION,
+        scope,
+        filter: Default::default(),
+        group_by: Default::default(),
+        sort: Default::default(),
+        layout: Default::default(),
+        swimlane: Default::default(),
+        show_subtasks: false,
+        show_cancelled: false,
+        show_agent_tasks: false,
+        lineage: None,
+    })
+}
+
+fn view_options(day: &Day) -> ViewOptions {
+    ViewOptions {
+        today: day.today.clone(),
+        utc_offset_min: day.utc_offset_min,
+        ..ViewOptions::default()
     }
 }
 
@@ -121,6 +175,17 @@ pub enum Priority {
     High,
     Normal,
     Low,
+}
+
+impl From<Priority> for taskmaster_core::Priority {
+    fn from(p: Priority) -> Self {
+        match p {
+            Priority::Urgent => Self::Urgent,
+            Priority::High => Self::High,
+            Priority::Normal => Self::Normal,
+            Priority::Low => Self::Low,
+        }
+    }
 }
 
 impl From<taskmaster_core::Priority> for Priority {
@@ -209,6 +274,15 @@ pub enum JoinMode {
     Replace,
 }
 
+/// Which side must be updated before syncing works again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum UpdateNeeded {
+    /// The server runs a newer database version: update the app ("update to sync").
+    App,
+    /// The app is ahead: update the server.
+    Server,
+}
+
 /// What the sync screen shows.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SyncStatus {
@@ -228,10 +302,20 @@ pub struct SyncStatus {
     pub pending: u32,
     /// The phone's clock is more than a minute off (sync corrects for it).
     pub clock_warning: bool,
+    /// Set when the last round failed because the database versions differ. The phone
+    /// keeps working offline meanwhile.
+    pub update: Option<UpdateNeeded>,
 }
 
-impl From<engine::SyncStatus> for SyncStatus {
-    fn from(s: engine::SyncStatus) -> Self {
+impl SyncStatus {
+    fn new(s: engine::SyncStatus, app_schema: u32) -> Self {
+        let update = s.server_schema.map(|server| {
+            if server > app_schema {
+                UpdateNeeded::App
+            } else {
+                UpdateNeeded::Server
+            }
+        });
         Self {
             configured: s.configured,
             url: s.url,
@@ -249,6 +333,7 @@ impl From<engine::SyncStatus> for SyncStatus {
             last_error: s.last_error,
             pending: s.pending,
             clock_warning: s.clock_warning,
+            update,
         }
     }
 }
@@ -269,6 +354,8 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 struct Inner {
     dir: PathBuf,
     device_name: String,
+    /// This build's database version (fixed once migrations ran).
+    app_schema: u32,
     store: Mutex<Store>,
     engine: Engine,
     /// Taken by the first [`Core::start`].
@@ -280,6 +367,10 @@ struct Inner {
 impl Inner {
     fn listener(&self) -> Option<Arc<dyn Listener>> {
         lock(&self.listener).clone()
+    }
+
+    fn status(&self, s: engine::SyncStatus) -> SyncStatus {
+        SyncStatus::new(s, self.app_schema)
     }
 }
 
@@ -318,7 +409,7 @@ impl Host for Inner {
 
     fn status_changed(&self, status: &engine::SyncStatus) {
         if let Some(listener) = self.listener() {
-            listener.sync_changed(status.clone().into());
+            listener.sync_changed(self.status(status.clone()));
         }
     }
 
@@ -335,6 +426,30 @@ impl Host for Inner {
     /// Attachments are fetched when opened, not with every round.
     fn files(&self) -> Files {
         Files::OnDemand
+    }
+}
+
+/// Where a task stands: its status's kind (to do when the status is gone).
+fn stage_of(task: &Task, s: &Snapshot) -> Stage {
+    s.statuses
+        .iter()
+        .find(|st| st.id == task.status_id)
+        .map_or(Stage::Todo, |st| st.category.into())
+}
+
+/// Still to be done: neither done nor cancelled.
+fn is_open(task: &Task, s: &Snapshot) -> bool {
+    !matches!(stage_of(task, s), Stage::Done | Stage::Cancelled)
+}
+
+/// A user's own open task (agent tasks stay on the desktop's Agents page).
+fn is_mine_open(task: &Task, s: &Snapshot) -> bool {
+    task.owner == taskmaster_core::TaskOwner::Me && is_open(task, s)
+}
+
+fn not_found(what: &str) -> AppError {
+    AppError::NotFound {
+        message: format!("that {what} was deleted"),
     }
 }
 
@@ -387,6 +502,7 @@ impl Core {
         std::fs::create_dir_all(&dir).map_err(|e| AppError::internal(e.to_string()))?;
         let mut store = Store::open(dir.join(DATABASE))?.with_files(dir.join(ATTACHMENTS_DIR));
         let changes = store.subscribe();
+        let app_schema = store.schema_version()?;
         let account = match std::fs::read(dir.join(ACCOUNT)) {
             Ok(bytes) => Some(serde_json::from_slice(&bytes).map_err(|e| {
                 AppError::internal(format!("the saved account is unreadable: {e}"))
@@ -398,6 +514,7 @@ impl Core {
         let inner = Arc::new(Inner {
             dir,
             device_name,
+            app_schema,
             store: Mutex::new(store),
             engine,
             kicks: Mutex::new(Some(kicks)),
@@ -448,29 +565,12 @@ impl Core {
     // -----------------------------------------------------------------------------------
     // Reads
 
-    /// The rows of a list: grouped by status, in the default order, subtasks under their
-    /// parent.
+    /// The rows of a list: grouped and ordered as the scope says (by status in the default
+    /// order unless a saved view says otherwise), subtasks under their parent.
     pub fn list(&self, scope: Scope, day: Day) -> AppResult<Vec<ListRow>> {
-        let spec: ViewSpec = ViewSpec {
-            version: VIEW_SPEC_VERSION,
-            scope: scope.into(),
-            filter: Default::default(),
-            group_by: Default::default(),
-            sort: Default::default(),
-            layout: Default::default(),
-            swimlane: Default::default(),
-            show_subtasks: false,
-            show_cancelled: false,
-            show_agent_tasks: false,
-            lineage: None,
-        };
-        let options = ViewOptions {
-            today: day.today.clone(),
-            utc_offset_min: day.utc_offset_min,
-            ..ViewOptions::default()
-        };
         let snapshot = lock(&self.inner.store).snapshot()?;
-        let rows = taskmaster_core::views::list_rows(&snapshot, &spec, &options);
+        let spec = spec_for(scope, &snapshot)?;
+        let rows = taskmaster_core::views::list_rows(&snapshot, &spec, &view_options(&day));
         Ok(rows
             .into_iter()
             .map(|row| match row {
@@ -573,23 +673,27 @@ impl Core {
     // Sync
 
     pub fn sync_status(&self) -> SyncStatus {
-        self.inner.engine.status(&*self.inner).into()
+        self.inner.status(self.inner.engine.status(&*self.inner))
     }
 
     /// The status, after asking the server what it needs when that is not known yet
     /// (after a restart). Uses the network.
     pub fn sync_refresh(&self) -> SyncStatus {
-        self.inner.engine.refresh(&*self.inner).into()
+        self.inner.status(self.inner.engine.refresh(&*self.inner))
     }
 
     /// Saves the server's address after asking it how it authenticates. Uses the network.
     pub fn sync_connect(&self, url: String) -> AppResult<SyncStatus> {
-        Ok(self.inner.engine.connect(&*self.inner, &url)?.into())
+        Ok(self
+            .inner
+            .status(self.inner.engine.connect(&*self.inner, &url)?))
     }
 
     /// Saves a token made on the server, after checking it. Uses the network.
     pub fn sync_set_token(&self, token: String) -> AppResult<SyncStatus> {
-        Ok(self.inner.engine.set_token(&*self.inner, &token)?.into())
+        Ok(self
+            .inner
+            .status(self.inner.engine.set_token(&*self.inner, &token)?))
     }
 
     /// Starts syncing. Uses the network.
@@ -598,7 +702,9 @@ impl Core {
             JoinMode::Merge => engine::JoinMode::Merge,
             JoinMode::Replace => engine::JoinMode::Replace,
         };
-        Ok(self.inner.engine.join(&*self.inner, mode)?.into())
+        Ok(self
+            .inner
+            .status(self.inner.engine.join(&*self.inner, mode)?))
     }
 
     /// Asks the background loop for a round soon (the app came to the front).
@@ -609,12 +715,14 @@ impl Core {
     /// Syncs now and returns when done (pull to refresh, background refresh). Blocks on
     /// the network: never call it on the main thread.
     pub fn sync_now(&self) -> SyncStatus {
-        self.inner.engine.sync_now(&*self.inner).into()
+        self.inner.status(self.inner.engine.sync_now(&*self.inner))
     }
 
     /// Stops syncing and forgets the server. The phone's data stays.
     pub fn sync_disconnect(&self) -> AppResult<SyncStatus> {
-        Ok(self.inner.engine.disconnect(&*self.inner)?.into())
+        Ok(self
+            .inner
+            .status(self.inner.engine.disconnect(&*self.inner)?))
     }
 }
 
@@ -622,4 +730,26 @@ impl Core {
 #[uniffi::export]
 pub fn core_version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_older_side_is_the_one_to_update() {
+        let status = |server| {
+            SyncStatus::new(
+                engine::SyncStatus {
+                    server_schema: server,
+                    ..engine::SyncStatus::default()
+                },
+                17,
+            )
+            .update
+        };
+        assert_eq!(status(None), None);
+        assert_eq!(status(Some(18)), Some(UpdateNeeded::App));
+        assert_eq!(status(Some(16)), Some(UpdateNeeded::Server));
+    }
 }

@@ -263,7 +263,7 @@ fn a_different_schema_is_refused() {
         })
         .unwrap_err();
     assert!(
-        matches!(err, ClientError::Schema(ref m) if m.contains("update")),
+        matches!(err, ClientError::Schema { ref message, .. } if message.contains("update")),
         "{err}"
     );
 }

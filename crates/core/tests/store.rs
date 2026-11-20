@@ -1817,3 +1817,31 @@ fn reverting_a_batch_restores_it_unless_its_rows_changed_since() {
         Err(Error::NotFound { .. })
     ));
 }
+
+#[test]
+fn checkpoint_empties_the_write_ahead_log() {
+    let dir = std::env::temp_dir().join(format!("tm-checkpoint-{}", new_id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("tasks.sqlite");
+    let mut s = Store::open(&path).unwrap();
+    add_task(&mut s, new_task("Written before suspend"));
+    let wal = dir.join("tasks.sqlite-wal");
+    assert!(std::fs::metadata(&wal).unwrap().len() > 0);
+
+    assert!(s.checkpoint().unwrap());
+    assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0);
+    // The database file alone holds the task: a copy without the log still has it.
+    drop(s);
+    let copy = dir.join("copy.sqlite");
+    std::fs::copy(&path, &copy).unwrap();
+    let titles: Vec<String> = Store::open(&copy)
+        .unwrap()
+        .snapshot()
+        .unwrap()
+        .tasks
+        .into_iter()
+        .map(|t| t.title)
+        .collect();
+    assert_eq!(titles, ["Written before suspend"]);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

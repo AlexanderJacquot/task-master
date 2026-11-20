@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use taskmaster_core::Store;
 use taskmaster_mobile::{
     AppError, AuthMode, Core, Day, JoinMode, ListRow, Listener, Priority, Scope, Stage, SyncStatus,
+    UpdateNeeded,
 };
 use taskmaster_server::auth::{Scope as TokenScope, Tokens};
 use taskmaster_server::config::Config;
@@ -42,7 +43,11 @@ fn server(config: Config) -> (String, Arc<AppState>) {
         store,
         Tokens::open_in_memory().unwrap(),
     );
-    let app = router(state.clone());
+    (serve(router(state.clone())), state)
+}
+
+/// Serves `app` on a free local port; returns its address.
+fn serve(app: axum::Router) -> String {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
@@ -52,7 +57,7 @@ fn server(config: Config) -> (String, Arc<AppState>) {
             axum::serve(listener, app).await.unwrap();
         });
     });
-    (format!("http://{}", rx.recv().unwrap()), state)
+    format!("http://{}", rx.recv().unwrap())
 }
 
 fn titles(app: &Core, scope: Scope) -> Vec<String> {
@@ -214,4 +219,84 @@ fn two_phones_sync_through_a_token_server_and_remember_the_account() {
     assert!(!status.configured);
     assert!(!dir_b.join("account.json").exists());
     assert_eq!(titles(&b, Scope::Inbox).len(), 2, "the data stays");
+}
+
+#[test]
+fn attachments_come_down_when_opened() {
+    let (url, state) = server(Config {
+        auth: taskmaster_core::AuthMode::Token,
+        ..Config::default()
+    });
+    let (dir_a, dir_b) = (temp_dir("files-a"), temp_dir("files-b"));
+    let (a, b) = (open(&dir_a, "Phone A"), open(&dir_b, "Phone B"));
+    for (app, name) in [(&a, "a"), (&b, "b")] {
+        app.sync_connect(url.clone()).unwrap();
+        let token = state.tokens.add(name, TokenScope::Sync).unwrap();
+        app.sync_set_token(token).unwrap();
+        app.sync_join(JoinMode::Merge).unwrap();
+    }
+    let task = a.capture("Fix the gate".into(), day()).unwrap();
+    let photo = dir_a.join("gate.png");
+    std::fs::write(&photo, b"a photo of the gate").unwrap();
+    let id = a
+        .attach_file(
+            task.clone(),
+            photo.to_string_lossy().into_owned(),
+            "Gate".into(),
+        )
+        .unwrap();
+    assert_eq!(a.sync_now().last_error, None);
+
+    // b gets the attachment's record with the round, its content only when opened.
+    assert_eq!(b.sync_now().last_error, None);
+    let item = &b.task(task, day()).unwrap().attachments[0];
+    assert_eq!((item.name.as_str(), item.on_device), ("Gate", false));
+    let file = b.attachment(id.clone()).unwrap();
+    assert!(!file.on_device && !std::path::Path::new(&file.path).exists());
+    assert!(b.fetch_attachment(id.clone()).unwrap());
+    let file = b.attachment(id).unwrap();
+    assert!(file.on_device);
+    assert_eq!(std::fs::read(file.path).unwrap(), b"a photo of the gate");
+}
+
+#[test]
+fn a_newer_server_asks_for_an_app_update_and_the_phone_keeps_working() {
+    // A real server behind an `/info` that reports the next database version, as a
+    // server upgraded before the phone would.
+    let (inner, state) = server(Config::default());
+    let schema = state.store().schema_version().unwrap();
+    let info = taskmaster_core::ServerInfo {
+        name: "newer".into(),
+        version: "99.0.0".into(),
+        schema_version: schema + 1,
+        auth: taskmaster_core::AuthMode::None,
+        oidc_issuer: None,
+        oidc_client_id: None,
+        server_time: taskmaster_core::now_ms(),
+        public_url: None,
+    };
+    let real = router(state.clone());
+    let url = serve(
+        axum::Router::new()
+            .route(
+                "/info",
+                axum::routing::get(move || {
+                    let info = info.clone();
+                    async move { axum::Json(info) }
+                }),
+            )
+            .fallback_service(real),
+    );
+    drop(inner);
+
+    let dir = temp_dir("behind");
+    let app = open(&dir, "Phone");
+    app.sync_connect(url).unwrap();
+    app.sync_join(JoinMode::Merge).unwrap();
+    app.capture("Written offline".into(), day()).unwrap();
+    let status = app.sync_now();
+    assert_eq!(status.update, Some(UpdateNeeded::App), "{status:?}");
+    assert!(status.last_error.is_some_and(|e| e.contains("update")));
+    assert_eq!(status.pending, 1, "the edit waits on the phone");
+    assert_eq!(titles(&app, Scope::Inbox), ["Written offline"]);
 }

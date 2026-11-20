@@ -500,6 +500,17 @@ impl Store {
         Ok(removed)
     }
 
+    /// Moves everything in the write-ahead log into the database file and empties the log,
+    /// so the file alone is complete. For the phone before iOS suspends the app (ADR 030):
+    /// nothing is left half in the log while the app holds no lock. Returns false when
+    /// another connection kept part of the log busy (it is checkpointed later).
+    pub fn checkpoint(&self) -> Result<bool> {
+        let busy: i64 = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
+        Ok(busy == 0)
+    }
+
     /// Writes a consistent copy of the database to `target` (replacing it).
     pub fn backup_to(&self, target: impl AsRef<Path>) -> Result<()> {
         crate::dump::backup_to(&self.conn, target.as_ref())

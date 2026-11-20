@@ -37,8 +37,12 @@ pub enum Error {
     Unreachable(String),
     /// The server refused the credentials (none, wrong, revoked or wrong scope).
     Unauthorized(String),
-    /// Client and server run different database schemas: update the older one.
-    Schema(String),
+    /// Client and server run different database schemas: update the older one. `server`
+    /// is the server's version when it is known (from its info), to tell which is older.
+    Schema {
+        message: String,
+        server: Option<u32>,
+    },
     /// Any other HTTP error status, with the server's message.
     Http(u16, String),
     /// The server answered something this client cannot read.
@@ -53,7 +57,7 @@ impl fmt::Display for Error {
             Self::Unreachable(m) => write!(f, "server unreachable: {m}"),
             Self::Unauthorized(m) if m.is_empty() => write!(f, "not authorized"),
             Self::Unauthorized(m) => write!(f, "not authorized: {m}"),
-            Self::Schema(m) => write!(f, "{m}"),
+            Self::Schema { message, .. } => write!(f, "{message}"),
             Self::Http(code, m) => write!(f, "the server answered HTTP {code}: {m}"),
             Self::Protocol(m) => write!(f, "unexpected answer from the server: {m}"),
             Self::Core(e) => write!(f, "{e}"),
@@ -135,7 +139,10 @@ impl Client {
             .unwrap_or(text);
         Err(match status {
             401 | 403 => Error::Unauthorized(message),
-            409 => Error::Schema(message),
+            409 => Error::Schema {
+                message,
+                server: None,
+            },
             _ => Error::Http(status, message),
         })
     }
@@ -378,11 +385,14 @@ pub fn sync_with(client: &Client, store: &Mutex<Store>, files: Files) -> Result<
 
     let schema = lock(store).schema_version()?;
     if info.schema_version != schema {
-        return Err(Error::Schema(format!(
-            "this app is at database version {schema} and the server at {}; update the \
-             older one first",
-            info.schema_version
-        )));
+        return Err(Error::Schema {
+            message: format!(
+                "this app is at database version {schema} and the server at {}; update the \
+                 older one first",
+                info.schema_version
+            ),
+            server: Some(info.schema_version),
+        });
     }
 
     // A server behind what this device already pulled lost data: send everything again.

@@ -66,6 +66,10 @@ pub struct SyncStatus {
     pub clock_warning: bool,
     /// Local changes not on the server yet (counted up to 1000).
     pub pending: u32,
+    /// The server's database version when the last round failed because it differs from
+    /// this device's (one of the two needs an update). Not sent to the desktop's UI.
+    #[serde(skip)]
+    pub server_schema: Option<u32>,
 }
 
 /// How a device starts syncing.
@@ -114,7 +118,9 @@ impl std::error::Error for EngineError {}
 impl From<crate::Error> for EngineError {
     fn from(e: crate::Error) -> Self {
         match e {
-            crate::Error::Unauthorized(_) | crate::Error::Schema(_) => Self::invalid(e.to_string()),
+            crate::Error::Unauthorized(_) | crate::Error::Schema { .. } => {
+                Self::invalid(e.to_string())
+            }
             _ => Self::internal(e.to_string()),
         }
     }
@@ -163,6 +169,7 @@ struct Run {
     last_report: Option<SyncReport>,
     auth: Option<AuthMode>,
     server_empty: Option<bool>,
+    server_schema: Option<u32>,
 }
 
 /// Sync state of one device: what the last round did, and the locks that order rounds
@@ -263,6 +270,7 @@ impl Engine {
             clock_offset_ms: report.clock_offset_ms,
             clock_warning: report.clock_offset_ms.abs() > CLOCK_WARNING_MS,
             pending,
+            server_schema: run.server_schema,
         }
     }
 
@@ -310,10 +318,18 @@ impl Engine {
                         let behind = run.announced > report.head;
                         run.last_sync_at = Some(now_ms());
                         run.last_error = None;
+                        run.server_schema = None;
                         run.last_report = Some(report);
                         (true, behind)
                     }
                     Err(e) => {
+                        if let crate::Error::Schema {
+                            server: Some(server),
+                            ..
+                        } = e
+                        {
+                            run.server_schema = Some(server);
+                        }
                         run.last_error = Some(e.to_string());
                         (false, false)
                     }
