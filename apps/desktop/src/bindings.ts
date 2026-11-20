@@ -2859,6 +2859,8 @@ export type ViewSpec_Deserialize = {
 	show_cancelled?: boolean,
 	/**  Agents' own tasks (ADR 017) are hidden unless set. */
 	show_agent_tasks?: boolean,
+	/**  Board swimlanes whose cards are all done or cancelled are hidden unless set. */
+	show_closed_lanes?: boolean,
 	/**
 	 *  Set for a saved Lineage canvas (ADR 022): it opens on the Lineage page instead of a
 	 *  list or board. Its project, epic and tag filters are `filter`'s (one project at
@@ -2883,6 +2885,8 @@ export type ViewSpec_Serialize = {
 	show_cancelled: boolean,
 	/**  Agents' own tasks (ADR 017) are hidden unless set. */
 	show_agent_tasks: boolean,
+	/**  Board swimlanes whose cards are all done or cancelled are hidden unless set. */
+	show_closed_lanes: boolean,
 	/**
 	 *  Set for a saved Lineage canvas (ADR 022): it opens on the Lineage page instead of a
 	 *  list or board. Its project, epic and tag filters are `filter`'s (one project at

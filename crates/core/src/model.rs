@@ -644,6 +644,9 @@ pub struct ViewSpec {
     /// Agents' own tasks (ADR 017) are hidden unless set.
     #[serde(default)]
     pub show_agent_tasks: bool,
+    /// Board swimlanes whose cards are all done or cancelled are hidden unless set.
+    #[serde(default)]
+    pub show_closed_lanes: bool,
     /// Set for a saved Lineage canvas (ADR 022): it opens on the Lineage page instead of a
     /// list or board. Its project, epic and tag filters are `filter`'s (one project at
     /// most), "Show subtasks" is `show_subtasks`, and the scope is `All`.

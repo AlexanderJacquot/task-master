@@ -1,6 +1,7 @@
 // The board (plan section 6): a pure function of the store's entities + a view spec, like the
 // list rows. Columns are statuses in workflow order, cards keep their manual rank order, and
-// optional swimlanes split every column by project, epic or priority.
+// optional swimlanes split every column by project, epic or priority. A lane whose cards are
+// all done or cancelled (a finished epic) is hidden unless the view shows closed lanes.
 
 import { rankBetween } from "./rank";
 import type {
@@ -20,10 +21,17 @@ export type { Swimlane };
 /**
  * The spec fields a board uses. `show_subtasks` shows subtasks as their own cards (hidden
  * by default when their parent is on the board). A status filter limits the columns.
+ * `show_closed_lanes` keeps swimlanes with no open card.
  */
 export type BoardQuery = Pick<
   ViewSpec,
-  "scope" | "filter" | "swimlane" | "show_subtasks" | "show_cancelled" | "show_agent_tasks"
+  | "scope"
+  | "filter"
+  | "swimlane"
+  | "show_subtasks"
+  | "show_cancelled"
+  | "show_agent_tasks"
+  | "show_closed_lanes"
 >;
 
 export interface Card {
@@ -178,7 +186,6 @@ export function buildBoard(
   const shownStatusIds = new Set(shownStatuses.map((s) => s.id));
 
   const lanes = new Map<string, LaneSpec & { cells: Record<string, Card[]> }>();
-  const counts = new Map<string, number>();
   for (const task of all) {
     if (!visible.has(task.id) || !shownStatusIds.has(task.status_id)) continue;
     const parentShown = task.parent_id !== null && visible.has(task.parent_id);
@@ -198,7 +205,25 @@ export function buildBoard(
     const cell = lane.cells[task.status_id];
     if (cell) cell.push(card);
     else lane.cells[task.status_id] = [card];
-    counts.set(task.status_id, (counts.get(task.status_id) ?? 0) + 1);
+  }
+
+  // Lanes with no open card go, unless asked for or only closed columns are shown (the
+  // board would be empty).
+  const hideClosed =
+    query.swimlane !== "none" &&
+    !query.show_closed_lanes &&
+    shownStatuses.some((s) => s.category !== "done" && s.category !== "cancelled");
+  if (hideClosed) {
+    for (const [key, lane] of lanes) {
+      const open = Object.values(lane.cells).some((cell) => cell.some((c) => isOpen(c.task, ctx)));
+      if (!open) lanes.delete(key);
+    }
+  }
+  const counts = new Map<string, number>();
+  for (const lane of lanes.values()) {
+    for (const [statusId, cell] of Object.entries(lane.cells)) {
+      counts.set(statusId, (counts.get(statusId) ?? 0) + cell.length);
+    }
   }
 
   for (const lane of lanes.values()) {

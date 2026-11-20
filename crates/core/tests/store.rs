@@ -1065,6 +1065,7 @@ fn spec(scope: ViewScope) -> ViewSpec {
         show_subtasks: false,
         show_cancelled: false,
         show_agent_tasks: false,
+        show_closed_lanes: false,
         lineage: None,
     }
 }
@@ -1334,6 +1335,8 @@ fn lineage_specs_parse_with_defaults_and_plain_views_stay_without_one() {
     let changes = s.execute_all(commands).unwrap();
     assert_eq!(changes.views[0].spec.lineage, Some(LineageSpec::default()));
     assert_eq!(changes.views[1].spec.lineage, None);
+    // A spec from before the board's lane toggle hides lanes with no open tasks.
+    assert!(!changes.views[1].spec.show_closed_lanes);
 
     let wire = serde_json::to_value(s.snapshot().unwrap()).unwrap();
     let canvas = &wire["views"][0]["spec"]["lineage"];

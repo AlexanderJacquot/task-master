@@ -62,6 +62,7 @@ function boardColumns(store: TaskStore): string[][] {
       show_subtasks: true,
       show_cancelled: false,
       show_agent_tasks: false,
+      show_closed_lanes: false,
     },
     ctx,
     statuses,
