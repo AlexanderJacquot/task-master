@@ -105,7 +105,8 @@ export function reloadTimers() {
   for (const l of listeners) l();
 }
 
-function subscribe(l: () => void) {
+/** Calls `l` when timers start or stop, here or in another window. Returns the unsubscribe. */
+export function subscribeTimers(l: () => void) {
   listeners.add(l);
   // Another window of the app (the quick-capture editor) started or stopped one.
   const onStorage = (e: StorageEvent) => {
@@ -122,7 +123,7 @@ function subscribe(l: () => void) {
 }
 
 export function useTimers(): RunningTimer[] {
-  return useSyncExternalStore(subscribe, getTimers, getTimers);
+  return useSyncExternalStore(subscribeTimers, getTimers, getTimers);
 }
 
 /** The current time, ticking every `everyMs` while `active`. */

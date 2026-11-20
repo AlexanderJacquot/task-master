@@ -12,6 +12,7 @@ import {
   putTimer,
   type RunningTimer,
   runToBlocks,
+  subscribeTimers,
   timerOf,
 } from "../lib/timer";
 import { applySegmentChanges, splitSegment } from "../lib/transcript";
@@ -1275,6 +1276,38 @@ export function followAgentTimer(store: TaskStore): () => void {
   };
   check();
   return store.subscribe(check);
+}
+
+/**
+ * Stops a task's timer, logging the run, when the task moves to a done or cancelled
+ * status, wherever that happens (its panel, the board, a list, an agent, another device).
+ * Only the move stops it: a timer started on a task already finished keeps running. Run
+ * it in one window only. Returns the unsubscribe function.
+ */
+export function stopTimersOnFinish(store: TaskStore): () => void {
+  /** Whether each timed task was finished when last seen. */
+  const seen = new Map<string, boolean>();
+  const check = () => {
+    const s = store.getState();
+    const timers = getTimers();
+    for (const id of seen.keys()) if (!timers.some((t) => t.task_id === id)) seen.delete(id);
+    for (const timer of timers) {
+      const task = s.tasks[timer.task_id];
+      if (!task) continue;
+      const category = s.statuses.find((st) => st.id === task.status_id)?.category;
+      const finished = category === "done" || category === "cancelled";
+      const before = seen.get(timer.task_id);
+      seen.set(timer.task_id, finished);
+      if (finished && before === false) void stopTimer(store, timer.task_id);
+    }
+  };
+  check();
+  const unsubscribeStore = store.subscribe(check);
+  const unsubscribeTimers = subscribeTimers(check);
+  return () => {
+    unsubscribeStore();
+    unsubscribeTimers();
+  };
 }
 
 /** Moves or resizes a block. */

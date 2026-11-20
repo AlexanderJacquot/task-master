@@ -19,6 +19,7 @@ import {
   saveOpenInPanel,
 } from "../../lib/capturePrefs";
 import { formatAgo, isoDate } from "../../lib/dates";
+import { loadCloseOnDone, saveCloseOnDone } from "../../lib/detailPrefs";
 import { useOrnaments } from "../../lib/ornaments";
 import { settingsApi } from "../../lib/settingsApi";
 import { loadSoundsOn, playSound, saveSoundsOn } from "../../lib/sounds";
@@ -366,6 +367,26 @@ function AddingTasks() {
           ]}
         />
       </div>
+    </Section>
+  );
+}
+
+function FinishingTasks() {
+  const [close, setClose] = useState(loadCloseOnDone);
+  return (
+    <Section title="Finishing tasks" hint="Remembered on this computer.">
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={close}
+          onChange={(e) => {
+            setClose(e.target.checked);
+            saveCloseOnDone(e.target.checked);
+          }}
+          className="accent-accent"
+        />
+        Close a task's side panel or full page when you mark it done there
+      </label>
     </Section>
   );
 }
@@ -718,6 +739,7 @@ const GENERAL: SettingsCategory = {
     <>
       <Appearance />
       <AddingTasks />
+      <FinishingTasks />
     </>
   ),
 };
