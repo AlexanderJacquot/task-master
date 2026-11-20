@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { events } from "../../bindings";
 import { DeleteIcon as Trash2, CloseIcon as X } from "../../components/TaskIcons";
 import { Button, IconButton } from "../../components/ui";
-import { deleteTask } from "../../store/actions";
+import { deleteTask, startTimer } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { useFileDrop } from "../shell/useFileDrop";
 import { OpenTaskContext } from "../shell/useOpenTask";
@@ -62,6 +62,7 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
   const ready = useStoreState((s) => s.ready);
   const input = useRef<HTMLInputElement>(null);
   const [round, setRound] = useState(0);
+  /** The footer's confirmation after a plain save, with or without a timer. */
   const [saved, setSaved] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -200,10 +201,10 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
           autoFocus
           variant="window"
           placeholder="What needs doing?"
+          withTimer
           footer={
-            saved
-              ? "Saved to Task Master ✓"
-              : "Enter to save · Shift+Enter to save and edit · Esc to close"
+            saved ??
+            "Enter saves · Shift+Enter saves and edits · Alt+Enter saves and starts a timer · Esc closes"
           }
           onEscape={hide}
           onCaptured={(id, how) => {
@@ -213,7 +214,9 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
               void controls.expand();
               return;
             }
-            setSaved(id);
+            // The timer lives in localStorage, so the main window's sidebar shows it too.
+            if (how.timer) void startTimer(store, id);
+            setSaved(how.timer ? "Saved, timer running ✓" : "Saved to Task Master ✓");
             setTimeout(hide, 350);
           }}
         />

@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Api } from "../../lib/api";
+import { getTimers, setTimers } from "../../lib/timer";
 import type { Changes, Command } from "../../lib/types";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore } from "../../store/store";
-import { fakeParse, snapshot } from "../../test/fixtures";
+import { fakeParse, STATUS, snapshot } from "../../test/fixtures";
 import { type CaptureControls, CaptureWindow } from "./CaptureWindow";
 
 /** Records what the window was asked to do; plain functions, as CLAUDE.md asks. */
@@ -91,6 +92,7 @@ async function renderWindow({ failDelete = false } = {}) {
   return { fake, executed, input, store };
 }
 
+beforeEach(() => setTimers([]));
 afterEach(cleanup);
 
 describe("the quick-capture window", () => {
@@ -101,6 +103,38 @@ describe("the quick-capture window", () => {
     await waitFor(() => expect(executed.length).toBe(1));
     await waitFor(() => expect(fake.calls).toEqual(["hide"]));
     expect(screen.queryByRole("region", { name: "Description" })).toBeNull();
+  });
+
+  it("starts no timer on a plain Enter", async () => {
+    const { fake, input } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Buy bread" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fake.calls).toEqual(["hide"]));
+    expect(getTimers()).toEqual([]);
+  });
+
+  it("saves, starts the task's timer and hides on Alt+Enter", async () => {
+    const { fake, input, store } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Fix the build" } });
+    fireEvent.keyDown(input, { key: "Enter", altKey: true });
+    await screen.findByText("Saved, timer running ✓");
+    const task = Object.values(store.getState().tasks).find((t) => t.title === "Fix the build");
+    expect(getTimers().map((t) => t.task_id)).toEqual([task?.id]);
+    // Started work moves to in progress, as from the task's own Start timer.
+    await waitFor(() =>
+      expect(store.getState().tasks[task?.id ?? ""]?.status_id).toBe(STATUS.inProgress),
+    );
+    await waitFor(() => expect(fake.calls).toEqual(["hide"]));
+    expect(screen.queryByRole("region", { name: "Description" })).toBeNull();
+  });
+
+  it("saves and starts the timer from its button", async () => {
+    const { fake, input, store } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Review the PR" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add and start timer" }));
+    await waitFor(() => expect(fake.calls).toEqual(["hide"]));
+    const task = Object.values(store.getState().tasks).find((t) => t.title === "Review the PR");
+    expect(getTimers().map((t) => t.task_id)).toEqual([task?.id]);
   });
 
   it("grows into the task editor on Shift+Enter and stays open on blur", async () => {
