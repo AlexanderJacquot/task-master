@@ -719,6 +719,8 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
         )?,
         meetings: meetings(conn, None)?,
         terminal_sessions: terminal_sessions(conn)?,
+        note_folders: crate::notes::folders(conn)?,
+        notes: crate::notes::notes(conn)?,
     })
 }
 

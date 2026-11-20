@@ -54,6 +54,8 @@ pub enum EntityKind {
     Meeting,
     TranscriptSegment,
     TerminalSession,
+    NoteFolder,
+    Note,
 }
 
 /// What an op targets. `TaskTag` rows are links: `entity_id` is the task, the patch holds
@@ -74,6 +76,8 @@ pub(crate) enum Entity {
     Meeting,
     TranscriptSegment,
     TerminalSession,
+    NoteFolder,
+    Note,
 }
 
 impl Entity {
@@ -93,6 +97,8 @@ impl Entity {
             Self::Meeting => "meeting",
             Self::TranscriptSegment => "transcript_segment",
             Self::TerminalSession => "terminal_session",
+            Self::NoteFolder => "note_folder",
+            Self::Note => "note",
         }
     }
 
@@ -112,6 +118,8 @@ impl Entity {
             "meeting" => Self::Meeting,
             "transcript_segment" => Self::TranscriptSegment,
             "terminal_session" => Self::TerminalSession,
+            "note_folder" => Self::NoteFolder,
+            "note" => Self::Note,
             other => return Err(Error::invalid(format!("unknown op entity '{other}'"))),
         })
     }
@@ -132,6 +140,8 @@ impl Entity {
             Self::Meeting => "meetings",
             Self::TranscriptSegment => "transcript_segments",
             Self::TerminalSession => "terminal_sessions",
+            Self::NoteFolder => "note_folders",
+            Self::Note => "notes",
         }
     }
 
@@ -315,6 +325,25 @@ impl Entity {
                 "updated_at",
                 "deleted_at",
             ],
+            Self::NoteFolder => &[
+                "id",
+                "name",
+                "rank",
+                "created_at",
+                "updated_at",
+                "deleted_at",
+            ],
+            Self::Note => &[
+                "id",
+                "title",
+                "body",
+                "folder_id",
+                "task_id",
+                "rank",
+                "created_at",
+                "updated_at",
+                "deleted_at",
+            ],
         }
     }
 
@@ -333,6 +362,8 @@ impl Entity {
             Self::Meeting => EntityKind::Meeting,
             Self::TranscriptSegment => EntityKind::TranscriptSegment,
             Self::TerminalSession => EntityKind::TerminalSession,
+            Self::NoteFolder => EntityKind::NoteFolder,
+            Self::Note => EntityKind::Note,
         }
     }
 }

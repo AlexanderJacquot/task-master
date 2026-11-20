@@ -1,5 +1,11 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  NotebookPen,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import {
   type MouseEvent,
@@ -52,6 +58,7 @@ import { inView, isOpen, type ViewContext } from "../../lib/views";
 import { createEpic, createProject, deleteProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { isActive } from "../agents/sessions";
+import { NotesTree, useNewNote } from "../notes/NotesTree";
 import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import { PROJECT_COLORS } from "../organize/projectColors";
@@ -61,6 +68,7 @@ import { useShell } from "../shell/shellContext";
 import { DROP_OVER_CLASS, type TaskDropTarget, useTaskDropTarget } from "../shell/taskDrop";
 import { TimerPill } from "../timer/Timer";
 import { ProjectTree } from "./ProjectTree";
+import { activeClass, rowBaseClass, rowClass } from "./rows";
 import { useProjectOrder } from "./useProjectOrder";
 
 /** The expanded sidebar adapts to the window; the Windows title bar uses the same width. */
@@ -117,11 +125,6 @@ function SidebarResizer() {
     />
   );
 }
-
-const rowBaseClass =
-  "group flex min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-ink-2 transition-colors hover:bg-hover hover:text-ink";
-const rowClass = `${rowBaseClass} py-[5px]`;
-const activeClass = "bg-selected text-ink";
 
 function NavItem({
   to,
@@ -504,6 +507,8 @@ export function Sidebar({
   const tags = useStoreState((s) => s.tags);
   const views = useStoreState((s) => s.views);
   const statusList = useStoreState((s) => s.statuses);
+  const noteCount = useStoreState((s) => Object.keys(s.notes).length);
+  const newNote = useNewNote();
   const runningAgents = useStoreState(
     (s) => Object.values(s.agent_sessions).filter(isActive).length,
   );
@@ -914,6 +919,17 @@ export function Sidebar({
         </section>
 
         <div className="mx-2 mt-4 mb-2 h-px bg-line" />
+
+        <Collapsible
+          id="notes"
+          title="Notes"
+          icon={<NotebookPen size={16} className="shrink-0" />}
+          count={noteCount}
+          onAdd={() => void newNote()}
+          defaultOpen
+        >
+          <NotesTree />
+        </Collapsible>
 
         <Collapsible
           id="epics"

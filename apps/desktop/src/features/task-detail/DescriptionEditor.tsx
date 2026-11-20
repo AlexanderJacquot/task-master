@@ -4,12 +4,16 @@ import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language"
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { EditIcon as Pencil } from "../../components/TaskIcons";
-import { cx } from "../../components/ui";
+import { cx, MENU } from "../../components/ui";
 import { toggleTaskItem } from "../../lib/attachments";
-import type { Attachment } from "../../lib/types";
+import { taskLinkMarkdown } from "../../lib/notes";
+import type { Attachment, Task } from "../../lib/types";
+import { useTaskStore } from "../../store/context";
 import { FILE_DROP_EVENT, type FileDropDetail } from "../shell/useFileDrop";
 import { type MarkdownActions, MarkdownView } from "./MarkdownView";
+import { PickerBody } from "./TaskPicker";
 
 const base = {
   "&": { backgroundColor: "transparent", color: "var(--tm-ink)" },
@@ -43,6 +47,52 @@ export interface Uploader {
   paths(paths: string[]): Promise<string | null>;
 }
 
+/** Where `[[` was typed: the picker opens under it and replaces it with the link. */
+interface LinkPick {
+  from: number;
+  left: number;
+  top: number;
+}
+
+/**
+ * The task search opened by typing `[[` (ADR 032). Picking inserts `[title](task:<id>)`;
+ * Esc or a click outside leaves the brackets as typed.
+ */
+function TaskLinkPicker({
+  at,
+  onPick,
+  onCancel,
+}: {
+  at: LinkPick;
+  onPick(task: Task): void;
+  onCancel(): void;
+}) {
+  const store = useTaskStore();
+  const left = Math.max(8, Math.min(at.left, window.innerWidth - 336));
+  return createPortal(
+    <>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: a click outside closes the search; Esc in its box is the keyboard path */}
+      <div className="fixed inset-0 z-40" onMouseDown={onCancel} />
+      <div
+        role="dialog"
+        aria-label="Link a task"
+        style={{ left, top: at.top + 6 }}
+        className={cx(MENU, "fixed z-50 w-80 max-w-[calc(100vw-1rem)] p-2")}
+      >
+        <PickerBody
+          label="Link a task"
+          candidates={() =>
+            Object.values(store.getState().tasks).sort((a, b) => b.updated_at - a.updated_at)
+          }
+          onPick={onPick}
+          onEscape={onCancel}
+        />
+      </div>
+    </>,
+    document.body,
+  );
+}
+
 /** `text` placed at `pos` on lines of its own. */
 function insertBlock(doc: string, pos: number, text: string) {
   const before = pos > 0 && doc[pos - 1] !== "\n" ? "\n" : "";
@@ -65,6 +115,8 @@ export function DescriptionEditor({
   actions,
   upload,
   autoFocus = false,
+  taskLinks = true,
+  placeholder: hint,
 }: {
   value: string;
   onSave: (text: string) => void;
@@ -76,6 +128,10 @@ export function DescriptionEditor({
   actions: MarkdownActions;
   /** Absent: pasting files does nothing special. */
   upload?: Uploader;
+  /** Typing `[[` opens a task search that inserts a link to the task picked (ADR 032). */
+  taskLinks?: boolean;
+  /** Replaces the default invitation shown on an empty text. */
+  placeholder?: string;
 }) {
   const [editing, setEditing] = useState(autoFocus);
   const [uploading, setUploading] = useState(0);
@@ -87,6 +143,28 @@ export function DescriptionEditor({
   save.current = onSave;
   const uploader = useRef(upload);
   uploader.current = upload;
+  const [linkPick, setLinkPick] = useState<LinkPick | null>(null);
+  // While the `[[` picker has the focus, leaving the editor neither saves nor closes it.
+  const picking = useRef(false);
+  const links = useRef(taskLinks);
+  links.current = taskLinks;
+
+  const closePicker = (insert?: string) => {
+    const editor = view.current;
+    const at = linkPick;
+    picking.current = false;
+    setLinkPick(null);
+    if (!editor) return;
+    if (insert && at) {
+      const head = editor.state.selection.main.head;
+      const to = Math.max(head, at.from + 2);
+      editor.dispatch({
+        changes: { from: at.from, to, insert },
+        selection: { anchor: at.from + insert.length },
+      });
+    }
+    editor.focus();
+  };
 
   const commit = (text: string) => {
     if (text !== saved.current) {
@@ -144,13 +222,26 @@ export function DescriptionEditor({
           syntaxHighlighting(defaultHighlightStyle),
           EditorView.lineWrapping,
           placeholder(
-            size === "page"
-              ? "Write freely… Markdown works: # headings, - [ ] checklists, **bold**, [links](…). Paste images to attach them."
-              : "Add a description (markdown; paste images to attach them)…",
+            hint ??
+              (size === "page"
+                ? "Write freely… Markdown works: # headings, - [ ] checklists, **bold**, [links](…). Paste images to attach them."
+                : "Add a description (markdown; paste images to attach them)…"),
           ),
+          EditorView.inputHandler.of((v, from, to, text) => {
+            // Typed (or inserted) text that ends a `[[`.
+            if (!links.current || !`${v.state.sliceDoc(from - 1, from)}${text}`.endsWith("[["))
+              return false;
+            const end = from + text.length;
+            v.dispatch({ changes: { from, to, insert: text }, selection: { anchor: end } });
+            const coords = v.coordsAtPos(end);
+            picking.current = true;
+            setLinkPick({ from: end - 2, left: coords?.left ?? 0, top: coords?.bottom ?? 0 });
+            return true;
+          }),
           THEMES[size],
           EditorView.domEventHandlers({
             blur: (_event, v) => {
+              if (picking.current) return;
               commit(v.state.doc.toString());
               setEditing(false);
             },
@@ -225,7 +316,7 @@ export function DescriptionEditor({
     />
   ) : (
     <p className="text-ink-3 italic">
-      {page ? "Write freely… Markdown works." : "Add a description…"}
+      {hint ?? (page ? "Write freely… Markdown works." : "Add a description…")}
     </p>
   );
   // On the page, an invitation to keep going below the text, as in the mockup.
@@ -274,6 +365,13 @@ export function DescriptionEditor({
         >
           <Pencil size={14} />
         </button>
+      )}
+      {linkPick && editing && (
+        <TaskLinkPicker
+          at={linkPick}
+          onPick={(task) => closePicker(taskLinkMarkdown(task))}
+          onCancel={() => closePicker()}
+        />
       )}
       {uploading > 0 && (
         <div className="absolute right-2 bottom-1 text-[12px] text-ink-3" aria-live="polite">

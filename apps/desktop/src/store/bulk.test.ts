@@ -27,6 +27,8 @@ async function setup(tasks: Task[], extra: Parameters<typeof snapshot>[0] = {}) 
         meetings: [],
         transcript_segments: [],
         terminal_sessions: [],
+        notes: [],
+        note_folders: [],
         statuses: [],
       } as Changes;
     },

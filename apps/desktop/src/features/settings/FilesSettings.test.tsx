@@ -67,6 +67,8 @@ it("shows storage and warns about description links before deleting attachments 
         meetings: [],
         transcript_segments: [],
         terminal_sessions: [],
+        notes: [],
+        note_folders: [],
         statuses: [],
       } satisfies Changes;
     },

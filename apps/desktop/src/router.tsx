@@ -13,6 +13,7 @@ import { AgentsPage } from "./features/agents/AgentsPage";
 import { CalendarPage } from "./features/calendar/CalendarPage";
 import { LineagePage, SavedLineagePage } from "./features/lineage/LineagePage";
 import { MetricsPage } from "./features/metrics/MetricsPage";
+import { NotePage } from "./features/notes/NotePage";
 import { EpicPage } from "./features/organize/EpicPage";
 import { ProjectPage } from "./features/organize/ProjectPage";
 import { TagMenu } from "./features/organize/TagMenu";
@@ -122,6 +123,15 @@ const meetingRoute = createRoute({
     const { meetingId } = meetingRoute.useParams();
     const { line } = meetingRoute.useSearch();
     return <MeetingPage key={meetingId} meetingId={meetingId} {...(line && { line })} />;
+  },
+});
+
+const noteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "note/$noteId",
+  component: function NoteView() {
+    const { noteId } = noteRoute.useParams();
+    return <NotePage key={noteId} noteId={noteId} />;
   },
 });
 
@@ -242,6 +252,7 @@ const routeTree = rootRoute.addChildren([
   agentsRoute,
   scribeRoute,
   meetingRoute,
+  noteRoute,
   allRoute,
   projectRoute,
   epicRoute,

@@ -11,6 +11,8 @@ import type {
   Command,
   Epic,
   Meeting,
+  Note,
+  NoteFolder,
   Project,
   Snapshot,
   Status,
@@ -45,6 +47,9 @@ export interface Entities {
   transcript_segments: ById<TranscriptSegment>;
   /** Claude Code sessions run in a terminal, read from their transcripts (M21). */
   terminal_sessions: ById<TerminalSession>;
+  /** Notes and their folders (ADR 032). */
+  notes: ById<Note>;
+  note_folders: ById<NoteFolder>;
 }
 
 /** Local edits shown before the core confirms them. */
@@ -62,6 +67,8 @@ export interface Optimistic {
     meetings?: Meeting[];
     transcript_segments?: TranscriptSegment[];
     terminal_sessions?: TerminalSession[];
+    notes?: Note[];
+    note_folders?: NoteFolder[];
   };
   remove?: {
     tasks?: string[];
@@ -76,6 +83,8 @@ export interface Optimistic {
     meetings?: string[];
     transcript_segments?: string[];
     terminal_sessions?: string[];
+    notes?: string[];
+    note_folders?: string[];
   };
 }
 
@@ -115,7 +124,9 @@ type Kind =
   | "agent_sessions"
   | "meetings"
   | "transcript_segments"
-  | "terminal_sessions";
+  | "terminal_sessions"
+  | "notes"
+  | "note_folders";
 const KINDS: Kind[] = [
   "tasks",
   "projects",
@@ -129,6 +140,8 @@ const KINDS: Kind[] = [
   "meetings",
   "transcript_segments",
   "terminal_sessions",
+  "notes",
+  "note_folders",
 ];
 
 /** Statuses are kept as an array in workflow order; every other kind as a map by id. */
@@ -162,6 +175,8 @@ function fromSnapshot(snapshot: Snapshot): Omit<Entities, "transcript_segments">
     agent_sessions: byId(snapshot.agent_sessions),
     meetings: byId(snapshot.meetings),
     terminal_sessions: byId(snapshot.terminal_sessions ?? []),
+    notes: byId(snapshot.notes ?? []),
+    note_folders: byId(snapshot.note_folders ?? []),
   };
 }
 
@@ -261,6 +276,8 @@ export function createTaskStore(api: Api): TaskStore {
       meetings: {},
       transcript_segments: {},
       terminal_sessions: {},
+      notes: {},
+      note_folders: {},
       agentActivity: {},
       ready: false,
       loadError: null,

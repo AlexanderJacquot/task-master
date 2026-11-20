@@ -1,4 +1,4 @@
-import { type TextareaHTMLAttributes, useLayoutEffect, useRef } from "react";
+import { type Ref, type TextareaHTMLAttributes, useLayoutEffect, useRef } from "react";
 
 /** Sets the textarea's height to its content, so no line of the title is hidden. */
 export function fitHeight(el: HTMLTextAreaElement) {
@@ -10,7 +10,10 @@ export function fitHeight(el: HTMLTextAreaElement) {
  * A textarea that grows with its text. CSS `field-sizing: content` would do this, but
  * WebKitGTK (the Linux webview) ignores it, which left long titles cut off at `rows`.
  */
-export function TitleField(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+export function TitleField({
+  ref: outer,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { ref?: Ref<HTMLTextAreaElement> }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const { onInput } = props;
 
@@ -33,7 +36,11 @@ export function TitleField(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
     <textarea
       {...props}
-      ref={ref}
+      ref={(el) => {
+        ref.current = el;
+        if (typeof outer === "function") outer(el);
+        else if (outer) outer.current = el;
+      }}
       rows={1}
       onInput={(e) => {
         fitHeight(e.currentTarget);

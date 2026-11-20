@@ -4,6 +4,22 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Notes in the sidebar** (2026-11-20, branch `notes-page`; ADR 032): markdown pages in
+simple folders (one level), in a Notes section of the sidebar (open by default, above
+Epics). Migration 18: `note_folders`, `notes` (title, body, folder, attached task, rank),
+ordinary entities (ops, undo, sync, export/import), core in `crates/core/src/notes.rs`.
+`/note/<id>`: a large title on top (saved after a 500 ms pause, so the sidebar follows),
+then the markdown body (`DescriptionEditor`); the bar moves it to a folder, attaches it to
+a task, deletes it. Links: `[text](task:<id>)` / `[text](project:<id>)` render as chips;
+typing `[[` in any markdown editor (notes, task descriptions, meeting notes) opens a task
+search that inserts one. A task's panel and page list its notes (attached, then "links
+here") with "New note" (attached, titled like the task). Deleting a folder moves its notes
+to the top level. Showcase has two sample notes. Tests: core `tests/notes.rs` (8),
+`lib/notes.test.ts` (6), `features/notes/notes.test.tsx` (4). Checks: `cargo fmt --check`,
+clippy, `cargo test --workspace`, biome, typecheck, `pnpm test` (605 passed, 2 skipped).
+Tried in the browser showcase (sidebar, new note, title following, `[[` picker, task
+panel). Not yet tried in the Tauri app. Schema 18: update the sync server with the app.
+
 **Release 0.26.0** (2026-11-20, on `main`; notes `docs/releases/0.26.0.md`): the Roadmap
 (epics across projects, a timeline per epic, saved roadmap views; ADR 031), Outlook
 calendar sync on Windows (ADR 030), a Today panel on All tasks with list rows that drag,
@@ -2442,6 +2458,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- Notes (ADR 032): notes in the command palette and search; images and files in notes;
+  drag and drop between folders; MCP tools so agents can read and write notes; a
+  project's notes on its page.
 - Roadmap (ADR 031): an MCP tool to read a roadmap (bars, late links); "push dependents"
   when a bar moves past them; moving an epic's bar could offer to shift its tasks; a
   `start_date` on epics and tasks if starts matter outside the roadmap.

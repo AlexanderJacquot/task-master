@@ -485,6 +485,39 @@ pub struct TerminalSession {
     pub deleted_at: Option<Timestamp>,
 }
 
+/// A folder of [`Note`]s (ADR 032). Folders do not nest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NoteFolder {
+    pub id: Id,
+    pub name: String,
+    pub rank: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
+/// A markdown page in the sidebar's Notes (ADR 032). Its body links tasks and projects
+/// with `task:<id>` and `project:<id>` URLs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct Note {
+    pub id: Id,
+    /// May be blank; shown as "Untitled".
+    pub title: String,
+    /// Markdown.
+    pub body: String,
+    /// `None`: at the top level.
+    pub folder_id: Option<Id>,
+    /// The task it is attached to.
+    pub task_id: Option<Id>,
+    /// Order within its folder.
+    pub rank: String,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub deleted_at: Option<Timestamp>,
+}
+
 /// Where an [`AgentSession`] is.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -907,4 +940,10 @@ pub struct Snapshot {
     /// Live terminal sessions, every device's, by start.
     #[serde(default)]
     pub terminal_sessions: Vec<TerminalSession>,
+    /// Live note folders, in order (ADR 032).
+    #[serde(default)]
+    pub note_folders: Vec<NoteFolder>,
+    /// Live notes, by rank.
+    #[serde(default)]
+    pub notes: Vec<Note>,
 }

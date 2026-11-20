@@ -28,6 +28,7 @@ import type { Task, TaskChange } from "../../lib/types";
 import { adoptTask, deleteTask, setParent, toggleDone, updateTask } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { SessionsPanel } from "../agents/SessionsPanel";
+import { TaskNotes } from "../notes/TaskNotes";
 import { ProjectMark } from "../organize/ProjectMark";
 import { MeetingsSection } from "../scribe/MeetingsSection";
 import { DROP_OVER_CLASS, useTaskDropTarget } from "../shell/taskDrop";
@@ -394,6 +395,7 @@ export function TaskEditor({
       {/* The page follows the mockup: subtasks right under the text, files after. */}
       {page ? [subtasks, attachmentList] : [attachmentList, subtasks]}
       <DependencyList task={task} page={page} />
+      <TaskNotes task={task} page={page} />
       <MeetingsSection link={{ task: task.id }} page={page} />
       <SessionsPanel task={task} page={page} />
       {page ? (

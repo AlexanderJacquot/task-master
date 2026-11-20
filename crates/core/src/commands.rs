@@ -207,6 +207,29 @@ pub enum Command {
     DeleteTerminalSession {
         id: Id,
     },
+    /// Adds a note (ADR 032).
+    CreateNote {
+        note: crate::notes::NewNote,
+    },
+    UpdateNote {
+        id: Id,
+        changes: Vec<crate::notes::NoteChange>,
+    },
+    /// Removes a note; undo brings it back.
+    DeleteNote {
+        id: Id,
+    },
+    CreateNoteFolder {
+        folder: crate::notes::NewNoteFolder,
+    },
+    UpdateNoteFolder {
+        id: Id,
+        changes: Vec<crate::notes::NoteFolderChange>,
+    },
+    /// Moves the folder's notes to the top level, then deletes it.
+    DeleteNoteFolder {
+        id: Id,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -608,6 +631,12 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
         Command::RecordTerminalSessions { sessions } => crate::terminal::record(b, sessions),
         Command::UpdateTerminalSession { id, changes } => crate::terminal::update(b, &id, changes),
         Command::DeleteTerminalSession { id } => crate::terminal::delete(b, &id),
+        Command::CreateNote { note } => crate::notes::create_note(b, note),
+        Command::UpdateNote { id, changes } => crate::notes::update_note(b, &id, changes),
+        Command::DeleteNote { id } => crate::notes::delete_note(b, &id),
+        Command::CreateNoteFolder { folder } => crate::notes::create_folder(b, folder),
+        Command::UpdateNoteFolder { id, changes } => crate::notes::update_folder(b, &id, changes),
+        Command::DeleteNoteFolder { id } => crate::notes::delete_folder(b, &id),
     }
 }
 
@@ -2384,7 +2413,7 @@ fn trimmed(value: Option<String>) -> Option<String> {
     value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
-fn client_id(id: Option<Id>) -> Result<Id> {
+pub(crate) fn client_id(id: Option<Id>) -> Result<Id> {
     match id {
         Some(id) => {
             check_id(&id)?;
@@ -2413,7 +2442,7 @@ fn check_estimate(minutes: Option<i64>) -> Result<()> {
     }
 }
 
-fn live_task(b: &Batch<'_, '_>, id: &str) -> Result<Task> {
+pub(crate) fn live_task(b: &Batch<'_, '_>, id: &str) -> Result<Task> {
     let task = query::task(b.tx, id)?;
     if task.deleted_at.is_some() {
         return Err(Error::not_found("task", id));

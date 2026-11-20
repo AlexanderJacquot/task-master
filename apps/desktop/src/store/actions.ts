@@ -4,6 +4,7 @@
 import { ranksForDrop } from "../lib/board";
 import type { RestorePlan } from "../lib/history";
 import { applyMeetingChanges, cleanParticipants } from "../lib/meetings";
+import { applyNoteChanges, tidy } from "../lib/notes";
 import { rankBetween } from "../lib/rank";
 import { playSound } from "../lib/sounds";
 import {
@@ -27,6 +28,10 @@ import type {
   Meeting,
   MeetingChange,
   MeetingState,
+  Note,
+  NoteChange,
+  NoteFolder,
+  NoteFolderChange,
   Priority,
   Project,
   ProjectChange,
@@ -1588,4 +1593,139 @@ export function nameSpeaker(store: TaskStore, meetingId: string, speaker: string
   return updateMeeting(store, meetingId, [
     { speaker_name: { speaker, name: name.trim() || null } },
   ]);
+}
+
+// ---------------------------------------------------------------------------------------
+// Notes (ADR 032)
+
+/** The rank after the last live note of a folder (`null`: the top level). */
+function endOfFolder(notes: Record<string, Note>, folderId: string | null): string {
+  return rankBetween(
+    lastRank(Object.values(notes), (n) => (n.folder_id ?? null) === folderId),
+    null,
+  );
+}
+
+export interface NewNoteInput {
+  title?: string;
+  body?: string;
+  folder_id?: string | null;
+  task_id?: string | null;
+}
+
+/** Adds a note at the end of its folder. Resolves to its id, or null when refused. */
+export async function createNote(
+  store: TaskStore,
+  input: NewNoteInput = {},
+): Promise<string | null> {
+  const s = store.getState();
+  const now = Date.now();
+  const folderId = input.folder_id ?? null;
+  const note: Note = {
+    id: uuidv7(now),
+    title: tidy(input.title ?? ""),
+    body: input.body ?? "",
+    folder_id: folderId,
+    task_id: input.task_id ?? null,
+    rank: endOfFolder(s.notes, folderId),
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  };
+  const changes = await s.mutate(
+    [
+      {
+        type: "create_note",
+        note: {
+          id: note.id,
+          title: note.title,
+          body: note.body,
+          folder_id: note.folder_id,
+          task_id: note.task_id,
+          rank: note.rank,
+        },
+      },
+    ],
+    { upsert: { notes: [note] } },
+  );
+  return changes ? note.id : null;
+}
+
+export function updateNote(store: TaskStore, id: string, changes: NoteChange[]) {
+  const s = store.getState();
+  const note = s.notes[id];
+  if (!note || !changes.length) return Promise.resolve(null);
+  const next = applyNoteChanges(note, changes, Date.now());
+  return s.mutate([{ type: "update_note", id, changes }], { upsert: { notes: [next] } });
+}
+
+/** Moves a note to the end of a folder (`null`: the top level). */
+export function moveNote(store: TaskStore, id: string, folderId: string | null) {
+  const s = store.getState();
+  const note = s.notes[id];
+  if (!note || (note.folder_id ?? null) === folderId) return Promise.resolve(null);
+  return updateNote(store, id, [{ folder_id: folderId }, { rank: endOfFolder(s.notes, folderId) }]);
+}
+
+export function deleteNote(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.notes[id]) return Promise.resolve(null);
+  return s.mutate([{ type: "delete_note", id }], { remove: { notes: [id] } });
+}
+
+/** Adds a folder after the others. Resolves to its id, or null when refused. */
+export async function createNoteFolder(store: TaskStore, name: string): Promise<string | null> {
+  const s = store.getState();
+  const clean = tidy(name);
+  if (!clean) return null;
+  const now = Date.now();
+  const folder: NoteFolder = {
+    id: uuidv7(now),
+    name: clean,
+    rank: rankBetween(
+      lastRank(Object.values(s.note_folders), () => true),
+      null,
+    ),
+    created_at: now,
+    updated_at: now,
+    deleted_at: null,
+  };
+  const changes = await s.mutate(
+    [{ type: "create_note_folder", folder: { id: folder.id, name: clean, rank: folder.rank } }],
+    { upsert: { note_folders: [folder] } },
+  );
+  return changes ? folder.id : null;
+}
+
+export function updateNoteFolder(store: TaskStore, id: string, changes: NoteFolderChange[]) {
+  const s = store.getState();
+  const folder = s.note_folders[id];
+  if (!folder || !changes.length) return Promise.resolve(null);
+  const next = { ...folder, updated_at: Date.now() };
+  for (const change of changes) {
+    if ("name" in change && change.name !== undefined) next.name = tidy(change.name);
+    else if ("rank" in change && change.rank !== undefined) next.rank = change.rank;
+  }
+  return s.mutate([{ type: "update_note_folder", id, changes }], {
+    upsert: { note_folders: [next] },
+  });
+}
+
+/** Deletes a folder; its notes move to the end of the top level (undo puts them back). */
+export function deleteNoteFolder(store: TaskStore, id: string) {
+  const s = store.getState();
+  if (!s.note_folders[id]) return Promise.resolve(null);
+  const now = Date.now();
+  let last = lastRank(Object.values(s.notes), (n) => n.folder_id === null);
+  const moved = Object.values(s.notes)
+    .filter((n) => n.folder_id === id)
+    .sort((a, b) => (a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : 1))
+    .map((n) => {
+      last = rankBetween(last, null);
+      return { ...n, folder_id: null, rank: last, updated_at: now };
+    });
+  return s.mutate([{ type: "delete_note_folder", id }], {
+    remove: { note_folders: [id] },
+    upsert: { notes: moved },
+  });
 }

@@ -14,8 +14,9 @@ use crate::events::{Changed, EntityRef, EventBus};
 use crate::files::FileStore;
 use crate::history::{self, History};
 use crate::model::{
-    AgentNote, AgentRuntime, AgentSession, Attachment, Epic, Id, Meeting, Project, ProjectFolder,
-    SessionState, Snapshot, Status, Tag, Task, TerminalSession, TimeBlock, TranscriptSegment, View,
+    AgentNote, AgentRuntime, AgentSession, Attachment, Epic, Id, Meeting, Note, NoteFolder,
+    Project, ProjectFolder, SessionState, Snapshot, Status, Tag, Task, TerminalSession, TimeBlock,
+    TranscriptSegment, View,
 };
 use crate::ops::{Batch, EntityKind};
 use crate::sync::{self, Merged, OpsPage, SyncOp};
@@ -45,6 +46,10 @@ pub struct Changes {
     pub transcript_segments: Vec<TranscriptSegment>,
     #[serde(default)]
     pub terminal_sessions: Vec<TerminalSession>,
+    #[serde(default)]
+    pub note_folders: Vec<NoteFolder>,
+    #[serde(default)]
+    pub notes: Vec<Note>,
 }
 
 impl Changes {
@@ -853,6 +858,8 @@ fn load_changes(
                     .terminal_sessions
                     .push(query::terminal_session(conn, id)?);
             }
+            EntityKind::NoteFolder => changes.note_folders.push(crate::notes::folder(conn, id)?),
+            EntityKind::Note => changes.notes.push(crate::notes::note(conn, id)?),
         }
     }
     Ok(changes)
