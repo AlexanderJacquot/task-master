@@ -9,6 +9,7 @@ mod backups;
 mod calendar_sync;
 mod config;
 mod google;
+mod relaunch;
 mod scribe;
 mod server_sync;
 
@@ -580,7 +581,8 @@ fn set_data_dir(
             .save(&state.config_path)
             .map_err(|e| internal(format!("cannot save settings: {e}")))?;
     }
-    app.restart();
+    relaunch::restart(&app);
+    Ok(())
 }
 
 fn default_data_dir(app: &AppHandle) -> tauri::Result<PathBuf> {
@@ -908,6 +910,8 @@ pub fn run() {
                 scribe::shutdown(app);
                 agents::shutdown(app);
             }
+            // Last: on macOS a restart exits here (no second Dock icon).
+            relaunch::on_run_event(app, &event);
         });
 }
 
