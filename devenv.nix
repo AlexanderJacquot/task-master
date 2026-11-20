@@ -2,6 +2,18 @@
 
 let
   state = config.devenv.state;
+  # cc-rs (and the cmake crate through it) and cargo read these per target, so nothing
+  # else in the shell changes: CC_<target>, CXX_<target>, AR_<target>, and the linker.
+  appleToolchain = targets: lib.foldl' (env: target:
+    let
+      under = builtins.replaceStrings [ "-" ] [ "_" ] target;
+    in
+    env // {
+      "CC_${under}" = "/usr/bin/clang";
+      "CXX_${under}" = "/usr/bin/clang++";
+      "AR_${under}" = "/usr/bin/ar";
+      "CARGO_TARGET_${lib.toUpper under}_LINKER" = "/usr/bin/clang";
+    }) { } targets;
 in
 {
   # Caches and downloads stay in this checkout (.devenv/ is git-ignored), not in $HOME.
@@ -15,16 +27,17 @@ in
     pnpm_config_state_dir = "${state}/pnpm/state";
     PNPM_HOME = "${state}/pnpm/home";
     XDG_CACHE_HOME = "${state}/cache";
-  } // lib.optionalAttrs pkgs.stdenv.isDarwin {
-    # iOS builds use Xcode's clang (/usr/bin shims follow xcode-select): the Nix clang
-    # wrapper adds a macOS minimum version that clang rejects for iOS targets.
-    CC_aarch64_apple_ios = "/usr/bin/clang";
-    AR_aarch64_apple_ios = "/usr/bin/ar";
-    CARGO_TARGET_AARCH64_APPLE_IOS_LINKER = "/usr/bin/clang";
-    CC_aarch64_apple_ios_sim = "/usr/bin/clang";
-    AR_aarch64_apple_ios_sim = "/usr/bin/ar";
-    CARGO_TARGET_AARCH64_APPLE_IOS_SIM_LINKER = "/usr/bin/clang";
-  };
+  } // lib.optionalAttrs pkgs.stdenv.isDarwin (appleToolchain [
+    # Every Apple target builds its C and C++ (SQLite, ring, whisper.cpp) and links with
+    # Xcode's toolchain (the /usr/bin shims follow xcode-select), the same one as CI's
+    # macOS runners. The Nix clang wrapper keeps its own macOS 14.4 SDK: next to Xcode's
+    # headers (which whisper.cpp's CMake picks) clang 21 rejects them, linking misses
+    # macOS 15 Metal symbols, and for iOS it adds a macOS minimum version clang refuses.
+    "aarch64-apple-darwin"
+    "x86_64-apple-darwin"
+    "aarch64-apple-ios"
+    "aarch64-apple-ios-sim"
+  ]);
 
   # Same toolchain as CI: version and components from rust-toolchain.toml.
   languages.rust = {

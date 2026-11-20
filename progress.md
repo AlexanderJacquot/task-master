@@ -72,6 +72,22 @@ folders only from this device's sessions, devenv for agents. Schema 17, unchange
 sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
 Schema 17: update the sync server with the app.
 
+**devenv: clean desktop builds on macOS** (2026-11-20, on `main`): the entry below was
+checked on a warm `target/`. A clean build of the desktop crate failed in whisper-rs-sys:
+the Nix clang wrapper (still on its own macOS 14.4 SDK) compiled whisper.cpp against
+Xcode's macOS headers, which its CMake picks, and clang 21 rejected them
+(`-Welaborated-enum-base` in `vDSP.h`, `CFBase.h`); the link would also miss macOS 15 Metal
+symbols. Found by the iPhone session (`p1-ios-mac` notes). `devenv.nix` now gives every
+Apple target (`aarch64-apple-darwin`, `x86_64-apple-darwin`, `aarch64-apple-ios`,
+`aarch64-apple-ios-sim`) Xcode's toolchain per target (`CC_`, `CXX_`, `AR_<target>`,
+`CARGO_TARGET_<TARGET>_LINKER` = `/usr/bin/clang`, `clang++`, `ar`), the toolchain CI's
+macOS runners use; nothing else in the shell changes, Linux is untouched. Checked from an
+empty target folder in a fresh devenv shell: clippy, `cargo test --workspace` (332 passed,
+8 ignored, the desktop crate linked with whisper.cpp and Metal), `taskmaster-core` for the
+iOS simulator, biome, typecheck, `pnpm test` (550 passed, 2 skipped). A stale whisper-rs-sys
+build folder from a failed configure keeps failing (its CMakeCache says
+`WHISPER_BUILD_TESTS=ON`): `cargo clean -p whisper-rs-sys` once.
+
 **devenv builds with Xcode, and for iOS** (2026-11-19, on `main`): this Mac now has Xcode
 27.2 and the iOS 27.2 simulators (from the App Store, in the nix-darwin config with
 xcodegen, xcbeautify, swiftlint and XcodeBuildMCP; Claude Code has the `xcode` and
