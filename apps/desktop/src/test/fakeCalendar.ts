@@ -16,6 +16,8 @@ export function fakeCalendar(initial: Partial<CalendarStatus> = {}, events: Cale
     last_error: null,
     last_report: null,
     sources: [],
+    outlook_available: false,
+    outlook: null,
     ...initial,
   };
   let listener: ((s: CalendarStatus) => void) | null = null;
@@ -35,6 +37,19 @@ export function fakeCalendar(initial: Partial<CalendarStatus> = {}, events: Cale
       calls.push("disconnect");
       status = { ...status, connected: false, sources: [] };
       return status;
+    },
+    connectOutlook: async () => {
+      calls.push("connect outlook");
+      status = { ...status, configured: true, connected: true, outlook: "me@company.example" };
+      return status;
+    },
+    disconnectOutlook: async () => {
+      calls.push("disconnect outlook");
+      status = { ...status, configured: false, connected: false, outlook: null, sources: [] };
+      return status;
+    },
+    openInOutlook: async (eventId) => {
+      calls.push(`open ${eventId}`);
     },
     setShown: async (id, shown) => {
       calls.push(`shown ${id} ${shown}`);

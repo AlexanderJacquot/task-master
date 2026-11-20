@@ -1,5 +1,6 @@
 // Settings → Calendar (M10, ADR 014): connect a Google account with the user's own OAuth
-// client, pick the calendars shown in the app, see the last sync.
+// client, or classic Outlook on this PC (ADR 030), pick the calendars shown in the app, see
+// the last sync.
 
 import { useEffect, useState } from "react";
 import { Button, cx, Dot, INPUT } from "../../components/ui";
@@ -61,10 +62,15 @@ export function CalendarSettings() {
     setWaiting(false);
   };
 
+  const outlook = status?.outlook ?? null;
+  const connectOutlook = api.connectOutlook;
+  const disconnectOutlook = api.disconnectOutlook;
+  const from = outlook ? "Outlook" : "Google";
+
   return (
     <Section
       title="Calendar"
-      hint="Two-way sync with Google Calendar: your time blocks, day plans and due dates go to a calendar named “task-master” in your account (moving or deleting them there comes back here). Due dates appear as all-day “Due:” events marked as free. The calendars you pick below show in the Calendar view, read-only."
+      hint="Two-way sync with Google Calendar, or with classic Outlook on Windows: your time blocks, day plans and due dates go to your calendar (moving or deleting them there comes back here). Due dates appear as all-day “Due:” events marked as free. The calendars you pick below show in the Calendar view, read-only."
     >
       {status?.connected && status.can_set_runner && setRunner && (
         <fieldset className="flex items-center gap-3" disabled={waiting}>
@@ -106,14 +112,14 @@ export function CalendarSettings() {
             {status.syncing
               ? "Syncing…"
               : status.last_sync_at
-                ? `Connected. Last synced ${formatAgo(status.last_sync_at)}.`
-                : "Connected. The first sync starts in a few seconds."}
+                ? `Connected${outlook ? ` to Outlook (${outlook})` : ""}. Last synced ${formatAgo(status.last_sync_at)}.`
+                : `Connected${outlook ? ` to Outlook (${outlook})` : ""}. The first sync starts in a few seconds.`}
             {status.last_report && !status.syncing && (
               <span className="text-ink-3">
                 {" "}
                 ({status.last_report.created} added, {status.last_report.updated} updated,{" "}
-                {status.last_report.deleted} removed, {status.last_report.pulled} changes from
-                Google)
+                {status.last_report.deleted} removed, {status.last_report.pulled} changes from{" "}
+                {from})
               </span>
             )}
           </p>
@@ -131,6 +137,7 @@ export function CalendarSettings() {
                   <span className="text-ink">{source.name}</span>
                   <span className="text-xs text-ink-3">
                     receives your blocks, day plans and due dates
+                    {outlook && " (private; your meetings there are never changed)"}
                   </span>
                 </div>
               ) : (
@@ -166,7 +173,11 @@ export function CalendarSettings() {
               size="sm"
               variant="ghost"
               disabled={status.runner === "server" || waiting}
-              onClick={() => void run(() => api.disconnect())}
+              onClick={() =>
+                void run(() =>
+                  outlook && disconnectOutlook ? disconnectOutlook() : api.disconnect(),
+                )
+              }
             >
               Disconnect
             </Button>
@@ -174,6 +185,35 @@ export function CalendarSettings() {
         </>
       ) : (
         <>
+          {status?.outlook_available && connectOutlook && (
+            <div className="flex flex-col gap-2 border-b border-line pb-3">
+              <p className="text-[13px] text-ink-2">
+                <b>Classic Outlook on this PC.</b> Uses the account Outlook is already signed in to,
+                a work account included: no sign-in and nothing for IT to approve. Blocks go to your
+                main calendar as private, busy events; day plans and due dates as free all-day
+                events. Outlook syncs while it is open.
+              </p>
+              <div className="flex items-center gap-3">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  disabled={waiting}
+                  onClick={() => {
+                    setWaiting(true);
+                    void run(() => connectOutlook()).finally(() => setWaiting(false));
+                  }}
+                >
+                  Connect Outlook
+                </Button>
+                {waiting && (
+                  <span role="status" className="text-xs text-ink-3">
+                    Reaching Outlook…
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-ink-3">Or connect Google Calendar:</p>
+            </div>
+          )}
           <ol className="flex list-decimal flex-col gap-1 pl-5 text-[13px] text-ink-2">
             <li>
               In the{" "}

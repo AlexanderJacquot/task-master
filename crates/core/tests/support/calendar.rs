@@ -12,6 +12,8 @@ pub struct FakeServer {
     pub next_id: u64,
     pub expire_token: bool,
     pub writes: Vec<String>,
+    /// Push into the primary calendar (classic Outlook, ADR 030).
+    pub primary_target: bool,
 }
 
 impl FakeServer {
@@ -201,5 +203,9 @@ impl CalendarProvider for FakeServer {
             *version = v;
         }
         Ok(())
+    }
+
+    fn target_is_primary(&self) -> bool {
+        self.primary_target
     }
 }

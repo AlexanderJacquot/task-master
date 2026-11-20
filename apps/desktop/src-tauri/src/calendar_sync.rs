@@ -1,26 +1,28 @@
-//! Calendar sync in the desktop shell (M10, ADR 014): the Google account in settings, a
-//! background thread running `taskmaster_core::calendar::sync`, and the commands and event
-//! the UI uses.
+//! Calendar sync in the desktop shell (M10, ADR 014): the Google account in settings, or
+//! classic Outlook on this PC (ADR 030), a background thread running
+//! `taskmaster_core::calendar::sync`, and the commands and event the UI uses.
 //!
 //! A sync runs every 5 minutes, a few seconds after tasks, time blocks or meetings change
 //! (several quick edits make one sync), and on "Sync now".
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use taskmaster_client::Client;
 use taskmaster_core::calendar::{
-    CalendarEvent, CalendarRunner, CalendarSource, EventRange, GoogleCredentials, ProviderError,
-    RunnerRequest, RunnerStatus, SyncReport,
+    CalendarEvent, CalendarProvider, CalendarRunner, CalendarSource, EventRange, GoogleCredentials,
+    ProviderError, RunnerRequest, RunnerStatus, SyncReport,
 };
 use taskmaster_core::{EntityKind, now_ms, utc_date};
+use taskmaster_outlook::OutlookCalendar;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tauri_specta::Event;
 
-use crate::config::GoogleAccount;
+use crate::config::{GoogleAccount, OutlookAccount};
 use crate::google::{self, GoogleCalendar};
 use crate::{AppState, CommandResult, internal, invalid, with_store};
 
@@ -45,6 +47,10 @@ pub struct CalendarStatus {
     pub last_error: Option<String>,
     pub last_report: Option<SyncReport>,
     pub sources: Vec<CalendarSource>,
+    /// Classic Outlook can be connected on this device (Windows).
+    pub outlook_available: bool,
+    /// The connected Outlook mailbox (ADR 030); Google is then not connected.
+    pub outlook: Option<String>,
 }
 
 /// Sent when a sync starts and ends, so views re-read events and status.
@@ -64,6 +70,8 @@ pub struct CalendarRuntime {
     run: Mutex<Run>,
     pub(crate) gate: Mutex<()>,
     kick: Sender<()>,
+    /// The next sync may start Outlook (connecting, "Sync now"); others wait for it.
+    start_outlook: AtomicBool,
 }
 
 impl CalendarRuntime {
@@ -74,6 +82,7 @@ impl CalendarRuntime {
                 run: Mutex::new(Run::default()),
                 gate: Mutex::new(()),
                 kick,
+                start_outlook: AtomicBool::new(false),
             },
             kicks,
         )
@@ -100,25 +109,34 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 pub fn status(state: &AppState) -> CommandResult<CalendarStatus> {
-    let account = lock(&state.config).google.clone();
+    let (account, outlook) = {
+        let config = lock(&state.config);
+        (config.google.clone(), config.outlook.clone())
+    };
     let sources = lock(&state.store)
         .calendar_sources()
         .map_err(crate::CommandError::from)?;
     let run = lock(&state.calendar.run);
     Ok(CalendarStatus {
-        configured: account.is_some(),
-        runner: account.as_ref().map(|a| a.runner).unwrap_or_default(),
-        can_set_runner: server_client(state).is_some(),
+        configured: account.is_some() || outlook.is_some(),
+        runner: account
+            .as_ref()
+            .filter(|_| outlook.is_none())
+            .map(|a| a.runner)
+            .unwrap_or_default(),
+        can_set_runner: server_client(state).is_some() && outlook.is_none(),
         client_id: account
             .as_ref()
             .map(|a| a.client_id.clone())
             .unwrap_or_default(),
-        connected: account.as_ref().is_some_and(|a| a.refresh_token.is_some()),
+        connected: outlook.is_some() || account.as_ref().is_some_and(|a| a.refresh_token.is_some()),
         syncing: run.syncing,
         last_sync_at: run.last_sync_at,
         last_error: run.last_error.clone(),
         last_report: run.last_report.clone(),
         sources,
+        outlook_available: taskmaster_outlook::available(),
+        outlook: outlook.map(|o| o.mailbox),
     })
 }
 
@@ -131,6 +149,8 @@ fn announce(app: &AppHandle) {
 /// The background loop: waits for a kick or the cycle, then syncs if signed in.
 pub fn run(app: AppHandle, kicks: Receiver<()>) {
     let mut client: Option<(GoogleAccount, GoogleCalendar)> = None;
+    // Made on this thread and kept on it: COM objects stay where they were made.
+    let mut outlook: Option<OutlookCalendar> = None;
     let mut wait = FIRST;
     loop {
         match kicks.recv_timeout(wait) {
@@ -141,6 +161,14 @@ pub fn run(app: AppHandle, kicks: Receiver<()>) {
         wait = CYCLE;
         let state = app.state::<AppState>();
         let _gate = lock(&state.calendar.gate);
+        if lock(&state.config).outlook.is_some() {
+            client = None;
+            let provider = outlook.get_or_insert_with(OutlookCalendar::new);
+            provider.set_may_start(state.calendar.start_outlook.swap(false, Ordering::SeqCst));
+            sync_outlook(&app, provider, &kicks);
+            continue;
+        }
+        outlook = None;
         let account = lock(&state.config).google.clone();
         if account
             .as_ref()
@@ -184,35 +212,65 @@ pub fn run(app: AppHandle, kicks: Receiver<()>) {
             // A client reused after disconnect must not retain its old lease guard.
             google.set_guard(|| Ok(()));
         }
-        lock(&state.calendar.run).syncing = true;
-        announce(&app);
-        let now = now_ms();
-        let result = taskmaster_core::calendar::sync(&state.store, google, now, &utc_date(now));
+        sync_once(&app, google, &kicks);
         if let Some(server) = server {
             let _ = server.calendar_lease(&device_id, true);
         }
-        let pulled = result.as_ref().is_ok_and(|r| r.pulled > 0);
-        {
-            let mut run = lock(&state.calendar.run);
-            run.syncing = false;
-            match result {
-                Ok(report) => {
-                    run.last_sync_at = Some(now);
-                    run.last_report = Some(report);
-                    run.last_error = None;
-                }
-                Err(err) => {
-                    eprintln!("calendar sync failed: {err}");
-                    run.last_error = Some(err.to_string());
-                }
+    }
+}
+
+/// One sync with classic Outlook, under the server's Calendar lease when a server is
+/// joined (one runner at a time, ADR 015).
+fn sync_outlook(app: &AppHandle, provider: &mut OutlookCalendar, kicks: &Receiver<()>) {
+    let state = app.state::<AppState>();
+    let server = server_client(&state);
+    let device_id = lock(&state.store).device_id().to_owned();
+    if let Some(server) = &server {
+        let refused = match server.calendar_lease(&device_id, false) {
+            Ok(true) => None,
+            Ok(false) => Some("Calendar runs on the server or another device".to_owned()),
+            Err(e) => Some(format!("cannot acquire Calendar lease: {e}")),
+        };
+        if let Some(error) = refused {
+            lock(&state.calendar.run).last_error = Some(error);
+            announce(app);
+            return;
+        }
+    }
+    sync_once(app, provider, kicks);
+    if let Some(server) = server {
+        let _ = server.calendar_lease(&device_id, true);
+    }
+}
+
+/// Runs the engine once and reports it to the UI.
+fn sync_once<P: CalendarProvider>(app: &AppHandle, provider: &mut P, kicks: &Receiver<()>) {
+    let state = app.state::<AppState>();
+    lock(&state.calendar.run).syncing = true;
+    announce(app);
+    let now = now_ms();
+    let result = taskmaster_core::calendar::sync(&state.store, provider, now, &utc_date(now));
+    let pulled = result.as_ref().is_ok_and(|r| r.pulled > 0);
+    {
+        let mut run = lock(&state.calendar.run);
+        run.syncing = false;
+        match result {
+            Ok(report) => {
+                run.last_sync_at = Some(now);
+                run.last_report = Some(report);
+                run.last_error = None;
+            }
+            Err(err) => {
+                eprintln!("calendar sync failed: {err}");
+                run.last_error = Some(err.to_string());
             }
         }
-        // Edits pulled from the calendar committed a batch, which kicked us again: skip it.
-        if pulled {
-            while kicks.try_recv().is_ok() {}
-        }
-        announce(&app);
     }
+    // Edits pulled from the calendar committed a batch, which kicked us again: skip it.
+    if pulled {
+        while kicks.try_recv().is_ok() {}
+    }
+    announce(app);
 }
 
 /// The calendar connection and the account's calendars.
@@ -236,6 +294,11 @@ pub fn google_connect(
     let _gate = lock(&state.calendar.gate);
     if remote_status(&state)?.runner == CalendarRunner::Server {
         return Err(invalid("move Calendar to this device before reconnecting"));
+    }
+    if lock(&state.config).outlook.is_some() {
+        return Err(invalid(
+            "disconnect Outlook first: one calendar account at a time",
+        ));
     }
     let client_id = client_id.trim().to_owned();
     if client_id.is_empty() {
@@ -303,6 +366,72 @@ pub fn google_disconnect(app: AppHandle) -> CommandResult<CalendarStatus> {
     status(&state)
 }
 
+/// Connects classic Outlook on this PC (ADR 030): reaches it (starting it if needed),
+/// then syncs with its main calendar. Google must be disconnected first.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn outlook_connect(app: AppHandle) -> CommandResult<CalendarStatus> {
+    let state = app.state::<AppState>();
+    let _gate = lock(&state.calendar.gate);
+    if !taskmaster_outlook::available() {
+        return Err(invalid(taskmaster_outlook::UNAVAILABLE));
+    }
+    if remote_status(&state)?.runner == CalendarRunner::Server {
+        return Err(invalid(
+            "move Calendar to this device before connecting Outlook",
+        ));
+    }
+    if lock(&state.config)
+        .google
+        .as_ref()
+        .is_some_and(|a| a.refresh_token.is_some())
+    {
+        return Err(invalid(
+            "disconnect Google first: one calendar account at a time",
+        ));
+    }
+    let mailbox = taskmaster_outlook::check().map_err(internal)?;
+    {
+        let mut config = lock(&state.config);
+        config.outlook = Some(OutlookAccount { mailbox });
+        config
+            .save(&state.config_path)
+            .map_err(|e| internal(format!("cannot save settings: {e}")))?;
+    }
+    // Start fresh: events already pushed are matched again by their stored keys.
+    with_store(&state, |s| s.clear_calendar_sync())?;
+    *lock(&state.calendar.run) = Run::default();
+    state.calendar.start_outlook.store(true, Ordering::SeqCst);
+    state.calendar.kick();
+    status(&state)
+}
+
+/// Stops syncing with Outlook and forgets the synced calendars. The events stay in
+/// Outlook.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn outlook_disconnect(app: AppHandle) -> CommandResult<CalendarStatus> {
+    let state = app.state::<AppState>();
+    let _gate = lock(&state.calendar.gate);
+    {
+        let mut config = lock(&state.config);
+        config.outlook = None;
+        config
+            .save(&state.config_path)
+            .map_err(|e| internal(format!("cannot save settings: {e}")))?;
+    }
+    with_store(&state, |s| s.clear_calendar_sync())?;
+    *lock(&state.calendar.run) = Run::default();
+    status(&state)
+}
+
+/// Opens an event of the Outlook calendar in Outlook.
+#[tauri::command(async)]
+#[specta::specta]
+pub fn outlook_open_event(event_id: String) -> CommandResult<()> {
+    taskmaster_outlook::open_event(event_id).map_err(internal)
+}
+
 /// Shows or hides one of the account's calendars, then syncs.
 #[tauri::command(async)]
 #[specta::specta]
@@ -349,6 +478,7 @@ pub fn calendar_sync_now(state: State<'_, AppState>) -> CommandResult<CalendarSt
                 .map_err(|e| internal(e.to_string()))?,
         ));
     }
+    state.calendar.start_outlook.store(true, Ordering::SeqCst);
     state.calendar.kick();
     status(&state)
 }
@@ -397,6 +527,8 @@ fn from_remote(state: &AppState, remote: RunnerStatus) -> CalendarStatus {
         last_error: remote.last_error,
         last_report: remote.last_report,
         sources: remote.sources,
+        outlook_available: taskmaster_outlook::available(),
+        outlook: None,
     }
 }
 fn remote_status(state: &AppState) -> CommandResult<CalendarStatus> {
@@ -421,6 +553,9 @@ pub fn set_calendar_runner(
     let state = app.state::<AppState>();
     let _gate = lock(&state.calendar.gate);
     let server = server_client(&state).ok_or_else(|| invalid("join a sync server first"))?;
+    if lock(&state.config).outlook.is_some() {
+        return Err(invalid("Outlook syncs only on the PC it runs on"));
+    }
     let device_id = lock(&state.store).device_id().to_owned();
     let account = lock(&state.config).google.clone();
     let credentials = account.as_ref().and_then(|a| {

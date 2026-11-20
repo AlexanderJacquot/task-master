@@ -139,6 +139,12 @@ pub trait CalendarProvider {
     ) -> ProviderResult<RemoteEvent>;
     /// Deleting an event that is already gone succeeds.
     fn delete(&mut self, calendar_id: &str, event_id: &str) -> ProviderResult<()>;
+    /// Push into the account's primary calendar instead of a calendar of the app's own
+    /// (classic Outlook, ADR 030). Its other events are then read like a shown calendar's
+    /// and never changed.
+    fn target_is_primary(&self) -> bool {
+        false
+    }
 }
 
 /// Short, exclusive access to the store (a mutex in the desktop shell).
@@ -239,8 +245,14 @@ pub fn sync<S: StoreAccess, P: CalendarProvider>(
     // 1. The account's calendars and the target.
     let mut calendars = provider.calendars()?;
     let known = store.with(|s| target_id(s.conn()))?;
+    let primary_target = provider.target_is_primary();
     let target = match known.filter(|id| calendars.iter().any(|c| &c.id == id)) {
         Some(id) => id,
+        None if primary_target => calendars
+            .iter()
+            .find(|c| c.primary && c.owned)
+            .map(|c| c.id.clone())
+            .ok_or_else(|| Error::Remote("the account has no main calendar to write to".into()))?,
         None => match calendars
             .iter()
             .find(|c| c.owned && c.name == TARGET_CALENDAR)
@@ -310,6 +322,14 @@ pub fn sync<S: StoreAccess, P: CalendarProvider>(
         let events = provider.events_between(&calendar_id, from, to)?;
         report.events += u32::try_from(events.len()).unwrap_or(u32::MAX);
         store.with(|s| replace_events(s.conn(), &calendar_id, &events, now))?;
+    }
+    // The primary calendar as the target: the user's own events there, without the ones
+    // pushed from here (those are the blocks, plans and deadlines themselves).
+    if primary_target {
+        let mut events = provider.events_between(&target, from, to)?;
+        events.retain(|e| e.key.is_none());
+        report.events += u32::try_from(events.len()).unwrap_or(u32::MAX);
+        store.with(|s| replace_events(s.conn(), &target, &events, now))?;
     }
     Ok(report)
 }

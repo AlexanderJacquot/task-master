@@ -32,6 +32,13 @@ pub struct GoogleAccount {
     pub runner: taskmaster_core::calendar::CalendarRunner,
 }
 
+/// Classic Outlook on this PC (ADR 030): no credentials, Outlook's own profile is used.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutlookAccount {
+    /// The mailbox of the main calendar, as Outlook names it.
+    pub mailbox: String,
+}
+
 /// The sync server this device syncs with (ADR 015, docs/server.md).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncAccount {
@@ -241,6 +248,9 @@ pub struct AppConfig {
     pub remote: Option<RemoteBackup>,
     #[serde(default)]
     pub google: Option<GoogleAccount>,
+    /// Classic Outlook on this PC (ADR 030), instead of Google: one at a time.
+    #[serde(default)]
+    pub outlook: Option<OutlookAccount>,
     #[serde(default)]
     pub sync: Option<SyncAccount>,
 }
@@ -488,6 +498,9 @@ mod tests {
                 client_secret: "secret".into(),
                 refresh_token: Some("1//token".into()),
                 runner: Default::default(),
+            }),
+            outlook: Some(OutlookAccount {
+                mailbox: "me@company.example".into(),
             }),
             sync: Some(SyncAccount {
                 url: "https://tasks.example.org".into(),

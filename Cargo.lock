@@ -5184,6 +5184,7 @@ dependencies = [
  "taskmaster-client",
  "taskmaster-core",
  "taskmaster-macos-panel",
+ "taskmaster-outlook",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -5217,6 +5218,17 @@ dependencies = [
  "serde_json",
  "taskmaster-core",
  "tokio",
+]
+
+[[package]]
+name = "taskmaster-outlook"
+version = "0.25.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "taskmaster-core",
+ "windows",
+ "windows-core",
 ]
 
 [[package]]

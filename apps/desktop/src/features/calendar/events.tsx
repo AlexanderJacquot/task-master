@@ -6,7 +6,7 @@ import {
 } from "../../components/TaskIcons";
 // Events from the user's calendars (M10, ADR 014): read-only, drawn outlined in their
 // calendar's color so they read as "planned elsewhere". A click shows the details and a
-// link to the event in Google Calendar.
+// link to the event in Google Calendar, or a button that opens it in Outlook (ADR 030).
 
 import { Popover } from "radix-ui";
 import { type ReactNode, useState } from "react";
@@ -54,7 +54,7 @@ function when(event: CalendarEvent): string {
 
 /** The details popover around an event's trigger element. */
 function EventDetails({ event, children }: { event: CalendarEvent; children: ReactNode }) {
-  const { openUrl, calendarName } = useCalendar();
+  const { openUrl, openInOutlook, calendarName } = useCalendar();
   const newMeeting = useNewMeeting();
   const [open, setOpen] = useState(false);
   return (
@@ -128,6 +128,19 @@ function EventDetails({ event, children }: { event: CalendarEvent; children: Rea
             >
               <ExternalLink size={13} />
               Open in Google Calendar
+            </Button>
+          )}
+          {openInOutlook && (
+            <Button
+              size="sm"
+              className="self-start"
+              onClick={() => {
+                setOpen(false);
+                openInOutlook(event.id);
+              }}
+            >
+              <ExternalLink size={13} />
+              Open in Outlook
             </Button>
           )}
         </Popover.Content>
