@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 import TaskMasterKit
 
@@ -7,6 +8,7 @@ struct SyncView: View {
     @State private var address = ""
     @State private var token = ""
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.webAuthenticationSession) private var webAuthentication
 
     var body: some View {
         NavigationStack {
@@ -39,8 +41,17 @@ struct SyncView: View {
                 case .signIn:
                     server
                     Section {
-                        Text("This server signs in with an identity provider. Sign-in on the phone is not built yet; use a server token for now.")
-                            .foregroundStyle(.secondary)
+                        Button("Sign in") {
+                            Task {
+                                await sync.signIn { page in
+                                    try await webAuthentication.authenticate(
+                                        using: page, callbackURLScheme: "taskmaster")
+                                }
+                            }
+                        }
+                        .disabled(sync.busy)
+                    } footer: {
+                        Text("This server signs in with an identity provider. The sign-in page opens in a sheet and comes back here.")
                     }
                 case .join:
                     server
@@ -75,6 +86,13 @@ struct SyncView: View {
                     Section {
                         Button("Sync now") { Task { await sync.syncNow() } }
                             .disabled(sync.busy)
+                    }
+                }
+
+                if let update = sync.updateMessage {
+                    Section {
+                        Label(update, systemImage: "arrow.down.app")
+                            .accessibilityIdentifier("updateNeeded")
                     }
                 }
 

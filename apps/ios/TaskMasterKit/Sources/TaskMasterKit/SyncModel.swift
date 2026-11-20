@@ -62,6 +62,39 @@ public final class SyncModel {
         await run { try core.syncSetToken(token: token) }
     }
 
+    /// The redirect the identity provider sends the sign-in back to. Registered with it
+    /// for the phone (docs/ios-plan.md 4.1).
+    public nonisolated static let signInRedirect = "taskmaster://oidc/callback"
+
+    /// Signs in with the server's identity provider. `present` shows the provider's page
+    /// in the system sign-in sheet and returns the URL it came back with.
+    public func signIn(present: @escaping @MainActor (URL) async throws -> URL) async {
+        let core = session.core
+        busy = true
+        defer { busy = false }
+        do {
+            let flow = try await Task.detached { try core.signIn(redirect: SyncModel.signInRedirect) }.value
+            guard let page = URL(string: flow.page()) else {
+                error = "the provider's sign-in address is invalid"
+                return
+            }
+            let back = try await present(page)
+            status = try await Task.detached { try flow.finish(redirectUrl: back.absoluteString) }.value
+            error = nil
+        } catch {
+            self.error = describe(error)
+        }
+    }
+
+    /// What to tell the user when the database versions differ, else nil.
+    public var updateMessage: String? {
+        switch status.update {
+        case .app: "The server runs a newer version. Update the app to sync; your changes stay on this phone meanwhile."
+        case .server: "This app is newer than the server. Update the server to sync again."
+        case nil: nil
+        }
+    }
+
     public func join(_ mode: JoinMode) async {
         let core = session.core
         await run { try core.syncJoin(mode: mode) }

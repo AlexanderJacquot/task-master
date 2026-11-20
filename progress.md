@@ -15,6 +15,55 @@ sync check (P0 moved the desktop's sync loop into `crates/client`), and a CI run
 `ios.yml` on the mirror. No Apple developer account yet, so no real iPhone. Next: P2,
 starting with phone mockups of the read screens.
 
+**iPhone plumbing, P2–P6 without the design** (2026-11-20, branch `p2-ios-plumbing` on top
+of `p1-ios-mac`; not merged, docs/ios-plan.md): the user asked for every function now and
+form and UI later, so the plan's "mockups before SwiftUI" step is postponed, not dropped.
+Rust (`crates/mobile`, new modules `browse`, `edit`, `plan`, `account`):
+- reads: `navigation` (counts for Inbox, Today and overdue; projects in tree order with
+  their epics; tags; saved views; statuses), `Scope::View` (a saved view's own spec),
+  `board` (one column per status, cancelled left out, lanes merged), `task` (detail:
+  fields, parent, subtasks, tags, waits-on, attachments with `on_device`, time blocks),
+  `activity`, `search`;
+- edits, each one undo: `edit_task` (`TaskEdit`: title, description, priority, due date,
+  today, estimate, project, epic, status), `set_tags` (the set, diffed), `create_tag`
+  (finds a same-named one), `add_task` (`NewTaskInput`; a subtask takes its parent's
+  project and epic), `move_task` (`Placement`: between neighbours, into a status),
+  `set_parent`, `delete_task`, `redo`, `undo_state`;
+- the day: `day_blocks` (a local day from `Day.utc_offset_min`), `schedule`, `move_block`,
+  `set_block_outcome`, `unschedule`; `reminders(from, to, due_minute)` for local
+  notifications (open own tasks' due dates, planned blocks; stable keys);
+- `attach_file`, `attachment`, `fetch_attachment` (on demand), `remove_attachment`;
+  `sign_in` → `SignIn` (`page`, `finish(redirect_url)`) for OIDC with the system sheet;
+  `suspend` (new `Store::checkpoint`, WAL truncated) and `resume`
+  (`refresh_external_changes` + a sync kick);
+- `SyncStatus.update` (`App` or `Server`): the client's `Error::Schema` now carries the
+  server's version and the engine keeps it (`server_schema`, not sent to the desktop UI).
+
+Swift: `TaskMasterKit` gains `NavigationModel`, `BoardModel` (and `placement(of:at:in:)` for
+`onMove`), `TaskDetailModel`, `SearchModel`, `DayPlanModel`, `ReminderPlanner`, sign-in and
+`updateMessage` on `SyncModel`, `suspend`/`resume` on `Session`. App: stand-in screens
+(Browse with search, a scope as list or one-column board, task detail with every field,
+subtasks, photos and files with Quick Look, the day plan), reminders scheduled through
+`UNUserNotificationCenter` as a diff, suspend/resume on scene phase, sign-in through
+`webAuthenticationSession` (scheme `taskmaster`). The P1 home screen and its UI test are
+unchanged. Tests: core `checkpoint_empties_the_write_ahead_log`; mobile `tests/plumbing.rs`
+(6), `app.rs` `attachments_come_down_when_opened`,
+`a_newer_server_asks_for_an_app_update_and_the_phone_keeps_working` (a real server behind
+a stand-in `/info`), unit tests for dates and the update side; Swift `PlumbingTests` (7,
+all 11 kit tests pass on the iOS 27.2 simulator). Tried in the simulator: capture, detail
+edits, subtask, plan an hour, Browse counts and tag, day plan, the notification prompt.
+Checks: fmt, clippy (`-D warnings`, all targets), `cargo test --workspace` (354 passed, 8
+ignored), biome, typecheck, `pnpm test` (600 passed, 2 skipped), TaskMasterKit (11) on the
+simulator, and the P1 UI test against a local seeded server (the server then had the
+phone's task). `cargo test` needed the desktop workaround from "devenv on macOS, a clean build
+of the desktop fails" under Done (`CC=/usr/bin/clang CXX=/usr/bin/clang++ CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/clang`)
+and a stale whisper-rs-sys build folder removed (its CMakeCache had
+`WHISPER_BUILD_TESTS=ON`, so CMake looked for a `tests` folder the crate does not ship).
+Not done: OIDC sign-in against a real provider (needs the redirect registered in
+Authelia), notifications firing, the camera, App Group and extensions (P5). Seen in the
+simulator: the first word of a second capture typed right after submitting can be lost
+(the field takes focus again a moment later); check by hand on a device.
+
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
 folders only from this device's sessions, devenv for agents. Schema 17, unchanged.

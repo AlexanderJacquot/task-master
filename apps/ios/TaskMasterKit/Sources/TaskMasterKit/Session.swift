@@ -32,6 +32,27 @@ public final class Session {
         try core.start()
     }
 
+    /// The app is going to the background: leave the database file complete.
+    public func suspend() {
+        try? core.suspend()
+    }
+
+    /// The app is back: pick up what an extension wrote meanwhile, and sync soon.
+    public func resume() {
+        try? core.resume()
+    }
+
+    /// The current time, in the core's unit (Unix ms).
+    public var nowMs: Int64 { Session.ms(clock()) }
+
+    public nonisolated static func ms(_ date: Date) -> Int64 {
+        Int64((date.timeIntervalSince1970 * 1000).rounded())
+    }
+
+    public nonisolated static func date(_ ms: Int64) -> Date {
+        Date(timeIntervalSince1970: Double(ms) / 1000)
+    }
+
     /// The user's calendar day, which "today" and "overdue" count from.
     public var day: Day {
         Session.day(at: clock(), in: timeZone())
@@ -101,6 +122,19 @@ private final class Bridge: Listener, @unchecked Sendable {
 }
 
 extension TaskRow: Identifiable {}
+extension ProjectItem: Identifiable {}
+extension EpicItem: Identifiable {}
+extension TagItem: Identifiable {}
+extension SavedView: Identifiable {}
+extension StatusItem: Identifiable {}
+extension AttachmentItem: Identifiable {}
+extension BlockItem: Identifiable {}
+extension TaskRef: Identifiable {}
+
+extension Stage {
+    /// Done or cancelled.
+    public var isClosed: Bool { self == .done || self == .cancelled }
+}
 
 extension AppError {
     /// The sentence to show the user.
@@ -113,4 +147,15 @@ extension AppError {
 
 func describe(_ error: Error) -> String {
     (error as? AppError)?.message ?? error.localizedDescription
+}
+
+/// Runs `body`; the error in words when it throws, nil when it worked. Screen models keep
+/// the last one to show.
+func failure(_ body: () throws -> Void) -> String? {
+    do {
+        try body()
+        return nil
+    } catch {
+        return describe(error)
+    }
 }

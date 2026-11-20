@@ -86,6 +86,33 @@ public final class TaskListModel {
         }
     }
 
+    /// Makes again the last edit undone.
+    public func redo() {
+        attempt {
+            _ = try session.core.redo()
+            reload()
+        }
+    }
+
+    /// Whether undo and redo have something to do.
+    public var undoState: UndoState { session.core.undoState() }
+
+    /// Moves a task within its section to `index` (as `List.onMove` reports it).
+    public func move(_ task: TaskRow, to index: Int, in section: Section) {
+        let placement = placement(of: task.id, at: index, in: section.tasks.map(\.id))
+        attempt {
+            try session.core.moveTask(taskId: task.id, placement: placement)
+            reload()
+        }
+    }
+
+    public func delete(_ task: TaskRow) {
+        attempt {
+            try session.core.deleteTask(taskId: task.id)
+            reload()
+        }
+    }
+
     @discardableResult
     private func attempt(_ body: () throws -> Void) -> Bool {
         do {

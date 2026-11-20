@@ -12,8 +12,15 @@ struct TaskListView: View {
             ForEach(list.sections) { section in
                 Section(section.label) {
                     ForEach(section.tasks) { task in
-                        TaskRowView(task: task) {
-                            withAnimation { list.toggle(task) }
+                        NavigationLink(value: Route.task(id: task.id)) {
+                            TaskRowView(task: task) {
+                                withAnimation { list.toggle(task) }
+                            }
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                withAnimation { list.delete(task) }
+                            }
                         }
                         .swipeActions(edge: .leading, allowsFullSwipe: true) {
                             Button {
@@ -22,6 +29,11 @@ struct TaskListView: View {
                                 Label(task.isClosed ? "Reopen" : "Done", systemImage: "checkmark")
                             }
                             .tint(.green)
+                        }
+                    }
+                    .onMove { from, to in
+                        if let index = from.first {
+                            list.move(section.tasks[index], to: to, in: section)
                         }
                     }
                 }
@@ -37,6 +49,14 @@ struct TaskListView: View {
         }
         .refreshable {
             await sync.syncNow()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .bottomBar) {
+                Button("Undo", systemImage: "arrow.uturn.backward") { list.undo() }
+                    .disabled(!list.undoState.canUndo)
+                Button("Redo", systemImage: "arrow.uturn.forward") { list.redo() }
+                    .disabled(!list.undoState.canRedo)
+            }
         }
         .safeAreaInset(edge: .bottom) {
             capture

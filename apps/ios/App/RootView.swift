@@ -1,24 +1,28 @@
 import SwiftUI
 import TaskMasterKit
 
-/// The walking skeleton (docs/ios-plan.md, P1): one list with a scope switch, a capture
-/// field and the sync screen. The real navigation comes with P2.
+/// The home screen: one list with a scope switch, a capture field and the sync screen
+/// (the walking skeleton, P1), with Browse leading to everything else. Stand-in layout
+/// until the design pass.
 struct RootView: View {
     let session: Session
     @State private var list: TaskListModel
     @State private var sync: SyncModel
     @State private var scope = ScopeChoice.inbox
     @State private var showingSync = false
+    @State private var path: [Route] = []
+    @State private var notifications: Notifications
     @Environment(\.scenePhase) private var scenePhase
 
     init(session: Session) {
         self.session = session
         _list = State(initialValue: TaskListModel(session: session, scope: .inbox))
         _sync = State(initialValue: SyncModel(session: session))
+        _notifications = State(initialValue: Notifications(session: session))
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             TaskListView(list: list, sync: sync)
                 .navigationTitle(scope.title)
                 .toolbar {
@@ -31,6 +35,14 @@ struct RootView: View {
                         .pickerStyle(.segmented)
                         .accessibilityIdentifier("scopePicker")
                     }
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            path.append(.browse)
+                        } label: {
+                            Label("Browse", systemImage: "sidebar.left")
+                        }
+                        .accessibilityIdentifier("browseButton")
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             showingSync = true
@@ -41,6 +53,7 @@ struct RootView: View {
                     }
                 }
                 .navigationBarTitleDisplayMode(.inline)
+                .routes(session: session, sync: sync)
         }
         .sheet(isPresented: $showingSync) {
             SyncView(sync: sync)
@@ -49,10 +62,17 @@ struct RootView: View {
             list.scope = choice.scope
         }
         .onChange(of: scenePhase) { _, phase in
-            // Coming back to the app: see what changed elsewhere.
-            if phase == .active {
-                session.core.syncKick()
+            switch phase {
+            case .active:
+                // Coming back: pick up what extensions wrote, sync, reschedule reminders.
+                session.resume()
                 list.reload()
+                Task { await notifications.refresh() }
+            case .background:
+                // Leave the database file complete before iOS suspends the app.
+                session.suspend()
+            default:
+                break
             }
         }
         .task {
@@ -62,11 +82,13 @@ struct RootView: View {
                 await sync.syncNow()
             } else {
                 await sync.refresh()
+                await notifications.start()
             }
         }
     }
 
     private var syncIcon: String {
+        if sync.status.update != nil { return "arrow.down.app" }
         if sync.status.lastError != nil { return "exclamationmark.icloud" }
         if !sync.status.joined { return "icloud.slash" }
         return sync.status.syncing ? "arrow.triangle.2.circlepath.icloud" : "checkmark.icloud"
