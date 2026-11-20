@@ -4,11 +4,24 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.26.0** (2026-11-20, on `main`; notes `docs/releases/0.26.0.md`): the Roadmap
+(epics across projects, a timeline per epic, saved roadmap views; ADR 031), Outlook
+calendar sync on Windows (ADR 030), a Today panel on All tasks with list rows that drag,
+board lanes with no open tasks hidden, a task closes when marked done and its timer stops,
+quick capture starts a timer (Alt+Enter) and keeps the cursor on macOS, Cmd/Ctrl+Enter in
+Send to agent, Linux builds without libclang. Integrated on `release-0.26.0` from those 9
+branches (the iPhone branches stay out); the merge fixed the Roadmap's ADR number (031),
+the close-on-done timer tests (they had never run: the storage listener now skips without
+a window) and formatting. Checks on the merged tree: `cargo fmt --check`, clippy, `cargo
+test --workspace` (339 passed, 8 ignored), biome, typecheck, `pnpm test` (595 passed, 2
+skipped). Schema 17, unchanged.
+
 **Send to agent: Cmd/Ctrl+Enter starts it** (2026-11-19, branch
 `worktree-send-to-agent-cmd-enter`): in the Send to agent dialog, Cmd+Enter (Ctrl+Enter on
 Windows/Linux) from any field starts the session, same as Start / Open in Claude, and does
 nothing while Start is disabled. The button's tooltip names the shortcut. Test in
 `agents.test.tsx`. Tests and biome not run in the session (installing deps was not allowed).
+
 **Linux/WSL desktop build without libclang** (2026-11-19, branch
 `worktree-fix-linux-whisper-bindings`): since 9a84fec, whisper-rs-sys's bindgen panicked
 ("Unable to find libclang") on Linux without libclang; its fallback to the shipped bindings
@@ -18,6 +31,7 @@ ubuntu-22.04 ships libclang; they keep generating bindings (comment in `ci.yml`)
 devenv: `WHISPER_DONT_GENERATE_BINDINGS=1 cargo …` or install libclang-dev. Not run here
 (macOS session, devenv evaluation not permitted): check `devenv shell` + `cargo test -p
 taskmaster-desktop` in WSL.
+
 **Start the timer from quick capture** (2026-11-20, branch `capture-start-timer`): the small
 quick-capture window saves a task and starts its timer with Alt+Enter or its Start timer
 button (`CaptureBox` `withTimer`, `onCaptured` gets `how.timer`; `startTimer` as from the
@@ -28,6 +42,7 @@ localStorage. Alt+Enter is in the shortcut list and reserved. Tests: three in
 typecheck, `pnpm test` (553 passed, 2 skipped); no Rust change, so clippy and `cargo test`
 were not run. Not yet tried in the running app (the footer may wrap to two lines at the
 window's 660 px).
+
 **Quick capture: cursor in the field on macOS** (2026-11-20, branch
 `quick-capture-focus-mac`): opening capture on macOS left no cursor in the input, and
 Shift+Enter opened the editor without one in the description. Cause: tao gives the
@@ -39,6 +54,7 @@ showing it (`Webview::set_focus`, wry's `makeFirstResponder`: no app activation)
 `expand` control does the same from the page (`core:webview:allow-set-webview-focus`),
 and the editor mounts only once the window has grown. Tests for the order; checked
 clippy, biome, `pnpm test`. Not yet tried in the real macOS app.
+
 **Outlook calendar through classic Outlook** (2026-11-20, branch `outlook-calendar`; ADR
 030): for the user's company Microsoft 365 account (no admin rights, Windows). New crate
 `crates/outlook` (`taskmaster-outlook`): classic Outlook's calendar over COM (late-bound
@@ -58,6 +74,7 @@ a scratch rustup toolchain with that target and a stand-in C compiler for SQLite
 script). **Not run against Outlook**: to check on the user's PC (ADR 030 lists what),
 also with the New Outlook toggle on. Later: Microsoft Graph for macOS (company consent
 may block it); write the event body if the object model guard allows it.
+
 **Roadmap** (2026-11-20, branch `roadmap`; ADR 031, proposed): a Roadmap page (Gantt) under
 Lineage in the sidebar, the rail and the palette (`features/roadmap/`), on two levels.
 `/roadmap`: the epics across projects, grouped by home project (projects multi-filter;
@@ -81,14 +98,6 @@ biome, typecheck, `pnpm test` (574 passed, 2 skipped). Tried in the browser show
 timeline with its target date, Days zoom, dark and light. Not yet tried in the Tauri app.
 Backlog (the user's tasks): export roadmap images; a server endpoint rendering one.
 
-**Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
-desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
-folders only from this device's sessions, devenv for agents. Schema 17, unchanged.
-
-**Release 0.24.0** (2026-11-19, on `main`; notes `docs/releases/0.24.0.md`): M21 terminal
-sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
-Schema 17: update the sync server with the app.
-
 **Board: hide lanes with no open tasks** (2026-11-20, branch `hide-empty-epic-lanes`): with
 swimlanes on, a lane whose cards are all done or cancelled (a finished epic, also project
 and priority lanes) is hidden; Display → "Show lanes with no open tasks" brings it back,
@@ -96,6 +105,7 @@ collapsed as before. New `ViewSpec.show_closed_lanes` (serde default false, so s
 hide them too; no schema change). Column counts leave hidden lanes out. When only closed
 columns are shown (a Done-only status filter) nothing is hidden. `buildBoard` in
 `lib/board.ts`; tests in `board.test.ts`, `app.test.tsx`, `store.rs`.
+
 **Today panel on All tasks** (2026-11-20, branch `today-side-panel`): a "Today" toggle in
 the All tasks header opens a panel on the right (`features/today/TodayPanel.tsx`, open state
 remembered per machine as `task-master.today-panel`). It lists the Today view's tasks flat
@@ -111,6 +121,30 @@ start a drag. Tests: `todayTasks`, `listDragGroup`, app "the Today panel on All 
 `pnpm test` (555 passed, 2 skipped); no Rust changes, so no cargo run. Tried in the
 showcase page (drag and click). To check: with the task panel open too, a narrow window
 leaves the list little room.
+
+**Close a task when it is marked done** (2026-11-19, branch `close-on-done`): marking a
+task done in its side panel or full page (the check, the Status menu or the status pill)
+closes it: the panel closes, the full page goes back to its project or the Inbox.
+Reopening never closes. Settings → General → Finishing tasks turns it off, remembered on
+this computer (`lib/detailPrefs.ts`, on by default). The quick-capture window is
+unchanged. Test: `task-detail/closeOnDone.test.tsx` (3). Checks: biome, typecheck,
+`pnpm test` (551 passed; the 2 `DatePicker.test.tsx` failures also fail on `main` today,
+likely date-dependent). No Rust changes. Not yet tried in the running app.
+Same branch: a running work timer stops (and logs its run) when its task moves to a done
+or cancelled status, from anywhere (panel, board, list, agent, sync): `stopTimersOnFinish`
+in `store/actions.ts`, mounted in the main window next to `followAgentTimer`. Only the
+move stops it, so a timer started on a task already finished keeps running; undoing the
+move does not restart the timer. Tests: 3 in `store/timer.test.ts`, written but NOT RUN
+yet (the session could not get approval to run pnpm); run `pnpm biome check`,
+typecheck and `pnpm test` before merging.
+
+**Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
+desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
+folders only from this device's sessions, devenv for agents. Schema 17, unchanged.
+
+**Release 0.24.0** (2026-11-19, on `main`; notes `docs/releases/0.24.0.md`): M21 terminal
+sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
+Schema 17: update the sync server with the app.
 
 **devenv: clean desktop builds on macOS** (2026-11-20, on `main`): the entry below was
 checked on a warm `target/`. A clean build of the desktop crate failed in whisper-rs-sys:
@@ -142,22 +176,6 @@ typecheck, `pnpm test` (550 passed, 2 skipped); `taskmaster-core` builds for bot
 targets. A shell entered before this change keeps the old variables: reload it. Later:
 `scripts/ios/build-xcframework.sh` on `p1-ios-walking-skeleton` calls `rustup target add`,
 and devenv's Rust has no rustup (the targets come from `devenv.nix`).
-**Close a task when it is marked done** (2026-11-19, branch `close-on-done`): marking a
-task done in its side panel or full page (the check, the Status menu or the status pill)
-closes it: the panel closes, the full page goes back to its project or the Inbox.
-Reopening never closes. Settings → General → Finishing tasks turns it off, remembered on
-this computer (`lib/detailPrefs.ts`, on by default). The quick-capture window is
-unchanged. Test: `task-detail/closeOnDone.test.tsx` (3). Checks: biome, typecheck,
-`pnpm test` (551 passed; the 2 `DatePicker.test.tsx` failures also fail on `main` today,
-likely date-dependent). No Rust changes. Not yet tried in the running app.
-Same branch: a running work timer stops (and logs its run) when its task moves to a done
-or cancelled status, from anywhere (panel, board, list, agent, sync): `stopTimersOnFinish`
-in `store/actions.ts`, mounted in the main window next to `followAgentTimer`. Only the
-move stops it, so a timer started on a task already finished keeps running; undoing the
-move does not restart the timer. Tests: 3 in `store/timer.test.ts`, written but NOT RUN
-yet (the session could not get approval to run pnpm); run `pnpm biome check`,
-typecheck and `pnpm test` before merging.
-
 **Back to the desktop app's conversation** (2026-11-19, on `main` from branch `desktop-open-session`;
 ADR 029 second amendment): the "In desktop app" state (session card, Agents page) is a
 button. `agent_open_desktop` (shell `agents/desktop.rs`) finds the desktop app's session
@@ -610,7 +628,6 @@ Integrated-tree checks pass: `cargo clippy -- -D warnings`, `cargo test`, `cargo
 and opened the app; a temporary development navigation requested the Files route without
 logged runtime errors, then was removed. The shared desktop capture did not show the Files
 window, so visual and pointer interaction remain unverified.
-
 
 **Agents page: recent sessions by day** (2026-11-12, uncommitted on `main`): Recent
 sessions are split under day dividers ("Today", "Yesterday", "Monday, Nov 9", with the

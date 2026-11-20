@@ -89,11 +89,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Click "In desktop app" on an agent session to go back to its conversation in the Claude desktop app (macOS and Windows). The sidebar's Projects section folds like Epics. Fix: Send to agent no longer prefills a folder from another computer's sessions.
+            A Roadmap page: your epics across projects on a timeline, and each epic's tasks lined up against its target date; drag bars to change dates, save roadmaps as views. Calendar sync with classic Outlook on Windows. A Today panel on All tasks, with list rows you can drag. Board lanes with no open tasks are hidden. Marking a task done closes it and stops its timer. Quick capture can start a timer (Alt+Enter); Cmd/Ctrl+Enter starts Send to agent.
 
-            Database schema 17, as in 0.24.0: a 0.24 sync server keeps working. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.25.0.
+            Database schema 17, as in 0.24.0: a 0.24 or 0.25 sync server keeps working. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.26.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.25.0/docs/releases/0.25.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.26.0/docs/releases/0.26.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.
