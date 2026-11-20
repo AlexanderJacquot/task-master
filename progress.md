@@ -2460,7 +2460,8 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 - Notes (ADR 032): notes in the command palette and search; images and files in notes;
   drag and drop between folders; MCP tools so agents can read and write notes; a
-  project's notes on its page.
+  project's notes on its page. Each is a backlog task in task-master (project Task
+  Master, titles "Notes: …"), with a to-do to check notes in the Tauri app.
 - Roadmap (ADR 031): an MCP tool to read a roadmap (bars, late links); "push dependents"
   when a bar moves past them; moving an epic's bar could offer to shift its tasks; a
   `start_date` on epics and tasks if starts matter outside the roadmap.
