@@ -9,6 +9,15 @@ Running log for task-master. Read at the start of every session; update at the e
 Windows/Linux) from any field starts the session, same as Start / Open in Claude, and does
 nothing while Start is disabled. The button's tooltip names the shortcut. Test in
 `agents.test.tsx`. Tests and biome not run in the session (installing deps was not allowed).
+**Linux/WSL desktop build without libclang** (2026-11-19, branch
+`worktree-fix-linux-whisper-bindings`): since 9a84fec, whisper-rs-sys's bindgen panicked
+("Unable to find libclang") on Linux without libclang; its fallback to the shipped bindings
+only covers a failed parse. `devenv.nix` sets `WHISPER_DONT_GENERATE_BINDINGS=1` on Linux
+only (macOS and Windows keep generating theirs). The Linux CI and release jobs pass because
+ubuntu-22.04 ships libclang; they keep generating bindings (comment in `ci.yml`). Outside
+devenv: `WHISPER_DONT_GENERATE_BINDINGS=1 cargo …` or install libclang-dev. Not run here
+(macOS session, devenv evaluation not permitted): check `devenv shell` + `cargo test -p
+taskmaster-desktop` in WSL.
 
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
@@ -2334,11 +2343,10 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
   task-master tool sets (only the local one records the conversation id).
 - Terminal sessions (ADR 028): show them in the MCP (`list_agent_sessions` or their own
   tool), and on the task page when one is filed under a task.
-- Local Linux/WSL builds of the desktop crate fail without libclang: since 9a84fec the
-  `.cargo/config.toml` comment says whisper-rs-sys falls back to its shipped bindings
-  where libclang is missing, but bindgen panics first ("Unable to find libclang"). Set
-  `WHISPER_DONT_GENERATE_BINDINGS=1` for Linux only (or add libclang to devenv). Check
-  the Linux CI job too.
+- The `.cargo/config.toml` comment still says whisper-rs-sys falls back to its shipped
+  bindings where libclang is missing; it doesn't (bindgen panics first). Correct it (the
+  agent could not edit that file). The first whisper.cpp cmake build in a fresh target
+  profile sometimes fails and passes on retry (seen in WSL; not investigated).
 - Milestone numbers: the Scribe plan's next step was also called M21 (summary, action
   items); it becomes M23 (M21 and M22 went to terminal and desktop app sessions).
 - Scribe (meetings, docs/meetings-plan.md, ADR 025/026): M18–M20 built; M21 (summary,

@@ -37,7 +37,13 @@ in
     "x86_64-apple-darwin"
     "aarch64-apple-ios"
     "aarch64-apple-ios-sim"
-  ]);
+  ]) // lib.optionalAttrs pkgs.stdenv.isLinux {
+    # whisper-rs-sys: use its shipped bindings (laid out for Linux x86-64) instead of
+    # generating them with bindgen, which panics where libclang is missing (WSL, a bare
+    # Linux box) before its own fallback to those bindings can run. macOS and Windows
+    # generate theirs (.cargo/config.toml).
+    WHISPER_DONT_GENERATE_BINDINGS = "1";
+  };
 
   # Same toolchain as CI: version and components from rust-toolchain.toml.
   languages.rust = {
