@@ -4,6 +4,14 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Outlook calendar: explored, proposed** (2026-11-20, branch `outlook-calendar`; ADR 030
+proposed): local paths through the Outlook app do not cover both systems (classic Outlook
+COM is Windows only and being retired; the new Outlook and Outlook for Mac have no local
+API; macOS Calendar/EventKit reaches Microsoft 365 through EWS, off by default since
+2026-10-01). Proposed: a Microsoft Graph provider behind `CalendarProvider` (PKCE loopback
+sign-in like Google), one connected account at a time. Waiting on the user: who owns the
+Entra app registration, and one account or several. No code yet.
+
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
 folders only from this device's sessions, devenv for agents. Schema 17, unchanged.
