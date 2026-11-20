@@ -92,6 +92,6 @@ macOS bundles are **ad-hoc signed** (`tauri.macos.conf.json`, `signingIdentity: 
 ADR 027), and the release job checks the signature of each `.app`, sidecar included. That
 stops Apple Silicon from calling a downloaded app "damaged". Gatekeeper still blocks
 the first open: open the app once, then System Settings → Privacy & Security → *Open
-Anyway* (or `xattr -dr com.apple.quarantine /Applications/task-master.app`). In-app
+Anyway* (or `xattr -dr com.apple.quarantine /Applications/Task Master.app`). In-app
 updates are not quarantined and open without asking. A Developer ID certificate and
 notarization would remove the warning; see ADR 027.
