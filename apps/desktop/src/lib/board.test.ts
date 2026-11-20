@@ -22,6 +22,7 @@ interface Opts {
   swimlane: Swimlane;
   showSubtasks: boolean;
   showCancelled: boolean;
+  showClosedLanes?: boolean;
 }
 const plain: Opts = { swimlane: "none", showSubtasks: false, showCancelled: false };
 
@@ -43,6 +44,7 @@ function build(
       show_subtasks: o.showSubtasks,
       show_cancelled: o.showCancelled,
       show_agent_tasks: false,
+      show_closed_lanes: o.showClosedLanes ?? false,
     },
     c,
     list,
@@ -164,6 +166,57 @@ describe("buildBoard", () => {
       },
     );
     expect(board.lanes.map((l) => l.label)).toEqual(["Launch", "No epic"]);
+  });
+
+  it("hides lanes with no open card unless asked, and leaves them out of the counts", () => {
+    const epic = (id: string, name: string, rank: string): Epic => ({
+      id,
+      project_id: null,
+      name,
+      description: null,
+      target_date: null,
+      state: "active",
+      color: null,
+      icon: null,
+      rank,
+      created_at: 1,
+      updated_at: 1,
+      deleted_at: null,
+    });
+    const lookups = {
+      projects: {},
+      epics: { e1: epic("e1", "Shipped", "a0"), e2: epic("e2", "Next", "a1") },
+    };
+    const tasks = [
+      task({ title: "Released", epic_id: "e1", status_id: STATUS.done }),
+      task({ title: "Dropped", epic_id: "e1", status_id: STATUS.cancelled }),
+      task({ title: "Build", epic_id: "e2" }),
+      task({ title: "Spec", epic_id: "e2", status_id: STATUS.done }),
+      task({ title: "Old chore", status_id: STATUS.done }),
+    ];
+    const byEpic = { ...plain, swimlane: "epic" as const, showCancelled: true };
+    const board = build(tasks, { kind: "all" }, ctx(), statuses, lookups, byEpic);
+    expect(board.lanes.map((l) => l.label)).toEqual(["Next"]);
+    const done = board.columns.find((c) => c.status.id === STATUS.done);
+    expect(done?.count).toBe(1);
+
+    const all = build(tasks, { kind: "all" }, ctx(), statuses, lookups, {
+      ...byEpic,
+      showClosedLanes: true,
+    });
+    expect(all.lanes.map((l) => l.label)).toEqual(["Shipped", "Next", "No epic"]);
+    expect(all.columns.find((c) => c.status.id === STATUS.done)?.count).toBe(3);
+
+    // Only closed columns shown: nothing would be left, so every lane stays.
+    const doneOnly = build(tasks, { kind: "all" }, ctx(), statuses, lookups, byEpic, {
+      ...EMPTY_FILTER,
+      status_ids: [STATUS.done],
+    });
+    expect(doneOnly.lanes.map((l) => l.label)).toEqual(["Shipped", "Next", "No epic"]);
+
+    // Without swimlanes the single lane stays even when every card is closed.
+    const flat = build([tasks[0] as Task], { kind: "all" }, ctx(), statuses, lookups, plain);
+    expect(titles(flat.lanes[0]?.cells[STATUS.done])).toEqual(["Released"]);
   });
 
   it("applies the filter and limits columns to filtered statuses", () => {

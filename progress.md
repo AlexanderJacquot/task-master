@@ -48,6 +48,14 @@ folders only from this device's sessions, devenv for agents. Schema 17, unchange
 sessions, M22 sessions in the Claude desktop app, and the fixes from the macOS run.
 Schema 17: update the sync server with the app.
 
+**Board: hide lanes with no open tasks** (2026-11-20, branch `hide-empty-epic-lanes`): with
+swimlanes on, a lane whose cards are all done or cancelled (a finished epic, also project
+and priority lanes) is hidden; Display → "Show lanes with no open tasks" brings it back,
+collapsed as before. New `ViewSpec.show_closed_lanes` (serde default false, so saved views
+hide them too; no schema change). Column counts leave hidden lanes out. When only closed
+columns are shown (a Done-only status filter) nothing is hidden. `buildBoard` in
+`lib/board.ts`; tests in `board.test.ts`, `app.test.tsx`, `store.rs`.
+
 **devenv: clean desktop builds on macOS** (2026-11-20, on `main`): the entry below was
 checked on a warm `target/`. A clean build of the desktop crate failed in whisper-rs-sys:
 the Nix clang wrapper (still on its own macOS 14.4 SDK) compiled whisper.cpp against

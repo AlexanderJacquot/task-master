@@ -47,6 +47,7 @@ describe.skipIf(!env?.PERF)("10k-task budget", () => {
     filter: EMPTY_FILTER,
     show_cancelled: false,
     show_agent_tasks: false,
+    show_closed_lanes: false,
   };
 
   it("rebuilds a filtered board with swimlanes within budget", () => {

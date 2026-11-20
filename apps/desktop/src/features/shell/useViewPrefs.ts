@@ -14,6 +14,7 @@ export const DEFAULT_DISPLAY: ViewDisplay = {
   show_subtasks: false,
   show_cancelled: false,
   show_agent_tasks: false,
+  show_closed_lanes: false,
   lineage: null,
 };
 

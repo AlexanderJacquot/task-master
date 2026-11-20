@@ -579,6 +579,20 @@ function ViewBody({
                     className="accent-accent"
                   />
                 </label>
+                {board && display.swimlane !== "none" && (
+                  <label
+                    className="flex items-center justify-between gap-2 text-ink-2"
+                    title="Lanes whose cards are all done or cancelled, such as a finished epic"
+                  >
+                    Show lanes with no open tasks
+                    <input
+                      type="checkbox"
+                      checked={display.show_closed_lanes}
+                      onChange={(e) => setDisplay({ show_closed_lanes: e.target.checked })}
+                      className="accent-accent"
+                    />
+                  </label>
+                )}
                 <label className="flex items-center justify-between gap-2 text-ink-2">
                   Show agent tasks
                   <input

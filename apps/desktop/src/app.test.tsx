@@ -311,7 +311,7 @@ describe("the board", () => {
     expect(localStorage.getItem("task-master.board.lanes")).toBe('{"priority:normal":false}');
   });
 
-  it("starts lanes with nothing left to do collapsed, until opened by hand", async () => {
+  it("hides lanes with nothing left to do, or shows them collapsed until opened by hand", async () => {
     cleanup();
     const finished = task({
       title: "File the receipts",
@@ -333,10 +333,12 @@ describe("the board", () => {
     await openBoard();
     fireEvent.click(screen.getByRole("button", { name: "Display" }));
     await pickOption("Swimlanes", "Lanes by priority");
-    // Low has only a done card; Normal has an open one.
+    // Low has only a done card; Normal has an open one. Low is hidden until asked for.
     const normal = await screen.findByRole("region", { name: "Lane Normal" });
     expect(within(normal).getByRole("button", { name: /Normal/, expanded: true })).toBeTruthy();
-    const low = screen.getByRole("region", { name: "Lane Low" });
+    expect(screen.queryByRole("region", { name: "Lane Low" })).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Show lanes with no open tasks" }));
+    const low = await screen.findByRole("region", { name: "Lane Low" });
     const toggle = within(low).getByRole("button", { name: /Low/, expanded: false });
     expect(within(low).queryByRole("button", { name: "File the receipts" })).toBeNull();
     fireEvent.click(toggle);
