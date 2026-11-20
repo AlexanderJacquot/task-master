@@ -45,6 +45,7 @@ export const FIXED_SHORTCUTS: Array<{ keys: string; what: string }> = [
   { keys: "Ctrl+Shift+Space", what: "Quick capture from any app (where the desktop allows it)" },
   { keys: "Ctrl+1 … Ctrl+9", what: "Jump to the first nine projects in the sidebar" },
   { keys: "Shift+Enter", what: "Open a task as a full page (in a list, or when adding one)" },
+  { keys: "Alt+Enter", what: "In quick capture: save the task and start its timer" },
   {
     keys: "Esc",
     what: "Leave a field, clear the selection, close the task panel, or leave the full task page",
@@ -146,6 +147,7 @@ const RESERVED = new Set([
   "Escape",
   "Enter",
   "Shift+Enter",
+  "Alt+Enter",
   "Tab",
   "Shift+Tab",
   "Space",

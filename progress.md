@@ -18,6 +18,16 @@ ubuntu-22.04 ships libclang; they keep generating bindings (comment in `ci.yml`)
 devenv: `WHISPER_DONT_GENERATE_BINDINGS=1 cargo …` or install libclang-dev. Not run here
 (macOS session, devenv evaluation not permitted): check `devenv shell` + `cargo test -p
 taskmaster-desktop` in WSL.
+**Start the timer from quick capture** (2026-11-20, branch `capture-start-timer`): the small
+quick-capture window saves a task and starts its timer with Alt+Enter or its Start timer
+button (`CaptureBox` `withTimer`, `onCaptured` gets `how.timer`; `startTimer` as from the
+task's own button, so a to-do task moves to in progress). The footer says "Saved, timer
+running ✓" and the window hides; the main window's sidebar picks the timer up through
+localStorage. Alt+Enter is in the shortcut list and reserved. Tests: three in
+`captureWindow.test.tsx` (plain Enter starts none; Alt+Enter; the button). Checks: biome,
+typecheck, `pnpm test` (553 passed, 2 skipped); no Rust change, so clippy and `cargo test`
+were not run. Not yet tried in the running app (the footer may wrap to two lines at the
+window's 660 px).
 
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent

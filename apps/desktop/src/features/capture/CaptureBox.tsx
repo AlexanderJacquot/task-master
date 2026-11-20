@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useRef, useState } from "react";
-import { AddIcon as Plus } from "../../components/TaskIcons";
+import { PlayIcon, AddIcon as Plus } from "../../components/TaskIcons";
 import { Button, Chip, cx, PRIORITY_PILL } from "../../components/ui";
 import { formatDue, isoDate } from "../../lib/dates";
 import type { Capture } from "../../lib/types";
@@ -68,8 +68,13 @@ export const CaptureBox = forwardRef<
     defaults?: Omit<NewTaskInput, "title">;
     placeholder?: string;
     autoFocus?: boolean;
-    /** `open`: Shift+Enter was used, so the caller may open the new task. */
-    onCaptured?(taskId: string, how: { open: boolean }): void;
+    /**
+     * `open`: Shift+Enter was used, so the caller may open the new task. `timer`: Alt+Enter
+     * or the timer button was used (only with `withTimer`), so the caller starts its timer.
+     */
+    onCaptured?(taskId: string, how: { open: boolean; timer: boolean }): void;
+    /** Offers saving and starting a timer at once: Alt+Enter and a button (large variants). */
+    withTimer?: boolean;
     onEscape?(): void;
     className?: string;
     /** `inline`: the row above a list; `dialog` / `window`: large input with a footer. */
@@ -101,7 +106,7 @@ export const CaptureBox = forwardRef<
     [api],
   );
 
-  const submit = async (open = false) => {
+  const submit = async (open = false, timer = false) => {
     // Parse the exact text being saved, even if a keystroke's parse is still in flight.
     if (!text.trim()) return;
     const result = await parse(text);
@@ -123,7 +128,7 @@ export const CaptureBox = forwardRef<
     setText("");
     setCapture(null);
     setConfirming(false);
-    if (id) p.onCaptured?.(id, { open });
+    if (id) p.onCaptured?.(id, { open, timer: timer && !!p.withTimer });
   };
 
   const missing = capture ? missingContainers(capture) : [];
@@ -167,7 +172,7 @@ export const CaptureBox = forwardRef<
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              void submit(e.shiftKey);
+              void submit(e.shiftKey, e.altKey);
             } else if (e.key === "Escape") {
               if (confirming) {
                 e.stopPropagation();
@@ -207,6 +212,18 @@ export const CaptureBox = forwardRef<
           {p.onEscape && (
             <Button size="sm" onClick={p.onEscape}>
               Cancel
+            </Button>
+          )}
+          {p.withTimer && (
+            <Button
+              size="sm"
+              onClick={() => void submit(false, true)}
+              disabled={!text.trim()}
+              title="Save the task and start a timer on it (Alt+Enter)"
+              aria-label={confirming ? "Create and start timer" : "Add and start timer"}
+            >
+              <PlayIcon size={13} aria-hidden />
+              {confirming ? "Create, start timer" : "Start timer"}
             </Button>
           )}
           <Button variant="primary" size="sm" onClick={() => void submit()} disabled={!text.trim()}>
