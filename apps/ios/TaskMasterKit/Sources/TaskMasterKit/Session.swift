@@ -13,13 +13,24 @@ public final class Session {
     private var bridge: Bridge?
 
     /// Opens (or creates) the database in `directory`.
-    public init(
+    public convenience init(
         directory: URL,
         deviceName: String,
         clock: @escaping @Sendable () -> Date = { Date() },
         timeZone: @escaping @Sendable () -> TimeZone = { .current }
     ) throws {
-        self.core = try Core.open(dir: directory.path, deviceName: deviceName)
+        try self.init(
+            core: Core.open(dir: directory.path, deviceName: deviceName), clock: clock,
+            timeZone: timeZone)
+    }
+
+    /// Over a core already open (the process's shared one, `SharedStore.core`).
+    public init(
+        core: Core,
+        clock: @escaping @Sendable () -> Date = { Date() },
+        timeZone: @escaping @Sendable () -> TimeZone = { .current }
+    ) {
+        self.core = core
         self.clock = clock
         self.timeZone = timeZone
         let bridge = Bridge(session: self)
@@ -30,6 +41,15 @@ public final class Session {
     /// Starts background sync. Call once the first screen is up.
     public func start() throws {
         try core.start()
+    }
+
+    /// A sync round iOS granted while the app is in the background (background app
+    /// refresh): syncs, then leaves the database file complete. Returns the status.
+    public func refreshInBackground() async -> SyncStatus {
+        let core = self.core
+        let status = await Task.detached { core.syncNow() }.value
+        suspend()
+        return status
     }
 
     /// The app is going to the background: leave the database file complete.

@@ -22,9 +22,18 @@ targets:
   TaskMaster:
     type: application
     platform: iOS
-    sources: [App]
+    # Shared: the App Intents, also compiled into the widgets (their buttons run them).
+    sources: [App, Shared]
     dependencies:
       - package: TaskMasterKit
+      - target: TaskMasterWidgets
+      - target: TaskMasterShare
+    # The data folder is in this group's container, shared with the extensions
+    # (SharedStore). Simulator builds sign locally; a device needs the group registered.
+    entitlements:
+      path: build/App.entitlements
+      properties:
+        com.apple.security.application-groups: [group.space.solarnexus.taskmaster]
     info:
       path: build/App-Info.plist
       properties:
@@ -35,10 +44,64 @@ targets:
         # the LAN, and the test server in CI); anything else needs https.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # taskmaster:// links: notifications, widgets, Spotlight (AppLink), and the
+        # identity provider's sign-in coming back (taskmaster://oidc/callback).
+        CFBundleURLTypes:
+          - CFBundleURLName: space.solarnexus.taskmaster
+            CFBundleURLSchemes: [taskmaster]
+        # Background app refresh: a sync round now and then (BackgroundSync).
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [space.solarnexus.taskmaster.sync]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: space.solarnexus.taskmaster
         PRODUCT_NAME: TaskMaster
+  TaskMasterWidgets:
+    type: app-extension
+    platform: iOS
+    sources: [Widgets, Shared]
+    dependencies:
+      - package: TaskMasterKit
+    entitlements:
+      path: build/Widgets.entitlements
+      properties:
+        com.apple.security.application-groups: [group.space.solarnexus.taskmaster]
+    info:
+      path: build/Widgets-Info.plist
+      properties:
+        CFBundleDisplayName: Task Master
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: space.solarnexus.taskmaster.widgets
+        PRODUCT_NAME: TaskMasterWidgets
+  TaskMasterShare:
+    type: app-extension
+    platform: iOS
+    sources: [Share]
+    dependencies:
+      - package: TaskMasterKit
+    entitlements:
+      path: build/Share.entitlements
+      properties:
+        com.apple.security.application-groups: [group.space.solarnexus.taskmaster]
+    info:
+      path: build/Share-Info.plist
+      properties:
+        CFBundleDisplayName: Task Master
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+              NSExtensionActivationSupportsImageWithMaxCount: 5
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: space.solarnexus.taskmaster.share
+        PRODUCT_NAME: TaskMasterShare
   TaskMasterUITests:
     type: bundle.ui-testing
     platform: iOS

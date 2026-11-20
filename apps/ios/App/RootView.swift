@@ -12,6 +12,8 @@ struct RootView: View {
     @State private var showingSync = false
     @State private var path: [Route] = []
     @State private var notifications: Notifications
+    @State private var spotlight: Spotlight
+    private let router = Router.shared
     @Environment(\.scenePhase) private var scenePhase
 
     init(session: Session) {
@@ -19,6 +21,7 @@ struct RootView: View {
         _list = State(initialValue: TaskListModel(session: session, scope: .inbox))
         _sync = State(initialValue: SyncModel(session: session))
         _notifications = State(initialValue: Notifications(session: session))
+        _spotlight = State(initialValue: Spotlight(session: session))
     }
 
     var body: some View {
@@ -58,6 +61,17 @@ struct RootView: View {
         .sheet(isPresented: $showingSync) {
             SyncView(sync: sync)
         }
+        .onChange(of: router.pending) { _, link in
+            guard let link else { return }
+            router.pending = nil
+            showingSync = false
+            switch link {
+            case .task(let id): path = [.task(id: id)]
+            case .inbox: path = []; scope = .inbox
+            case .today: path = []; scope = .today
+            case .dayPlan: path = [.dayPlan]
+            }
+        }
         .onChange(of: scope) { _, choice in
             list.scope = choice.scope
         }
@@ -68,6 +82,7 @@ struct RootView: View {
                 session.resume()
                 list.reload()
                 Task { await notifications.refresh() }
+                spotlight.refresh()
             case .background:
                 // Leave the database file complete before iOS suspends the app.
                 session.suspend()

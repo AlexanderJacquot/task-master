@@ -15,6 +15,44 @@ sync check (P0 moved the desktop's sync loop into `crates/client`), and a CI run
 `ios.yml` on the mirror. No Apple developer account yet, so no real iPhone. Next: P2,
 starting with phone mockups of the read screens.
 
+**iPhone: P4 finished and P5's system parts** (2026-11-20, branch `p2-ios-plumbing`, `main`
+merged in first, with the devenv fix): stand-in looks, as below.
+- Background app refresh (`BGAppRefreshTask` `space.solarnexus.taskmaster.sync`, scheduled
+  15 min out on going to the background; `Session.refreshInBackground` syncs then
+  checkpoints, and the reminders are rescheduled); a tapped reminder opens its task (app
+  delegate set before launch ends; reminders also show while the app is open).
+- `taskmaster://` links (`AppLink`: `task/<id>`, `inbox`, `today`, `day`; the sign-in
+  callback is not a place) routed by a `Router` the root view follows.
+- The data folder moved into the App Group `group.space.solarnexus.taskmaster`
+  (`SharedStore`: one `Core` per process; Application Support data moves in once; an
+  unsigned build without the group stays in Application Support). Entitlements on the app
+  and both extensions; a device build needs the group registered with the developer
+  account.
+- App Intents in `apps/ios/Shared` (compiled into the app and the widgets): `AddTaskIntent`
+  (capture line), `CompleteTaskIntent` over `TaskEntity` (string query: search; suggested:
+  Today), `ShowTodayIntent` (opens `taskmaster://today`); `TaskMasterShortcuts` phrases.
+  Intent type names, the entity and phrases are a public contract for saved shortcuts.
+- Widget extension `TaskMasterWidgets`: Today's open tasks (small, medium, large, lock
+  screen) with a checkbox per task that runs `CompleteTaskIntent` in the widget's process;
+  reloads after midnight and whenever the app's data changes.
+- Share extension `TaskMasterShare`: a link, text or images into the Inbox (title editable,
+  link in the description, images attached).
+- Spotlight: open tasks indexed (title, project, due date), rebuilt 3 s after changes; a
+  result opens its task.
+
+Tests: TaskMasterKit `SystemTests` (links, the one-time move, a background round; 14 kit
+tests pass on the simulator); UI test `IntentsTests` with AppIntentsTesting (iOS 27, out of
+process: add, find, complete; Show Today), compiled only where the SDK has it; the P1 UI
+test still passes against a seeded local server. By hand in the simulator: the data moved
+into the group container, both links, the share sheet from Safari (the app showed the task
+on return), the widget (added from the gallery; its checkbox completed a task without
+opening the app), Spotlight (found a task and opened it). Rust unchanged here: clippy and
+`cargo test --workspace` (354) pass after the merge with no workaround (one
+`cargo clean -p whisper-rs-sys` for the stale folder). Not checked: the kit's Linux build
+in CI (`SharedStore.groupContainer` is nil there), CI's `macos-26` Xcode with the
+extensions, notifications actually firing, background refresh being granted (simulate
+from Xcode's debugger with `_simulateLaunchForTaskWithIdentifier`), camera capture.
+
 **iPhone plumbing, P2–P6 without the design** (2026-11-20, branch `p2-ios-plumbing` on top
 of `p1-ios-mac`; not merged, docs/ios-plan.md): the user asked for every function now and
 form and UI later, so the plan's "mockups before SwiftUI" step is postponed, not dropped.
