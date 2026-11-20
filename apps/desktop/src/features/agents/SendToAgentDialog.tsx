@@ -2,7 +2,7 @@
 // a background agent session on the task, or open one in the Claude desktop app (ADR 029).
 
 import { Dialog } from "radix-ui";
-import { useEffect, useState } from "react";
+import { type KeyboardEvent, useEffect, useState } from "react";
 import { Button, cx, INPUT, Select } from "../../components/ui";
 import type {
   AgentSession,
@@ -129,7 +129,8 @@ export function SendToAgentDialog({
   );
   const limits = limitStatuses(counted, settings?.limits, Date.now());
   const spent = limits.filter((l) => l.over);
-  const desktopPossible = !!settings && desktopAppPossible(settings.runtime, navigator.userAgent);
+  const isMac = /Mac/.test(navigator.userAgent);
+  const desktopPossible =!!settings && desktopAppPossible(settings.runtime, navigator.userAgent);
   const surface: AgentSurface = desktopPossible ? surfaceChoice : "background";
   const inDesktop = surface === "desktop";
   const needsConfirm =
@@ -173,6 +174,13 @@ export function SendToAgentDialog({
     }
   };
 
+  // Cmd+Enter (Ctrl+Enter on Windows and Linux) starts it from any field.
+  const startOnModEnter = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey) || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    if (canStart) void start();
+  };
+
   const loadBrief = () => {
     if (brief !== null) return;
     api.brief(task.id).then(setBrief, (e) => setBrief(`Cannot load the brief: ${message(e)}`));
@@ -184,6 +192,7 @@ export function SendToAgentDialog({
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" />
         <Dialog.Content
           aria-describedby={undefined}
+          onKeyDown={startOnModEnter}
           className="tex-sheet fixed top-[10%] left-1/2 z-50 flex max-h-[80vh] w-[36rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 flex-col gap-4 overflow-y-auto rounded-2xl border border-line-strong bg-overlay p-5 shadow-2xl shadow-black/40"
         >
           <Dialog.Title className="font-display text-[19px] tracking-wide text-accent">
@@ -359,7 +368,13 @@ export function SendToAgentDialog({
             <Button size="sm" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button size="sm" variant="primary" disabled={!canStart} onClick={() => void start()}>
+            <Button
+              size="sm"
+              variant="primary"
+              disabled={!canStart}
+              title={isMac ? "⌘Enter" : "Ctrl+Enter"}
+              onClick={() => void start()}
+            >
               {busy ? "Starting…" : inDesktop ? "Open in Claude" : "Start"}
             </Button>
           </div>

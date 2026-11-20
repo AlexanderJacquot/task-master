@@ -197,6 +197,32 @@ it("prefills the task's last folder and asks before running everything", async (
   expect(start).toHaveProperty("disabled", false);
 });
 
+it("starts with Cmd/Ctrl+Enter from the instructions, only once it can", async () => {
+  const t = task();
+  const { agents } = await renderAt(`/task/${t.id}`, { tasks: [t] });
+  fireEvent.click(await screen.findByRole("button", { name: "Send to agent" }));
+  const dialog = await screen.findByRole("dialog");
+  const instructions = within(dialog).getByLabelText("Instructions (optional)");
+  fireEvent.change(instructions, { target: { value: "Go" } });
+  // No folder yet: nothing starts.
+  fireEvent.keyDown(instructions, { key: "Enter", ctrlKey: true });
+  expect(agents.started).toEqual([]);
+
+  fireEvent.click(within(dialog).getByRole("button", { name: "Browse…" }));
+  await waitFor(() =>
+    expect(within(dialog).getByRole("textbox", { name: "Folder" })).toHaveProperty(
+      "value",
+      "/picked",
+    ),
+  );
+  // Plain Enter is a new line, not a start.
+  fireEvent.keyDown(instructions, { key: "Enter" });
+  expect(agents.started).toEqual([]);
+  fireEvent.keyDown(instructions, { key: "Enter", metaKey: true });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(agents.started.map((s) => s.prompt)).toEqual(["Go"]);
+});
+
 it("shows an ended session's summary and notes, and continues it with a follow-up", async () => {
   const t = task();
   const done = agentSession({
