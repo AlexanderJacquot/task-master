@@ -4,6 +4,18 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Quick capture: cursor in the field on macOS** (2026-11-20, branch
+`quick-capture-focus-mac`): opening capture on macOS left no cursor in the input, and
+Shift+Enter opened the editor without one in the description. Cause: tao gives the
+keyboard to its own view under the page on every style-mask change (`set_resizable`), and
+the capture panel never activates the app to take it back (ADR 027). Opening calls
+`set_resizable(false)`; Shift+Enter calls `setResizable(true)`, which blurred the
+description editor, and it closes on blur. Now `show_capture` focuses the webview after
+showing it (`Webview::set_focus`, wry's `makeFirstResponder`: no app activation), the
+`expand` control does the same from the page (`core:webview:allow-set-webview-focus`),
+and the editor mounts only once the window has grown. Tests for the order; checked
+clippy, biome, `pnpm test`. Not yet tried in the real macOS app.
+
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
 folders only from this device's sessions, devenv for agents. Schema 17, unchanged.
@@ -2281,6 +2293,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
   a remote upload to Garage after creating the bucket/key (docs/backups.md); dark/light
   toggle; board scrolling with the 10k seed; first GitHub release after the mirror is set
   up (docs/release.md); fresh install on Linux and Windows (M6 "done when").
+- Quick capture on macOS (0.25.x fix): the cursor is in the input on every opening, also
+  after an expanded one, over a full-screen app; Shift+Enter leaves it in the
+  description; capture still does not bring the main window forward.
 - M5 by hand: `Ctrl+Shift+Space` in a native X11 session or on Windows (WSLg only sees it
   while a WSLg window has focus), the capture window (appears centered, focused, hides on
   blur/Esc/save), the 3 s capture goal, palette feel. Shift+Enter there: the window

@@ -602,6 +602,12 @@ fn show_capture(app: &AppHandle) {
         // user off a full-screen app's Space onto the main window's.
         #[cfg(not(target_os = "macos"))]
         let _ = window.set_focus();
+        // `set_resizable` above changes the style mask, and tao then gives the keyboard to
+        // its own view under the page: the input would show no cursor and take no typing.
+        // Focusing the webview (its `makeFirstResponder`) hands it back without
+        // activating the app.
+        #[cfg(target_os = "macos")]
+        let _ = AsRef::<tauri::Webview>::as_ref(&window).set_focus();
         let _ = CaptureOpened.emit_to(app, CAPTURE_WINDOW);
     }
 }

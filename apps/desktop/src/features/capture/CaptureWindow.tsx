@@ -1,3 +1,4 @@
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { currentMonitor, getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState } from "react";
 import { events } from "../../bindings";
@@ -17,7 +18,10 @@ const EXPANDED = { width: 900, height: 720 };
 /** What the capture window needs from its native window; injected so tests can fake it. */
 export interface CaptureControls {
   hide(): Promise<void>;
-  /** Grows the window into an editor. The shell shrinks it back on the next opening. */
+  /**
+   * Grows the window into an editor, then hands the keyboard back to the page. The shell
+   * shrinks it back on the next opening.
+   */
   expand(): Promise<void>;
   /** The hotkey showed the window again. */
   onOpened(handler: () => void): Promise<() => void>;
@@ -41,6 +45,11 @@ export const tauriCaptureControls = (): CaptureControls => {
         ),
       );
       await win.center();
+      // On macOS making the window resizable gives the keyboard to the native view under
+      // the page (tao resets the first responder on every style change), and the capture
+      // panel never activates the app to take it back. Focusing the webview (not the
+      // window, which would activate the app, ADR 027) returns it.
+      await getCurrentWebview().setFocus();
     },
     onOpened: (handler) => events.captureOpened.listen(() => handler()),
     onBlur: (handler) =>
@@ -208,9 +217,16 @@ export function CaptureWindow({ controls }: { controls: CaptureControls }) {
           onEscape={hide}
           onCaptured={(id, how) => {
             if (how.open) {
-              setCreated(id);
-              setEditing(id);
-              void controls.expand();
+              // Grow first, then open the editor: on macOS growing briefly takes the
+              // keyboard from the page, and the description editor closes when it loses
+              // focus, which would leave no cursor in it.
+              void controls
+                .expand()
+                .catch(() => {})
+                .then(() => {
+                  setCreated(id);
+                  setEditing(id);
+                });
               return;
             }
             setSaved(id);
