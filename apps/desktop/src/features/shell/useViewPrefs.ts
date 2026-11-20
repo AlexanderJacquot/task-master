@@ -16,6 +16,7 @@ export const DEFAULT_DISPLAY: ViewDisplay = {
   show_agent_tasks: false,
   show_closed_lanes: false,
   lineage: null,
+  roadmap: null,
 };
 
 export const SPEC_VERSION = 1;

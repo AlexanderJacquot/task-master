@@ -2094,6 +2094,73 @@ export type RemoteView = {
 	has_secret: boolean,
 };
 
+/**  The rows of the roadmap of epics: under their home project, or one list. */
+export type RoadmapGroup = "project" | "none";
+
+/**
+ *  A saved Roadmap: the epics across projects (their bars end on their target dates), or
+ *  one epic's tasks (their bars end on their due dates). Neither has a start date, so where
+ *  bars start is part of the roadmap. The bars are whatever the filters match when it opens.
+ */
+export type RoadmapSpec = RoadmapSpec_Serialize | RoadmapSpec_Deserialize;
+
+/**
+ *  A saved Roadmap: the epics across projects (their bars end on their target dates), or
+ *  one epic's tasks (their bars end on their due dates). Neither has a start date, so where
+ *  bars start is part of the roadmap. The bars are whatever the filters match when it opens.
+ */
+export type RoadmapSpec_Deserialize = {
+	/**
+	 *  The epic whose task timeline this is; `None` for the roadmap of epics. Its tag
+	 *  filter and "Show subtasks" are the spec's.
+	 */
+	epic?: string | null,
+	/**  Epics: `All` also shows done and dropped epics. Tasks: as on the Lineage page. */
+	completion?: LineageCompletion,
+	/**  How the roadmap of epics groups its rows. */
+	group?: RoadmapGroup,
+	zoom?: RoadmapZoom,
+	/**  The first day of each bar, by epic or task id (`YYYY-MM-DD`). */
+	starts?: { [key in string]: string },
+	/**  Folded groups: project ids, or [`FILTER_NONE`]. */
+	collapsed?: string[],
+	/**
+	 *  Leave out epics without a target date, or tasks without a due date (they show as
+	 *  empty rows to draw a bar on).
+	 */
+	hide_unscheduled?: boolean,
+};
+
+/**
+ *  A saved Roadmap: the epics across projects (their bars end on their target dates), or
+ *  one epic's tasks (their bars end on their due dates). Neither has a start date, so where
+ *  bars start is part of the roadmap. The bars are whatever the filters match when it opens.
+ */
+export type RoadmapSpec_Serialize = {
+	/**
+	 *  The epic whose task timeline this is; `None` for the roadmap of epics. Its tag
+	 *  filter and "Show subtasks" are the spec's.
+	 */
+	epic: string | null,
+	/**  Epics: `All` also shows done and dropped epics. Tasks: as on the Lineage page. */
+	completion: LineageCompletion,
+	/**  How the roadmap of epics groups its rows. */
+	group: RoadmapGroup,
+	zoom: RoadmapZoom,
+	/**  The first day of each bar, by epic or task id (`YYYY-MM-DD`). */
+	starts: { [key in string]: string },
+	/**  Folded groups: project ids, or [`FILTER_NONE`]. */
+	collapsed: string[],
+	/**
+	 *  Leave out epics without a target date, or tasks without a due date (they show as
+	 *  empty rows to draw a bar on).
+	 */
+	hide_unscheduled: boolean,
+};
+
+/**  How much time a roadmap's width shows. */
+export type RoadmapZoom = "day" | "week" | "month" | "quarter";
+
 /**  How often the background workers run on this device, in minutes. */
 export type Schedule = Schedule_Serialize | Schedule_Deserialize;
 
@@ -2887,6 +2954,13 @@ export type ViewSpec_Deserialize = {
 	 *  most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
 	 */
 	lineage?: LineageSpec_Deserialize | null,
+	/**
+	 *  Set for a saved Roadmap (ADR 030): it opens on the Roadmap page, on the epics of
+	 *  `filter.project_ids` (any number of projects; none is every project), or on one
+	 *  epic's task timeline. The scope is `All`.
+	 *  Boxed: it keeps `ViewSpec` (and so `Command`) small.
+	 */
+	roadmap?: RoadmapSpec_Deserialize | null,
 };
 
 /**
@@ -2913,6 +2987,13 @@ export type ViewSpec_Serialize = {
 	 *  most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
 	 */
 	lineage: LineageSpec_Serialize | null,
+	/**
+	 *  Set for a saved Roadmap (ADR 030): it opens on the Roadmap page, on the epics of
+	 *  `filter.project_ids` (any number of projects; none is every project), or on one
+	 *  epic's task timeline. The scope is `All`.
+	 *  Boxed: it keeps `ViewSpec` (and so `Command`) small.
+	 */
+	roadmap: RoadmapSpec_Serialize | null,
 };
 
 /**  A saved board or list: a name plus a [`ViewSpec`]. */

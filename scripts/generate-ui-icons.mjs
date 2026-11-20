@@ -85,6 +85,7 @@ const labels = {
   close: "Close",
   check: "Check",
   scribe: "Scribe",
+  roadmap: "Roadmap",
 };
 // Icons per row in the proof sheet; each theme panel grows with the icon count.
 const perRow = 8;

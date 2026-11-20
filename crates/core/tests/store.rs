@@ -1067,6 +1067,7 @@ fn spec(scope: ViewScope) -> ViewSpec {
         show_agent_tasks: false,
         show_closed_lanes: false,
         lineage: None,
+        roadmap: None,
     }
 }
 
@@ -1343,6 +1344,112 @@ fn lineage_specs_parse_with_defaults_and_plain_views_stay_without_one() {
     assert_eq!(canvas["arrange"], "free");
     assert_eq!(canvas["completion"], "all");
     assert!(wire["views"][1]["spec"]["lineage"].is_null());
+}
+
+#[test]
+fn roadmap_views_keep_their_starts_and_are_validated() {
+    let mut s = store();
+    let project = add_project(&mut s, "Homelab", None);
+    let other = add_project(&mut s, "Garden", None);
+    let epic = add_epic(&mut s, "IaC");
+    let a = add_task(&mut s, new_task("Plan"));
+
+    let mut plan = spec(ViewScope::All);
+    plan.filter.project_ids = vec![project.id.clone()];
+    plan.filter.epic_ids = vec![epic.id.clone(), FILTER_NONE.into()];
+    plan.roadmap = Some(Box::new(RoadmapSpec {
+        epic: None,
+        completion: LineageCompletion::Open,
+        group: RoadmapGroup::None,
+        zoom: RoadmapZoom::Month,
+        starts: [
+            (epic.id.clone(), "2026-11-16".to_string()),
+            (a.id.clone(), "2026-12-01".to_string()),
+        ]
+        .into(),
+        collapsed: vec![FILTER_NONE.into()],
+        hide_unscheduled: true,
+    }));
+    let create = |spec: ViewSpec| Command::CreateView {
+        view: NewView {
+            id: Some(new_id()),
+            name: "Q1".into(),
+            spec,
+            rank: None,
+        },
+    };
+    let created = roundtrip(&mut s, create(plan.clone()));
+    let view = created.views[0].clone();
+    assert_eq!(view.spec, plan);
+    assert_eq!(s.snapshot().unwrap().views[0].spec, plan);
+
+    // Moving a bar's start is a spec update, undoable like any other.
+    let mut moved = plan.clone();
+    moved
+        .roadmap
+        .as_mut()
+        .unwrap()
+        .starts
+        .insert(a.id.clone(), "2026-12-08".into());
+    roundtrip(
+        &mut s,
+        Command::UpdateView {
+            id: view.id.clone(),
+            changes: vec![ViewChange::Spec(Box::new(moved.clone()))],
+        },
+    );
+    assert_eq!(s.snapshot().unwrap().views[0].spec, moved);
+
+    // A roadmap of epics spans any number of projects; an epic's timeline names a live epic.
+    let mut two_projects = plan.clone();
+    two_projects.filter.project_ids = vec![project.id.clone(), other.id.clone()];
+    roundtrip(&mut s, create(two_projects));
+    let mut timeline = plan.clone();
+    timeline.roadmap.as_mut().unwrap().epic = Some(epic.id.clone());
+    roundtrip(&mut s, create(timeline.clone()));
+    let mut gone = timeline.clone();
+    gone.roadmap.as_mut().unwrap().epic = Some(new_id());
+    assert!(matches!(
+        s.execute(create(gone)),
+        Err(Error::NotFound { .. })
+    ));
+    let mut scoped = plan.clone();
+    scoped.scope = ViewScope::Today;
+    assert!(invalid(s.execute(create(scoped))).contains("roadmap"));
+    let mut both = plan.clone();
+    both.lineage = Some(LineageSpec::default());
+    assert!(invalid(s.execute(create(both))).contains("either"));
+    let mut bad_date = plan.clone();
+    bad_date
+        .roadmap
+        .as_mut()
+        .unwrap()
+        .starts
+        .insert(a.id.clone(), "next week".into());
+    assert!(invalid(s.execute(create(bad_date))).contains("roadmap start"));
+}
+
+#[test]
+fn roadmap_specs_parse_with_defaults() {
+    let mut s = store();
+    let json = serde_json::json!([
+        { "type": "create_view", "view": { "name": "Plan",
+          "spec": { "version": 1, "scope": { "kind": "all" }, "roadmap": {} } } }
+    ]);
+    let commands: Vec<Command> = serde_json::from_value(json).unwrap();
+    let changes = s.execute_all(commands).unwrap();
+    assert_eq!(
+        changes.views[0].spec.roadmap,
+        Some(Box::new(RoadmapSpec::default()))
+    );
+    assert_eq!(changes.views[0].spec.lineage, None);
+
+    let wire = serde_json::to_value(s.snapshot().unwrap()).unwrap();
+    let plan = &wire["views"][0]["spec"]["roadmap"];
+    assert_eq!(plan["group"], "project");
+    assert!(plan["epic"].is_null());
+    assert_eq!(plan["zoom"], "week");
+    assert_eq!(plan["completion"], "all");
 }
 
 #[test]

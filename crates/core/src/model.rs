@@ -652,6 +652,64 @@ pub struct ViewSpec {
     /// most), "Show subtasks" is `show_subtasks`, and the scope is `All`.
     #[serde(default)]
     pub lineage: Option<LineageSpec>,
+    /// Set for a saved Roadmap (ADR 030): it opens on the Roadmap page, on the epics of
+    /// `filter.project_ids` (any number of projects; none is every project), or on one
+    /// epic's task timeline. The scope is `All`.
+    /// Boxed: it keeps `ViewSpec` (and so `Command`) small.
+    #[serde(default)]
+    pub roadmap: Option<Box<RoadmapSpec>>,
+}
+
+/// A saved Roadmap: the epics across projects (their bars end on their target dates), or
+/// one epic's tasks (their bars end on their due dates). Neither has a start date, so where
+/// bars start is part of the roadmap. The bars are whatever the filters match when it opens.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct RoadmapSpec {
+    /// The epic whose task timeline this is; `None` for the roadmap of epics. Its tag
+    /// filter and "Show subtasks" are the spec's.
+    #[serde(default)]
+    pub epic: Option<Id>,
+    /// Epics: `All` also shows done and dropped epics. Tasks: as on the Lineage page.
+    #[serde(default)]
+    pub completion: LineageCompletion,
+    /// How the roadmap of epics groups its rows.
+    #[serde(default)]
+    pub group: RoadmapGroup,
+    #[serde(default)]
+    pub zoom: RoadmapZoom,
+    /// The first day of each bar, by epic or task id (`YYYY-MM-DD`).
+    #[serde(default)]
+    pub starts: BTreeMap<Id, IsoDate>,
+    /// Folded groups: project ids, or [`FILTER_NONE`].
+    #[serde(default)]
+    pub collapsed: Vec<String>,
+    /// Leave out epics without a target date, or tasks without a due date (they show as
+    /// empty rows to draw a bar on).
+    #[serde(default)]
+    pub hide_unscheduled: bool,
+}
+
+/// The rows of the roadmap of epics: under their home project, or one list.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum RoadmapGroup {
+    #[default]
+    Project,
+    None,
+}
+
+/// How much time a roadmap's width shows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum RoadmapZoom {
+    Day,
+    #[default]
+    Week,
+    Month,
+    Quarter,
 }
 
 /// A saved Lineage canvas: the filters the page has beyond [`ViewFilter`], and where the

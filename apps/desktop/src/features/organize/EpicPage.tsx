@@ -182,13 +182,20 @@ export function EpicPage({ epic }: { epic: Epic }) {
       }
       details={<EpicDetails key={epic.id} epic={epic} />}
       actions={
-        <HeaderButton
-          onClick={async () => {
-            if ((await deleteEpic(store, epic.id)) !== null) void navigate({ to: "/inbox" });
-          }}
-        >
-          Delete epic
-        </HeaderButton>
+        <>
+          <HeaderButton
+            onClick={() => void navigate({ to: "/roadmap", search: { epic: epic.id } })}
+          >
+            Timeline
+          </HeaderButton>
+          <HeaderButton
+            onClick={async () => {
+              if ((await deleteEpic(store, epic.id)) !== null) void navigate({ to: "/inbox" });
+            }}
+          >
+            Delete epic
+          </HeaderButton>
+        </>
       }
     />
   );

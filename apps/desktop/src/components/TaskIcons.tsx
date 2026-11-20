@@ -8,6 +8,7 @@ import {
   Calendar,
   CalendarClock,
   CalendarPlus,
+  ChartGantt,
   ChartNoAxesColumn,
   Check,
   ChevronsLeft,
@@ -149,6 +150,7 @@ const CLEAN: Record<IconName, LucideIcon> = {
   close: X,
   check: Check,
   scribe: NotebookPen,
+  roadmap: ChartGantt,
 };
 
 // Lucide fills its 24-unit box edge to edge where the medieval glyphs are cropped larger,
@@ -225,6 +227,8 @@ export const TodayIcon = icon("today");
 export const MetricsIcon = icon("metrics");
 /** Oak tree. */
 export const LineageIcon = icon("lineage");
+/** Pennants on a staff, staggered along it like a plan's phases. */
+export const RoadmapIcon = icon("roadmap");
 /** Fletched arrow. */
 export const SendIcon = icon("send");
 /** Candle clock. */

@@ -1469,6 +1469,22 @@ fn view_spec_json(b: &Batch<'_, '_>, spec: &ViewSpec) -> Result<String> {
             live_task(b, id)?;
         }
     }
+    if let Some(roadmap) = &spec.roadmap {
+        if spec.scope != ViewScope::All {
+            return Err(Error::invalid("a roadmap view covers all tasks"));
+        }
+        if spec.lineage.is_some() {
+            return Err(Error::invalid(
+                "a view is either a lineage view or a roadmap view",
+            ));
+        }
+        if let Some(id) = &roadmap.epic {
+            live_epic(b, id)?;
+        }
+        for start in roadmap.starts.values() {
+            check_date("roadmap start", start)?;
+        }
+    }
     Ok(serde_json::to_string(spec)?)
 }
 
