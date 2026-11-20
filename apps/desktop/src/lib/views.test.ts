@@ -10,6 +10,7 @@ import {
   FILTER_NONE,
   inView,
   matchesFilter,
+  todayTasks,
   type ViewContext,
   type ViewQuery,
 } from "./views";
@@ -348,5 +349,22 @@ describe("descendantIds", () => {
     const b = task({ parent_id: a.id });
     const c = task({ parent_id: b.id });
     expect(descendantIds(a.id, childrenByParent([a, b, c])).sort()).toEqual([b.id, c.id].sort());
+  });
+});
+
+describe("todayTasks", () => {
+  it("lists the Today view's tasks flat: open ones in the default order, then done ones", () => {
+    const picked = task({ title: "picked", today_on: TODAY });
+    const overdue = task({ title: "overdue", due_date: "2026-11-01" });
+    const urgent = task({ title: "urgent", today_on: TODAY, priority: "urgent" });
+    const done = task({ title: "done", today_on: TODAY, status_id: STATUS.done });
+    const out = [
+      task({ title: "tomorrow", today_on: "2026-11-05" }),
+      task({ title: "cancelled", today_on: TODAY, status_id: STATUS.cancelled }),
+      task({ title: "agent", today_on: TODAY, owner: "agent" }),
+      task({ title: "done and due", due_date: TODAY, status_id: STATUS.done }),
+    ];
+    const titles = todayTasks([done, overdue, ...out, picked, urgent], ctx()).map((t) => t.title);
+    expect(titles).toEqual(["urgent", "picked", "overdue", "done"]);
   });
 });

@@ -193,6 +193,18 @@ export function compareTasks(a: Task, b: Task, ctx: ViewContext): number {
   );
 }
 
+/**
+ * The Today panel's tasks, flat: the Today view's (no cancelled or agent tasks), open ones
+ * in the default order, then the ones already done.
+ */
+export function todayTasks(tasks: Iterable<Task>, ctx: ViewContext): Task[] {
+  const list = Array.from(tasks).filter(
+    (t) => inView({ kind: "today" }, t, ctx) && categoryOf(t, ctx) !== "cancelled",
+  );
+  const closed = (t: Task) => (isOpen(t, ctx) ? 0 : 1);
+  return list.sort((a, b) => closed(a) - closed(b) || compareTasks(a, b, ctx));
+}
+
 /** Manual order only, for subtask checklists and board columns. */
 export function compareRank(a: Task, b: Task): number {
   return compareStrings(a.rank, b.rank) || compareStrings(a.id, b.id);
