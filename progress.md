@@ -5,22 +5,27 @@ Running log for task-master. Read at the start of every session; update at the e
 ## Current milestone
 
 **Roadmap** (2026-11-20, branch `roadmap`; ADR 030, proposed): a Roadmap page (Gantt) under
-Lineage in the sidebar, the rail and the palette (`features/roadmap/`). Tasks are bars
-grouped by epic, project or not at all, on a days/weeks/months/quarters scale. A bar ends on
-the task's due date: dragging or ←/→ edits it through `execute`; its start belongs to the
-roadmap (this machine's `task-master.roadmap-layout`, or the saved view), defaulting to the
-estimate in working days. Drag across an unscheduled task's empty row, or its Schedule
-button, to give it a bar. Dependency arrows; a dependent starting before its prerequisite
-ends is flagged. An epic's target date is a draggable milestone. Saved roadmap views:
-`ViewSpec.roadmap` (`RoadmapSpec`: completion, group, zoom, starts, collapsed,
-hide_unscheduled), validated in core (scope All, one project, not with `lineage`, dates);
+Lineage in the sidebar, the rail and the palette (`features/roadmap/`), on two levels.
+`/roadmap`: the epics across projects, grouped by home project (projects multi-filter;
+epics without one show with their tasks' projects), each bar ending on the epic's target
+date and filled with its share of done tasks; arrows between epics derived from their
+tasks' prerequisites. `/roadmap?epic=<id>` (an epic's row, or "Timeline" on the epic page):
+its tasks, subtasks under their parent, bars ending on due dates, the epic's target date as
+a dashed line with a draggable handle; tasks past it are flagged. Bars move, resize and
+nudge (←/→, Alt/Ctrl), or are drawn across an empty row; ends edit the real dates through
+`execute`, starts belong to the roadmap (`task-master.roadmap-layout` on this machine, or
+the saved view), defaulting to the estimate in working days (an epic: its first task, else
+two working weeks). Late links are flagged. Saved roadmap views at both levels:
+`ViewSpec.roadmap` (boxed `RoadmapSpec`: epic, completion, group, zoom, starts, collapsed,
+hide_unscheduled), validated in core (scope All, live epic, not with `lineage`, dates);
 bindings regenerated; new `roadmap` glyph (`paths.json`, lucide `ChartGantt` in clean).
 Tests: core `roadmap_views_keep_their_starts_and_are_validated`,
 `roadmap_specs_parse_with_defaults`; `timeline.test.ts`, `saved.test.ts`,
 `RoadmapPage.test.tsx`. Checks: clippy, `cargo test --workspace` (334 passed, 8 ignored),
-biome, typecheck, `pnpm test` (567 passed, 2 skipped). Tried in the browser showcase
-(`showcase.html#/roadmap`, dark and light): drag, resize, draw, late links, Days zoom. Not
-yet tried in the Tauri app.
+biome, typecheck, `pnpm test` (574 passed, 2 skipped). Tried in the browser showcase
+(`showcase.html#/roadmap`): scheduling and drawing epics, derived epic links, an epic's
+timeline with its target date, Days zoom, dark and light. Not yet tried in the Tauri app.
+Backlog (the user's tasks): export roadmap images; a server endpoint rendering one.
 
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
@@ -2326,8 +2331,8 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 ## Later
 
 - Roadmap (ADR 030): an MCP tool to read a roadmap (bars, late links); "push dependents"
-  when a bar moves past them; epics with a target date but no tasks as their own rows; a
-  task `start_date` if starts matter outside the roadmap.
+  when a bar moves past them; moving an epic's bar could offer to shift its tasks; a
+  `start_date` on epics and tasks if starts matter outside the roadmap.
 - From the macOS run (2026-11-19, see Current milestone): `spellcheck`/autocorrect off
   and no smart punctuation on path inputs; add `cmake` to `devenv.nix` (whisper.cpp,
   sherpa-onnx); a session with both the claude.ai connector and the local server has two

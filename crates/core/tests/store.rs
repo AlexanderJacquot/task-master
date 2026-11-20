@@ -1354,14 +1354,19 @@ fn roadmap_views_keep_their_starts_and_are_validated() {
     let mut plan = spec(ViewScope::All);
     plan.filter.project_ids = vec![project.id.clone()];
     plan.filter.epic_ids = vec![epic.id.clone(), FILTER_NONE.into()];
-    plan.roadmap = Some(RoadmapSpec {
+    plan.roadmap = Some(Box::new(RoadmapSpec {
+        epic: None,
         completion: LineageCompletion::Open,
-        group: RoadmapGroup::Project,
+        group: RoadmapGroup::None,
         zoom: RoadmapZoom::Month,
-        starts: [(a.id.clone(), "2026-12-01".to_string())].into(),
+        starts: [
+            (epic.id.clone(), "2026-11-16".to_string()),
+            (a.id.clone(), "2026-12-01".to_string()),
+        ]
+        .into(),
         collapsed: vec![FILTER_NONE.into()],
         hide_unscheduled: true,
-    });
+    }));
     let create = |spec: ViewSpec| Command::CreateView {
         view: NewView {
             id: Some(new_id()),
@@ -1392,9 +1397,19 @@ fn roadmap_views_keep_their_starts_and_are_validated() {
     );
     assert_eq!(s.snapshot().unwrap().views[0].spec, moved);
 
+    // A roadmap of epics spans any number of projects; an epic's timeline names a live epic.
     let mut two_projects = plan.clone();
     two_projects.filter.project_ids = vec![project.id.clone(), other.id.clone()];
-    assert!(invalid(s.execute(create(two_projects))).contains("one project"));
+    roundtrip(&mut s, create(two_projects));
+    let mut timeline = plan.clone();
+    timeline.roadmap.as_mut().unwrap().epic = Some(epic.id.clone());
+    roundtrip(&mut s, create(timeline.clone()));
+    let mut gone = timeline.clone();
+    gone.roadmap.as_mut().unwrap().epic = Some(new_id());
+    assert!(matches!(
+        s.execute(create(gone)),
+        Err(Error::NotFound { .. })
+    ));
     let mut scoped = plan.clone();
     scoped.scope = ViewScope::Today;
     assert!(invalid(s.execute(create(scoped))).contains("roadmap"));
@@ -1420,12 +1435,16 @@ fn roadmap_specs_parse_with_defaults() {
     ]);
     let commands: Vec<Command> = serde_json::from_value(json).unwrap();
     let changes = s.execute_all(commands).unwrap();
-    assert_eq!(changes.views[0].spec.roadmap, Some(RoadmapSpec::default()));
+    assert_eq!(
+        changes.views[0].spec.roadmap,
+        Some(Box::new(RoadmapSpec::default()))
+    );
     assert_eq!(changes.views[0].spec.lineage, None);
 
     let wire = serde_json::to_value(s.snapshot().unwrap()).unwrap();
     let plan = &wire["views"][0]["spec"]["roadmap"];
-    assert_eq!(plan["group"], "epic");
+    assert_eq!(plan["group"], "project");
+    assert!(plan["epic"].is_null());
     assert_eq!(plan["zoom"], "week");
     assert_eq!(plan["completion"], "all");
 }

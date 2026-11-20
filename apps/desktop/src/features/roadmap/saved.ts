@@ -1,4 +1,4 @@
-// The Roadmap page's settings (ADR 030): kept on this machine for the plain page, or in a
+// The Roadmap page's settings (ADR 030): kept on this machine for the plain pages, or in a
 // saved view's spec, which syncs and undoes like any other view.
 
 import type { RoadmapSpec, ViewSpec } from "../../lib/types";
@@ -7,13 +7,19 @@ import type { Completion } from "../lineage/graph";
 import { DEFAULT_DISPLAY, SPEC_VERSION } from "../shell/useViewPrefs";
 import type { Group, Zoom } from "./timeline";
 
-/** What the header picks: filters, grouping and timescale. */
+/** The two levels: the epics across projects, or one epic's tasks. */
+export type Level = "epics" | "tasks";
+
+/**
+ * What the header picks. The roadmap of epics uses `projects` and `group`; an epic's
+ * timeline uses `tags` and `subtasks`. Both use the rest.
+ */
 export type RoadmapFilter = {
-  project: string;
-  /** Epic ids, or `FILTER_NONE` for tasks without an epic; empty shows all. */
-  epics: string[];
+  /** Project ids, or `FILTER_NONE` for epics without a home project; empty shows all. */
+  projects: string[];
   /** Tag ids, or `FILTER_NONE` for tasks without tags; empty shows all. */
   tags: string[];
+  /** For epics, "open" is the active ones. */
   completion: Completion;
   subtasks: boolean;
   unscheduled: boolean;
@@ -21,21 +27,35 @@ export type RoadmapFilter = {
   zoom: Zoom;
 };
 
-/** What the chart edits beside the tasks' own dates: where bars start, folded groups. */
+/** What the chart edits beside the epics' and tasks' own dates: where bars start, folds. */
 export type RoadmapLayout = { starts: Record<string, string>; collapsed: string[] };
 
-export const DEFAULT_FILTER: RoadmapFilter = {
-  project: "",
-  epics: [],
-  tags: [],
-  completion: "open",
-  subtasks: true,
-  unscheduled: true,
-  group: "epic",
-  zoom: "week",
+export const DEFAULT_FILTER: Record<Level, RoadmapFilter> = {
+  epics: {
+    projects: [],
+    tags: [],
+    completion: "open",
+    subtasks: true,
+    unscheduled: true,
+    group: "project",
+    zoom: "month",
+  },
+  tasks: {
+    projects: [],
+    tags: [],
+    completion: "open",
+    subtasks: true,
+    unscheduled: true,
+    group: "none",
+    zoom: "week",
+  },
 };
 
-export const FILTER_KEY = "task-master.roadmap-filter";
+export const FILTER_KEY: Record<Level, string> = {
+  epics: "task-master.roadmap-filter",
+  tasks: "task-master.epic-timeline-filter",
+};
+/** One layout for both levels: epic and task ids never collide. */
 export const LAYOUT_KEY = "task-master.roadmap-layout";
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
@@ -69,22 +89,22 @@ function writeJson(key: string, value: unknown) {
   }
 }
 
-export function loadFilter(): RoadmapFilter {
-  const raw = readJson(FILTER_KEY);
+export function loadFilter(level: Level): RoadmapFilter {
+  const raw = readJson(FILTER_KEY[level]);
+  const fallback = DEFAULT_FILTER[level];
   return {
-    project: typeof raw.project === "string" ? raw.project : "",
-    epics: ids(raw.epics),
+    projects: ids(raw.projects),
     tags: ids(raw.tags),
-    completion: oneOf(raw.completion, ["all", "open", "ready"], DEFAULT_FILTER.completion),
+    completion: oneOf(raw.completion, ["all", "open", "ready"], fallback.completion),
     subtasks: raw.subtasks !== false,
     unscheduled: raw.unscheduled !== false,
-    group: oneOf(raw.group, ["epic", "project", "none"], DEFAULT_FILTER.group),
-    zoom: oneOf(raw.zoom, ["day", "week", "month", "quarter"], DEFAULT_FILTER.zoom),
+    group: oneOf(raw.group, ["project", "none"], fallback.group),
+    zoom: oneOf(raw.zoom, ["day", "week", "month", "quarter"], fallback.zoom),
   };
 }
 
-export function saveFilter(filter: RoadmapFilter) {
-  writeJson(FILTER_KEY, filter);
+export function saveFilter(level: Level, filter: RoadmapFilter) {
+  writeJson(FILTER_KEY[level], filter);
 }
 
 export function loadLayout(): RoadmapLayout {
@@ -96,13 +116,18 @@ export function saveLayout(layout: RoadmapLayout) {
   writeJson(LAYOUT_KEY, layout);
 }
 
-/** The spec of a saved Roadmap: its filters, and the starts of the bars it shows now. */
+/**
+ * The spec of a saved roadmap: its filters, and the starts of the bars it shows now. With
+ * `epic`, it is that epic's task timeline.
+ */
 export function roadmapSpec(
   filter: RoadmapFilter,
   layout: RoadmapLayout,
   shown: ReadonlySet<string>,
+  epic: string | null,
 ): ViewSpec {
   const roadmap: RoadmapSpec = {
+    epic,
     completion: filter.completion,
     group: filter.group,
     zoom: filter.zoom,
@@ -116,9 +141,8 @@ export function roadmapSpec(
     scope: { kind: "all" },
     filter: {
       ...EMPTY_FILTER,
-      project_ids: filter.project ? [filter.project] : [],
-      epic_ids: [...filter.epics],
-      tag_ids: [...filter.tags],
+      project_ids: epic ? [] : [...filter.projects],
+      tag_ids: epic ? [...filter.tags] : [],
     },
     show_subtasks: filter.subtasks,
     roadmap,
@@ -127,15 +151,15 @@ export function roadmapSpec(
 
 export function filterOf(spec: ViewSpec): RoadmapFilter {
   const roadmap = spec.roadmap;
+  const fallback = DEFAULT_FILTER[roadmap?.epic ? "tasks" : "epics"];
   return {
-    project: spec.filter.project_ids[0] ?? "",
-    epics: [...spec.filter.epic_ids],
+    projects: [...spec.filter.project_ids],
     tags: [...spec.filter.tag_ids],
-    completion: roadmap?.completion ?? DEFAULT_FILTER.completion,
+    completion: roadmap?.completion ?? fallback.completion,
     subtasks: spec.show_subtasks,
     unscheduled: !roadmap?.hide_unscheduled,
-    group: roadmap?.group ?? DEFAULT_FILTER.group,
-    zoom: roadmap?.zoom ?? DEFAULT_FILTER.zoom,
+    group: roadmap?.group ?? fallback.group,
+    zoom: roadmap?.zoom ?? fallback.zoom,
   };
 }
 
@@ -151,8 +175,7 @@ const sameIds = (x: string[], y: string[]) =>
 
 export function sameFilter(a: RoadmapFilter, b: RoadmapFilter): boolean {
   return (
-    a.project === b.project &&
-    sameIds(a.epics, b.epics) &&
+    sameIds(a.projects, b.projects) &&
     sameIds(a.tags, b.tags) &&
     a.completion === b.completion &&
     a.subtasks === b.subtasks &&

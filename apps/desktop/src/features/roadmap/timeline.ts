@@ -1,7 +1,7 @@
 // The Roadmap's time arithmetic (ADR 030): calendar days as whole numbers, bars from due
 // dates and the roadmap's own starts, the visible range, the scale's ticks, and the rows.
 
-import type { Epic, Project, RoadmapGroup, RoadmapZoom, Task } from "../../lib/types";
+import type { Epic, RoadmapGroup, RoadmapZoom, Task } from "../../lib/types";
 import { FILTER_NONE } from "../../lib/views";
 
 export type Zoom = RoadmapZoom;
@@ -182,73 +182,187 @@ export function ticksOf(range: Range, zoom: Zoom): { top: Tick[]; bottom: Tick[]
   }
 }
 
-/** One line of the roadmap: a group's header, or a task. */
+/** What a bar stands for: an epic on the roadmap, or a task on an epic's timeline. */
+export type Item = {
+  id: string;
+  title: string;
+  rank: string;
+  bar: Bar | null;
+  /** Working days a bar drawn with one click takes. */
+  length: number;
+  /** A done task, or an epic that is done or dropped. */
+  done: boolean;
+  /** The share of an epic's tasks that are done, 0 to 1; `null` for a task. */
+  progress: number | null;
+  color: string | null;
+  /** Where it is listed: a project id, `FILTER_NONE`, or "" without groups. */
+  group: string;
+  /** A subtask's parent, when it is on the timeline too. */
+  parent: string | null;
+  /** What it waits on: a task's prerequisites, or the epics an epic's tasks wait on. */
+  after: string[];
+  /** An epic's tasks, from the first start to the last end: a guide while it has no bar. */
+  span: Bar | null;
+};
+
+/** Working days a new epic bar takes, and how early an epic without tasks starts. */
+export const EPIC_DAYS = 10;
+
+export function taskItem(task: Task, bar: Bar | null, done: boolean): Item {
+  return {
+    id: task.id,
+    title: task.title,
+    rank: task.rank,
+    bar,
+    length: estimateDays(task.estimate_min),
+    done,
+    progress: null,
+    color: null,
+    group: "",
+    parent: task.parent_id,
+    after: [...(task.dependency_ids ?? [])],
+    span: null,
+  };
+}
+
+/**
+ * An epic's bar: it ends on its target date and starts on the roadmap's start for it, else
+ * where its earliest task starts, else two working weeks before. No target date, no bar.
+ */
+export function epicBar(
+  epic: Epic,
+  starts: Readonly<Record<string, string>>,
+  taskBars: Bar[],
+): Bar | null {
+  const end = epic.target_date;
+  if (!end) return null;
+  const first = taskBars.length ? taskBars.map((bar) => bar.start).reduce(earlier) : null;
+  const start = starts[epic.id] ?? first ?? addWorkingDays(end, -(EPIC_DAYS - 1));
+  return { start: earlier(start, end), end };
+}
+
+/**
+ * The epics as roadmap items: their bars, their progress (done tasks out of the ones not
+ * cancelled), and which epics they wait on, from their tasks' prerequisites in other epics.
+ */
+export function epicItems(
+  epics: Epic[],
+  tasks: Task[],
+  starts: Readonly<Record<string, string>>,
+  status: { done: ReadonlySet<string>; cancelled: ReadonlySet<string> },
+  groupOf: (epic: Epic) => string,
+): Item[] {
+  const shown = new Set(epics.map((epic) => epic.id));
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const members = new Map<string, Task[]>();
+  const after = new Map<string, Set<string>>();
+  for (const task of tasks) {
+    if (!task.epic_id || !shown.has(task.epic_id)) continue;
+    members.set(task.epic_id, [...(members.get(task.epic_id) ?? []), task]);
+    for (const id of task.dependency_ids ?? []) {
+      const other = byId.get(id)?.epic_id;
+      if (other && other !== task.epic_id && shown.has(other))
+        after.set(task.epic_id, (after.get(task.epic_id) ?? new Set()).add(other));
+    }
+  }
+  return epics.map((epic) => {
+    const list = (members.get(epic.id) ?? []).filter((task) => !status.cancelled.has(task.id));
+    const done = list.filter((task) => status.done.has(task.id)).length;
+    const bars = list.flatMap((task) => barOf(task, starts) ?? []);
+    return {
+      id: epic.id,
+      title: epic.name,
+      rank: epic.rank,
+      bar: epicBar(epic, starts, bars),
+      length: EPIC_DAYS,
+      done: epic.state !== "active",
+      progress: list.length ? done / list.length : 0,
+      color: epic.color,
+      group: groupOf(epic),
+      parent: null,
+      after: [...(after.get(epic.id) ?? [])].sort(),
+      span: bars.length
+        ? {
+            start: bars.map((bar) => bar.start).reduce(earlier),
+            end: bars.map((bar) => bar.end).reduce(later),
+          }
+        : null,
+    };
+  });
+}
+
+/** One line of the roadmap: a group's header, or an epic or task. */
 export type Row =
   | {
       kind: "group";
       key: string;
       label: string;
       color: string | null;
-      /** Tasks under it (scheduled or not), shown or folded. */
+      /** Items under it (scheduled or not), shown or folded. */
       count: number;
       collapsed: boolean;
       /** From the first bar's start to the last bar's end. */
       span: Bar | null;
-      /** The epic it stands for, whose target date is its milestone. */
-      epic: Epic | null;
     }
-  | { kind: "task"; task: Task; bar: Bar | null; group: string };
+  | { kind: "item"; item: Item; depth: number };
 
-type Groupable = { id: string; name: string; color: string | null; rank: string };
+/** Scheduled items first, by start, then by rank. */
+function byStart(a: Item, b: Item): number {
+  if (a.bar && b.bar && a.bar.start !== b.bar.start) return a.bar.start < b.bar.start ? -1 : 1;
+  if (!!a.bar !== !!b.bar) return a.bar ? -1 : 1;
+  return a.rank.localeCompare(b.rank) || a.id.localeCompare(b.id);
+}
+
+/** Items in order, each followed by its subtasks (one level indented, deeper ones too). */
+function nested(items: Item[]): Row[] {
+  const ids = new Set(items.map((item) => item.id));
+  const children = new Map<string, Item[]>();
+  const top: Item[] = [];
+  for (const item of items) {
+    if (item.parent && ids.has(item.parent))
+      children.set(item.parent, [...(children.get(item.parent) ?? []), item]);
+    else top.push(item);
+  }
+  const rows: Row[] = [];
+  const seen = new Set<string>();
+  const add = (item: Item, depth: number) => {
+    if (seen.has(item.id)) return;
+    seen.add(item.id);
+    rows.push({ kind: "item", item, depth });
+    for (const child of (children.get(item.id) ?? []).sort(byStart)) add(child, depth + 1);
+  };
+  for (const item of top.sort(byStart)) add(item, 0);
+  return rows;
+}
+
+type Groupable = { name: string; color: string | null; rank: string };
 
 /**
- * The rows: tasks under their epic or project (by rank, "none" last), each group's tasks
- * by start then rank, unscheduled ones last. A folded group keeps its header only.
+ * The rows: items under their group (by the owner's rank, "none" last) or in one list,
+ * each list by start then rank, unscheduled ones last. A folded group keeps its header.
  */
 export function rowsOf(
-  tasks: Task[],
-  bars: ReadonlyMap<string, Bar>,
-  group: Group,
-  epics: Readonly<Record<string, Epic>>,
-  projects: Readonly<Record<string, Project>>,
+  items: Item[],
+  owners: Readonly<Record<string, Groupable | undefined>> | null,
+  noneLabel: string,
   collapsed: ReadonlySet<string>,
 ): Row[] {
-  const order = (a: Task, b: Task) => {
-    const x = bars.get(a.id);
-    const y = bars.get(b.id);
-    if (x && y && x.start !== y.start) return x.start < y.start ? -1 : 1;
-    if (!!x !== !!y) return x ? -1 : 1;
-    return a.rank.localeCompare(b.rank) || a.id.localeCompare(b.id);
-  };
-  const taskRow = (task: Task, key: string): Row => ({
-    kind: "task",
-    task,
-    bar: bars.get(task.id) ?? null,
-    group: key,
-  });
-  if (group === "none") return [...tasks].sort(order).map((task) => taskRow(task, ""));
-
-  const keyOf = (task: Task) => (group === "epic" ? task.epic_id : task.project_id) ?? FILTER_NONE;
-  const members = new Map<string, Task[]>();
-  for (const task of tasks) {
-    const key = keyOf(task);
-    members.set(key, [...(members.get(key) ?? []), task]);
-  }
-  const owners: Record<string, Groupable | undefined> = group === "epic" ? epics : projects;
+  if (!owners) return nested(items);
+  const members = new Map<string, Item[]>();
+  for (const item of items) members.set(item.group, [...(members.get(item.group) ?? []), item]);
   const keys = [...members.keys()].sort((a, b) => {
     if (a === FILTER_NONE || b === FILTER_NONE) return a === FILTER_NONE ? 1 : -1;
     return (owners[a]?.rank ?? "").localeCompare(owners[b]?.rank ?? "") || a.localeCompare(b);
   });
   const rows: Row[] = [];
   for (const key of keys) {
-    const list = (members.get(key) ?? []).sort(order);
-    const spans = list.flatMap((task) => bars.get(task.id) ?? []);
-    const owner = owners[key];
+    const list = members.get(key) ?? [];
+    const spans = list.flatMap((item) => item.bar ?? []);
     rows.push({
       kind: "group",
       key,
-      label: owner?.name ?? (group === "epic" ? "No epic" : "No project"),
-      color: owner?.color ?? null,
+      label: owners[key]?.name ?? noneLabel,
+      color: owners[key]?.color ?? null,
       count: list.length,
       collapsed: collapsed.has(key),
       span: spans.length
@@ -257,9 +371,8 @@ export function rowsOf(
             end: spans.map((bar) => bar.end).reduce(later),
           }
         : null,
-      epic: group === "epic" ? (epics[key] ?? null) : null,
     });
-    if (!collapsed.has(key)) for (const task of list) rows.push(taskRow(task, key));
+    if (!collapsed.has(key)) rows.push(...nested(list));
   }
   return rows;
 }
@@ -267,15 +380,15 @@ export function rowsOf(
 /** A dependency arrow between two shown bars; `late` when the dependent starts too early. */
 export type Link = { from: string; to: string; late: boolean };
 
-/** Links between bars on the roadmap: a prerequisite should end before its dependent starts. */
-export function linksOf(tasks: Task[], bars: ReadonlyMap<string, Bar>): Link[] {
+/** Links between bars: what an item waits on should end before it starts. */
+export function linksOf(items: Item[]): Link[] {
+  const bars = new Map(items.flatMap((item) => (item.bar ? [[item.id, item.bar] as const] : [])));
   const links: Link[] = [];
-  for (const task of tasks) {
-    const to = bars.get(task.id);
-    if (!to) continue;
-    for (const id of task.dependency_ids ?? []) {
+  for (const item of items) {
+    if (!item.bar) continue;
+    for (const id of item.after) {
       const from = bars.get(id);
-      if (from) links.push({ from: id, to: task.id, late: to.start <= from.end });
+      if (from) links.push({ from: id, to: item.id, late: item.bar.start <= from.end });
     }
   }
   return links;

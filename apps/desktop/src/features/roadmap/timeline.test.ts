@@ -6,6 +6,9 @@ import {
   addWorkingDays,
   barOf,
   dayNumber,
+  epicBar,
+  epicItems,
+  type Item,
   isoOf,
   linksOf,
   newBar,
@@ -13,6 +16,7 @@ import {
   rowsOf,
   shiftBar,
   spanBetween,
+  taskItem,
   ticksOf,
   weekday,
 } from "./timeline";
@@ -117,81 +121,156 @@ describe("range and scale", () => {
   });
 });
 
-describe("rows", () => {
-  const first = epic({ id: "e1", name: "Launch", rank: "a1", target_date: "2026-12-15" });
-  const second = epic({ id: "e2", name: "Polish", rank: "a2", color: "#c00" });
-  const epics = { e1: first, e2: second };
+describe("epics", () => {
+  const status = { done: new Set<string>(), cancelled: new Set<string>() };
 
-  it("groups tasks under their epic by rank, no epic last, scheduled ones by start", () => {
-    const late = task({ title: "Late", epic_id: "e1", due_date: "2026-12-10" });
-    const early = task({ title: "Early", epic_id: "e1", due_date: "2026-12-01" });
-    const loose = task({ title: "Loose", epic_id: "e1" });
-    const polish = task({ title: "Polish it", epic_id: "e2", due_date: "2026-12-05" });
-    const none = task({ title: "None" });
-    const list = [none, loose, late, polish, early];
-    const bars = new Map(
-      list.flatMap((t) => {
-        const bar = barOf(t, {});
-        return bar ? [[t.id, bar] as const] : [];
-      }),
+  it("end on the target date and start where the roadmap says, their first task, or earlier", () => {
+    const launch = epic({ id: "e1", target_date: "2026-12-18" });
+    expect(epicBar(epic({ target_date: null }), {}, [])).toBeNull();
+    expect(epicBar(launch, { e1: "2026-12-01" }, [])).toEqual({
+      start: "2026-12-01",
+      end: "2026-12-18",
+    });
+    expect(
+      epicBar(launch, {}, [
+        { start: "2026-12-10", end: "2026-12-11" },
+        { start: "2026-12-09", end: "2026-12-10" },
+      ]),
+    ).toEqual({ start: "2026-12-09", end: "2026-12-18" });
+    // No tasks scheduled: two working weeks before the target date.
+    expect(epicBar(launch, {}, [])).toEqual({ start: "2026-12-07", end: "2026-12-18" });
+  });
+
+  it("count progress without cancelled tasks, and wait on the epics their tasks wait on", () => {
+    const a = epic({ id: "a", name: "API", rank: "a1", target_date: "2026-12-04" });
+    const b = epic({ id: "b", name: "App", rank: "a2", target_date: "2026-12-04" });
+    const c = epic({ id: "c", name: "Hidden", rank: "a3" });
+    const api = task({ epic_id: "a", due_date: "2026-12-04" });
+    const done = task({ epic_id: "b" });
+    const dropped = task({ epic_id: "b" });
+    const app = task({ epic_id: "b", dependency_ids: [api.id] });
+    const inner = task({ epic_id: "b", dependency_ids: [done.id] });
+    const other = task({ epic_id: "c" });
+    const outside = task({ epic_id: "b", dependency_ids: [other.id] });
+    const items = epicItems(
+      [a, b],
+      [api, done, dropped, app, inner, other, outside],
+      {},
+      { done: new Set([done.id]), cancelled: new Set([dropped.id]) },
+      (e) => e.project_id ?? FILTER_NONE,
     );
-    const rows = rowsOf(list, bars, "epic", epics, {}, new Set());
-    expect(rows.map((row) => (row.kind === "group" ? `# ${row.label}` : row.task.title))).toEqual([
-      "# Launch",
+    expect(items.map((item) => [item.id, item.progress, item.after])).toEqual([
+      ["a", 0, []],
+      // 1 done of 4 (the cancelled one is left out); only shown epics are waited on.
+      ["b", 0.25, ["a"]],
+    ]);
+    expect(items[0]?.group).toBe(FILTER_NONE);
+    expect(items[0]?.span).toEqual({ start: "2026-12-04", end: "2026-12-04" });
+    expect(items[1]?.span).toBeNull();
+    // B starts with the two working weeks before its target, before A ends: late.
+    expect(linksOf(items)).toEqual([{ from: "a", to: "b", late: true }]);
+    expect(epicItems([c], [], {}, status, () => "")[0]?.done).toBe(false);
+    expect(epicItems([{ ...c, state: "done" }], [], {}, status, () => "")[0]?.done).toBe(true);
+  });
+});
+
+describe("rows", () => {
+  const item = (overrides: Partial<Item>): Item => ({
+    id: "x",
+    title: "X",
+    rank: "a",
+    bar: null,
+    length: 1,
+    done: false,
+    progress: null,
+    color: null,
+    group: "",
+    parent: null,
+    after: [],
+    span: null,
+    ...overrides,
+  });
+
+  it("groups items under their project by rank, no project last, scheduled ones by start", () => {
+    const home = project({ name: "Home", rank: "a1" });
+    const work = project({ name: "Work", rank: "a2" });
+    const items = [
+      item({ id: "loose", title: "Loose", group: home.id, rank: "a0" }),
+      item({
+        id: "late",
+        title: "Late",
+        group: home.id,
+        bar: { start: "2026-12-10", end: "2026-12-11" },
+      }),
+      item({
+        id: "early",
+        title: "Early",
+        group: home.id,
+        bar: { start: "2026-12-01", end: "2026-12-02" },
+      }),
+      item({ id: "none", title: "None", group: FILTER_NONE }),
+      item({ id: "work", title: "Work it", group: work.id }),
+    ];
+    const owners = { [home.id]: home, [work.id]: work };
+    const rows = rowsOf(items, owners, "No project", new Set());
+    expect(rows.map((row) => (row.kind === "group" ? `# ${row.label}` : row.item.title))).toEqual([
+      "# Home",
       "Early",
       "Late",
       "Loose",
-      "# Polish",
-      "Polish it",
-      "# No epic",
+      "# Work",
+      "Work it",
+      "# No project",
       "None",
     ]);
-    const launch = rows[0];
-    expect(launch?.kind === "group" && launch.span).toEqual({
+    const first = rows[0];
+    expect(first?.kind === "group" && first.span).toEqual({
       start: "2026-12-01",
-      end: "2026-12-10",
+      end: "2026-12-11",
     });
-    expect(launch?.kind === "group" && launch.epic?.target_date).toBe("2026-12-15");
 
-    const folded = rowsOf(list, bars, "epic", epics, {}, new Set(["e1", FILTER_NONE]));
-    expect(folded.map((row) => (row.kind === "group" ? row.key : row.task.title))).toEqual([
-      "e1",
-      "e2",
-      "Polish it",
+    const folded = rowsOf(items, owners, "No project", new Set([home.id, FILTER_NONE]));
+    expect(folded.map((row) => (row.kind === "group" ? row.key : row.item.title))).toEqual([
+      home.id,
+      work.id,
+      "Work it",
       FILTER_NONE,
     ]);
     expect(folded[0]?.kind === "group" && folded[0].count).toBe(3);
   });
 
-  it("groups by project, or not at all", () => {
-    const home = project({ name: "Home" });
-    const a = task({ title: "A", project_id: home.id });
-    const b = task({ title: "B" });
-    const byProject = rowsOf([a, b], new Map(), "project", {}, { [home.id]: home }, new Set());
-    expect(byProject.map((row) => (row.kind === "group" ? row.label : row.task.title))).toEqual([
-      "Home",
-      "A",
-      "No project",
-      "B",
-    ]);
-    expect(rowsOf([a, b], new Map(), "none", {}, {}, new Set())).toHaveLength(2);
+  it("lists subtasks under their parent without groups", () => {
+    const items = [
+      item({
+        id: "child",
+        title: "Child",
+        parent: "parent",
+        bar: { start: "2026-12-01", end: "2026-12-01" },
+      }),
+      item({ id: "parent", title: "Parent", bar: { start: "2026-12-05", end: "2026-12-06" } }),
+      item({
+        id: "orphan",
+        title: "Orphan",
+        parent: "gone",
+        bar: { start: "2026-12-03", end: "2026-12-03" },
+      }),
+    ];
+    expect(
+      rowsOf(items, null, "", new Set()).map((row) =>
+        row.kind === "item" ? `${row.depth}:${row.item.title}` : "",
+      ),
+    ).toEqual(["0:Orphan", "0:Parent", "1:Child"]);
   });
 });
 
 describe("links", () => {
-  it("flags a dependent that starts before its prerequisite ends", () => {
+  it("flag a dependent that starts before its prerequisite ends", () => {
     const a = task({ due_date: "2026-11-25" });
     const b = task({ due_date: "2026-11-30", dependency_ids: [a.id] });
     const c = task({ due_date: "2026-11-25", dependency_ids: [a.id] });
     const d = task({ dependency_ids: [a.id] });
-    const list = [a, b, c, d];
-    const bars = new Map(
-      list.flatMap((t) => {
-        const bar = barOf(t, {});
-        return bar ? [[t.id, bar] as const] : [];
-      }),
-    );
-    expect(linksOf(list, bars)).toEqual([
+    const items = [a, b, c, d].map((t) => taskItem(t, barOf(t, {}), false));
+    expect(linksOf(items)).toEqual([
       { from: a.id, to: b.id, late: false },
       { from: a.id, to: c.id, late: true },
     ]);

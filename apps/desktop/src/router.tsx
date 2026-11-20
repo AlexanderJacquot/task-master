@@ -89,7 +89,14 @@ const lineageRoute = createRoute({
 const roadmapRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "roadmap",
-  component: () => <RoadmapPage />,
+  // ?epic=<epic id> opens that epic's task timeline (an epic on the roadmap, or its page).
+  validateSearch: (search: Record<string, unknown>): { epic?: string } => ({
+    ...(typeof search.epic === "string" && search.epic && { epic: search.epic }),
+  }),
+  component: function RoadmapView() {
+    const { epic } = roadmapRoute.useSearch();
+    return <RoadmapPage key={epic ?? ""} {...(epic && { epic })} />;
+  },
 });
 
 const agentsRoute = createRoute({
