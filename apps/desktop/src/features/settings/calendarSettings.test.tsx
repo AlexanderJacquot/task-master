@@ -128,3 +128,20 @@ it("moves Calendar to the server and back without disconnecting Google", async (
     ),
   );
 });
+
+it("connects classic Outlook on Windows and disconnects it", async () => {
+  const calendar = fakeCalendar({ outlook_available: true });
+  renderWith(calendar);
+  fireEvent.click(await screen.findByRole("button", { name: "Connect Outlook" }));
+  await waitFor(() => expect(calendar.calls).toEqual(["connect outlook"]));
+  expect(await screen.findByText(/Connected to Outlook \(me@company\.example\)/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+  await waitFor(() => expect(calendar.calls).toEqual(["connect outlook", "disconnect outlook"]));
+  expect(await screen.findByRole("button", { name: "Connect Outlook" })).toBeTruthy();
+});
+
+it("offers Outlook only where classic Outlook can be reached", async () => {
+  renderWith(fakeCalendar());
+  expect(await screen.findByRole("button", { name: "Connect Google Calendar" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Connect Outlook" })).toBeNull();
+});

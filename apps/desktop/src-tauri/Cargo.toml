@@ -17,6 +17,8 @@ tauri-build = { version = "2.5", features = [] }
 taskmaster-core = { workspace = true, features = ["specta"] }
 # Sync with the task-master server (ADR 015, M13).
 taskmaster-client = { path = "../../../crates/client" }
+# Classic Outlook's calendar through COM, on Windows (ADR 030).
+taskmaster-outlook = { path = "../../../crates/outlook" }
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8.3"
 tauri-plugin-global-shortcut = "2.4.1"

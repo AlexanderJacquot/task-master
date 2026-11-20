@@ -78,6 +78,18 @@ export const commands = {
 	 *  OAuth client is kept for reconnecting.
 	 */
 	googleDisconnect: () => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("google_disconnect")),
+	/**
+	 *  Connects classic Outlook on this PC (ADR 030): reaches it (starting it if needed),
+	 *  then syncs with its main calendar. Google must be disconnected first.
+	 */
+	outlookConnect: () => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("outlook_connect")),
+	/**
+	 *  Stops syncing with Outlook and forgets the synced calendars. The events stay in
+	 *  Outlook.
+	 */
+	outlookDisconnect: () => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("outlook_disconnect")),
+	/**  Opens an event of the Outlook calendar in Outlook. */
+	outlookOpenEvent: (eventId: string) => typedError<null, CommandError>(__TAURI_INVOKE("outlook_open_event", { eventId })),
 	/**  Shows or hides one of the account's calendars, then syncs. */
 	setCalendarShown: (calendarId: string, shown: boolean) => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("set_calendar_shown", { calendarId, shown })),
 	calendarSyncNow: () => typedError<CalendarStatus_Serialize, CommandError>(__TAURI_INVOKE("calendar_sync_now")),
@@ -767,6 +779,10 @@ export type CalendarStatus_Deserialize = {
 	last_error?: string | null,
 	last_report?: SyncReport | null,
 	sources: CalendarSource_Deserialize[],
+	/**  Classic Outlook can be connected on this device (Windows). */
+	outlook_available: boolean,
+	/**  The connected Outlook mailbox (ADR 030); Google is then not connected. */
+	outlook?: string | null,
 };
 
 /**  What settings and the calendar page show. */
@@ -783,6 +799,10 @@ export type CalendarStatus_Serialize = {
 	last_error: string | null,
 	last_report: SyncReport | null,
 	sources: CalendarSource_Serialize[],
+	/**  Classic Outlook can be connected on this device (Windows). */
+	outlook_available: boolean,
+	/**  The connected Outlook mailbox (ADR 030); Google is then not connected. */
+	outlook: string | null,
 };
 
 /**  Sent when a sync starts and ends, so views re-read events and status. */

@@ -626,6 +626,39 @@ describe("events from Google Calendar", () => {
     expect((calendar.ranges.at(-1)?.to_date ?? "") > today).toBe(true);
   });
 
+  it("opens Outlook events in Outlook when Outlook is the connected calendar", async () => {
+    const meeting = { ...standup, id: "00000000ABCD", link: null, color: null };
+    const calendar = fakeCalendar(
+      {
+        connected: true,
+        outlook: "me@company.example",
+        last_sync_at: Date.now() - 60_000,
+        sources: [
+          {
+            id: "me@example.com",
+            name: "Calendar",
+            color: null,
+            primary: true,
+            target: true,
+            shown: true,
+            synced_at: 1,
+          },
+        ],
+      },
+      [meeting],
+    );
+    await renderCalendar("/calendar", { calendar: calendar.api });
+    expect(await screen.findByText(/Outlook synced 1 min ago/)).toBeTruthy();
+    const column = await screen.findByTestId(`time-column-${today}`);
+    fireEvent.click(
+      await within(column).findByRole("button", { name: /^Standup, .*calendar event/ }),
+    );
+    const details = await screen.findByRole("dialog", { name: "Calendar event" });
+    expect(within(details).queryByRole("button", { name: "Open in Google Calendar" })).toBeNull();
+    fireEvent.click(within(details).getByRole("button", { name: "Open in Outlook" }));
+    expect(calendar.calls).toEqual(["open 00000000ABCD"]);
+  });
+
   it("re-reads events after a sync and in the month view", async () => {
     const calendar = fakeCalendar({ connected: true, sources }, [standup]);
     await renderCalendar("/calendar", { calendar: calendar.api });

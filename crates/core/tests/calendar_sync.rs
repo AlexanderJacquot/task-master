@@ -777,3 +777,81 @@ fn meetings_are_pushed_followed_and_come_back_when_deleted_there() {
     run(&s, &mut server);
     assert!(server.live(&target).iter().all(|e| e.id != again.id));
 }
+
+#[test]
+fn the_main_calendar_can_be_the_target_and_its_own_events_are_left_alone() {
+    let (s, mut server) = setup();
+    server.primary_target = true;
+    let main = "me@example.com";
+    let standup = server.user_add(
+        main,
+        "Standup",
+        When::Timed {
+            start_at: NOW + HOUR,
+            end_at: NOW + HOUR + 900_000,
+        },
+    );
+    let task = add_task(&s, "Write report", None);
+    let block = schedule(&s, &task.id, NOW + 2 * HOUR, NOW + 3 * HOUR);
+
+    let report = run(&s, &mut server);
+    assert!(
+        !server
+            .writes
+            .iter()
+            .any(|w| w.starts_with("create_calendar")),
+        "{:?}",
+        server.writes
+    );
+    assert_eq!(report.created, 1);
+    let key = format!("block:{}", block.id);
+    let pushed = linked_event(&s.borrow(), &key).unwrap().expect("linked");
+    assert_eq!(server.event(main, &pushed).title, "Write report");
+
+    let range = EventRange {
+        from: NOW,
+        to: NOW + 24 * HOUR,
+        from_date: TODAY.into(),
+        to_date: "2026-11-06".into(),
+    };
+    let titles = |s: &RefCell<Store>| -> Vec<String> {
+        s.borrow()
+            .calendar_events(&range)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.title)
+            .collect()
+    };
+    // The meeting shows; the pushed block does not show twice.
+    assert_eq!(titles(&s), vec!["Standup".to_string()]);
+    let sources = s.borrow().calendar_sources().unwrap();
+    assert!(sources.iter().any(|c| c.id == main && c.target));
+
+    // Moving the meeting there is read, never followed or pushed back.
+    server.user_edit(main, &standup, |e| {
+        e.when = Some(When::Timed {
+            start_at: NOW + 4 * HOUR,
+            end_at: NOW + 5 * HOUR,
+        });
+    });
+    let report = run(&s, &mut server);
+    assert_eq!(report.pulled, 0);
+    assert!(server.writes.is_empty(), "{:?}", server.writes);
+    let moved = &s.borrow().calendar_events(&range).unwrap()[0];
+    assert_eq!(moved.start_at, Some(NOW + 4 * HOUR));
+
+    // Removing the block deletes its event only.
+    s.borrow_mut()
+        .execute(Command::DeleteTimeBlock {
+            id: block.id.clone(),
+        })
+        .unwrap();
+    run(&s, &mut server);
+    assert_eq!(server.writes, vec![format!("delete {pushed}")]);
+    assert!(!server.event(main, &standup).cancelled);
+
+    // A meeting deleted there disappears here.
+    server.delete(main, &standup).unwrap();
+    run(&s, &mut server);
+    assert!(titles(&s).is_empty());
+}

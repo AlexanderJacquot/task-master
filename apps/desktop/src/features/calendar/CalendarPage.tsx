@@ -177,6 +177,8 @@ export function CalendarPage() {
   const api = useApi();
   const range = useMemo(() => viewRange(mode, date), [mode, date]);
   const { events, status } = useCalendarEvents(api.calendar, range);
+  const outlookConnected = Boolean(status?.outlook);
+  const provider = outlookConnected ? "Outlook" : "Google Calendar";
   const sources = status?.sources;
   const statusMap = useMemo(() => Object.fromEntries(statuses.map((s) => [s.id, s])), [statuses]);
   const planDays = mode === "month" ? [] : visibleDays(mode, date);
@@ -260,6 +262,10 @@ export function CalendarPage() {
       openTask: (id) => openTaskPanel(id),
       justDragged: () => Date.now() - lastDragEnd.current < 250,
       openUrl: api.files ? (url) => void api.files?.openUrl(url) : undefined,
+      openInOutlook:
+        outlookConnected && api.calendar?.openInOutlook
+          ? (id) => void api.calendar?.openInOutlook?.(id)
+          : undefined,
       calendarName: (id) => sources?.find((s) => s.id === id)?.name ?? "Calendar",
       hours: planPrefs.hours,
       busyEvents,
@@ -272,6 +278,8 @@ export function CalendarPage() {
       now,
       openTaskPanel,
       api.files,
+      api.calendar,
+      outlookConnected,
       sources,
       planPrefs.hours,
       busyEvents,
@@ -407,12 +415,12 @@ export function CalendarPage() {
                 >
                   ·{" "}
                   {status.syncing
-                    ? "Syncing with Google…"
+                    ? `Syncing with ${outlookConnected ? "Outlook" : "Google"}…`
                     : status.last_error
-                      ? "Google Calendar sync failed (see Settings)"
+                      ? `${provider} sync failed (see Settings)`
                       : status.last_sync_at
-                        ? `Google Calendar synced ${formatAgo(status.last_sync_at, now)}`
-                        : "Google Calendar connected"}
+                        ? `${provider} synced ${formatAgo(status.last_sync_at, now)}`
+                        : `${provider} connected`}
                 </span>
               )}
             </div>

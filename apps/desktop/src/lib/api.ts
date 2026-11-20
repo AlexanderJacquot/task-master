@@ -175,7 +175,10 @@ export const tauriSync: SyncApi = {
   onChanged: (handler) => events.syncChanged.listen((event) => handler(event.payload)),
 };
 
-/** Google Calendar sync: settings, status and the read-only events of shown calendars. */
+/**
+ * Calendar sync with Google or, on Windows, classic Outlook (ADR 030): settings, status and
+ * the read-only events of shown calendars.
+ */
 export interface CalendarApi {
   status(): Promise<CalendarStatus>;
   /** Opens the Google sign-in in the browser and waits for it (up to 5 minutes). */
@@ -184,6 +187,11 @@ export interface CalendarApi {
   setShown(calendarId: string, shown: boolean): Promise<CalendarStatus>;
   syncNow(): Promise<CalendarStatus>;
   setRunner?(runner: "this_device" | "server"): Promise<CalendarStatus>;
+  /** Classic Outlook on this PC: no sign-in, Outlook's own account is used. */
+  connectOutlook?(): Promise<CalendarStatus>;
+  disconnectOutlook?(): Promise<CalendarStatus>;
+  /** Shows an event of the Outlook calendar in Outlook. */
+  openInOutlook?(eventId: string): Promise<void>;
   events(range: EventRange): Promise<CalendarEvent[]>;
   /** Called when a sync starts and ends. */
   onSynced(handler: (status: CalendarStatus) => void): Promise<() => void>;
@@ -194,6 +202,11 @@ export const tauriCalendar: CalendarApi = {
   setRunner: (runner) => unwrap(commands.setCalendarRunner(runner)),
   connect: (clientId, clientSecret) => unwrap(commands.googleConnect(clientId, clientSecret)),
   disconnect: () => unwrap(commands.googleDisconnect()),
+  connectOutlook: () => unwrap(commands.outlookConnect()),
+  disconnectOutlook: () => unwrap(commands.outlookDisconnect()),
+  openInOutlook: async (eventId) => {
+    await unwrap(commands.outlookOpenEvent(eventId));
+  },
   setShown: (calendarId, shown) => unwrap(commands.setCalendarShown(calendarId, shown)),
   syncNow: () => unwrap(commands.calendarSyncNow()),
   events: (range) => unwrap(commands.calendarEvents(range)),

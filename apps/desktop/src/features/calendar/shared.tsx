@@ -27,6 +27,8 @@ export interface CalendarData {
   justDragged(): boolean;
   /** Opens a link outside the app (absent in tests). */
   openUrl?(url: string): void;
+  /** Shows an event in classic Outlook, when Outlook is the connected calendar. */
+  openInOutlook?(eventId: string): void;
   /** A synced calendar's name, for event details. */
   calendarName(id: string): string;
   /** Working hours (set in Plan mode), where replanning looks for free time. */

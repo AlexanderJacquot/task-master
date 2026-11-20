@@ -1,6 +1,6 @@
 # ADR 030: Outlook calendar
 
-Date: 2026-11-20 · Status: **proposed** (to confirm with the user before building).
+Date: 2026-11-20 · Status: accepted (option 1 built; to verify on the user's Windows PC).
 Follows ADR 013 and ADR 014.
 
 ## Context
@@ -64,44 +64,68 @@ whether this company allows it.
   by April 2027) until Apple's planned move to Graph in a macOS 27 update.
 - *A published ICS link*: read only, and often disabled by companies.
 
-## Proposed decisions (option 1)
+## Decisions (option 1, as built)
 
-- **A Windows-only crate `crates/outlook-com`** holds the COM calls (late-bound
-  `IDispatch` through the `windows` crate, already in the tree through Tauri; a direct
-  dependency with the `Win32_System_Com`, `Win32_System_Ole` and `Win32_System_Variant`
-  features). The unsafe code stays there, as the AppKit calls stay in
-  `taskmaster-macos-panel`; the shell stays free of unsafe code. It runs on its own
-  thread (COM apartment).
-- **`OutlookCalendar` implements `CalendarProvider`**:
-  - `calendars`: the default calendar folder (`GetDefaultFolder(9)`) and the other
-    calendar folders of the profile; the default one is the target and is shown.
-  - `create_calendar`: not used (the target is the main calendar).
-  - `events_between`: `Items` with `IncludeRecurrences`, sorted by `[Start]`, restricted
-    to the window (recurring meetings come expanded).
-  - `changes`: COM has no sync token. The token is the set of keyed items seen last time
-    (EntryID → last modification time), so edits and deletions of pushed events show up;
-    unkeyed events of the main calendar are read through `events_between` instead.
-  - `insert` / `update` / `delete`: `AppointmentItem` with subject, start, end, all-day,
-    `BusyStatus` (busy for blocks, free for plans and due dates), saved with `Save()`.
-  - Local key: the MAPI named property `taskMasterKey` in `PS_PUBLIC_STRINGS`, through
-    `PropertyAccessor`. Graph reads the same property as
+- **`crates/outlook` (`taskmaster-outlook`)** holds the COM calls: late-bound `IDispatch`
+  through the `windows` crate (already in the tree through Tauri; a direct dependency
+  with the `Win32_Foundation`, `Win32_Globalization`, `Win32_System_Com`,
+  `Win32_System_Ole` and `Win32_System_Variant` features). Its unsafe code stays in
+  `com.rs`, as the AppKit calls stay in `taskmaster-macos-panel`; the shell stays free of
+  unsafe code. Outside Windows the same API fails with "Classic Outlook is only on
+  Windows", so the shell has no `cfg`. The platform-neutral half (`model.rs`: OLE dates,
+  ids, the change token) is tested everywhere.
+- **`OutlookCalendar` implements `CalendarProvider`**, on the calendar sync thread (COM
+  objects stay on the thread that made them; multithreaded apartment):
+  - `calendars`: the default calendar folder (`GetDefaultFolder(9)`, named with its
+    mailbox) and the calendars inside it. The default one is the target.
+  - `create_calendar`: never called (`target_is_primary`, below).
+  - `changes`: COM has no sync token. Items carrying the key are listed with a DASL
+    filter on it (every item is read when Outlook refuses the filter); the token is the
+    set listed last time (EntryID → change time, in UTC through
+    `PropertyAccessor.LocalTimeToUTC`), so edits and deletions show up. An item missing
+    from the listing is reported deleted only if `GetItemFromID` cannot find it in that
+    calendar either (deleted items move to Deleted Items with their EntryID), so a
+    listing that misses items never deletes blocks.
+  - `events_between`: `Items` sorted by `[Start]` with `IncludeRecurrences`, restricted
+    by a Jet filter written in the user's short date format (`GetDateFormatEx`), a day
+    of margin each side, then cut exactly. An occurrence of a series gets the id
+    `<EntryID>|<start ms>`.
+  - `insert` / `update` / `delete`: an `AppointmentItem` with subject, times (`StartUTC`
+    / `EndUTC`, or `AllDayEvent` with local dates), `BusyStatus` busy for timed events and
+    free for all-day ones, `Sensitivity` private, no reminder, then `Save()`. The body is
+    not written (Outlook's object model guard watches body access).
+  - Key: the named property `taskMasterKey` in `PS_PUBLIC_STRINGS` through
+    `PropertyAccessor`; Graph reads the same property as
     `String {00020329-0000-0000-C000-000000000046} Name taskMasterKey`, so a later switch
     to Graph re-links the events instead of duplicating them.
-- **Main calendar as target.** The engine already leaves unkeyed events alone (shown,
-  never edited or deleted) and deletes only keyed events whose key names nothing here.
-  Because colleagues can see the main calendar, pushed events are marked **private**
-  (`Sensitivity = 2`) by default.
-- **Credentials and config.** `GoogleAccount` / `GoogleCredentials` become a
-  `CalendarAccount` with a `provider` (serde default `google`, so existing `config.json`
-  and server `calendar.json` files keep working). Outlook (COM) has no credentials and
-  only the "this device" runner.
-- **UI.** Settings → Calendar: "Connect Outlook (classic, on this PC)" next to Google,
-  shown only on Windows; disconnecting removes nothing from Outlook. Shown events get
-  "Open in Outlook" (`AppointmentItem.Display()` through a shell command).
-- **Tests.** The engine tests (`crates/core/tests/calendar_sync.rs`) gain cases for a
-  main-calendar target with foreign events and for token-less change detection. The COM
-  layer can only be checked on Windows with Outlook: a manual check on the user's
-  machine, listed in progress.md.
+- **Engine: `CalendarProvider::target_is_primary`** (default false). When true the
+  target is the account's primary calendar, nothing is created, and after the push the
+  target's own events are read through `events_between` like a shown calendar's, without
+  the keyed ones (those are the blocks, plans and deadlines). The engine already left
+  unkeyed events of the target alone and deletes only keyed events whose key names
+  nothing here. Test: `the_main_calendar_can_be_the_target_and_its_own_events_are_left_alone`.
+- **When it syncs.** Background syncs use Outlook only while it is open
+  (`GetActiveObject`); otherwise the status says so. Connecting and "Sync now" may start
+  it (`CoCreateInstance`). A broken connection (Outlook closed) is dropped and made
+  again on the next call.
+- **Config, not credentials.** `config.json` gets `outlook: { mailbox }` next to
+  `google`; the sync server and its runner handoff are unchanged. Outlook runs on this
+  device only (`set_calendar_runner` refuses), under the server's Calendar lease when a
+  server is joined. One account at a time: connecting either refuses while the other is
+  connected.
+- **IPC.** `outlook_connect` (reaches Outlook, names its mailbox, clears the sync tables
+  and syncs), `outlook_disconnect` (the events stay in Outlook), `outlook_open_event`
+  (`Display()`); `CalendarStatus` gains `outlook_available` and `outlook`. In the UI they
+  are optional members of `Api.calendar`.
+- **UI.** Settings → Calendar shows "Connect Outlook" above the Google steps on Windows,
+  the mailbox once connected, and notes that the main calendar's events are never
+  changed. The calendar header names Outlook; Outlook events offer "Open in Outlook".
+- **Checks.** The COM layer compiles and passes clippy for `x86_64-pc-windows-msvc`
+  (checked from macOS with a stand-in C compiler for SQLite); it has not run against
+  Outlook. To check on the user's PC: connect, a block appears as a private busy event in
+  the main calendar, moving it in Outlook moves the block, deleting it there removes the
+  block, meetings show in the app and stay untouched, and all of it with the "New
+  Outlook" toggle on too.
 
 ## Rejected
 

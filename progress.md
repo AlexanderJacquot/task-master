@@ -4,14 +4,25 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**Outlook calendar: explored, proposed** (2026-11-20, branch `outlook-calendar`; ADR 030
-proposed): the user's company Microsoft 365 account, no admin rights, Windows (classic and
-new Outlook). Decided: one calendar account at a time; blocks go to the main calendar.
-Proposed: a local provider through classic Outlook's COM object model (no sign-in, no
-tenant consent; Windows only; to verify on the user's PC, also with the New Outlook
-toggle on), with Microsoft Graph later for macOS (company consent may block it). Other
-local routes don't work (new Outlook and Outlook for Mac have no local API; macOS
-Calendar reaches Microsoft 365 through EWS, off since 2026-10-01). No code yet.
+**Outlook calendar through classic Outlook** (2026-11-20, branch `outlook-calendar`; ADR
+030): for the user's company Microsoft 365 account (no admin rights, Windows). New crate
+`crates/outlook` (`taskmaster-outlook`): classic Outlook's calendar over COM (late-bound
+`IDispatch`, the `windows` crate already in the tree), a `CalendarProvider` that pushes
+blocks, plans and deadlines into the main calendar (private; blocks busy, all-day items
+free; no reminders) and reads the user's meetings without touching them. Engine:
+`CalendarProvider::target_is_primary` (main calendar as target; its unkeyed events read
+like a shown calendar's). Shell: `config.json` `outlook`, commands `outlook_connect`,
+`outlook_disconnect`, `outlook_open_event`, status fields `outlook_available`/`outlook`;
+background syncs only while Outlook is open, Connect and Sync now may start it; one
+account at a time; this device only. UI: Connect Outlook in Settings → Calendar (Windows),
+Open in Outlook on events. Tests: core `the_main_calendar_can_be_the_target_…`, outlook
+`model` (4), settings (2), calendar page (1), config roundtrip. Checks: clippy, `cargo
+test --workspace` (337 passed, 8 ignored), biome, typecheck, `pnpm test` (553 passed, 2
+skipped); the outlook crate also passes clippy for `x86_64-pc-windows-msvc` (from macOS:
+a scratch rustup toolchain with that target and a stand-in C compiler for SQLite's build
+script). **Not run against Outlook**: to check on the user's PC (ADR 030 lists what),
+also with the New Outlook toggle on. Later: Microsoft Graph for macOS (company consent
+may block it); write the event body if the object model guard allows it.
 
 **Release 0.25.0** (2026-11-19, on `main`; notes `docs/releases/0.25.0.md`): open the
 desktop app's conversation from "In desktop app", fold the sidebar's Projects, agent
