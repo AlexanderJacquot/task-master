@@ -1,11 +1,11 @@
-// The calendar's planning bar (Plan mode): working hours, and Suggest / Approve / Clear for
+// The calendar's planning bar (Plan mode): working hours (with an optional lunch break), and Suggest / Approve / Clear for
 // a proposed plan of the shown day or week. The plan draws from the tasks the tray's
 // filter (the focus: project, epic, status, drawn by `FocusFilter`) lists.
 
 import { Dices } from "lucide-react";
 import { CheckIcon as Check, CloseIcon as X } from "../../components/TaskIcons";
 import { Button, Select, type SelectOption } from "../../components/ui";
-import { atMinute, formatDuration, formatHour } from "../../lib/calendar";
+import { atMinute, formatDuration, formatHour, formatTime } from "../../lib/calendar";
 import { INBOX, type Plan, type PlanFocus, type PlanHours } from "../../lib/planner";
 import type { Epic, Project, Status } from "../../lib/types";
 import { FILTER_NONE } from "../../lib/views";
@@ -97,6 +97,17 @@ export function PlanBar({
         label: h === 24 ? "Midnight" : formatHour(atMinute(today, h * 60)),
       };
     });
+  // Half hours from 10:00 to 15:00, and the saved time if it is another one.
+  const lunchStarts = Array.from({ length: 11 }, (_, i) => 10 * 60 + i * 30);
+  if (!lunchStarts.includes(hours.lunchStartMin)) lunchStarts.push(hours.lunchStartMin);
+  const lunchStartOptions: SelectOption[] = lunchStarts
+    .sort((a, b) => a - b)
+    .map((m) => ({ value: String(m), label: formatTime(atMinute(today, m)) }));
+  const lunchLengths = [30, 45, 60, 90];
+  if (!lunchLengths.includes(hours.lunchMin)) lunchLengths.push(hours.lunchMin);
+  const lunchLengthOptions: SelectOption[] = lunchLengths
+    .sort((a, b) => a - b)
+    .map((m) => ({ value: String(m), label: formatDuration(m) }));
   const startHour = Math.floor(hours.startMin / 60);
   const endHour = Math.ceil(hours.endMin / 60);
   const plannedMin = plan
@@ -123,6 +134,31 @@ export function PlanBar({
         options={hourOptions(Math.min(startHour + 1, 24), 24)}
         onValueChange={(v) => onHours({ ...hours, endMin: Number(v) * 60 })}
       />
+      <label className="flex items-center gap-1.5 text-ink-2">
+        <input
+          type="checkbox"
+          checked={hours.lunch}
+          onChange={(e) => onHours({ ...hours, lunch: e.target.checked })}
+          className="accent-[var(--tm-accent)]"
+        />
+        Lunch
+      </label>
+      {hours.lunch && (
+        <>
+          <Select
+            aria-label="Lunch at"
+            value={String(hours.lunchStartMin)}
+            options={lunchStartOptions}
+            onValueChange={(v) => onHours({ ...hours, lunchStartMin: Number(v) })}
+          />
+          <Select
+            aria-label="Lunch length"
+            value={String(hours.lunchMin)}
+            options={lunchLengthOptions}
+            onValueChange={(v) => onHours({ ...hours, lunchMin: Number(v) })}
+          />
+        </>
+      )}
       {multiDay && (
         <label className="flex items-center gap-1.5 text-ink-2">
           <input

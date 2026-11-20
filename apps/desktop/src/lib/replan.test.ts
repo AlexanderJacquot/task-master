@@ -21,6 +21,15 @@ function input(extra: Partial<ReplanInput> = {}): ReplanInput {
 }
 
 describe("laterToday", () => {
+  it("skips the lunch break when the hours keep one", () => {
+    const hours = { ...DEFAULT_HOURS, lunch: true };
+    expect(laterToday(input({ hours, now: at(THU, 11, 30) }))).toEqual({
+      iso: THU,
+      start_at: at(THU, 13),
+      end_at: at(THU, 14),
+    });
+  });
+
   it("takes the next free quarter hour after now", () => {
     expect(laterToday(input())).toEqual({
       iso: THU,

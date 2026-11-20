@@ -49,6 +49,7 @@ import {
   type PlanHours,
   planCandidates,
   readFocus,
+  readHours,
   suggestPlan,
 } from "../../lib/planner";
 import { blocksToReview } from "../../lib/replan";
@@ -100,7 +101,7 @@ function loadPlanPrefs(): PlanPrefs {
     const saved = JSON.parse(localStorage.getItem(PLAN_KEY) ?? "null") as Partial<PlanPrefs> | null;
     return {
       focus: readFocus(saved?.focus),
-      hours: { ...DEFAULT_HOURS, ...saved?.hours },
+      hours: readHours(saved?.hours),
     };
   } catch {
     return { focus: DEFAULT_FOCUS, hours: DEFAULT_HOURS };

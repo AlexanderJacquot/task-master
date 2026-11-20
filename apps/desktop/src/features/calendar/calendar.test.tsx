@@ -707,6 +707,27 @@ describe("planning the calendar", () => {
     expect(within(column).getAllByTestId("time-block").length).toBeGreaterThanOrEqual(batch.length);
   });
 
+  it("keeps a lunch break out of the free time when asked, and remembers it", async () => {
+    localStorage.setItem("task-master.calendar-mode", "day");
+    await renderCalendar();
+    await screen.findByRole("heading", { name: "Calendar" });
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(screen.getByTestId("plan-summary").textContent).toMatch(/· 8 h free/);
+    expect(screen.queryByRole("combobox", { name: "Lunch at" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lunch" }));
+    expect(screen.getByTestId("plan-summary").textContent).toMatch(/· 7 h free/);
+    expect(screen.getByRole("combobox", { name: "Lunch at" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Lunch length" })).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem("task-master.calendar-plan") ?? "{}").hours).toEqual(
+      expect.objectContaining({ lunch: true, lunchStartMin: 12 * 60, lunchMin: 60 }),
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lunch" }));
+    expect(screen.getByTestId("plan-summary").textContent).toMatch(/· 8 h free/);
+  });
+
   it("narrows the tray and the plan to the focus, and remembers it", async () => {
     // A focus saved before it took several values of each.
     localStorage.setItem(
