@@ -22,6 +22,7 @@ import {
   NO_FILTER,
   sortFiles,
 } from "../../lib/files";
+import { noteTitle } from "../../lib/notes";
 import { settingsApi } from "../../lib/settingsApi";
 import { deleteAttachmentsOfFiles } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
@@ -130,6 +131,7 @@ function FileLine({
   onToggle,
   onOpenTask,
   onOpenMeeting,
+  onOpenNote,
   onHover,
   onPin,
   active,
@@ -143,6 +145,7 @@ function FileLine({
   onToggle: () => void;
   onOpenTask: (id: string) => void;
   onOpenMeeting: (id: string) => void;
+  onOpenNote: (id: string) => void;
 }) {
   const where =
     !row.onDevice && row.onServer
@@ -190,6 +193,14 @@ function FileLine({
             >
               Meeting: {row.meeting.title}
             </button>
+          ) : row.note ? (
+            <button
+              type="button"
+              className="truncate hover:text-accent hover:underline"
+              onClick={() => row.note && onOpenNote(row.note.id)}
+            >
+              Note: {noteTitle(row.note)}
+            </button>
           ) : (
             <span>No task uses it</span>
           )}
@@ -216,6 +227,7 @@ export function FilesSettings() {
   const attachments = useStoreState((s) => s.attachments);
   const tasks = useStoreState((s) => s.tasks);
   const meetings = useStoreState((s) => s.meetings);
+  const notes = useStoreState((s) => s.notes);
   const [overview, setOverview] = useState<FilesOverview_Serialize | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -253,9 +265,10 @@ export function FilesSettings() {
             attachments: Object.values(attachments),
             tasks,
             meetings,
+            notes,
           })
         : [],
-    [overview, server, attachments, tasks, meetings],
+    [overview, server, attachments, tasks, meetings, notes],
   );
   const shown = useMemo(
     () => sortFiles(filterFiles(rows, filter, Date.now()), sort),
@@ -457,6 +470,9 @@ export function FilesSettings() {
                           params: { meetingId },
                           search: {},
                         })
+                      }
+                      onOpenNote={(noteId) =>
+                        void navigate({ to: "/note/$noteId", params: { noteId }, search: {} })
                       }
                     />
                   </div>

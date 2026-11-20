@@ -2,19 +2,26 @@ import { useNavigate } from "@tanstack/react-router";
 import { Dialog } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cx } from "../../components/ui";
+import { noteTitle } from "../../lib/notes";
 import { type PaletteItem, rankItems } from "../../lib/palette";
 import { plainSnippet, speakerLabel } from "../../lib/transcript";
-import type { TranscriptHit } from "../../lib/types";
+import type { NoteHit, TranscriptHit } from "../../lib/types";
 import { categoryOf } from "../../lib/views";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
+import { useNewNote } from "../notes/NotesTree";
 import { useOpenTask } from "../shell/useOpenTask";
 import { NEW_TASK_INPUT_ID } from "../shell/useShortcuts";
 
 type Runnable = PaletteItem & { run(): void };
 
+/** A search snippet short enough for the hint column. */
+function clip(text: string, max = 56): string {
+  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+}
+
 /**
  * Ctrl+K: jump to any view, project, epic, tag, task (full-text search over titles and
- * descriptions), meeting or transcript line, or run an action. Arrow keys move, Enter runs, Escape closes.
+ * descriptions), note (titles and bodies), meeting or transcript line, or run an action. Arrow keys move, Enter runs, Escape closes.
  */
 export function CommandPalette({
   open,
@@ -34,9 +41,13 @@ export function CommandPalette({
   const tags = useStoreState((s) => s.tags);
   const views = useStoreState((s) => s.views);
   const meetings = useStoreState((s) => s.meetings);
+  const notes = useStoreState((s) => s.notes);
+  const noteFolders = useStoreState((s) => s.note_folders);
+  const newNote = useNewNote();
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<string[]>([]);
   const [lines, setLines] = useState<TranscriptHit[]>([]);
+  const [noteHits, setNoteHits] = useState<NoteHit[]>([]);
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
 
@@ -46,6 +57,7 @@ export function CommandPalette({
     if (text.length < 2) {
       setHits([]);
       setLines([]);
+      setNoteHits([]);
       return;
     }
     let live = true;
@@ -58,6 +70,10 @@ export function CommandPalette({
         .searchTranscripts?.(text, 6)
         .then((found) => live && setLines(found))
         .catch(() => live && setLines([]));
+      api
+        .searchNotes?.(text, 8)
+        .then((found) => live && setNoteHits(found))
+        .catch(() => live && setNoteHits([]));
     }, 80);
     return () => {
       live = false;
@@ -82,6 +98,7 @@ export function CommandPalette({
   );
 
   const items: Runnable[] = useMemo(() => {
+    const folderName = (id: string | null) => (id ? noteFolders[id]?.name : undefined);
     const list: Runnable[] = [
       {
         key: "action:new",
@@ -92,6 +109,16 @@ export function CommandPalette({
         run: () => {
           close();
           requestAnimationFrame(() => document.getElementById(NEW_TASK_INPUT_ID)?.focus());
+        },
+      },
+      {
+        key: "action:note",
+        group: "Actions",
+        label: "New note",
+        keywords: "write page markdown notes",
+        run: () => {
+          close();
+          void newNote();
         },
       },
       {
@@ -209,6 +236,32 @@ export function CommandPalette({
         },
       });
     }
+    // Notes found by full-text search first (in the core's order, with the words around
+    // the match), then every other note, matched on its title.
+    const found = new Set<string>();
+    for (const hit of noteHits) {
+      const n = notes[hit.note_id];
+      if (!n) continue;
+      found.add(n.id);
+      const snippet = plainSnippet(hit.snippet).trim();
+      list.push({
+        key: `note:${n.id}`,
+        group: "Notes",
+        label: noteTitle(n),
+        hint: snippet && snippet !== n.title ? clip(snippet) : folderName(n.folder_id),
+        run: () => go("/note/$noteId", { noteId: n.id }),
+      });
+    }
+    for (const n of Object.values(notes)) {
+      if (found.has(n.id)) continue;
+      list.push({
+        key: `note:${n.id}`,
+        group: "Notes",
+        label: noteTitle(n),
+        hint: folderName(n.folder_id),
+        run: () => go("/note/$noteId", { noteId: n.id }),
+      });
+    }
     for (const m of Object.values(meetings)) {
       list.push({
         key: `meeting:${m.id}`,
@@ -241,6 +294,10 @@ export function CommandPalette({
     statuses,
     meetings,
     lines,
+    notes,
+    noteHits,
+    noteFolders,
+    newNote,
     store,
     openTask,
     close,
@@ -252,11 +309,12 @@ export function CommandPalette({
       searchHits: new Set([
         ...hits.map((id) => `task:${id}`),
         ...lines.map((l) => `line:${l.segment_id}`),
+        ...noteHits.map((h) => `note:${h.note_id}`),
       ]),
     });
     const byKey = new Map(items.map((i) => [i.key, i]));
     return ranked.map((r) => byKey.get(r.key) as Runnable);
-  }, [items, query, hits, lines]);
+  }, [items, query, hits, lines, noteHits]);
 
   const current = Math.min(active, Math.max(results.length - 1, 0));
   useEffect(() => {
@@ -292,7 +350,7 @@ export function CommandPalette({
                 results[current]?.run();
               }
             }}
-            placeholder="Jump to a view, project, epic, tag or task… or run an action"
+            placeholder="Jump to a view, project, epic, tag, task or note… or run an action"
             aria-label="Command"
             className="w-full border-b border-line bg-transparent px-5 py-4 text-[17px] text-ink placeholder:text-ink-3 focus:outline-none"
           />

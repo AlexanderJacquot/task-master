@@ -227,6 +227,7 @@ impl Entity {
                 "id",
                 "task_id",
                 "meeting_id",
+                "note_id",
                 "hash",
                 "name",
                 "mime",

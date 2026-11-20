@@ -159,6 +159,7 @@ export function attachment(overrides: Partial<Attachment> = {}): Attachment {
     id: `0192f0c4-0000-7000-8000-${String(counter).padStart(12, "0")}`,
     task_id: "t0",
     meeting_id: null,
+    note_id: null,
     hash: "a".repeat(64),
     name: `file-${counter}.png`,
     mime: "image/png",

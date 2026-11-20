@@ -2,26 +2,29 @@
 // attachment folder, the sync server's, and the attachments that use each file.
 
 import type { BlobList, StoredFileInfo } from "../bindings";
-import type { Attachment, Meeting, Task } from "./types";
+import type { Attachment, Meeting, Note, Task } from "./types";
 
 export type FileRow = {
   hash: string;
   size: number;
   /** The first attachment's name, or the hash's start for a file nothing uses. */
   name: string;
-  /** Live attachments of live tasks and meetings using it (several when the same file was
+  /** Live attachments of live tasks, meetings and notes using it (several when the same file was
    * attached twice). */
   attachments: Attachment[];
   /** The task of the first attachment, when a task holds it. */
   task: Task | null;
   /** The meeting of the first attachment, when a meeting holds it. */
   meeting: Meeting | null;
+  /** The note of the first attachment, when a note holds it. */
+  note: Note | null;
   /** When it was first attached, else when it was stored. Unix ms. */
   addedAt: number;
   onDevice: boolean;
   /** `null` when the server's files are unknown (no sync, or it could not be read). */
   onServer: boolean | null;
-  /** Shown as an image or link in a task's description: deleting it leaves a gap there. */
+  /** Shown as an image or link in a task's description, a meeting's notes or a note:
+   * deleting it leaves a gap there. */
   inDescription: boolean;
 };
 
@@ -32,6 +35,7 @@ export type FilesInput = {
   attachments: Attachment[];
   tasks: Record<string, Task>;
   meetings?: Record<string, Meeting>;
+  notes?: Record<string, Note>;
 };
 
 export function fileRows({
@@ -40,22 +44,31 @@ export function fileRows({
   attachments,
   tasks,
   meetings = {},
+  notes = {},
 }: FilesInput): FileRow[] {
   const localBy = new Map(local.map((f) => [f.hash, f]));
   const serverBy = new Map((server?.files ?? []).map((f) => [f.hash, f]));
   const purged = new Set(server?.purged ?? []);
   const usedBy = new Map<string, Attachment[]>();
   for (const a of attachments) {
-    const live = a.task_id ? tasks[a.task_id] : a.meeting_id ? meetings[a.meeting_id] : null;
+    const live = a.task_id
+      ? tasks[a.task_id]
+      : a.meeting_id
+        ? meetings[a.meeting_id]
+        : a.note_id
+          ? notes[a.note_id]
+          : null;
     if (!live) continue;
     const list = usedBy.get(a.hash);
     if (list) list.push(a);
     else usedBy.set(a.hash, [a]);
   }
   const hashes = new Set([...localBy.keys(), ...serverBy.keys(), ...usedBy.keys()]);
-  const descriptions = Object.values(tasks)
-    .map((t) => t.description ?? "")
-    .filter((d) => d.includes("attachment:"));
+  const descriptions = [
+    ...Object.values(tasks).map((t) => t.description ?? ""),
+    ...Object.values(meetings).map((m) => m.notes ?? ""),
+    ...Object.values(notes).map((n) => n.body),
+  ].filter((d) => d.includes("attachment:"));
 
   const rows: FileRow[] = [];
   for (const hash of hashes) {
@@ -72,6 +85,7 @@ export function fileRows({
       attachments: used,
       task: first?.task_id ? (tasks[first.task_id] ?? null) : null,
       meeting: first?.meeting_id ? (meetings[first.meeting_id] ?? null) : null,
+      note: first?.note_id ? (notes[first.note_id] ?? null) : null,
       addedAt: first?.created_at ?? mine?.stored_at ?? theirs?.stored_at ?? 0,
       onDevice: !!mine,
       onServer: server ? !!theirs : null,

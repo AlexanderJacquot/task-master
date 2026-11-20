@@ -50,6 +50,7 @@ export type {
   NoteChange_Deserialize as NoteChange,
   NoteFolder_Serialize as NoteFolder,
   NoteFolderChange,
+  NoteHit,
   PlanUsage_Serialize as PlanUsage,
   PlanWindow_Serialize as PlanWindow,
   Priority,

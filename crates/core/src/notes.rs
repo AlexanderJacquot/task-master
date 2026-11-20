@@ -299,7 +299,7 @@ fn end_of_folder(b: &Batch<'_, '_>, folder_id: Option<&str>) -> Result<String> {
     rank::key_between(end_rank(b, folder_id)?.as_deref(), None)
 }
 
-fn live_note(b: &Batch<'_, '_>, id: &str) -> Result<Note> {
+pub(crate) fn live_note(b: &Batch<'_, '_>, id: &str) -> Result<Note> {
     let note = note(b.tx, id)?;
     if note.deleted_at.is_some() {
         return Err(Error::not_found("note", id));
@@ -384,5 +384,40 @@ pub(crate) fn folders(conn: &Connection) -> Result<Vec<NoteFolder>> {
         "SELECT {FOLDER_COLS} FROM note_folders WHERE deleted_at IS NULL ORDER BY rank, id"
     ))?;
     let rows = stmt.query_map([], folder_row)?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// A note matching a search.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NoteHit {
+    pub note_id: Id,
+    /// The title or the body around the matches, which are between `[` and `]`.
+    pub snippet: String,
+}
+
+/// Live notes matching every word of `text` (prefix match on title and body), best first.
+pub(crate) fn search_notes(conn: &Connection, text: &str, limit: u32) -> Result<Vec<NoteHit>> {
+    let terms: Vec<String> = text
+        .split_whitespace()
+        .map(|word| format!("\"{}\"*", word.replace('"', "\"\"")))
+        .collect();
+    if terms.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut stmt = conn.prepare(
+        "SELECT n.id, snippet(notes_fts, -1, '[', ']', '…', 16)
+         FROM notes_fts
+         JOIN notes n ON n.rowid = notes_fts.rowid
+         WHERE notes_fts MATCH ?1 AND n.deleted_at IS NULL
+         ORDER BY bm25(notes_fts, 4.0, 1.0), n.updated_at DESC
+         LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![terms.join(" "), limit], |r| {
+        Ok(NoteHit {
+            note_id: r.get(0)?,
+            snippet: r.get(1)?,
+        })
+    })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }

@@ -378,3 +378,187 @@ fn export_and_import_carry_notes() {
     assert_eq!(snap.notes, vec![n]);
     assert_eq!(snap.note_folders, vec![folder]);
 }
+
+struct TempDir(std::path::PathBuf);
+
+impl TempDir {
+    fn new() -> Self {
+        let dir = std::env::temp_dir().join(format!("taskmaster-notes-{}", new_id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        Self(dir)
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[test]
+fn search_finds_notes_by_title_and_body() {
+    let mut s = store();
+    let plan = add_note(
+        &mut s,
+        NewNote {
+            title: "Launch plan".into(),
+            body: "Budget approved by finance.\n\nNext: the press kit.".into(),
+            ..NewNote::default()
+        },
+    );
+    let other = add_note(
+        &mut s,
+        NewNote {
+            title: "Groceries".into(),
+            body: "Bread, launch snacks".into(),
+            ..NewNote::default()
+        },
+    );
+
+    let hits = s.search_notes("budg", 10).unwrap();
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].note_id, plan.id);
+    assert!(hits[0].snippet.contains("[Budget]"), "{}", hits[0].snippet);
+
+    // Every word must match; a title match ranks first.
+    let both = s.search_notes("launch", 10).unwrap();
+    assert_eq!(
+        both.iter().map(|h| h.note_id.as_str()).collect::<Vec<_>>(),
+        [plan.id.as_str(), other.id.as_str()]
+    );
+    assert_eq!(s.search_notes("launch bread", 10).unwrap().len(), 1);
+    assert!(s.search_notes("  ", 10).unwrap().is_empty());
+    assert!(s.search_notes("\"quoted", 10).unwrap().is_empty());
+
+    // Edits are indexed; deleted notes are not found, and come back with undo.
+    s.execute(Command::UpdateNote {
+        id: other.id.clone(),
+        changes: vec![NoteChange::Body("Milk".into())],
+    })
+    .unwrap();
+    assert_eq!(s.search_notes("launch", 10).unwrap().len(), 1);
+    assert_eq!(s.search_notes("milk", 10).unwrap().len(), 1);
+    s.execute(Command::DeleteNote {
+        id: plan.id.clone(),
+    })
+    .unwrap();
+    assert!(s.search_notes("budget", 10).unwrap().is_empty());
+    s.undo().unwrap();
+    assert_eq!(s.search_notes("budget", 10).unwrap().len(), 1);
+}
+
+#[test]
+fn notes_take_attachments_hidden_with_them() {
+    let dir = TempDir::new();
+    let mut s = Store::open_in_memory()
+        .unwrap()
+        .with_files(dir.0.join("attachments"));
+    let page = add_note(&mut s, note("Diagram"));
+    let stored = s.files().unwrap().put_bytes(b"png bytes").unwrap();
+    let attach = |note_id: Option<String>, task_id: Option<String>| Command::CreateAttachment {
+        attachment: NewAttachment {
+            id: None,
+            task_id,
+            meeting_id: None,
+            note_id,
+            hash: stored.hash.clone(),
+            name: "sketch.png".into(),
+            mime: None,
+            size: stored.size,
+        },
+    };
+    let created = roundtrip(&mut s, attach(Some(page.id.clone()), None));
+    let attachment = created.attachments[0].clone();
+    assert_eq!(attachment.note_id.as_deref(), Some(page.id.as_str()));
+    assert_eq!(attachment.task_id, None);
+    assert_eq!(attachment.mime, "image/png");
+    assert!(
+        created.notes[0].updated_at >= page.updated_at,
+        "the note is touched"
+    );
+    assert!(s.file_in_use(&stored.hash).unwrap());
+
+    let task = add_task(&mut s, "T");
+    assert!(
+        invalid(s.execute(attach(Some(page.id.clone()), Some(task.id)))).contains("exactly one")
+    );
+
+    // Renaming and removing work as for a task's files.
+    s.execute(Command::UpdateAttachment {
+        id: attachment.id.clone(),
+        changes: vec![AttachmentChange::Name("plan.png".into())],
+    })
+    .unwrap();
+    s.undo().unwrap();
+
+    s.execute(Command::DeleteNote {
+        id: page.id.clone(),
+    })
+    .unwrap();
+    assert!(s.snapshot().unwrap().attachments.is_empty());
+    assert!(
+        !s.file_in_use(&stored.hash).unwrap(),
+        "purgeable once hidden"
+    );
+    s.undo().unwrap();
+    assert_eq!(s.snapshot().unwrap().attachments, vec![attachment.clone()]);
+
+    // A deleted note takes no new files.
+    s.execute(Command::DeleteNote {
+        id: page.id.clone(),
+    })
+    .unwrap();
+    assert!(matches!(
+        s.execute(attach(Some(page.id), None)),
+        Err(Error::NotFound { .. })
+    ));
+}
+
+#[test]
+fn note_attachments_sync_and_export() {
+    let dir = TempDir::new();
+    let mut a = Store::open_in_memory()
+        .unwrap()
+        .with_files(dir.0.join("attachments"));
+    let mut server = store();
+    let page = add_note(&mut a, note("Shared"));
+    let stored = a.files().unwrap().put_bytes(b"abc").unwrap();
+    a.execute(Command::CreateAttachment {
+        attachment: NewAttachment {
+            id: None,
+            task_id: None,
+            meeting_id: None,
+            note_id: Some(page.id.clone()),
+            hash: stored.hash.clone(),
+            name: "notes.txt".into(),
+            mime: None,
+            size: stored.size,
+        },
+    })
+    .unwrap();
+    sync(&mut a, &mut server);
+    let there = server.snapshot().unwrap();
+    assert_eq!(there.attachments.len(), 1);
+    assert_eq!(
+        there.attachments[0].note_id.as_deref(),
+        Some(page.id.as_str())
+    );
+    assert_eq!(
+        server.search_notes("shared", 5).unwrap().len(),
+        1,
+        "indexed on arrival"
+    );
+
+    let file = a.export().unwrap();
+    let mut b = store();
+    b.import(&file).unwrap();
+    assert_eq!(
+        b.snapshot().unwrap().attachments,
+        a.snapshot().unwrap().attachments
+    );
+    assert_eq!(
+        b.search_notes("shared", 5).unwrap().len(),
+        1,
+        "indexed on import"
+    );
+}

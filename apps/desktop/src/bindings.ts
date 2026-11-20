@@ -18,6 +18,8 @@ export const commands = {
 	meetingTranscript: (meetingId: string) => typedError<TranscriptSegment_Serialize[], CommandError>(__TAURI_INVOKE("meeting_transcript", { meetingId })),
 	/**  Transcript lines of live meetings matching every word of `text`, best first. */
 	searchTranscripts: (text: string, limit: number) => typedError<TranscriptHit[], CommandError>(__TAURI_INVOKE("search_transcripts", { text, limit })),
+	/**  Live notes matching every word of `text` in their title or body, best first (ADR 032). */
+	searchNotes: (text: string, limit: number) => typedError<NoteHit[], CommandError>(__TAURI_INVOKE("search_notes", { text, limit })),
 	/**  A task's change history, newest first (read from the ops log). */
 	taskActivity: (taskId: string, limit: number) => typedError<Activity_Serialize[], CommandError>(__TAURI_INVOKE("task_activity", { taskId, limit })),
 	/**
@@ -569,6 +571,7 @@ export type Attachment_Deserialize = {
 	id: string,
 	task_id?: string | null,
 	meeting_id?: string | null,
+	note_id?: string | null,
 	/**  SHA-256 of the content, lowercase hex. */
 	hash: string,
 	/**  File name, without any folder. */
@@ -589,6 +592,7 @@ export type Attachment_Serialize = {
 	id: string,
 	task_id: string | null,
 	meeting_id: string | null,
+	note_id: string | null,
 	/**  SHA-256 of the content, lowercase hex. */
 	hash: string,
 	/**  File name, without any folder. */
@@ -1732,9 +1736,10 @@ export type NewAttachment = NewAttachment_Serialize | NewAttachment_Deserialize;
 
 export type NewAttachment_Deserialize = {
 	id?: string | null,
-	/**  The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two. */
+	/**  The task, meeting or note it is attached to: exactly one of the three. */
 	task_id?: string | null,
 	meeting_id?: string | null,
+	note_id?: string | null,
 	/**  From `FileStore::put_*`. */
 	hash: string,
 	/**  Folders are stripped. */
@@ -1746,9 +1751,10 @@ export type NewAttachment_Deserialize = {
 
 export type NewAttachment_Serialize = {
 	id: string | null,
-	/**  The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two. */
+	/**  The task, meeting or note it is attached to: exactly one of the three. */
 	task_id: string | null,
 	meeting_id: string | null,
+	note_id: string | null,
 	/**  From `FileStore::put_*`. */
 	hash: string,
 	/**  Folders are stripped. */
@@ -2084,6 +2090,13 @@ export type NoteFolder_Serialize = {
 	created_at: number,
 	updated_at: number,
 	deleted_at: number | null,
+};
+
+/**  A note matching a search. */
+export type NoteHit = {
+	note_id: string,
+	/**  The title or the body around the matches, which are between `[` and `]`. */
+	snippet: string,
 };
 
 /**

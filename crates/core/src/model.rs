@@ -256,6 +256,7 @@ pub struct Attachment {
     pub id: Id,
     pub task_id: Option<Id>,
     pub meeting_id: Option<Id>,
+    pub note_id: Option<Id>,
     /// SHA-256 of the content, lowercase hex.
     pub hash: String,
     /// File name, without any folder.

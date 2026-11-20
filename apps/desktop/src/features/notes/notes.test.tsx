@@ -10,7 +10,7 @@ import { createTaskStore, type TaskStore } from "../../store/store";
 import { fakeParse, note, noteFolder, STATUS, snapshot, task } from "../../test/fixtures";
 
 /** A core that confirms every write with what the store optimistically shows. */
-function fakeApi(getStore: () => TaskStore, initial: Partial<Snapshot>) {
+function fakeApi(getStore: () => TaskStore, initial: Partial<Snapshot>, extra: Partial<Api>) {
   const executed: Command[][] = [];
   const api: Api = {
     snapshot: async () => snapshot(initial),
@@ -43,14 +43,15 @@ function fakeApi(getStore: () => TaskStore, initial: Partial<Snapshot>) {
     taskActivity: async () => [],
     parseCapture: async (text) => fakeParse(text),
     onChanged: async () => () => {},
+    ...extra,
   };
   return { api, executed };
 }
 
 let store: TaskStore;
 
-async function renderApp(path: string, initial: Partial<Snapshot> = {}) {
-  const fake = fakeApi(() => store, initial);
+async function renderApp(path: string, initial: Partial<Snapshot> = {}, extra: Partial<Api> = {}) {
+  const fake = fakeApi(() => store, initial, extra);
   store = createTaskStore(fake.api);
   await store.getState().hydrate();
   const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
@@ -141,5 +142,93 @@ describe("notes", () => {
     expect(within(sidebar()).queryByRole("button", { name: /Ideas/ })).toBeNull();
     expect(within(sidebar()).getByRole("link", { name: "Garden" })).toBeTruthy();
     expect(store.getState().notes[inside.id]?.folder_id).toBeNull();
+  });
+
+  it("finds notes in the command palette, by title and by words in the body", async () => {
+    const plan = note({ title: "Launch plan", body: "Budget approved by finance." });
+    const other = note({ title: "Groceries" });
+    const searched: string[] = [];
+    const { router } = await renderApp(
+      "/inbox",
+      { notes: [plan, other] },
+      {
+        searchNotes: async (text) => {
+          searched.push(text);
+          return text.startsWith("budg")
+            ? [{ note_id: plan.id, snippet: "[Budget] approved by finance." }]
+            : [];
+        },
+      },
+    );
+    await screen.findByRole("heading", { name: "Inbox" });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = await screen.findByRole("textbox", { name: "Command" });
+    const results = () => screen.getByRole("list", { name: "Results" });
+
+    fireEvent.change(input, { target: { value: "groc" } });
+    expect(await within(results()).findByRole("button", { name: /Groceries/ })).toBeTruthy();
+
+    fireEvent.change(input, { target: { value: "budget" } });
+    const hit = await within(results()).findByRole("button", {
+      name: /Launch plan.*Budget approved by finance/,
+    });
+    expect(searched).toContain("budget");
+    fireEvent.click(hit);
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/note/${plan.id}`));
+  });
+
+  it("writes a note from the command palette", async () => {
+    const { router, executed } = await renderApp("/inbox");
+    await screen.findByRole("heading", { name: "Inbox" });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const input = await screen.findByRole("textbox", { name: "Command" });
+    fireEvent.change(input, { target: { value: "new note" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/note\//));
+    expect(executed[0]?.[0]).toMatchObject({ type: "create_note" });
+  });
+
+  it("attaches an image pasted in a note and shows it in the note", async () => {
+    const n = note({ title: "Diagram" });
+    const stored: string[] = [];
+    await renderApp(
+      `/note/${n.id}`,
+      { notes: [n] },
+      {
+        files: {
+          storeData: async (name, mime) => {
+            stored.push(name);
+            return { hash: "c".repeat(64), size: 4, name, mime };
+          },
+          storeFile: async (path) => ({ hash: "d".repeat(64), size: 4, name: path, mime: "x/y" }),
+          open: async () => {},
+          saveCopy: async () => true,
+          openUrl: async () => {},
+          pickFiles: async () => [],
+          url: (id) => `tm://localhost/${id}`,
+        },
+      },
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Edit description" }));
+    const editor = await waitFor(() => {
+      const el = document.querySelector(".cm-content");
+      if (!el) throw new Error("no editor yet");
+      return el as HTMLElement;
+    });
+    const file = new File(["png!"], "image.png", { type: "image/png" });
+    fireEvent.paste(editor, { clipboardData: { files: [file], getData: () => "" } });
+    await waitFor(() => expect(stored).toHaveLength(1));
+    const attachment = await waitFor(() => {
+      const a = Object.values(store.getState().attachments)[0];
+      if (!a) throw new Error("not attached yet");
+      return a;
+    });
+    expect(attachment).toMatchObject({ note_id: n.id, task_id: null });
+    await waitFor(() =>
+      expect(editor.textContent).toBe(`![${attachment.name}](attachment:${attachment.id})`),
+    );
+    expect(screen.getByRole("region", { name: "Attachments" }).textContent).toContain(
+      attachment.name,
+    );
   });
 });

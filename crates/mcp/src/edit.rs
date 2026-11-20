@@ -444,6 +444,7 @@ impl TaskServer {
                 id: Some(id.clone()),
                 task_id: Some(task.id.clone()),
                 meeting_id: None,
+                note_id: None,
                 hash: stored.hash,
                 name,
                 mime: None,

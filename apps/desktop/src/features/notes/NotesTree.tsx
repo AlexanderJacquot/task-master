@@ -1,7 +1,7 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { ChevronDown, ChevronRight, Folder, FolderPlus } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
-import { type MouseEvent, type ReactNode, useMemo, useState } from "react";
+import { type MouseEvent, type ReactNode, useCallback, useMemo, useState } from "react";
 import {
   FileTextIcon,
   FolderOpenIcon,
@@ -63,11 +63,14 @@ function useOpenFolders(): [(id: string) => boolean, (id: string, open: boolean)
 export function useNewNote() {
   const store = useTaskStore();
   const navigate = useNavigate();
-  return async (input: Parameters<typeof createNote>[1] = {}) => {
-    const id = await createNote(store, input);
-    if (id) void navigate({ to: "/note/$noteId", params: { noteId: id }, search: {} });
-    return id;
-  };
+  return useCallback(
+    async (input: Parameters<typeof createNote>[1] = {}) => {
+      const id = await createNote(store, input);
+      if (id) void navigate({ to: "/note/$noteId", params: { noteId: id }, search: {} });
+      return id;
+    },
+    [store, navigate],
+  );
 }
 
 const toolClass = cx(

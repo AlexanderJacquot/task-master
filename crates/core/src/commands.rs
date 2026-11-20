@@ -436,11 +436,13 @@ pub enum ViewChange {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct NewAttachment {
     pub id: Option<Id>,
-    /// The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two.
+    /// The task, meeting or note it is attached to: exactly one of the three.
     #[serde(default)]
     pub task_id: Option<Id>,
     #[serde(default)]
     pub meeting_id: Option<Id>,
+    #[serde(default)]
+    pub note_id: Option<Id>,
     /// From `FileStore::put_*`.
     pub hash: String,
     /// Folders are stripped.
@@ -1601,12 +1603,14 @@ fn live_view(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::View> {
 enum Owner {
     Task(Id),
     Meeting(Id),
+    Note(Id),
 }
 
 fn attachment_owner(a: &crate::model::Attachment) -> Result<Owner> {
-    match (&a.task_id, &a.meeting_id) {
-        (Some(task_id), None) => Ok(Owner::Task(task_id.clone())),
-        (None, Some(meeting_id)) => Ok(Owner::Meeting(meeting_id.clone())),
+    match (&a.task_id, &a.meeting_id, &a.note_id) {
+        (Some(task_id), None, None) => Ok(Owner::Task(task_id.clone())),
+        (None, Some(meeting_id), None) => Ok(Owner::Meeting(meeting_id.clone())),
+        (None, None, Some(note_id)) => Ok(Owner::Note(note_id.clone())),
         _ => Err(Error::invalid(format!(
             "attachment {} has no single owner",
             a.id
@@ -1624,23 +1628,33 @@ fn touch_owner(b: &mut Batch<'_, '_>, owner: &Owner) -> Result<()> {
             OpKind::Update,
             json!({ "updated_at": b.now }),
         )),
+        Owner::Note(id) => b.apply(Change::new(
+            Entity::Note,
+            id,
+            OpKind::Update,
+            json!({ "updated_at": b.now }),
+        )),
     }
 }
 
 fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
     let id = client_id(n.id)?;
-    let owner = match (&n.task_id, &n.meeting_id) {
-        (Some(task_id), None) => {
+    let owner = match (&n.task_id, &n.meeting_id, &n.note_id) {
+        (Some(task_id), None, None) => {
             live_task(b, task_id)?;
             Owner::Task(task_id.clone())
         }
-        (None, Some(meeting_id)) => {
+        (None, Some(meeting_id), None) => {
             live_meeting(b, meeting_id)?;
             Owner::Meeting(meeting_id.clone())
         }
+        (None, None, Some(note_id)) => {
+            crate::notes::live_note(b, note_id)?;
+            Owner::Note(note_id.clone())
+        }
         _ => {
             return Err(Error::invalid(
-                "an attachment belongs to exactly one task or meeting",
+                "an attachment belongs to exactly one task, meeting or note",
             ));
         }
     };
@@ -1667,6 +1681,7 @@ fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
         json!({
             "task_id": n.task_id,
             "meeting_id": n.meeting_id,
+            "note_id": n.note_id,
             "hash": n.hash,
             "name": name,
             "mime": mime,

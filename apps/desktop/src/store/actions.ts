@@ -985,8 +985,8 @@ export function deleteStatus(store: TaskStore, id: string) {
 // ---------------------------------------------------------------------------------------
 // Attachments (ADR 011). The content is stored first (`FilesApi.store*`); these record it.
 
-/** What files are attached to: a task or a meeting. */
-export type AttachmentOwner = { task: string } | { meeting: string };
+/** What files are attached to: a task, a meeting or a note. */
+export type AttachmentOwner = { task: string } | { meeting: string } | { note: string };
 
 /**
  * Attaches stored files to a task in one undoable batch. Resolves to the new attachments
@@ -1000,7 +1000,7 @@ export function attachFiles(
   return attachFilesTo(store, { task: taskId }, uploads);
 }
 
-/** Attaches stored files to a task or a meeting in one undoable batch. */
+/** Attaches stored files to a task, a meeting or a note in one undoable batch. */
 export async function attachFilesTo(
   store: TaskStore,
   owner: AttachmentOwner,
@@ -1009,14 +1009,17 @@ export async function attachFilesTo(
   const s = store.getState();
   const task_id = "task" in owner ? owner.task : null;
   const meeting_id = "meeting" in owner ? owner.meeting : null;
+  const note_id = "note" in owner ? owner.note : null;
   const task = task_id ? s.tasks[task_id] : undefined;
   const meeting = meeting_id ? s.meetings[meeting_id] : undefined;
-  if ((!task && !meeting) || !uploads.length) return [];
+  const note = note_id ? s.notes[note_id] : undefined;
+  if ((!task && !meeting && !note) || !uploads.length) return [];
   const now = Date.now();
   const attachments: Attachment[] = uploads.map((u, i) => ({
     id: uuidv7(now + i),
     task_id,
     meeting_id,
+    note_id,
     hash: u.hash,
     name: u.name,
     mime: u.mime,
@@ -1030,7 +1033,7 @@ export async function attachFilesTo(
       type: "create_attachment" as const,
       attachment: {
         id: a.id,
-        ...(task_id ? { task_id } : { meeting_id }),
+        ...(task_id ? { task_id } : meeting_id ? { meeting_id } : { note_id }),
         hash: a.hash,
         name: a.name,
         mime: a.mime,
@@ -1042,6 +1045,7 @@ export async function attachFilesTo(
         attachments,
         ...(task && { tasks: [{ ...task, updated_at: now }] }),
         ...(meeting && { meetings: [{ ...meeting, updated_at: now }] }),
+        ...(note && { notes: [{ ...note, updated_at: now }] }),
       },
     },
   );

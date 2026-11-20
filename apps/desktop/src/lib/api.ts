@@ -19,6 +19,7 @@ import type {
   EventRange,
   GitInfo,
   JoinMode,
+  NoteHit,
   PlanUsage,
   ProjectFolder,
   Snapshot,
@@ -65,6 +66,8 @@ export interface Api {
   transcript?(meetingId: string): Promise<TranscriptSegment[]>;
   /** Transcript lines matching every word, best first. */
   searchTranscripts?(text: string, limit: number): Promise<TranscriptHit[]>;
+  /** Notes matching every word of their title or body, best first (ADR 032). */
+  searchNotes?(text: string, limit: number): Promise<NoteHit[]>;
   onChanged(handler: (event: Changed) => void): Promise<() => void>;
   /** Attachments and links; absent where there is no file system (some tests). */
   files?: FilesApi;
@@ -267,6 +270,7 @@ export const tauriApi: Api = {
   parseCapture: (text, today) => unwrap(commands.parseCapture(text, today)),
   transcript: (meetingId) => unwrap(commands.meetingTranscript(meetingId)),
   searchTranscripts: (text, limit) => unwrap(commands.searchTranscripts(text, limit)),
+  searchNotes: (text, limit) => unwrap(commands.searchNotes(text, limit)),
   onChanged: (handler) => events.storeChanged.listen((event) => handler(event.payload)),
   files: tauriFiles,
   calendar: tauriCalendar,

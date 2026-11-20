@@ -7,6 +7,7 @@ export type PaletteGroup =
   | "Epics"
   | "Tags"
   | "Tasks"
+  | "Notes"
   | "Meetings"
   | "Transcripts";
 
@@ -28,6 +29,7 @@ const GROUP_ORDER: PaletteGroup[] = [
   "Epics",
   "Tags",
   "Tasks",
+  "Notes",
   "Meetings",
   "Transcripts",
 ];

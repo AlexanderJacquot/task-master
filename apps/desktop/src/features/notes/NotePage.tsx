@@ -12,9 +12,11 @@ import { tidy } from "../../lib/notes";
 import type { Note, NoteChange } from "../../lib/types";
 import { deleteNote, moveNote, updateNote } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { AttachmentList } from "../task-detail/AttachmentList";
 import { DescriptionEditor } from "../task-detail/DescriptionEditor";
 import { TaskPicker } from "../task-detail/TaskPicker";
 import { fitHeight, TitleField } from "../task-detail/TitleField";
+import { useNoteAttachments, useNoteFiles } from "../task-detail/useTaskFiles";
 
 /** Typing pauses this long before the title is saved (and the sidebar shows it). */
 const TITLE_SAVE_MS = 500;
@@ -183,6 +185,9 @@ function NoteEditor({ note }: { note: Note }) {
   // Enter in the title opens the body's editor (remounted with the cursor in it).
   const [bodyFocus, setBodyFocus] = useState(0);
   const change = (changes: NoteChange[]) => void updateNote(store, note.id, changes);
+  const files = useNoteFiles(note.id);
+  const attachments = useNoteAttachments(note.id);
+  const attachmentsById = useStoreState((s) => s.attachments);
   return (
     <div className="flex flex-col gap-4">
       <NoteTitle
@@ -196,10 +201,20 @@ function NoteEditor({ note }: { note: Note }) {
         value={note.body}
         onSave={(body) => body !== note.body && change([{ body }])}
         size="page"
-        attachments={{}}
-        actions={{}}
+        attachments={attachmentsById}
+        actions={files.actions}
+        upload={files.uploader}
         autoFocus={bodyFocus > 0}
-        placeholder="Write freely… Markdown works. Type [[ to link a task."
+        placeholder="Write freely… Markdown works. Type [[ to link a task; paste or drop images and files."
+      />
+      <AttachmentList
+        attachments={attachments}
+        files={files}
+        page
+        onInsert={(markdown) => {
+          const text = store.getState().notes[note.id]?.body.replace(/\s+$/, "") ?? "";
+          change([{ body: text ? `${text}\n\n${markdown}` : markdown }]);
+        }}
       />
     </div>
   );
