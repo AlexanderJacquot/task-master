@@ -23,7 +23,7 @@ const STATUS_COLS: &str =
     "id, name, category, color, rank, wip_limit, created_at, updated_at, deleted_at";
 const VIEW_COLS: &str = "id, name, spec, rank, created_at, updated_at, deleted_at";
 const ATTACHMENT_COLS: &str =
-    "id, task_id, hash, name, mime, size, created_at, updated_at, deleted_at, meeting_id";
+    "id, task_id, hash, name, mime, size, created_at, updated_at, deleted_at, meeting_id, note_id";
 
 const MEETING_COLS: &str = "id, title, started_at, ended_at, project_id, epic_id, task_id, \
     state, participants, notes, summary, transcribed_at, validated_at, created_at, updated_at, \
@@ -152,6 +152,7 @@ fn attachment_row(r: &Row<'_>) -> rusqlite::Result<Attachment> {
         updated_at: r.get(7)?,
         deleted_at: r.get(8)?,
         meeting_id: r.get(9)?,
+        note_id: r.get(10)?,
     })
 }
 
@@ -680,18 +681,20 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
             &[],
             view_row,
         )?,
-        // A deleted task or meeting keeps its attachment rows, so undoing the delete
+        // A deleted task, meeting or note keeps its attachment rows, so undoing the delete
         // restores them.
         attachments: query(
             conn,
             "SELECT a.id, a.task_id, a.hash, a.name, a.mime, a.size, a.created_at,
-                    a.updated_at, a.deleted_at, a.meeting_id
+                    a.updated_at, a.deleted_at, a.meeting_id, a.note_id
              FROM attachments a
              LEFT JOIN tasks t ON t.id = a.task_id
              LEFT JOIN meetings m ON m.id = a.meeting_id
+             LEFT JOIN notes n ON n.id = a.note_id
              WHERE a.deleted_at IS NULL
                AND (t.deleted_at IS NULL AND t.id IS NOT NULL
-                    OR m.deleted_at IS NULL AND m.id IS NOT NULL)
+                    OR m.deleted_at IS NULL AND m.id IS NOT NULL
+                    OR n.deleted_at IS NULL AND n.id IS NOT NULL)
              ORDER BY a.created_at, a.id",
             &[],
             attachment_row,
@@ -719,6 +722,8 @@ pub(crate) fn snapshot(conn: &Connection) -> Result<Snapshot> {
         )?,
         meetings: meetings(conn, None)?,
         terminal_sessions: terminal_sessions(conn)?,
+        note_folders: crate::notes::folders(conn)?,
+        notes: crate::notes::notes(conn)?,
     })
 }
 

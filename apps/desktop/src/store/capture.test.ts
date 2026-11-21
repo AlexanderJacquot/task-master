@@ -36,6 +36,8 @@ async function setup() {
         meetings: [],
         transcript_segments: [],
         terminal_sessions: [],
+        notes: [],
+        note_folders: [],
         statuses: [],
       } as Changes;
     },

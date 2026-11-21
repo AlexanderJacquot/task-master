@@ -4,6 +4,47 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Notes integrations** (2026-11-21, branch `notes-integrations`, on top of `notes-page`;
+ADR 032 "Follow-ups"): migration 19 adds `notes_fts` (title, body; triggers like
+`tasks_fts`) and `attachments.note_id` (exactly one of task, meeting, note; table rebuilt).
+**Search**: `Store::search_notes` + IPC read `search_notes`; the command palette lists
+notes (titles; bodies through search, with a plain snippet, `noteSnippet`) and a New note
+action. **Files**: a note page takes pasted/dropped files (`useNoteFiles`) and lists them
+under the body; Settings → Files names the note. **Drag and drop**: sidebar note rows drag
+onto a folder (end), next to a note (before/after, a line shows where) or onto a "Drop here
+for no folder" strip (`notePlacement`, `placeNote`). **Project page**: notes linking the
+project, attached to or linking its tasks (an area's include its projects'), "New note"
+(also in the ⋯ menu) writes one starting with a project link. **MCP**: `list_notes`,
+`get_note`, `create_note`, `update_note`, `delete_note`; `attach_file` and the attachment
+tools take notes; `search` lists matching notes. Writing a note is always allowed,
+changing the user's follows Settings → Agents (own notes stay editable); docs/mcp.md.
+The palette and `[[` picker inputs turn off macOS inline text prediction
+(`NO_TEXT_PREDICTION`): its bubble covered the first result. Tests: core `notes.rs` (+3),
+MCP `tools.rs` (+2, tool list), `lib/notes.test.ts`, `notes.test.tsx` (+6), attachments,
+files. Checks: `cargo fmt --check`, clippy, `cargo test --workspace` (353 passed, 8
+ignored), biome, typecheck, `pnpm test` (618 passed, 2 skipped). **Tried in the Tauri app**
+(a debug bundle with identifier `space.solarnexus.taskmaster.notescheck`, so its own
+config and database, no sync): the `[[` picker in a note (finds the task, inserts a chip),
+palette New note and body search, the project page's notes, dragging a note into a folder
+and out again. Not tried live: pasting or dropping a file into a note (tests only).
+Schema 19: update the sync server with the app.
+
+**Notes in the sidebar** (2026-11-20, branch `notes-page`; ADR 032): markdown pages in
+simple folders (one level), in a Notes section of the sidebar (open by default, above
+Epics). Migration 18: `note_folders`, `notes` (title, body, folder, attached task, rank),
+ordinary entities (ops, undo, sync, export/import), core in `crates/core/src/notes.rs`.
+`/note/<id>`: a large title on top (saved after a 500 ms pause, so the sidebar follows),
+then the markdown body (`DescriptionEditor`); the bar moves it to a folder, attaches it to
+a task, deletes it. Links: `[text](task:<id>)` / `[text](project:<id>)` render as chips;
+typing `[[` in any markdown editor (notes, task descriptions, meeting notes) opens a task
+search that inserts one. A task's panel and page list its notes (attached, then "links
+here") with "New note" (attached, titled like the task). Deleting a folder moves its notes
+to the top level. Showcase has two sample notes. Tests: core `tests/notes.rs` (8),
+`lib/notes.test.ts` (6), `features/notes/notes.test.tsx` (4). Checks: `cargo fmt --check`,
+clippy, `cargo test --workspace`, biome, typecheck, `pnpm test` (605 passed, 2 skipped).
+Tried in the browser showcase (sidebar, new note, title following, `[[` picker, task
+panel). Not yet tried in the Tauri app. Schema 18: update the sync server with the app.
+
 **Release 0.26.0** (2026-11-20, on `main`; notes `docs/releases/0.26.0.md`): the Roadmap
 (epics across projects, a timeline per epic, saved roadmap views; ADR 031), Outlook
 calendar sync on Windows (ADR 030), a Today panel on All tasks with list rows that drag,
@@ -2442,6 +2483,9 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- Notes (ADR 032): reorder folders by drag; a Notes page listing all notes; backlinks
+  between notes (`note:<id>` links). (The first follow-ups landed on
+  `notes-integrations`.)
 - Roadmap (ADR 031): an MCP tool to read a roadmap (bars, late links); "push dependents"
   when a bar moves past them; moving an epic's bar could offer to shift its tasks; a
   `start_date` on epics and tasks if starts matter outside the roadmap.

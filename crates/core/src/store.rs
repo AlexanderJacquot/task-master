@@ -14,8 +14,9 @@ use crate::events::{Changed, EntityRef, EventBus};
 use crate::files::FileStore;
 use crate::history::{self, History};
 use crate::model::{
-    AgentNote, AgentRuntime, AgentSession, Attachment, Epic, Id, Meeting, Project, ProjectFolder,
-    SessionState, Snapshot, Status, Tag, Task, TerminalSession, TimeBlock, TranscriptSegment, View,
+    AgentNote, AgentRuntime, AgentSession, Attachment, Epic, Id, Meeting, Note, NoteFolder,
+    Project, ProjectFolder, SessionState, Snapshot, Status, Tag, Task, TerminalSession, TimeBlock,
+    TranscriptSegment, View,
 };
 use crate::ops::{Batch, EntityKind};
 use crate::sync::{self, Merged, OpsPage, SyncOp};
@@ -45,6 +46,10 @@ pub struct Changes {
     pub transcript_segments: Vec<TranscriptSegment>,
     #[serde(default)]
     pub terminal_sessions: Vec<TerminalSession>,
+    #[serde(default)]
+    pub note_folders: Vec<NoteFolder>,
+    #[serde(default)]
+    pub notes: Vec<Note>,
 }
 
 impl Changes {
@@ -373,6 +378,11 @@ impl Store {
         query::search_transcripts(&self.conn, text, limit)
     }
 
+    /// Live notes matching every word of `text` in their title or body, best first.
+    pub fn search_notes(&self, text: &str, limit: u32) -> Result<Vec<crate::notes::NoteHit>> {
+        crate::notes::search_notes(&self.conn, text, limit)
+    }
+
     /// Live meetings by start; with `link` (`("project" | "epic" | "task", id)`), only
     /// those linked to it.
     pub fn meetings(&self, link: Option<(&str, &str)>) -> Result<Vec<Meeting>> {
@@ -412,17 +422,19 @@ impl Store {
         Ok(missing)
     }
 
-    /// Whether a live attachment of a live task or meeting uses the content with `hash`. A
-    /// file only used by deleted attachments, or by attachments of deleted tasks and
-    /// meetings, can be purged.
+    /// Whether a live attachment of a live task, meeting or note uses the content with
+    /// `hash`. A file only used by deleted attachments, or by attachments of deleted tasks,
+    /// meetings and notes, can be purged.
     pub fn file_in_use(&self, hash: &str) -> Result<bool> {
         Ok(self.conn.query_row(
             "SELECT EXISTS (SELECT 1 FROM attachments a \
              LEFT JOIN tasks t ON t.id = a.task_id \
              LEFT JOIN meetings m ON m.id = a.meeting_id \
+             LEFT JOIN notes n ON n.id = a.note_id \
              WHERE a.hash = ?1 AND a.deleted_at IS NULL \
                AND (t.id IS NOT NULL AND t.deleted_at IS NULL \
-                    OR m.id IS NOT NULL AND m.deleted_at IS NULL))",
+                    OR m.id IS NOT NULL AND m.deleted_at IS NULL \
+                    OR n.id IS NOT NULL AND n.deleted_at IS NULL))",
             [hash],
             |r| r.get(0),
         )?)
@@ -853,6 +865,8 @@ fn load_changes(
                     .terminal_sessions
                     .push(query::terminal_session(conn, id)?);
             }
+            EntityKind::NoteFolder => changes.note_folders.push(crate::notes::folder(conn, id)?),
+            EntityKind::Note => changes.notes.push(crate::notes::note(conn, id)?),
         }
     }
     Ok(changes)

@@ -1,11 +1,16 @@
+import { useRouter } from "@tanstack/react-router";
 import { ImageOff } from "lucide-react";
-import { type ComponentProps, memo, useState } from "react";
+import { type ComponentProps, memo, type ReactNode, useState } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { FileTextIcon as FileText } from "../../components/TaskIcons";
+import { CheckIcon, FileTextIcon as FileText } from "../../components/TaskIcons";
 import { cx } from "../../components/ui";
 import { attachmentId, formatSize, isImage } from "../../lib/attachments";
+import { entityLink } from "../../lib/notes";
 import type { Attachment } from "../../lib/types";
+import { useStoreState } from "../../store/context";
+import { ProjectMark } from "../organize/ProjectMark";
+import { useOpenTask } from "../shell/useOpenTask";
 
 export interface MarkdownActions {
   /** URL to load an attachment's content from. */
@@ -16,9 +21,59 @@ export interface MarkdownActions {
   toggleTask?: (line: number, checked: boolean) => void;
 }
 
-/** Keeps `attachment:` links (resolved below) and the default safe set of URLs. */
+/** Keeps `attachment:`, `task:` and `project:` links (resolved below) and the default safe set of URLs. */
 function urlTransform(url: string): string {
-  return attachmentId(url) ? url : defaultUrlTransform(url);
+  return attachmentId(url) || entityLink(url) ? url : defaultUrlTransform(url);
+}
+
+const ENTITY_LINK =
+  "inline-flex items-baseline gap-1 rounded px-1 text-accent hover:bg-accent/10 hover:underline";
+
+/** A `task:<id>` link (ADR 032): the link text with the task's state; opens the task. */
+function TaskLink({ id, children }: { id: string; children: ReactNode }) {
+  const task = useStoreState((s) => s.tasks[id]);
+  const done = useStoreState((s) => {
+    const category = task && s.statuses.find((x) => x.id === task.status_id)?.category;
+    return category === "done" || category === "cancelled";
+  });
+  const openTask = useOpenTask();
+  return (
+    <button
+      type="button"
+      onClick={() => task && openTask(id)}
+      className={cx(ENTITY_LINK, !task && "text-ink-3 line-through", done && "text-ink-3")}
+      title={task ? `Open task: ${task.title}` : "This task was deleted"}
+    >
+      {done ? (
+        <CheckIcon size={12} className="self-center" />
+      ) : (
+        <span className="size-2.5 shrink-0 self-center rounded-full border-[1.5px] border-current" />
+      )}
+      <span className={cx(done && "line-through")}>{children}</span>
+    </button>
+  );
+}
+
+/** A `project:<id>` link: the link text with the project's mark; opens the project. */
+function ProjectLink({ id, children }: { id: string; children: ReactNode }) {
+  const project = useStoreState((s) => s.projects[id]);
+  const router = useRouter({ warn: false });
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        project &&
+        void router?.navigate({ to: "/project/$projectId", params: { projectId: id }, search: {} })
+      }
+      className={cx(ENTITY_LINK, !project && "text-ink-3 line-through")}
+      title={project ? `Open project: ${project.name}` : "This project was deleted"}
+    >
+      {project && (
+        <ProjectMark project={project} dotClass="size-2" className="self-center text-[12px]" />
+      )}
+      {children}
+    </button>
+  );
 }
 
 function MissingFile({ name }: { name: string }) {
@@ -63,7 +118,8 @@ function AttachmentImage({
 /**
  * A task description rendered from markdown (GitHub flavor: tables, task lists,
  * strikethrough, autolinks). Raw HTML is not rendered. Images and links to
- * `attachment:<id>` show the task's files; other links open outside the app.
+ * `attachment:<id>` show the task's files; `task:<id>` and `project:<id>` links open them
+ * in the app (ADR 032); other links open outside the app.
  */
 export const MarkdownView = memo(function MarkdownView({
   source,
@@ -94,6 +150,9 @@ export const MarkdownView = memo(function MarkdownView({
       );
     },
     a: ({ href, children }) => {
+      const entity = entityLink(href);
+      if (entity?.kind === "task") return <TaskLink id={entity.id}>{children}</TaskLink>;
+      if (entity?.kind === "project") return <ProjectLink id={entity.id}>{children}</ProjectLink>;
       const id = attachmentId(href);
       if (id) {
         const attachment = attachments[id];

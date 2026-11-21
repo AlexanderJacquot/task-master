@@ -37,6 +37,17 @@ export const PRIORITY_PILL: Record<Priority, string> = {
 };
 
 /** Focus ring shared by every control. */
+/**
+ * Props for a search box: no autocorrect, spell check or macOS inline text prediction,
+ * whose bubble would cover the results under it.
+ */
+export const NO_TEXT_PREDICTION = {
+  autoComplete: "off",
+  autoCorrect: "off",
+  spellCheck: false,
+  writingsuggestions: "false",
+} as const;
+
 export const FOCUS =
   "focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent";
 

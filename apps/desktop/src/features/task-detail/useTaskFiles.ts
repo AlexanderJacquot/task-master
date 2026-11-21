@@ -30,7 +30,12 @@ export function useMeetingFiles(meetingId: string) {
   return useFiles("meeting", meetingId);
 }
 
-function useFiles(kind: "task" | "meeting", id: string) {
+/** A note's attachments (ADR 032), as `useTaskFiles` for a task. */
+export function useNoteFiles(noteId: string) {
+  return useFiles("note", noteId);
+}
+
+function useFiles(kind: "task" | "meeting" | "note", id: string) {
   const store = useTaskStore();
   const files = useApi().files;
 
@@ -50,7 +55,8 @@ function useFiles(kind: "task" | "meeting", id: string) {
           fail(err);
         }
       }
-      const owner: AttachmentOwner = kind === "task" ? { task: id } : { meeting: id };
+      const owner: AttachmentOwner =
+        kind === "task" ? { task: id } : kind === "meeting" ? { meeting: id } : { note: id };
       return attachFilesTo(store, owner, stored);
     };
 
@@ -127,5 +133,17 @@ export function useMeetingAttachments(meetingId: string): Attachment[] {
         .filter((a) => a.meeting_id === meetingId)
         .sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1)),
     [all, meetingId],
+  );
+}
+
+/** The note's attachments, oldest first. */
+export function useNoteAttachments(noteId: string): Attachment[] {
+  const all = useStoreState((s) => s.attachments);
+  return useMemo(
+    () =>
+      Object.values(all)
+        .filter((a) => a.note_id === noteId)
+        .sort((a, b) => a.created_at - b.created_at || (a.id < b.id ? -1 : 1)),
+    [all, noteId],
   );
 }

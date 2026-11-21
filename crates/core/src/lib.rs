@@ -17,6 +17,7 @@ mod events;
 mod files;
 mod history;
 mod model;
+mod notes;
 mod ops;
 mod parse;
 mod query;
@@ -43,10 +44,15 @@ pub use files::{
 pub use model::{
     AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, CanvasPoint, DueFilter, Epic,
     EpicState, FILTER_NONE, GroupBy, Id, IsoDate, LaneKeys, LanePositions, Layout, LineageArrange,
-    LineageCompletion, LineageSpec, Meeting, MeetingState, Priority, Project, ProjectFolder,
-    REVIEW_STATUS_ID, RoadmapGroup, RoadmapSpec, RoadmapZoom, SessionState, Snapshot, SortBy,
-    Status, StatusCategory, Swimlane, Tag, Task, TaskOwner, TerminalSession, TimeBlock, Timestamp,
-    TranscriptSegment, VIEW_SPEC_VERSION, View, ViewFilter, ViewScope, ViewSpec, review_status,
+    LineageCompletion, LineageSpec, Meeting, MeetingState, Note, NoteFolder, Priority, Project,
+    ProjectFolder, REVIEW_STATUS_ID, RoadmapGroup, RoadmapSpec, RoadmapZoom, SessionState,
+    Snapshot, SortBy, Status, StatusCategory, Swimlane, Tag, Task, TaskOwner, TerminalSession,
+    TimeBlock, Timestamp, TranscriptSegment, VIEW_SPEC_VERSION, View, ViewFilter, ViewScope,
+    ViewSpec, review_status,
+};
+pub use notes::{
+    MAX_NOTE_BODY_CHARS, MAX_NOTE_TITLE_CHARS, NewNote, NewNoteFolder, NoteChange,
+    NoteFolderChange, NoteHit,
 };
 pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};

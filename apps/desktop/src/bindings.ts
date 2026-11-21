@@ -18,6 +18,8 @@ export const commands = {
 	meetingTranscript: (meetingId: string) => typedError<TranscriptSegment_Serialize[], CommandError>(__TAURI_INVOKE("meeting_transcript", { meetingId })),
 	/**  Transcript lines of live meetings matching every word of `text`, best first. */
 	searchTranscripts: (text: string, limit: number) => typedError<TranscriptHit[], CommandError>(__TAURI_INVOKE("search_transcripts", { text, limit })),
+	/**  Live notes matching every word of `text` in their title or body, best first (ADR 032). */
+	searchNotes: (text: string, limit: number) => typedError<NoteHit[], CommandError>(__TAURI_INVOKE("search_notes", { text, limit })),
 	/**  A task's change history, newest first (read from the ops log). */
 	taskActivity: (taskId: string, limit: number) => typedError<Activity_Serialize[], CommandError>(__TAURI_INVOKE("task_activity", { taskId, limit })),
 	/**
@@ -569,6 +571,7 @@ export type Attachment_Deserialize = {
 	id: string,
 	task_id?: string | null,
 	meeting_id?: string | null,
+	note_id?: string | null,
 	/**  SHA-256 of the content, lowercase hex. */
 	hash: string,
 	/**  File name, without any folder. */
@@ -589,6 +592,7 @@ export type Attachment_Serialize = {
 	id: string,
 	task_id: string | null,
 	meeting_id: string | null,
+	note_id: string | null,
 	/**  SHA-256 of the content, lowercase hex. */
 	hash: string,
 	/**  File name, without any folder. */
@@ -916,6 +920,8 @@ export type Changes_Deserialize = {
 	/**  Transcript segments written (Scribe): not in the snapshot, read per meeting. */
 	transcript_segments?: TranscriptSegment_Deserialize[],
 	terminal_sessions?: TerminalSession_Deserialize[],
+	note_folders?: NoteFolder_Deserialize[],
+	notes?: Note_Deserialize[],
 };
 
 /**
@@ -940,6 +946,8 @@ export type Changes_Serialize = {
 	/**  Transcript segments written (Scribe): not in the snapshot, read per meeting. */
 	transcript_segments: TranscriptSegment_Serialize[],
 	terminal_sessions: TerminalSession_Serialize[],
+	note_folders: NoteFolder_Serialize[],
+	notes: Note_Serialize[],
 };
 
 /**  Claude Code as found with these settings (not saved). */
@@ -1039,7 +1047,13 @@ export type Command_Deserialize = { type: "create_task"; task: NewTask_Deseriali
  *  Removes a terminal session from the totals; reading its transcript again does not
  *  bring it back.
  */
-{ type: "delete_terminal_session"; id: string };
+{ type: "delete_terminal_session"; id: string } | 
+/**  Adds a note (ADR 032). */
+{ type: "create_note"; note: NewNote_Deserialize } | { type: "update_note"; id: string; changes: NoteChange_Deserialize[] } | 
+/**  Removes a note; undo brings it back. */
+{ type: "delete_note"; id: string } | { type: "create_note_folder"; folder: NewNoteFolder_Deserialize } | { type: "update_note_folder"; id: string; changes: NoteFolderChange[] } | 
+/**  Moves the folder's notes to the top level, then deletes it. */
+{ type: "delete_note_folder"; id: string };
 
 /**  A user action. Several commands sent together form one undoable batch. */
 export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize } | { type: "update_task"; id: string; changes: TaskChange_Serialize[] } | 
@@ -1121,7 +1135,13 @@ export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize }
  *  Removes a terminal session from the totals; reading its transcript again does not
  *  bring it back.
  */
-{ type: "delete_terminal_session"; id: string };
+{ type: "delete_terminal_session"; id: string } | 
+/**  Adds a note (ADR 032). */
+{ type: "create_note"; note: NewNote_Serialize } | { type: "update_note"; id: string; changes: NoteChange_Serialize[] } | 
+/**  Removes a note; undo brings it back. */
+{ type: "delete_note"; id: string } | { type: "create_note_folder"; folder: NewNoteFolder_Serialize } | { type: "update_note_folder"; id: string; changes: NoteFolderChange[] } | 
+/**  Moves the folder's notes to the top level, then deletes it. */
+{ type: "delete_note_folder"; id: string };
 
 /**  What the settings screen shows: never the secret itself. */
 export type ConfigView = ConfigView_Serialize | ConfigView_Deserialize;
@@ -1167,7 +1187,7 @@ export type DueFilter =
 "none";
 
 /**  Kinds of entity front ends get back in [`crate::Changes`] and events. */
-export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block" | "agent_session" | "agent_note" | "meeting" | "transcript_segment" | "terminal_session";
+export type EntityKind = "task" | "project" | "epic" | "tag" | "view" | "status" | "attachment" | "time_block" | "agent_session" | "agent_note" | "meeting" | "transcript_segment" | "terminal_session" | "note_folder" | "note";
 
 export type EntityRef = {
 	kind: EntityKind,
@@ -1323,6 +1343,7 @@ export type ImportSummary_Deserialize = {
 	time_blocks: number,
 	meetings: number,
 	transcript_segments?: number,
+	notes?: number,
 	/**  Attachments whose file was not found (an export copied without its folder). */
 	missing_files: number,
 };
@@ -1338,6 +1359,7 @@ export type ImportSummary_Serialize = {
 	time_blocks: number,
 	meetings: number,
 	transcript_segments: number,
+	notes: number,
 	/**  Attachments whose file was not found (an export copied without its folder). */
 	missing_files: number,
 };
@@ -1714,9 +1736,10 @@ export type NewAttachment = NewAttachment_Serialize | NewAttachment_Deserialize;
 
 export type NewAttachment_Deserialize = {
 	id?: string | null,
-	/**  The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two. */
+	/**  The task, meeting or note it is attached to: exactly one of the three. */
 	task_id?: string | null,
 	meeting_id?: string | null,
+	note_id?: string | null,
 	/**  From `FileStore::put_*`. */
 	hash: string,
 	/**  Folders are stripped. */
@@ -1728,9 +1751,10 @@ export type NewAttachment_Deserialize = {
 
 export type NewAttachment_Serialize = {
 	id: string | null,
-	/**  The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two. */
+	/**  The task, meeting or note it is attached to: exactly one of the three. */
 	task_id: string | null,
 	meeting_id: string | null,
+	note_id: string | null,
 	/**  From `FileStore::put_*`. */
 	hash: string,
 	/**  Folders are stripped. */
@@ -1804,6 +1828,48 @@ export type NewMeeting_Serialize = {
 	/**  Trimmed; blanks and repeats (ignoring case) are dropped. */
 	participants: string[],
 	notes: string,
+};
+
+export type NewNote = NewNote_Serialize | NewNote_Deserialize;
+
+export type NewNoteFolder = NewNoteFolder_Serialize | NewNoteFolder_Deserialize;
+
+export type NewNoteFolder_Deserialize = {
+	id?: string | null,
+	name?: string,
+	/**  Defaults to after the last folder. */
+	rank?: string | null,
+};
+
+export type NewNoteFolder_Serialize = {
+	id: string | null,
+	name: string,
+	/**  Defaults to after the last folder. */
+	rank: string | null,
+};
+
+export type NewNote_Deserialize = {
+	/**  Client-generated UUID; generated when absent. */
+	id?: string | null,
+	/**  May be blank. */
+	title?: string,
+	body?: string,
+	folder_id?: string | null,
+	task_id?: string | null,
+	/**  Defaults to the end of its folder. */
+	rank?: string | null,
+};
+
+export type NewNote_Serialize = {
+	/**  Client-generated UUID; generated when absent. */
+	id: string | null,
+	/**  May be blank. */
+	title: string,
+	body: string,
+	folder_id: string | null,
+	task_id: string | null,
+	/**  Defaults to the end of its folder. */
+	rank: string | null,
 };
 
 export type NewProject = NewProject_Serialize | NewProject_Deserialize;
@@ -1973,6 +2039,106 @@ export type NewView_Serialize = {
 	name: string,
 	spec: ViewSpec_Serialize,
 	rank: string | null,
+};
+
+/**
+ *  A markdown page in the sidebar's Notes (ADR 032). Its body links tasks and projects
+ *  with `task:<id>` and `project:<id>` URLs.
+ */
+export type Note = Note_Serialize | Note_Deserialize;
+
+export type NoteChange = NoteChange_Serialize | NoteChange_Deserialize;
+
+export type NoteChange_Deserialize = ({ title: string }) & { body?: never; folder_id?: never; rank?: never; task_id?: never } | ({ body: string }) & { folder_id?: never; rank?: never; task_id?: never; title?: never } | 
+/**
+ *  Moves it to a folder (`None`: the top level). Without a `Rank` change in the same
+ *  update it goes to the end of that folder.
+ */
+({ folder_id?: string | null }) & { body?: never; rank?: never; task_id?: never; title?: never } | 
+/**  Attaches it to a task, or detaches it with `None`. */
+({ task_id?: string | null }) & { body?: never; folder_id?: never; rank?: never; title?: never } | ({ rank: string }) & { body?: never; folder_id?: never; task_id?: never; title?: never };
+
+export type NoteChange_Serialize = ({ title: string }) & { body?: never; folder_id?: never; rank?: never; task_id?: never } | ({ body: string }) & { folder_id?: never; rank?: never; task_id?: never; title?: never } | 
+/**
+ *  Moves it to a folder (`None`: the top level). Without a `Rank` change in the same
+ *  update it goes to the end of that folder.
+ */
+({ folder_id: string | null }) & { body?: never; rank?: never; task_id?: never; title?: never } | 
+/**  Attaches it to a task, or detaches it with `None`. */
+({ task_id: string | null }) & { body?: never; folder_id?: never; rank?: never; title?: never } | ({ rank: string }) & { body?: never; folder_id?: never; task_id?: never; title?: never };
+
+/**  A folder of [`Note`]s (ADR 032). Folders do not nest. */
+export type NoteFolder = NoteFolder_Serialize | NoteFolder_Deserialize;
+
+export type NoteFolderChange = ({ name: string }) & { rank?: never } | ({ rank: string }) & { name?: never };
+
+/**  A folder of [`Note`]s (ADR 032). Folders do not nest. */
+export type NoteFolder_Deserialize = {
+	id: string,
+	name: string,
+	rank: string,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**  A folder of [`Note`]s (ADR 032). Folders do not nest. */
+export type NoteFolder_Serialize = {
+	id: string,
+	name: string,
+	rank: string,
+	created_at: number,
+	updated_at: number,
+	deleted_at: number | null,
+};
+
+/**  A note matching a search. */
+export type NoteHit = {
+	note_id: string,
+	/**  The title or the body around the matches, which are between `[` and `]`. */
+	snippet: string,
+};
+
+/**
+ *  A markdown page in the sidebar's Notes (ADR 032). Its body links tasks and projects
+ *  with `task:<id>` and `project:<id>` URLs.
+ */
+export type Note_Deserialize = {
+	id: string,
+	/**  May be blank; shown as "Untitled". */
+	title: string,
+	/**  Markdown. */
+	body: string,
+	/**  `None`: at the top level. */
+	folder_id?: string | null,
+	/**  The task it is attached to. */
+	task_id?: string | null,
+	/**  Order within its folder. */
+	rank: string,
+	created_at: number,
+	updated_at: number,
+	deleted_at?: number | null,
+};
+
+/**
+ *  A markdown page in the sidebar's Notes (ADR 032). Its body links tasks and projects
+ *  with `task:<id>` and `project:<id>` URLs.
+ */
+export type Note_Serialize = {
+	id: string,
+	/**  May be blank; shown as "Untitled". */
+	title: string,
+	/**  Markdown. */
+	body: string,
+	/**  `None`: at the top level. */
+	folder_id: string | null,
+	/**  The task it is attached to. */
+	task_id: string | null,
+	/**  Order within its folder. */
+	rank: string,
+	created_at: number,
+	updated_at: number,
+	deleted_at: number | null,
 };
 
 export type PlanUsage = PlanUsage_Serialize | PlanUsage_Deserialize;
@@ -2345,6 +2511,10 @@ export type Snapshot_Deserialize = {
 	meetings: Meeting_Deserialize[],
 	/**  Live terminal sessions, every device's, by start. */
 	terminal_sessions?: TerminalSession_Deserialize[],
+	/**  Live note folders, in order (ADR 032). */
+	note_folders?: NoteFolder_Deserialize[],
+	/**  Live notes, by rank. */
+	notes?: Note_Deserialize[],
 };
 
 /**  Every live (non-deleted) entity, used to hydrate a front end. */
@@ -2365,6 +2535,10 @@ export type Snapshot_Serialize = {
 	meetings: Meeting_Serialize[],
 	/**  Live terminal sessions, every device's, by start. */
 	terminal_sessions: TerminalSession_Serialize[],
+	/**  Live note folders, in order (ADR 032). */
+	note_folders: NoteFolder_Serialize[],
+	/**  Live notes, by rank. */
+	notes: Note_Serialize[],
 };
 
 export type SortBy = 

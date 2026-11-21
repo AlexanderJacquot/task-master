@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Api } from "../lib/api";
-import type { Attachment, Changes, Command, Meeting, StoredUpload, Task } from "../lib/types";
-import { attachment, fakeParse, meeting, snapshot, task } from "../test/fixtures";
+import type { Attachment, Changes, Command, Meeting, Note, StoredUpload, Task } from "../lib/types";
+import { attachment, fakeParse, meeting, note, snapshot, task } from "../test/fixtures";
 import {
   attachFiles,
   attachFilesTo,
@@ -12,7 +12,7 @@ import {
 import { createTaskStore } from "./store";
 
 function setup(
-  data: { tasks?: Task[]; attachments?: Attachment[]; meetings?: Meeting[] },
+  data: { tasks?: Task[]; attachments?: Attachment[]; meetings?: Meeting[]; notes?: Note[] },
   refuse = false,
 ) {
   const executed: Command[][] = [];
@@ -36,6 +36,8 @@ function setup(
         meetings: [],
         transcript_segments: [],
         terminal_sessions: [],
+        notes: [],
+        note_folders: [],
         statuses: [],
       } as Changes);
     },
@@ -79,6 +81,27 @@ describe("attachment actions", () => {
     expect(executed[1]).toEqual([{ type: "delete_meeting", id: m.id }]);
     expect(store.getState().meetings[m.id]).toBeUndefined();
     expect(store.getState().attachments).toEqual({});
+  });
+
+  it("attaches files to a note (ADR 032)", async () => {
+    const n = note({ title: "Diagram" });
+    const { store, executed, ready } = setup({ notes: [n] });
+    await ready;
+    const [added] = await attachFilesTo(store, { note: n.id }, [upload("sketch.png")]);
+    expect(added).toMatchObject({ note_id: n.id, task_id: null, meeting_id: null });
+    expect(executed[0]?.[0]).toEqual({
+      type: "create_attachment",
+      attachment: {
+        id: added?.id,
+        note_id: n.id,
+        hash: "b".repeat(64),
+        name: "sketch.png",
+        mime: "image/png",
+        size: 10,
+      },
+    });
+    expect(store.getState().attachments[added?.id as string]).toBeTruthy();
+    expect(await attachFilesTo(store, { note: "gone" }, [upload("x.png")])).toEqual([]);
   });
 
   it("attaches several stored files in one batch, shown at once", async () => {

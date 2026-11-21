@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BlobList, StoredFileInfo } from "../bindings";
-import { attachment, meeting, task } from "../test/fixtures";
+import { attachment, meeting, note, task } from "../test/fixtures";
 import { fileRows, fileTotals, filterFiles, sortFiles } from "./files";
 
 const A = "a".repeat(64);
@@ -28,6 +28,28 @@ describe("files overview", () => {
     expect(rows.map((r) => [r.name, r.task, r.meeting?.title])).toEqual([
       ["deck.pdf", null, "Kick-off"],
     ]);
+  });
+
+  it("names the note holding a file, and flags one shown in its body", () => {
+    const held = attachment({ task_id: null, note_id: "n1", hash: A, name: "sketch.png" });
+    const n = note({ id: "n1", title: "Diagram", body: `![sketch](attachment:${held.id})` });
+    const rows = fileRows({
+      local: [local(A, 10, 1)],
+      server: null,
+      attachments: [held],
+      tasks: {},
+      notes: { [n.id]: n },
+    });
+    expect(rows.map((r) => [r.name, r.note?.title, r.inDescription])).toEqual([
+      ["sketch.png", "Diagram", true],
+    ]);
+    const orphan = fileRows({
+      local: [local(A, 10, 1)],
+      server: null,
+      attachments: [held],
+      tasks: {},
+    });
+    expect(orphan[0]?.attachments).toEqual([]);
   });
 
   it("joins duplicate attachments with device and server content, including missing content", () => {

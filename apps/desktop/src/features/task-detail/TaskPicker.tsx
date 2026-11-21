@@ -1,7 +1,7 @@
 import { Popover } from "radix-ui";
 import { type ReactNode, useMemo, useState } from "react";
 import { SearchIcon as Search } from "../../components/TaskIcons";
-import { cx, Dot, INPUT, MENU, MENU_ITEM } from "../../components/ui";
+import { cx, Dot, INPUT, MENU, MENU_ITEM, NO_TEXT_PREDICTION } from "../../components/ui";
 import type { Task } from "../../lib/types";
 import { useStoreState } from "../../store/context";
 import { rankCandidates } from "./hierarchy";
@@ -52,14 +52,18 @@ export function TaskPicker({
   );
 }
 
-function PickerBody({
+/** The search box and list of a task picker; Enter picks the best match. */
+export function PickerBody({
   label,
   candidates,
   onPick,
+  onEscape,
 }: {
   label: string;
   candidates: () => Task[];
   onPick: (task: Task) => void;
+  /** Esc in the search box (a popover handles it itself when absent). */
+  onEscape?: () => void;
 }) {
   const statuses = useStoreState((s) => s.statuses);
   const projects = useStoreState((s) => s.projects);
@@ -76,9 +80,16 @@ function PickerBody({
         <input
           // biome-ignore lint/a11y/noAutofocus: the popover exists to type a search
           autoFocus
+          {...NO_TEXT_PREDICTION}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
+            if (e.key === "Escape" && onEscape) {
+              e.preventDefault();
+              e.stopPropagation();
+              onEscape();
+              return;
+            }
             if (e.key !== "Enter" || !matches[0]) return;
             e.preventDefault();
             onPick(matches[0]);

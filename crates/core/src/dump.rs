@@ -36,6 +36,8 @@ pub(crate) const TABLES: &[&str] = &[
     "agent_sessions",
     "agent_notes",
     "terminal_sessions",
+    "note_folders",
+    "notes",
     "ops",
 ];
 
@@ -63,6 +65,8 @@ pub struct ImportSummary {
     pub meetings: u32,
     #[serde(default)]
     pub transcript_segments: u32,
+    #[serde(default)]
+    pub notes: u32,
     /// Attachments whose file was not found (an export copied without its folder).
     pub missing_files: u32,
 }
@@ -234,6 +238,7 @@ pub(crate) fn import(
             "time_blocks" => summary.time_blocks = n,
             "meetings" => summary.meetings = n,
             "transcript_segments" => summary.transcript_segments = n,
+            "notes" => summary.notes = n,
             _ => {}
         }
     }

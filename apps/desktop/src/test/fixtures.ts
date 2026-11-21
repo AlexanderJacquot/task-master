@@ -13,6 +13,8 @@ import type {
   Attachment,
   Capture,
   Meeting,
+  Note,
+  NoteFolder,
   Project,
   Snapshot,
   Status,
@@ -157,6 +159,7 @@ export function attachment(overrides: Partial<Attachment> = {}): Attachment {
     id: `0192f0c4-0000-7000-8000-${String(counter).padStart(12, "0")}`,
     task_id: "t0",
     meeting_id: null,
+    note_id: null,
     hash: "a".repeat(64),
     name: `file-${counter}.png`,
     mime: "image/png",
@@ -263,6 +266,35 @@ export function meeting(overrides: Partial<Meeting> = {}): Meeting {
   };
 }
 
+export function note(overrides: Partial<Note> = {}): Note {
+  counter += 1;
+  return {
+    id: `0192f0c7-0000-7000-8000-${String(counter).padStart(12, "0")}`,
+    title: `Note ${counter}`,
+    body: "",
+    folder_id: null,
+    task_id: null,
+    rank: fixtureRank(),
+    created_at: counter,
+    updated_at: counter,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
+export function noteFolder(overrides: Partial<NoteFolder> = {}): NoteFolder {
+  counter += 1;
+  return {
+    id: `0192f0c8-0000-7000-8000-${String(counter).padStart(12, "0")}`,
+    name: `Folder ${counter}`,
+    rank: fixtureRank(),
+    created_at: counter,
+    updated_at: counter,
+    deleted_at: null,
+    ...overrides,
+  };
+}
+
 export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
   return {
     tasks: [],
@@ -276,6 +308,8 @@ export function snapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     agent_sessions: [],
     meetings: [],
     terminal_sessions: [],
+    notes: [],
+    note_folders: [],
     ...overrides,
   };
 }

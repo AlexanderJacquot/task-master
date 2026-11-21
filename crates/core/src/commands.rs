@@ -207,6 +207,29 @@ pub enum Command {
     DeleteTerminalSession {
         id: Id,
     },
+    /// Adds a note (ADR 032).
+    CreateNote {
+        note: crate::notes::NewNote,
+    },
+    UpdateNote {
+        id: Id,
+        changes: Vec<crate::notes::NoteChange>,
+    },
+    /// Removes a note; undo brings it back.
+    DeleteNote {
+        id: Id,
+    },
+    CreateNoteFolder {
+        folder: crate::notes::NewNoteFolder,
+    },
+    UpdateNoteFolder {
+        id: Id,
+        changes: Vec<crate::notes::NoteFolderChange>,
+    },
+    /// Moves the folder's notes to the top level, then deletes it.
+    DeleteNoteFolder {
+        id: Id,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -413,11 +436,13 @@ pub enum ViewChange {
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct NewAttachment {
     pub id: Option<Id>,
-    /// The task, or (`meeting_id`) the meeting, it is attached to: exactly one of the two.
+    /// The task, meeting or note it is attached to: exactly one of the three.
     #[serde(default)]
     pub task_id: Option<Id>,
     #[serde(default)]
     pub meeting_id: Option<Id>,
+    #[serde(default)]
+    pub note_id: Option<Id>,
     /// From `FileStore::put_*`.
     pub hash: String,
     /// Folders are stripped.
@@ -608,6 +633,12 @@ pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
         Command::RecordTerminalSessions { sessions } => crate::terminal::record(b, sessions),
         Command::UpdateTerminalSession { id, changes } => crate::terminal::update(b, &id, changes),
         Command::DeleteTerminalSession { id } => crate::terminal::delete(b, &id),
+        Command::CreateNote { note } => crate::notes::create_note(b, note),
+        Command::UpdateNote { id, changes } => crate::notes::update_note(b, &id, changes),
+        Command::DeleteNote { id } => crate::notes::delete_note(b, &id),
+        Command::CreateNoteFolder { folder } => crate::notes::create_folder(b, folder),
+        Command::UpdateNoteFolder { id, changes } => crate::notes::update_folder(b, &id, changes),
+        Command::DeleteNoteFolder { id } => crate::notes::delete_folder(b, &id),
     }
 }
 
@@ -1572,12 +1603,14 @@ fn live_view(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::View> {
 enum Owner {
     Task(Id),
     Meeting(Id),
+    Note(Id),
 }
 
 fn attachment_owner(a: &crate::model::Attachment) -> Result<Owner> {
-    match (&a.task_id, &a.meeting_id) {
-        (Some(task_id), None) => Ok(Owner::Task(task_id.clone())),
-        (None, Some(meeting_id)) => Ok(Owner::Meeting(meeting_id.clone())),
+    match (&a.task_id, &a.meeting_id, &a.note_id) {
+        (Some(task_id), None, None) => Ok(Owner::Task(task_id.clone())),
+        (None, Some(meeting_id), None) => Ok(Owner::Meeting(meeting_id.clone())),
+        (None, None, Some(note_id)) => Ok(Owner::Note(note_id.clone())),
         _ => Err(Error::invalid(format!(
             "attachment {} has no single owner",
             a.id
@@ -1595,23 +1628,33 @@ fn touch_owner(b: &mut Batch<'_, '_>, owner: &Owner) -> Result<()> {
             OpKind::Update,
             json!({ "updated_at": b.now }),
         )),
+        Owner::Note(id) => b.apply(Change::new(
+            Entity::Note,
+            id,
+            OpKind::Update,
+            json!({ "updated_at": b.now }),
+        )),
     }
 }
 
 fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
     let id = client_id(n.id)?;
-    let owner = match (&n.task_id, &n.meeting_id) {
-        (Some(task_id), None) => {
+    let owner = match (&n.task_id, &n.meeting_id, &n.note_id) {
+        (Some(task_id), None, None) => {
             live_task(b, task_id)?;
             Owner::Task(task_id.clone())
         }
-        (None, Some(meeting_id)) => {
+        (None, Some(meeting_id), None) => {
             live_meeting(b, meeting_id)?;
             Owner::Meeting(meeting_id.clone())
         }
+        (None, None, Some(note_id)) => {
+            crate::notes::live_note(b, note_id)?;
+            Owner::Note(note_id.clone())
+        }
         _ => {
             return Err(Error::invalid(
-                "an attachment belongs to exactly one task or meeting",
+                "an attachment belongs to exactly one task, meeting or note",
             ));
         }
     };
@@ -1638,6 +1681,7 @@ fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
         json!({
             "task_id": n.task_id,
             "meeting_id": n.meeting_id,
+            "note_id": n.note_id,
             "hash": n.hash,
             "name": name,
             "mime": mime,
@@ -2384,7 +2428,7 @@ fn trimmed(value: Option<String>) -> Option<String> {
     value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
-fn client_id(id: Option<Id>) -> Result<Id> {
+pub(crate) fn client_id(id: Option<Id>) -> Result<Id> {
     match id {
         Some(id) => {
             check_id(&id)?;
@@ -2413,7 +2457,7 @@ fn check_estimate(minutes: Option<i64>) -> Result<()> {
     }
 }
 
-fn live_task(b: &Batch<'_, '_>, id: &str) -> Result<Task> {
+pub(crate) fn live_task(b: &Batch<'_, '_>, id: &str) -> Result<Task> {
     let task = query::task(b.tx, id)?;
     if task.deleted_at.is_some() {
         return Err(Error::not_found("task", id));

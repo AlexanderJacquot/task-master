@@ -32,6 +32,8 @@ async function renderAt(path: string, t: Task) {
         meetings: [],
         transcript_segments: [],
         terminal_sessions: [],
+        notes: [],
+        note_folders: [],
         statuses: [],
       }) as Changes,
     undo: async () => null,

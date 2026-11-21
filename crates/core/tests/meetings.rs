@@ -304,6 +304,7 @@ fn meetings_take_attachments_hidden_with_them() {
             id: None,
             task_id,
             meeting_id,
+            note_id: None,
             hash: stored.hash.clone(),
             name: "slides.pdf".into(),
             mime: None,

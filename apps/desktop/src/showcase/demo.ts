@@ -1,6 +1,6 @@
 // Sample data for the demo page (README screenshots). Development only.
 import type { Epic, Project, Snapshot, Tag, Task } from "../lib/types";
-import { STATUS, snapshot, task } from "../test/fixtures";
+import { note, noteFolder, STATUS, snapshot, task } from "../test/fixtures";
 
 const day = 86_400_000;
 const now = Date.now();
@@ -129,6 +129,8 @@ const landing = t({
   tag_ids: ["g-front"],
 });
 const launch = t({
+  // A real-looking id, so notes can link it (`task:<id>`).
+  id: "0192f0c6-0000-7000-8000-00000000a001",
   title: "Launch day checklist",
   project_id: "p-site",
   epic_id: "e-launch",
@@ -214,6 +216,34 @@ export const tasks: Task[] = [
   ...inbox,
 ];
 
+const siteFolder = noteFolder({ id: "0192f0c8-0000-7000-8000-00000000f001", name: "Website" });
+export const notes = [
+  note({
+    ...stamp,
+    title: "Launch plan",
+    folder_id: siteFolder.id,
+    task_id: launch.id,
+    rank: "a0",
+    body: [
+      "Ship on a Tuesday morning, never on a Friday.",
+      "",
+      "## Before",
+      `- [ ] Run through the [launch day checklist](task:${launch.id})`,
+      "- [x] Freeze the copy",
+      "",
+      "## After",
+      "- Watch the error rate for an hour",
+      "- Thank everyone",
+    ].join("\n"),
+  }),
+  note({
+    ...stamp,
+    title: "Reading list",
+    rank: "a1",
+    body: "- *The Mushroom at the End of the World*",
+  }),
+];
+
 export function demoSnapshot(): Snapshot {
-  return snapshot({ tasks, projects, epics, tags });
+  return snapshot({ tasks, projects, epics, tags, notes, note_folders: [siteFolder] });
 }

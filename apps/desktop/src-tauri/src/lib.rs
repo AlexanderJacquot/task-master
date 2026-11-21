@@ -172,6 +172,17 @@ fn search_transcripts(
     with_store(&state, |s| s.search_transcripts(&text, limit))
 }
 
+/// Live notes matching every word of `text` in their title or body, best first (ADR 032).
+#[tauri::command]
+#[specta::specta]
+fn search_notes(
+    state: State<'_, AppState>,
+    text: String,
+    limit: u32,
+) -> CommandResult<Vec<taskmaster_core::NoteHit>> {
+    with_store(&state, |s| s.search_notes(&text, limit))
+}
+
 /// A task's change history, newest first (read from the ops log).
 #[tauri::command]
 #[specta::specta]
@@ -624,6 +635,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             search,
             meeting_transcript,
             search_transcripts,
+            search_notes,
             task_activity,
             parse_capture,
             get_config,

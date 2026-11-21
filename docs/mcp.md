@@ -86,9 +86,9 @@ What it may do, outside a Send to Claude session:
   archive and delete projects, epics and tags (`update_project`, `delete_project`,
   `update_epic`, `delete_epic`, `list_tags`, `update_tag`, `delete_tag`); plan or log
   time on any task (`schedule_block`, `update_block`); link any tasks (`link_tasks`);
-  attachments (`list_attachments`, `attach_file`, `read_attachment`,
-  `rename_attachment`, `remove_attachment`); remove ended agent sessions
-  (`remove_agent_session`). Settings → Agents → **Let agents edit my tasks** turns all
+  attachments on tasks and notes (`list_attachments`, `attach_file`, `read_attachment`,
+  `rename_attachment`, `remove_attachment`); change and delete your notes (`update_note`,
+  `delete_note`); remove ended agent sessions (`remove_agent_session`). Settings → Agents → **Let agents edit my tasks** turns all
   of this off (deletes included); the remote MCP on the sync server always may. Notes and
   session summaries need a session: the server's own, or one opened in the Claude desktop
   app, named with `session_id` (its first message gives it; ADR 029).
@@ -120,6 +120,19 @@ session and task ids, task title and current task status, run state, start/end t
 project, epic, task or participant name; `get_meeting` returns one in full (links,
 participants, attachment names, notes, summary). Both are read-only. `get_calendar` shows
 meetings among the day's items. Pass `utc_offset` to read times in local time.
+
+### Notes
+
+The user's Notes (ADR 032: markdown pages in folders, which may be attached to a task and
+link tasks and projects with `[text](task:<id>)` and `[text](project:<id>)`):
+`list_notes` lists them most recently edited first, or with `query` those whose title or
+body match (best first, with the words around the match), narrowed by `folder` (a name or
+id; `""` for no folder) or `task_id` (attached to the task or linking to it); `get_note`
+returns one in full (folder, attached task, linked tasks and projects, attachments, then
+the body). `create_note` writes one (always allowed: it is the user's at once), in a
+folder by name (made when missing) and attached to a task if asked; `update_note` changes
+its title, body (or `append_body`), folder or task. `search` lists matching notes after
+the tasks. `add_note` is something else: a session's progress note on its task.
 
 `list_agent_sessions`, `list_tasks` and `list_meetings` return at most 200 rows per call
 (50 by default). When `next_cursor` is present, pass it as `cursor` with the same filters

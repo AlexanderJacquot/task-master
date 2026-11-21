@@ -40,6 +40,8 @@ function fakeApi(getStore: () => TaskStore, tasks: Task[]) {
         meetings: [],
         transcript_segments: [],
         terminal_sessions: [],
+        notes: [],
+        note_folders: [],
         statuses: [],
       } as Changes;
     },
