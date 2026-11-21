@@ -76,5 +76,5 @@ its end, Enter opens it (the task, or the epic's timeline). The target date hand
   same everywhere.
 - Rows are virtualized; the scale, weekend shading, guides and arrows are one element per
   tick, weekend day, row or link (no repeating gradients, per docs/rendering-performance.md).
-- Exporting a roadmap as an image, and a server endpoint that renders one, are in the
-  backlog: a pure data → SVG renderer would serve both.
+- Exporting a roadmap as an image: ADR 034 (a data → SVG renderer in the core, which a
+  server endpoint can reuse).

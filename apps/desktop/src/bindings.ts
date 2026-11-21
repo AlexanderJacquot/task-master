@@ -61,6 +61,13 @@ export const commands = {
 	openAttachment: (id: string) => typedError<null, CommandError>(__TAURI_INVOKE("open_attachment", { id })),
 	/**  Saves a copy of the attachment to `path` (chosen in a save dialog). */
 	saveAttachment: (id: string, path: string) => typedError<null, CommandError>(__TAURI_INVOKE("save_attachment", { id, path })),
+	/**  Draws a roadmap as SVG from the rows the Roadmap page shows (read-only). */
+	roadmapSvg: (image: RoadmapImage_Deserialize) => typedError<RenderedImage, CommandError>(__TAURI_INVOKE("roadmap_svg", { image })),
+	/**
+	 *  Writes an exported image where the user chose in the save dialog: an `.svg` (text) or a
+	 *  `.png` (base64 bytes, rasterized by the UI). Other names are refused.
+	 */
+	saveImage: (path: string, data: string) => typedError<null, CommandError>(__TAURI_INVOKE("save_image", { path, data })),
 	/**
 	 *  Opens a link from a task description in the default browser or mail app. Only
 	 *  `http`, `https` and `mailto` links: the description is user text, not trusted code.
@@ -1329,6 +1336,69 @@ export type GitInfo_Serialize = {
 /**  List grouping (the board always has status columns). */
 export type GroupBy = "status" | "project" | "epic" | "priority" | "due";
 
+/**  An epic's target date: a dashed line, tagged on the scale. */
+export type ImageDeadline = ImageDeadline_Serialize | ImageDeadline_Deserialize;
+
+/**  An epic's target date: a dashed line, tagged on the scale. */
+export type ImageDeadline_Deserialize = {
+	date: string,
+	/**  What the date belongs to (the epic's name), for the image's description. */
+	label?: string,
+};
+
+/**  An epic's target date: a dashed line, tagged on the scale. */
+export type ImageDeadline_Serialize = {
+	date: string,
+	/**  What the date belongs to (the epic's name), for the image's description. */
+	label: string,
+};
+
+/**  `to` waits on `from`. */
+export type ImageLink = {
+	from: string,
+	to: string,
+};
+
+/**  One line of the image. */
+export type ImageRow = ImageRow_Serialize | ImageRow_Deserialize;
+
+/**  One line of the image. */
+export type ImageRow_Deserialize = 
+/**  A project's header, with a thin bar from its first start to its last end. */
+{ kind: "group"; label: string; 
+/**  `#rgb` or `#rrggbb`; anything else draws in the theme's grey. */
+color?: string | null; 
+/**  How many bars it holds (folded or not). */
+count: number; start: string; end: string } | 
+/**  An epic or a task, and its bar (first and last day, both included). */
+{ kind: "item"; id: string; title: string; 
+/**  Subtasks are indented under their parent. */
+depth?: number; start: string; end: string; 
+/**  A done task, or an epic that is done or dropped. */
+done?: boolean; 
+/**  An epic's share of done tasks, 0 to 1; `None` for a task. */
+progress?: number | null; color?: string | null };
+
+/**  One line of the image. */
+export type ImageRow_Serialize = 
+/**  A project's header, with a thin bar from its first start to its last end. */
+{ kind: "group"; label: string; 
+/**  `#rgb` or `#rrggbb`; anything else draws in the theme's grey. */
+color: string | null; 
+/**  How many bars it holds (folded or not). */
+count: number; start: string; end: string } | 
+/**  An epic or a task, and its bar (first and last day, both included). */
+{ kind: "item"; id: string; title: string; 
+/**  Subtasks are indented under their parent. */
+depth: number; start: string; end: string; 
+/**  A done task, or an epic that is done or dropped. */
+done: boolean; 
+/**  An epic's share of done tasks, 0 to 1; `None` for a task. */
+progress: number | null; color: string | null };
+
+/**  The app's themes (ADR 005's light, dark and clean), as fixed colors. */
+export type ImageTheme = "light" | "dark" | "clean";
+
 /**  What an import replaced, for the UI to report. */
 export type ImportSummary = ImportSummary_Serialize | ImportSummary_Deserialize;
 
@@ -2260,8 +2330,64 @@ export type RemoteView = {
 	has_secret: boolean,
 };
 
+/**  The image as SVG: its text, and its size in pixels. */
+export type RenderedImage = {
+	svg: string,
+	width: number,
+	height: number,
+};
+
 /**  The rows of the roadmap of epics: under their home project, or one list. */
 export type RoadmapGroup = "project" | "none";
+
+/**  What a roadmap image shows. Built from the same rows as the page. */
+export type RoadmapImage = RoadmapImage_Serialize | RoadmapImage_Deserialize;
+
+/**  What a roadmap image shows. Built from the same rows as the page. */
+export type RoadmapImage_Deserialize = {
+	/**  The heading: "Roadmap", the epic's name or the saved view's. */
+	title: string,
+	/**  A line under the heading, e.g. what it shows and as of when. Empty for none. */
+	subtitle?: string,
+	/**  The name column's heading: "Epic" or "Task". */
+	name_header: string,
+	zoom: RoadmapZoom,
+	/**  The day the today line is drawn on (when it falls inside the range). */
+	today: string,
+	/**  An epic's target date across its task timeline. */
+	deadline?: ImageDeadline_Deserialize | null,
+	/**  Top to bottom: group headers and the epics or tasks under them. */
+	rows: ImageRow_Deserialize[],
+	/**
+	 *  Dependency arrows, from what is waited on to what waits; links to rows that are not
+	 *  in the image are left out.
+	 */
+	links?: ImageLink[],
+	theme?: ImageTheme,
+};
+
+/**  What a roadmap image shows. Built from the same rows as the page. */
+export type RoadmapImage_Serialize = {
+	/**  The heading: "Roadmap", the epic's name or the saved view's. */
+	title: string,
+	/**  A line under the heading, e.g. what it shows and as of when. Empty for none. */
+	subtitle: string,
+	/**  The name column's heading: "Epic" or "Task". */
+	name_header: string,
+	zoom: RoadmapZoom,
+	/**  The day the today line is drawn on (when it falls inside the range). */
+	today: string,
+	/**  An epic's target date across its task timeline. */
+	deadline: ImageDeadline_Serialize | null,
+	/**  Top to bottom: group headers and the epics or tasks under them. */
+	rows: ImageRow_Serialize[],
+	/**
+	 *  Dependency arrows, from what is waited on to what waits; links to rows that are not
+	 *  in the image are left out.
+	 */
+	links: ImageLink[],
+	theme: ImageTheme,
+};
 
 /**
  *  A saved Roadmap: the epics across projects (their bars end on their target dates), or

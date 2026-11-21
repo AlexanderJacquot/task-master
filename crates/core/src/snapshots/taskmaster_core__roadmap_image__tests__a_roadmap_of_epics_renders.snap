@@ -1,0 +1,70 @@
+---
+source: crates/core/src/roadmap_image.rs
+expression: "out.svg.replace(\"><\", \">\\n<\")"
+---
+<svg xmlns="http://www.w3.org/2000/svg" width="993" height="248" viewBox="0 0 993 248" font-family="Inter, 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="13">
+<title>Roadmap</title>
+<desc>3 rows</desc>
+<defs>
+<marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+<path d="M0 0L8 4L0 8Z" fill="#8a8a95"/>
+</marker>
+<marker id="arrow-late" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
+<path d="M0 0L8 4L0 8Z" fill="#f2857a"/>
+</marker>
+<clipPath id="chart">
+<rect x="160" y="0" width="785" height="140"/>
+</clipPath>
+</defs>
+<rect width="993" height="248" fill="#0e0e10"/>
+<text x="24" y="42" font-size="20" font-weight="600" fill="#ededf0">Roadmap</text>
+<text x="24" y="64" font-size="12" fill="#8a8a95">Epics across projects · Nov 21, 2026</text>
+<g transform="translate(24 84)">
+<rect x="0.5" y="0.5" width="944" height="139" rx="8" fill="#1b1b1f" stroke="#ffffff" stroke-opacity="0.13"/>
+<text x="166" y="15" font-size="12" font-weight="500" fill="#a8a8b3">2026</text>
+<path d="M640 0L640 22" stroke="#ffffff" stroke-opacity="0.07"/>
+<text x="646" y="15" font-size="12" font-weight="500" fill="#a8a8b3">2027</text>
+<path d="M180 22L180 140" stroke="#ffffff" stroke-opacity="0.07"/>
+<text x="184" y="37" font-size="11" fill="#8a8a95">Oct</text>
+<path d="M335 22L335 140" stroke="#ffffff" stroke-opacity="0.07"/>
+<text x="339" y="37" font-size="11" fill="#8a8a95">Nov</text>
+<path d="M485 22L485 140" stroke="#ffffff" stroke-opacity="0.07"/>
+<text x="489" y="37" font-size="11" fill="#8a8a95">Dec</text>
+<path d="M640 22L640 140" stroke="#ffffff" stroke-opacity="0.07"/>
+<text x="644" y="37" font-size="11" fill="#8a8a95">Jan</text>
+<path d="M795 22L795 140" stroke="#ffffff" stroke-opacity="0.07"/>
+<text x="799" y="37" font-size="11" fill="#8a8a95">Feb</text>
+<path d="M935 22L935 140" stroke="#ffffff" stroke-opacity="0.07"/>
+<path d="M160 22L945 22" stroke="#ffffff" stroke-opacity="0.07"/>
+<path d="M0 44L945 44" stroke="#ffffff" stroke-opacity="0.13"/>
+<path d="M160 0L160 140" stroke="#ffffff" stroke-opacity="0.13"/>
+<text x="16" y="35" font-size="12" font-weight="500" fill="#8a8a95">Epic</text>
+<path d="M0 76L945 76" stroke="#ffffff" stroke-opacity="0.07"/>
+<rect x="1" y="44" width="943" height="32" fill="#ededf0" fill-opacity="0.035"/>
+<circle cx="20" cy="60" r="4" fill="#2383e2"/>
+<text x="32" y="64.5" font-weight="600" fill="#ededf0">Task Master</text>
+<text x="148" y="64.5" font-size="12" text-anchor="end" fill="#8a8a95">2</text>
+<rect x="180" y="57" width="745" height="6" rx="3" fill="#2383e2" fill-opacity="0.5"/>
+<path d="M0 108L945 108" stroke="#ffffff" stroke-opacity="0.07"/>
+<circle cx="24" cy="92" r="4" fill="#e0a030"/>
+<text x="34" y="96.5" fill="#ededf0">UI</text>
+<rect x="180.5" y="82.5" width="394" height="19" rx="5" fill="#e0a030" fill-opacity="0.18"/>
+<clipPath id="bar1">
+<rect x="180.5" y="82.5" width="394" height="19" rx="5"/>
+</clipPath>
+<rect clip-path="url(#bar1)" x="180" y="82" width="158" height="20" fill="#e0a030" fill-opacity="0.35"/>
+<rect x="180.5" y="82.5" width="394" height="19" rx="5" fill="none" stroke="#e0a030" stroke-opacity="0.6"/>
+<text x="188" y="96" font-size="12" fill="#ededf0">UI · 40%</text>
+<circle cx="24" cy="124" r="4" fill="#8a8a95"/>
+<text x="34" y="128.5" fill="#ededf0">Team spaces</text>
+<rect x="655.5" y="114.5" width="269" height="19" rx="5" fill="#d9a54a" fill-opacity="0.18"/>
+<rect x="655.5" y="114.5" width="269" height="19" rx="5" fill="none" stroke="#d9a54a" stroke-opacity="0.6"/>
+<text x="663" y="128" font-size="12" fill="#ededf0">Team spaces · 0%</text>
+<g fill="none" stroke-width="1.5" clip-path="url(#chart)">
+<path d="M575 92C615 92 615 124 653 124" stroke="#8a8a95" stroke-opacity="0.7" marker-end="url(#arrow)"/>
+</g>
+<path d="M437.5 22L437.5 140" stroke="#d9a54a" stroke-opacity="0.7" stroke-width="2"/>
+<rect x="415.4" y="24" width="44.1" height="18" rx="9" fill="#d9a54a"/>
+<text x="437.5" y="36.5" font-size="11" font-weight="600" text-anchor="middle" fill="#1b1b1f">Today</text>
+</g>
+</svg>

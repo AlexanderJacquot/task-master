@@ -20,7 +20,8 @@ The full plan is in docs/plan.md. Architecture decisions are in docs/adr/.
   and meeting recording and transcription on the device (scribe_*: status, devices,
   settings, start/stop, audio, recover, purge, usage, models, download/delete model,
   process/cancel; `tm://localhost/meeting-audio/…` plays it; ADR 025, ADR 026), plus the
-  transcript reads `meeting_transcript` and `search_transcripts`.
+  transcript reads `meeting_transcript` and `search_transcripts`, and roadmap images
+  (`roadmap_svg` draws one in the core, `save_image` writes a PNG or SVG; ADR 034).
 - apps/desktop/src/bindings.ts is generated. Never edit it by hand.
 
 ## Frontend

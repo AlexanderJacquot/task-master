@@ -1,9 +1,9 @@
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BookmarkIcon as Bookmark, RoadmapIcon } from "../../components/TaskIcons";
 import { Button, cx, FOCUS, InlineInput, Select } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
-import type { View } from "../../lib/types";
+import type { RoadmapImage, View } from "../../lib/types";
 import { FILTER_NONE } from "../../lib/views";
 import { createView, deleteView, updateEpic, updateTask, updateView } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
@@ -11,6 +11,8 @@ import { type Completion, closedTaskIds, filterLineage } from "../lineage/graph"
 import { EditableTitle } from "../shell/EditableTitle";
 import { MultiPick } from "../shell/FilterBar";
 import { useOpenTask } from "../shell/useOpenTask";
+import { ExportImageMenu } from "./ExportImageMenu";
+import { currentImageTheme, imageLinks, imageRows } from "./exportImage";
 import { RoadmapChart } from "./RoadmapChart";
 import {
   filterOf,
@@ -85,6 +87,7 @@ export function RoadmapPage({
   const [savingAs, setSavingAs] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [todaySeq, setTodaySeq] = useState(0);
   const today = isoDate();
 
@@ -237,6 +240,51 @@ export function RoadmapPage({
   }
   const dirty = !!view && (layoutEdited || !savedFilter || !sameFilter(filter, savedFilter));
 
+  // A note that an export worked fades after a few seconds.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 6000);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
+  /**
+   * The page as an image (ADR 034): the same rows, filters, timescale, starts and folds, but
+   * only what has a bar. Unscheduled epics or tasks, and groups left empty, stay out.
+   */
+  function exportedImage(): RoadmapImage {
+    const scheduled = items.filter((item) => item.bar);
+    const owners = level === "epics" && filter.group === "project" ? projects : null;
+    const rows = imageRows(rowsOf(scheduled, owners, "No project", collapsed));
+    const asOf = new Date(`${today}T00:00:00Z`).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    const picked = filter.projects.map((id) =>
+      id === FILTER_NONE ? "No project" : (projects[id]?.name ?? ""),
+    );
+    const what =
+      level === "epics"
+        ? picked.length
+          ? `Epics of ${picked.filter(Boolean).join(", ")}`
+          : "Epics across projects"
+        : view && epic
+          ? `The tasks of ${epic.name}`
+          : "Epic timeline";
+    return {
+      title: view?.name ?? epic?.name ?? "Roadmap",
+      subtitle: `${what} · ${scheduled.length} ${noun(scheduled.length)} · ${asOf}`,
+      name_header: level === "epics" ? "Epic" : "Task",
+      zoom: filter.zoom,
+      today,
+      deadline: deadline ? { date: deadline.date, label: deadline.label } : null,
+      rows,
+      links: imageLinks(links, rows),
+      theme: currentImageTheme(),
+    };
+  }
+
   if (epicId && !epic)
     return (
       <div className="px-6 py-10 text-center text-sm text-ink-3">
@@ -290,6 +338,19 @@ export function RoadmapPage({
             <Button size="sm" onClick={() => setTodaySeq((n) => n + 1)}>
               Today
             </Button>
+            <ExportImageMenu
+              build={exportedImage}
+              today={today}
+              disabled={scheduled === 0}
+              onDone={(message) => {
+                setError("");
+                setNotice(message);
+              }}
+              onError={(message) => {
+                setNotice("");
+                setError(message);
+              }}
+            />
             {view ? (
               <>
                 {dirty && (
@@ -448,6 +509,11 @@ export function RoadmapPage({
       {error && (
         <p role="alert" className="px-6 py-2 text-sm text-danger">
           {error}
+        </p>
+      )}
+      {notice && (
+        <p role="status" className="px-6 py-2 text-sm text-ink-3">
+          {notice}
         </p>
       )}
       {rows.length ? (

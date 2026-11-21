@@ -4,6 +4,29 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Roadmap images** (2026-11-21, branch `roadmap-export-image`; ADR 034, proposed): "Export
+image" in the Roadmap's header (epics, an epic's timeline, saved roadmap views): Copy as
+PNG, Save as PNG…, Save as SVG…; off while nothing is scheduled. The core draws it
+(`crates/core/src/roadmap_image.rs`, `render_roadmap`: a `RoadmapImage` of the page's
+rows → SVG, no dependency), so the sync server endpoint (backlog) can call the same code.
+Only bars: unscheduled epics or tasks and groups left empty stay out (the page builds the
+image's rows from its scheduled items, `features/roadmap/exportImage.ts`). The range is the
+bars and the target date (16 px of room, snapped to the week, month or quarter when close),
+not stretched to today; today is drawn when inside. Labels too long for a bar go beside it
+(the range grows to hold them; arrows start past them). Themes: the app's light, dark and
+clean. PNG is rasterized in the webview (2x, capped at 16,384 px a side and 64 Mpx), copied
+with `navigator.clipboard.write` (a promise in `ClipboardItem`, so WebKit keeps the click),
+saved through the dialog and `save_image`. New IPC: `roadmap_svg`, `save_image`. Tests:
+core `roadmap_image` (11, one SVG snapshot), `exportImage.test.ts`, two in
+`RoadmapPage.test.tsx`. Checks: `cargo fmt --check`, clippy, `cargo test --workspace` (368
+passed, 8 ignored), `pnpm biome ci .`, typecheck, `pnpm test` (631 passed, 2 skipped).
+**Tried in the Tauri app** (a debug bundle with identifier
+`space.solarnexus.taskmaster.roadmapimage`, on a copy of the database, no sync): Save as
+PNG on the roadmap of epics (31 epics, the 16 scheduled ones drawn), Copy as PNG on an epic's
+timeline (2 of 7 tasks scheduled; the clipboard held the PNG), the button off on an epic
+with nothing scheduled. Not tried: Save as SVG in the app (unit-tested; the same path),
+Windows and Linux (WebKitGTK may refuse images on the clipboard: Copy then says so).
+
 **Release 0.27.1** (2026-11-21, on `main`; notes `docs/releases/0.27.1.md`): 0.27.0 was
 tagged but never built: the release workflow's `pnpm biome ci .` failed on a format error in
 `progress.md` (`*after*`, from the Dock-fix branch); the merge was checked with `biome check
@@ -2539,6 +2562,10 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
+- Roadmap images (ADR 034): the server endpoint (backlog task) needs the roadmap's rows
+  built in Rust from its copy of the data (today in `features/roadmap/timeline.ts`) and a
+  rasterizer for PNG; an MCP tool returning the image; a light/dark choice in the menu
+  instead of the app's theme.
 - Notes (ADR 032): reorder folders by drag; a Notes page listing all notes; backlinks
   between notes (`note:<id>` links). (The first follow-ups landed on
   `notes-integrations`.)

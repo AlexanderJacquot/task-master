@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { Api } from "../../lib/api";
 import { isoDate } from "../../lib/dates";
-import type { Command, Epic, Project, Task } from "../../lib/types";
+import type { Command, Epic, Project, RoadmapImage, Task } from "../../lib/types";
 import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore } from "../../store/store";
@@ -13,9 +13,20 @@ import { pickOption } from "../../test/select";
 import { LAYOUT_KEY, loadLayout } from "./saved";
 import { addDays, addWorkingDays, DAY_WIDTH, dayNumber } from "./timeline";
 
+// Exporting draws in the core and asks where to save: the test keeps what would be saved.
+const exported = vi.hoisted(() => [] as { image: RoadmapImage; format: string }[]);
+vi.mock("./exportImage", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./exportImage")>()),
+  saveImageAs: async (image: RoadmapImage, format: string) => {
+    exported.push({ image, format });
+    return `/tmp/roadmap.${format}`;
+  },
+}));
+
 afterEach(() => {
   cleanup();
   localStorage.clear();
+  exported.length = 0;
 });
 
 const today = isoDate();
@@ -345,4 +356,52 @@ it("saves an epic's timeline as a view that reopens on that epic", async () => {
   expect(await screen.findByRole("heading", { name: /Launch plan/ })).toBeTruthy();
   expect(screen.getByText(/The tasks of Launch/)).toBeTruthy();
   expect(bar("Build")).toBeTruthy();
+});
+
+// ---------------------------------------------------------------------------------------
+// Export image
+
+it("exports the roadmap as an image of its bars only, leaving out unscheduled epics", async () => {
+  const shop = project({ name: "Shop" });
+  const later = project({ name: "Later", rank: "b" });
+  const launch = epic({ id: "e1", name: "Launch", project_id: shop.id, target_date: day(14) });
+  const idea = epic({ id: "e2", name: "Idea", project_id: later.id, rank: "b" });
+  const loose = epic({ id: "e3", name: "Loose", project_id: shop.id, rank: "c" });
+  await setup({ epics: [launch, idea, loose], projects: [shop, later] });
+  // On the page (epics without a target date are shown by default): both groups, and the
+  // epics without a target date as empty rows.
+  expect(screen.getByRole("button", { name: "Fold Later" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Schedule Loose from today" })).toBeTruthy();
+
+  fireEvent.keyDown(screen.getByRole("button", { name: /Export image/ }), { key: "Enter" });
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Save as SVG…" }));
+  await screen.findByText("Saved the image to /tmp/roadmap.svg");
+  const saved = exported[0];
+  expect(saved?.format).toBe("svg");
+  expect(saved?.image.title).toBe("Roadmap");
+  expect(saved?.image.name_header).toBe("Epic");
+  expect(saved?.image.rows).toEqual([
+    expect.objectContaining({ kind: "group", label: "Shop", count: 1, end: day(14) }),
+    expect.objectContaining({ kind: "item", id: "e1", title: "Launch", end: day(14) }),
+  ]);
+  expect(saved?.image.subtitle).toMatch(/^Epics across projects · 1 epic · /);
+});
+
+it("exports an epic's timeline with its target date, and is off with nothing scheduled", async () => {
+  const launch = epic({ id: "e1", name: "Launch", target_date: day(20) });
+  const planned = task({ title: "Plan", epic_id: "e1", due_date: day(5) });
+  const unplanned = task({ title: "Someday", epic_id: "e1" });
+  await setup({ epics: [launch], tasks: [planned, unplanned] }, "/roadmap?epic=e1");
+  fireEvent.keyDown(screen.getByRole("button", { name: /Export image/ }), { key: "Enter" });
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Save as PNG…" }));
+  await screen.findByText("Saved the image to /tmp/roadmap.png");
+  const image = exported[0]?.image;
+  expect(image?.title).toBe("Launch");
+  expect(image?.deadline).toEqual({ date: day(20), label: "Launch" });
+  expect(image?.rows.map((row) => row.kind === "item" && row.title)).toEqual(["Plan"]);
+  cleanup();
+
+  await setup({ epics: [epic({ id: "e2", name: "Bare" })] });
+  const button = screen.getByRole("button", { name: /Export image/ }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
 });

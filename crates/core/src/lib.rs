@@ -22,6 +22,7 @@ mod ops;
 mod parse;
 mod query;
 pub mod rank;
+mod roadmap_image;
 mod store;
 mod sync;
 mod terminal;
@@ -57,6 +58,10 @@ pub use notes::{
 pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};
 pub use query::{Activity, FieldChange, TranscriptHit};
+pub use roadmap_image::{
+    ImageDeadline, ImageLink, ImageRow, ImageTheme, MAX_IMAGE_DAYS, MAX_IMAGE_ROWS, RenderedImage,
+    RoadmapImage, render as render_roadmap,
+};
 pub use store::{ATTACHMENTS_DIR, Changes, PurgeReport, Store, StoredFileInfo};
 pub use sync::{
     AuthMode, BlobList, IssuedToken, Merged, OidcExchange, OpsPage, PullPage, PushRequest,

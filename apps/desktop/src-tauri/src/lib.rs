@@ -19,8 +19,8 @@ use config::{AppConfig, ConfigView, RemoteInput, RemoteView};
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use taskmaster_core::{
-    Activity, Capture, Changed, Changes, Command, ExportFile, Id, ImportSummary, Snapshot, Store,
-    clean_file_name, mime_for,
+    Activity, Capture, Changed, Changes, Command, ExportFile, Id, ImportSummary, RenderedImage,
+    RoadmapImage, Snapshot, Store, clean_file_name, mime_for,
 };
 use tauri::http::{Request, Response, StatusCode, header};
 use tauri::{AppHandle, Manager, State};
@@ -342,6 +342,43 @@ fn save_attachment(state: State<'_, AppState>, id: Id, path: String) -> CommandR
         .map_err(|e| internal(format!("cannot write {path}: {e}")))
 }
 
+// ---------------------------------------------------------------------------------------
+// Roadmap images (ADR 034): the core draws the SVG, the UI rasterizes PNG and copies it.
+
+/// Draws a roadmap as SVG from the rows the Roadmap page shows (read-only).
+#[tauri::command]
+#[specta::specta]
+fn roadmap_svg(image: RoadmapImage) -> CommandResult<RenderedImage> {
+    Ok(taskmaster_core::render_roadmap(&image)?)
+}
+
+/// Exported images are at most this large (a PNG twice the size of a wide roadmap).
+const MAX_IMAGE_BYTES: usize = 64 * 1_048_576;
+
+/// Writes an exported image where the user chose in the save dialog: an `.svg` (text) or a
+/// `.png` (base64 bytes, rasterized by the UI). Other names are refused.
+#[tauri::command]
+#[specta::specta]
+fn save_image(path: String, data: String) -> CommandResult<()> {
+    let lower = path.to_ascii_lowercase();
+    let bytes = if lower.ends_with(".svg") {
+        data.into_bytes()
+    } else if lower.ends_with(".png") {
+        if data.len() > MAX_IMAGE_BYTES / 3 * 4 + 4 {
+            return Err(invalid("the image is too large"));
+        }
+        base64::engine::general_purpose::STANDARD
+            .decode(data.as_bytes())
+            .map_err(|e| invalid(format!("the image is not valid base64: {e}")))?
+    } else {
+        return Err(invalid("an image is saved as .png or .svg"));
+    };
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(invalid("the image is too large"));
+    }
+    std::fs::write(&path, bytes).map_err(|e| internal(format!("cannot write {path}: {e}")))
+}
+
 /// Serves attachment content to the UI: `tm://localhost/<attachment id>` (on Windows
 /// `http://tm.localhost/<id>`). Only ids of attachments resolve, never paths. Meeting
 /// audio is `meeting-audio/<meeting id>/<track>` (ADR 025).
@@ -653,6 +690,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             store_data,
             open_attachment,
             save_attachment,
+            roadmap_svg,
+            save_image,
             open_url,
             calendar_sync::calendar_status,
             calendar_sync::set_calendar_runner,
