@@ -19,6 +19,12 @@ On macOS the relaunch is the app's own (`relaunch.rs`, 2026-11-20): Tauri's rest
 `open -n` while the old instance still runs, and the Dock gave that new instance a second
 tile next to the pinned one. A detached `sh` now waits for the process to exit, then runs a
 plain `open` on the bundle; moving the data folder restarts the same way.
+The updater installs into the folder it replaces, so a Mac updated from 0.26 or older keeps
+`/Applications/task-master.app` (0.27 names new installs `Task Master.app`). The app is not
+renamed on update (that would break the MCP path users registered with Claude); instead the
+non-localized `CFBundleDisplayName` is `task-master` and `en.lproj/InfoPlist.strings` gives
+"Task Master": macOS shows the localized name when the folder is named like the
+non-localized one, and the folder's name otherwise (2026-11-21).
 
 **Public releases.** The updater cannot authenticate, so the GitHub mirror is public (the
 user's choice over a separate releases repo or a homelab bucket). The Forgejo origin

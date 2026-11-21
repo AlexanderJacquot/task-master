@@ -4,6 +4,26 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**macOS: "Task Master" in the Dock after an update; the second Dock icon** (2026-11-21,
+branch `macos-display-name`): after updating to 0.27.1 the Dock still said `task-master`
+and showed the app twice. **Name**: the updater installs into the folder it replaces, so
+updated Macs keep `/Applications/task-master.app`, and macOS shows the folder's name, not
+`CFBundleName`. Renaming the bundle on update was rejected: users registered
+`/Applications/task-master.app/Contents/MacOS/task-master-mcp` with Claude (this Mac's
+`~/.claude.json` does). Instead `Info.plist` sets the non-localized `CFBundleDisplayName`
+to `task-master` (+ `LSHasLocalizedDisplayName`) and `macos/en.lproj/InfoPlist.strings`
+(bundled through `bundle.macOS.files`) gives "Task Master": macOS shows the localized name
+when the folder is named like the non-localized one. Checked with test bundles and
+LaunchServices on this Mac: `task-master.app` shows "Task Master" (0.27.1's plist shows
+`task-master`), `Task Master.app` shows "Task Master", a renamed `My TM.app` keeps its
+name; `lsappinfo` names the running app "Task Master". **Second icon**: no code change. The
+0.27.1 update was restarted by the old version's code (`open -n`), as noted for the Dock
+fix below; and this Mac's Dock has **two pinned entries** for
+`/Applications/task-master.app` (`defaults read com.apple.dock persistent-apps`), which no
+restart can merge: remove one from the Dock by hand. The Dock keeps a pinned tile's label
+(`file-label`) from when it was pinned, so a pinned tile may still say `task-master` until
+it is pinned again.
+
 **Release 0.27.1** (2026-11-21, on `main`; notes `docs/releases/0.27.1.md`): 0.27.0 was
 tagged but never built: the release workflow's `pnpm biome ci .` failed on a format error in
 `progress.md` (`*after*`, from the Dock-fix branch); the merge was checked with `biome check

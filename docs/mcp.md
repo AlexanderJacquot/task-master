@@ -16,7 +16,7 @@ the same database as the app on that computer.
 | --- | --- |
 | AUR, `.deb`, `.rpm` | `/usr/bin/task-master-mcp` (on `PATH`) |
 | Windows installer | `%LOCALAPPDATA%\task-master\task-master-mcp.exe` |
-| macOS | `/Applications/Task Master.app/Contents/MacOS/task-master-mcp` |
+| macOS | `/Applications/Task Master.app/Contents/MacOS/task-master-mcp` (`task-master.app` if the app was first installed before 0.27) |
 | AppImage | inside the image; use a package above, or `cargo build --release -p taskmaster-mcp` |
 | Windows app, Claude Code in WSL | `/mnt/c/Users/<you>/AppData/Local/task-master/task-master-mcp.exe` |
 

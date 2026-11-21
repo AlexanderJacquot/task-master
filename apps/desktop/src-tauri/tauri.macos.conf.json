@@ -34,7 +34,10 @@
     "macOS": {
       "signingIdentity": "-",
       "minimumSystemVersion": "10.15",
-      "entitlements": "entitlements.plist"
+      "entitlements": "entitlements.plist",
+      "files": {
+        "Resources/en.lproj/InfoPlist.strings": "macos/en.lproj/InfoPlist.strings"
+      }
     }
   }
 }

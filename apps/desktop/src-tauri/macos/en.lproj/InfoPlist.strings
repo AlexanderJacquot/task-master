@@ -1,0 +1,4 @@
+/* The name macOS shows for the app (Dock, Finder, Launchpad, permission prompts). See the
+   comment on CFBundleDisplayName in ../../Info.plist. */
+"CFBundleDisplayName" = "Task Master";
+"CFBundleName" = "Task Master";
