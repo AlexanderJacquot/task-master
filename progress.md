@@ -71,6 +71,18 @@ same path and the scribe/agent shutdown runs too. ADR 009 notes it. Tests: 4 in
 tried with a real update**: the fix takes effect from the update *after* the one that
 installs it (the relaunch runs the old app's code).
 
+**Day planner: lunch break toggle** (2026-11-20, branch `plan-lunch-toggle`): Plan mode's
+bar has a Lunch checkbox next to the working hours; when on, a start time (half hours,
+10:00 to 15:00) and a length (30, 45, 60, 90 min) appear. `PlanHours` gains `lunch`,
+`lunchStartMin` (12:00) and `lunchMin` (60), off by default; `freeSlots` treats each planned
+day's lunch as busy time, so Suggest, the free-time summary, "Later today" and "Tomorrow"
+all keep it free. Saved hours are read by the new `readHours` (older saves get the
+defaults). Tests: planner (free slots, no block over lunch, `readHours`), replan (later
+today skips lunch), calendar page (toggle, summary 8 h → 7 h, remembered). Checks: biome,
+typecheck, `pnpm test` (600 passed, 2 skipped); no Rust change. Not yet tried in the
+running app (the bar may wrap with the two extra pickers on a narrow window). The lunch
+break is not drawn on the grid.
+
 **Send to agent: Cmd/Ctrl+Enter starts it** (2026-11-19, branch
 `worktree-send-to-agent-cmd-enter`): in the Send to agent dialog, Cmd+Enter (Ctrl+Enter on
 Windows/Linux) from any field starts the session, same as Start / Open in Claude, and does

@@ -9,6 +9,7 @@ import {
   type PlanInput,
   planCandidates,
   readFocus,
+  readHours,
   seededRandom,
   suggestPlan,
 } from "./planner";
@@ -80,6 +81,54 @@ describe("free slots", () => {
     expect(freeMinutes(freeSlots(input([], { days: WEEK, hours })))).toBe(7 * 8 * 60);
     // A single shown Saturday is planned anyway.
     expect(freeMinutes(freeSlots(input([], { days: ["2026-11-14"] })))).toBe(8 * 60);
+  });
+
+  it("keeps the lunch break free when the hours include one", () => {
+    const hours = { ...DEFAULT_HOURS, lunch: true, lunchStartMin: 12 * 60 + 30, lunchMin: 45 };
+    expect(freeSlots(input([], { hours })).map((s) => [s.start, s.end])).toEqual([
+      [atMinute(MON, 9 * 60), atMinute(MON, 12 * 60 + 30)],
+      [atMinute(MON, 13 * 60 + 15), atMinute(MON, 17 * 60)],
+    ]);
+    // On every planned day of a week, and not at all when switched off.
+    expect(freeMinutes(freeSlots(input([], { days: WEEK, hours })))).toBe(5 * (8 * 60 - 45));
+    const off = { ...hours, lunch: false };
+    expect(freeMinutes(freeSlots(input([], { days: WEEK, hours: off })))).toBe(5 * 8 * 60);
+    // A lunch outside working hours takes nothing; one that overlaps a meeting counts once.
+    const late = { ...hours, lunchStartMin: 18 * 60 };
+    expect(freeMinutes(freeSlots(input([], { hours: late })))).toBe(8 * 60);
+    const meeting = { id: "m", start_at: atMinute(MON, 12 * 60), end_at: atMinute(MON, 13 * 60) };
+    expect(freeMinutes(freeSlots(input([], { hours, events: [meeting] })))).toBe(8 * 60 - 75);
+  });
+
+  it("plans no block over the lunch break", () => {
+    const tasks = Array.from({ length: 6 }, (_, i) =>
+      task({ title: `T${i}`, estimate_min: 60, status_id: STATUS.todo }),
+    );
+    const hours = { ...DEFAULT_HOURS, lunch: true };
+    const plan = suggestPlan(input(tasks, { hours }));
+    const lunchStart = atMinute(MON, 12 * 60);
+    const lunchEnd = atMinute(MON, 13 * 60);
+    expect(plan.blocks.length).toBeGreaterThan(0);
+    for (const b of plan.blocks) {
+      expect(b.end_at <= lunchStart || b.start_at >= lunchEnd).toBe(true);
+    }
+  });
+});
+
+describe("readHours", () => {
+  it("fills what is missing or not valid with the defaults", () => {
+    expect(readHours(undefined)).toEqual(DEFAULT_HOURS);
+    // Hours saved before the lunch break existed.
+    expect(readHours({ startMin: 8 * 60, endMin: 16 * 60, weekends: true })).toEqual({
+      ...DEFAULT_HOURS,
+      startMin: 8 * 60,
+      endMin: 16 * 60,
+      weekends: true,
+    });
+    expect(readHours({ lunch: "yes", lunchStartMin: -5, lunchMin: 45, startMin: "9" })).toEqual({
+      ...DEFAULT_HOURS,
+      lunchMin: 45,
+    });
   });
 });
 

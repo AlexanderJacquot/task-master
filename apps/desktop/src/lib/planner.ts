@@ -35,6 +35,12 @@ export interface PlanHours {
   endMin: number;
   /** Plan Saturdays and Sundays too (week view; a shown single day is always planned). */
   weekends: boolean;
+  /** Keep a lunch break free on every planned day. */
+  lunch: boolean;
+  /** When the lunch break starts, in minutes since midnight. */
+  lunchStartMin: number;
+  /** How long the lunch break lasts, in minutes. */
+  lunchMin: number;
 }
 
 export const DEFAULT_FOCUS: PlanFocus = { projectIds: [], epicIds: [], statusIds: [] };
@@ -60,7 +66,37 @@ export function readFocus(saved: unknown): PlanFocus {
     statusIds: list("statusIds", "statusId"),
   };
 }
-export const DEFAULT_HOURS: PlanHours = { startMin: 9 * 60, endMin: 17 * 60, weekends: false };
+export const DEFAULT_HOURS: PlanHours = {
+  startMin: 9 * 60,
+  endMin: 17 * 60,
+  weekends: false,
+  lunch: false,
+  lunchStartMin: 12 * 60,
+  lunchMin: 60,
+};
+
+/** Remembered working hours, read leniently: a field that is missing or not valid keeps its default. */
+export function readHours(saved: unknown): PlanHours {
+  const o = (saved && typeof saved === "object" ? saved : {}) as Record<string, unknown>;
+  const minute = (key: keyof PlanHours, max: number): number => {
+    const v = o[key];
+    return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max
+      ? v
+      : (DEFAULT_HOURS[key] as number);
+  };
+  const flag = (key: keyof PlanHours): boolean => {
+    const v = o[key];
+    return typeof v === "boolean" ? v : (DEFAULT_HOURS[key] as boolean);
+  };
+  return {
+    startMin: minute("startMin", DAY_MIN),
+    endMin: minute("endMin", DAY_MIN),
+    weekends: flag("weekends"),
+    lunch: flag("lunch"),
+    lunchStartMin: minute("lunchStartMin", DAY_MIN),
+    lunchMin: minute("lunchMin", DAY_MIN),
+  };
+}
 
 /** A suggested block, not yet written. `id` is a local key. */
 export interface ProposedBlock extends Span {
@@ -150,17 +186,35 @@ function planDays(days: string[], hours: PlanHours, now: number): string[] {
   });
 }
 
-/** Free time within working hours, from now on, around blocks and events, on quarter hours. */
+/** The lunch break of each day, when the hours keep one. */
+function lunchBreaks(days: string[], hours: PlanHours): Span[] {
+  if (!hours.lunch || hours.lunchMin <= 0) return [];
+  const start = Math.max(Math.min(hours.lunchStartMin, DAY_MIN), 0);
+  const end = Math.min(start + hours.lunchMin, DAY_MIN);
+  return days.map((iso) => ({
+    id: `lunch@${iso}`,
+    start_at: atMinute(iso, start),
+    end_at: atMinute(iso, end),
+  }));
+}
+
+/**
+ * Free time within working hours, from now on, around blocks, events and the lunch break,
+ * on quarter hours.
+ */
 export function freeSlots(
   input: Pick<PlanInput, "days" | "hours" | "now" | "blocks" | "events">,
 ): Slot[] {
   const { hours, now } = input;
-  const busy: Span[] = [...input.blocks.filter(holdsTime), ...input.events].sort(
-    (a, b) => a.start_at - b.start_at,
-  );
+  const days = planDays(input.days, hours, now);
+  const busy: Span[] = [
+    ...input.blocks.filter(holdsTime),
+    ...input.events,
+    ...lunchBreaks(days, hours),
+  ].sort((a, b) => a.start_at - b.start_at);
   const quarter = SNAP_MIN * MS;
   const slots: Slot[] = [];
-  for (const iso of planDays(input.days, hours, now)) {
+  for (const iso of days) {
     const startMin = Math.max(Math.min(hours.startMin, DAY_MIN), 0);
     const endMin = Math.max(Math.min(hours.endMin, DAY_MIN), startMin);
     let cursor = Math.max(atMinute(iso, startMin), Math.ceil(now / quarter) * quarter);
