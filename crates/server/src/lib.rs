@@ -9,6 +9,7 @@ pub mod backup;
 pub mod calendar;
 pub mod config;
 pub mod mcp;
+pub mod raster;
 pub mod roadmap;
 
 use std::convert::Infallible;
@@ -211,6 +212,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/auth/oidc", post(oidc_exchange))
         // A read for integrations as well as devices (ADR 035): checked in the handler.
         .route("/roadmap.svg", get(roadmap::svg))
+        .route("/roadmap.png", get(roadmap::png))
         .merge(sync)
         .with_state(state.clone())
         .merge(mcp::routes(state))

@@ -7,7 +7,7 @@ image, `ghcr.io/alexanderjacquot/task-master-server`. Design: `docs/adr/015-sync
 
 An HTTP API for other software (dashboards, scripts) is planned; the `api:read` and
 `api:write` token scopes already exist for it, for the remote MCP endpoint and for roadmap
-images (`GET /roadmap.svg`, section 6).
+images (`GET /roadmap.svg`, `GET /roadmap.png`, section 6).
 
 ## 1. How it fits together
 
@@ -193,8 +193,9 @@ Scopes: `sync` (desktops; desktops signed in with OIDC get one automatically),
 
 ### Roadmap images
 
-`GET /roadmap.svg` draws a roadmap from the server's copy, the same picture as the
-desktop's "Export image" (ADR 034, ADR 035). Send an `api:read`, `api:write` or `sync`
+`GET /roadmap.svg` and `GET /roadmap.png` draw a roadmap from the server's copy, the same
+picture as the desktop's "Export image" (ADR 034, ADR 035). The PNG uses the Inter font
+built into the server (no system fonts needed). Send an `api:read`, `api:write` or `sync`
 token as `Authorization: Bearer …` (none needed with `TM_AUTH=none`).
 
 ```bash
@@ -202,6 +203,8 @@ token as `Authorization: Bearer …` (none needed with `TM_AUTH=none`).
 curl -H "Authorization: Bearer $TOKEN" "$URL/roadmap.svg?view=<view id>" -o roadmap.svg
 # The roadmap of epics of two projects, by quarter, dark
 curl -H "Authorization: Bearer $TOKEN" "$URL/roadmap.svg?projects=<id>,<id>&zoom=quarter&theme=dark" -o roadmap.svg
+# The same as a PNG for a chat message, at the default twice the size
+curl -H "Authorization: Bearer $TOKEN" "$URL/roadmap.png?view=<view id>" -o roadmap.png
 ```
 
 | Parameter | Goes with | Values |
@@ -216,6 +219,7 @@ curl -H "Authorization: Bearer $TOKEN" "$URL/roadmap.svg?projects=<id>,<id>&zoom
 | `zoom` | any | `day`, `week`, `month` (default for epics), `quarter`; `week` for an epic's tasks |
 | `theme` | any | `clean` (default), `light`, `dark` |
 | `today` | any | `YYYY-MM-DD` for the today line; the server's UTC date by default |
+| `scale` | PNG only | Pixels per SVG pixel, `1` to `3` (default `2`). A PNG is at most 8,192 px a side and 16 Mpx: a larger roadmap comes out at a smaller scale |
 
 Only scheduled epics (with a target date) and tasks (with a due date) are drawn. **Bar
 starts come from saved views only**: the plain Roadmap page keeps the starts you drag on
@@ -226,8 +230,8 @@ target date). Save the roadmap as a view to publish it as you see it.
 Errors are JSON (`{"error": "…"}`): `400` for a parameter that is unknown, malformed or
 does not go with the others, a view that is not a roadmap, or nothing scheduled to draw;
 `404` for an unknown view or epic; `401`/`403` for the token. The answer is never cached
-(`Cache-Control: private, no-store`). PNG and share links for `<img>` embeds are
-proposals (ADR 035), not built.
+(`Cache-Control: private, no-store`). Share links for `<img>` embeds, which cannot send a
+token, are a proposal (ADR 035), not built.
 
 ## 7. Configuration reference
 

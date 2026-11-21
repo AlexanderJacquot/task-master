@@ -1416,6 +1416,79 @@ fn roadmap_svg_draws_saved_views_and_queries_for_api_and_sync_tokens() {
     }
 }
 
+/// `GET /roadmap.png`: status, content type, bytes.
+fn roadmap_png(url: &str, token: Option<&str>, query: &str) -> (u16, String, Vec<u8>) {
+    let mut request = http().get(format!("{url}/roadmap.png{query}"));
+    if let Some(token) = token {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
+    let mut response = request.call().unwrap();
+    let kind = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let body = response.body_mut().read_to_vec().unwrap();
+    (response.status().as_u16(), kind, body)
+}
+
+/// The `width="…" height="…"` of an SVG's root.
+fn svg_size(svg: &str) -> (u32, u32) {
+    let attr = |name: &str| {
+        let from = svg.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+        svg[from..svg[from..].find('"').unwrap() + from]
+            .parse()
+            .unwrap()
+    };
+    (attr("width"), attr("height"))
+}
+
+#[test]
+fn roadmap_png_draws_the_svg_at_twice_its_size() {
+    let (url, state) = server(Config {
+        auth: AuthMode::Token,
+        ..Config::default()
+    });
+    state
+        .store()
+        .execute(Command::CreateEpic {
+            epic: NewEpic {
+                name: "Launch".into(),
+                target_date: Some("2026-12-18".into()),
+                ..NewEpic::default()
+            },
+        })
+        .unwrap();
+    let read = state.tokens.add("chat", Scope::ApiRead).unwrap();
+    let query = "?today=2026-11-21&theme=light";
+    let (_, _, svg) = roadmap_svg(&url, Some(&read), query);
+    let (w, h) = svg_size(&svg);
+
+    let (status, kind, png) = roadmap_png(&url, Some(&read), query);
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&png));
+    assert_eq!(kind, "image/png");
+    assert_eq!(&png[..8], b"\x89PNG\r\n\x1a\n");
+    let size = |png: &[u8]| {
+        let at = |i: usize| u32::from_be_bytes(png[i..i + 4].try_into().unwrap());
+        (at(16), at(20))
+    };
+    assert_eq!(size(&png), (w * 2, h * 2));
+    let (status, _, one) = roadmap_png(&url, Some(&read), &format!("{query}&scale=1"));
+    assert_eq!(status, 200);
+    assert_eq!(size(&one), (w, h));
+
+    assert_eq!(roadmap_png(&url, None, "").0, 401);
+    for bad in ["?scale=4", "?scale=0.5", "?scale=big", "?tags=none"] {
+        assert_eq!(roadmap_png(&url, Some(&read), bad).0, 400, "{bad}");
+    }
+    assert_eq!(
+        roadmap_svg(&url, Some(&read), "?scale=2").0,
+        400,
+        "scale is PNG only"
+    );
+}
+
 #[test]
 fn roadmap_svg_is_open_on_a_server_without_auth() {
     let (url, state) = server(Config::default());

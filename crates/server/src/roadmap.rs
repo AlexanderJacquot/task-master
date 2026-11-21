@@ -1,7 +1,8 @@
-//! `GET /roadmap.svg` (ADR 035): a roadmap drawn from the server's replica, for
-//! integrations (a status page, a wiki, a chat bot). The core builds the roadmap a saved
-//! view or the query shows (`roadmap_image`) and draws it (`render_roadmap`), the same code
-//! as the desktop's "Export image" (ADR 034).
+//! `GET /roadmap.svg` and `GET /roadmap.png` (ADR 035): a roadmap drawn from the server's
+//! replica, for integrations (a status page, a wiki, a chat bot). The core builds the
+//! roadmap a saved view or the query shows (`roadmap_image`) and draws it
+//! (`render_roadmap`), the same code as the desktop's "Export image" (ADR 034); the PNG is
+//! that SVG rasterized here (`raster`).
 
 use std::sync::Arc;
 
@@ -16,6 +17,7 @@ use taskmaster_core::{
 };
 
 use crate::auth::Scope;
+use crate::raster;
 use crate::{ApiError, ApiResult, AppState, authorize_any, blocking};
 
 /// The query: a saved roadmap view, or the plain roadmap's filters. `zoom`, `theme` and
@@ -43,6 +45,8 @@ pub struct RoadmapQuery {
     theme: Option<String>,
     /// The day the today line is on (`YYYY-MM-DD`); the server's UTC date by default.
     today: Option<String>,
+    /// PNG only: pixels per SVG pixel, 1 to 3 (2 by default), less for a huge image.
+    scale: Option<f32>,
 }
 
 fn bad(message: impl Into<String>) -> ApiError {
@@ -149,14 +153,22 @@ fn build(state: &AppState, q: RoadmapQuery) -> ApiResult<taskmaster_core::Roadma
     Ok(roadmap_image(data, &spec, &options)?)
 }
 
+type QueryResult = Result<Query<RoadmapQuery>, axum::extract::rejection::QueryRejection>;
+
+/// The data is private: no shared caches, and nothing kept once shown.
+const NO_STORE: &str = "private, no-store";
+
 /// `GET /roadmap.svg`: needs an `api:read` (or `api:write`) or a `sync` token.
 pub async fn svg(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    query: Result<Query<RoadmapQuery>, axum::extract::rejection::QueryRejection>,
+    query: QueryResult,
 ) -> ApiResult<Response> {
     authorize_any(&state, &headers, &[Scope::ApiRead, Scope::Sync])?;
     let Query(q) = query.map_err(|e| bad(e.body_text()))?;
+    if q.scale.is_some() {
+        return Err(bad("scale goes with roadmap.png"));
+    }
     let rendered = blocking(move || {
         let image = build(&state, q)?;
         Ok(render_roadmap(&image)?)
@@ -165,8 +177,7 @@ pub async fn svg(
     Ok((
         [
             (header::CONTENT_TYPE, "image/svg+xml; charset=utf-8"),
-            // The data is private: no shared caches, and nothing kept once shown.
-            (header::CACHE_CONTROL, "private, no-store"),
+            (header::CACHE_CONTROL, NO_STORE),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
             // Opened on its own, the image runs nothing and loads nothing.
             (
@@ -175,6 +186,42 @@ pub async fn svg(
             ),
         ],
         rendered.svg,
+    )
+        .into_response())
+}
+
+/// Rasterizing takes memory (up to 64 MB of pixels each): two at a time, the rest wait.
+static RASTERIZING: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+
+/// `GET /roadmap.png`: the SVG drawn with the bundled Inter, at `scale` (2 by default).
+pub async fn png(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    query: QueryResult,
+) -> ApiResult<Response> {
+    authorize_any(&state, &headers, &[Scope::ApiRead, Scope::Sync])?;
+    let Query(q) = query.map_err(|e| bad(e.body_text()))?;
+    let scale = q.scale.unwrap_or(raster::DEFAULT_SCALE);
+    if !(1.0..=raster::MAX_SCALE).contains(&scale) {
+        return Err(bad("scale must be from 1 to 3"));
+    }
+    let _permit = RASTERIZING
+        .acquire()
+        .await
+        .map_err(|e| ApiError::new(StatusCode::SERVICE_UNAVAILABLE, e.to_string()))?;
+    let bytes = blocking(move || {
+        let rendered = render_roadmap(&build(&state, q)?)?;
+        raster::png(&rendered.svg, rendered.width, rendered.height, scale)
+            .map_err(|e| ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, e))
+    })
+    .await?;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "image/png"),
+            (header::CACHE_CONTROL, NO_STORE),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        bytes,
     )
         .into_response())
 }

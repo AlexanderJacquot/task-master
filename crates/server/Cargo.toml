@@ -38,4 +38,7 @@ taskmaster-client = { path = "../client" }
 # Remote MCP for claude.ai and the mobile apps (ADR 024): the same tools as the stdio
 # server, over rmcp's Streamable HTTP transport.
 taskmaster-mcp = { path = "../mcp" }
+# Roadmap PNGs (ADR 035): SVG to pixels in pure Rust, with the bundled Inter (fonts/) and
+# never the system's fonts (the image has none). No raster images or svgz in our SVGs.
+resvg = { version = "0.50.0", default-features = false, features = ["text"] }
 rmcp = { version = "3.9.0", default-features = false, features = ["server", "transport-streamable-http-server"] }

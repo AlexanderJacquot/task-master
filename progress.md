@@ -19,10 +19,15 @@ Server: `GET /roadmap.svg` (`crates/server/src/roadmap.rs`) with `view=<id>` or 
 `projects`, `group`, `tags`, `subtasks`, `completion`, plus `zoom`, `theme`, `today`;
 `api:read`/`api:write` or `sync` token; `400`/`404` as JSON; `private, no-store`. Starts of
 the plain roadmap live in the desktop's localStorage, so only saved views carry them
-(docs/server.md "Roadmap images"). **Proposals awaiting a yes** (ADR 035): PNG with
-`resvg` + bundled Inter, and per-view share tokens for `<img>` embeds. Tests: core
-`roadmap` (6, incl. the shared vectors), server (+2 end to end), `model.test.ts` (13).
-Checks: `cargo fmt --check`, clippy `-D warnings`, `cargo test --workspace` (376 passed,
+(docs/server.md "Roadmap images"). **`GET /roadmap.png`** (agreed after the SVG):
+`resvg` 0.50 (`text` feature only) in the server crate, Inter 4.1 Regular/Medium/SemiBold
+embedded (`crates/server/fonts/`, OFL, 1.25 MB) as the only fonts; `scale` 1–3 (default
+2), capped at 8,192 px a side and 16 Mpx, two rasterizations at a time
+(`crates/server/src/raster.rs`). Looked at: the fixture's epics and task-timeline cases as
+PNGs (Inter in all three weights, links, today, target date). **Proposal awaiting a yes**
+(ADR 035): per-view share tokens for `<img>` embeds. Tests: core `roadmap` (6, incl. the
+shared vectors), server `raster` (3), server end to end (+3), `model.test.ts` (13).
+Checks: `cargo fmt --check`, clippy `-D warnings`, `cargo test --workspace` (380 passed,
 8 ignored), `pnpm biome ci .`, `pnpm test` (644 passed, 2 skipped). `pnpm typecheck`
 fails on two implicit-any errors in `features/notes/NotesTree.tsx` (lines 465, 470),
 identical on `roadmap-export-image` with this install: not from this branch. Not tried:
@@ -2587,8 +2592,7 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
 
 ## Later
 
-- Roadmap images (ADR 034, 035): PNG on the server (`resvg` + Inter, proposed) and
-  per-view share tokens (proposed); an MCP tool returning the image; a light/dark choice in
+- Roadmap images (ADR 034, 035): per-view share tokens (proposed); an MCP tool returning the image; a light/dark choice in
   the menu instead of the app's theme. The Lineage page still sorts ranks with
   `localeCompare` (`LineagePage.tsx`), unlike the rest of the app.
 - Notes (ADR 032): reorder folders by drag; a Notes page listing all notes; backlinks

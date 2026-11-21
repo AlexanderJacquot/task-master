@@ -1,7 +1,7 @@
 # ADR 035: Roadmap images from the sync server
 
-Date: 2026-11-21 · Status: proposed (SVG implemented on branch `roadmap-server-image`;
-PNG and share links are proposals below, not built)
+Date: 2026-11-21 · Status: proposed (SVG and PNG implemented on branch
+`roadmap-server-image`; share links are a proposal below, not built)
 
 ## Context
 
@@ -60,29 +60,28 @@ nothing scheduled is `400`; an unknown view or epic `404`. The answer is
 `image/svg+xml; charset=utf-8` with `Cache-Control: private, no-store`, `nosniff` and a CSP
 that lets the image load and run nothing when opened on its own.
 
+**`GET /roadmap.png`** (agreed 2026-11-21). Chat apps and many wikis take PNG, not SVG.
+The same query, plus `scale` (1 to 3, default 2), and the SVG above rasterized on the
+server with `resvg` 0.50 (pure Rust: `usvg`, `tiny-skia`, `fontdb`; Apache-2.0 OR MIT,
+tiny-skia BSD-3-Clause; about thirty small crates, all MIT, Apache-2.0, BSD or Zlib),
+features `text` only: no system fonts, no raster images, no svgz. In `crates/server` only,
+so the desktop does not grow (it rasterizes in the webview, ADR 034). The server image has
+no fonts, so Inter 4.1's static Regular, Medium and SemiBold (the weights the SVG uses;
+SIL Open Font License 1.1, `crates/server/fonts/OFL.txt`; 1.25 MB, from the official
+`rsms/inter` release) are embedded with `include_bytes!` and are the font database's only
+fonts; any family the SVG names resolves to Inter. Text Inter has no glyph for (CJK,
+emoji) is left out of the PNG. The PNG is capped at 8,192 px a side and 16 Mpx (64 MB of
+pixels; the desktop allows 16,384 and 64 Mpx, but a server may be small): a larger image
+is drawn at a smaller scale, not refused. At most two rasterize at once; others wait.
+`Content-Type: image/png`, same caching and errors as the SVG; `scale` on the SVG is `400`.
+
 **Who may read it.** The same bearer tokens as the rest of the server (ADR 015): an
 `api:read` or `api:write` token (the integrations' scopes, which nothing else served until
 now) or a `sync` token (a desktop). On a server with `TM_AUTH=none` it is open, like
 everything else there. The route sits outside the device-only group and checks the token
 itself.
 
-## Proposals (not built; for a decision)
-
-**PNG (`GET /roadmap.png`).** Chat apps and many wikis take PNG, not SVG. The server image
-is a static binary with no system fonts, so it needs a rasterizer and a font of its own:
-
-- `resvg` (with `usvg` and `tiny-skia`; pure Rust, no C toolchain, which keeps the
-  image's build as it is; licenses to check when adding, last known Apache-2.0 OR MIT,
-  tiny-skia BSD-3-Clause) in `crates/server` only, so the desktop does not grow. Its font
-  database loads only the bundled font, never the system's.
-- Inter (SIL Open Font License 1.1) regular, medium and semibold, the weights the image
-  uses, about 1 MB of TTF embedded with `include_bytes!` (or one variable font). The SVG
-  already names Inter first, so the PNG would look as the app does.
-- Twice the size by default (`scale=1..3`), capped as the desktop caps it (16,384 px a
-  side, 64 Mpx), with `Content-Type: image/png`.
-
-Cost: a few hundred KB of code and the font in the binary, a new dependency tree to keep
-updated. Adding it needs a yes first (CLAUDE.md); then this ADR is amended.
+## Proposal (not built; for a decision)
 
 **Share links (a per-view read-only token).** An `<img>` tag, a wiki embed or a chat
 unfurl cannot send an `Authorization` header, so a bearer token does not help them. A
@@ -96,8 +95,9 @@ whoever has it sees that roadmap's names and dates until it is revoked. Not buil
 ## Consequences
 
 - The core gains `roadmap_image`, `default_roadmap_spec`, `RoadmapData`, `RoadmapOptions`
-  and `Store::roadmap_image`; no schema change, no new dependency.
-- The sync server gains `GET /roadmap.svg` (docs/server.md, "Roadmap images").
+  and `Store::roadmap_image`; no schema change, no new dependency in the core.
+- The sync server gains `GET /roadmap.svg` and `GET /roadmap.png` (docs/server.md,
+  "Roadmap images"), a dependency on `resvg` and 1.25 MB of fonts in its binary.
 - Two implementations of the roadmap's model must stay in step; the shared fixture is the
   guard, and a new filter or rule needs a case there.
 - Month names and the date in the subtitle are English on the server; the desktop's
