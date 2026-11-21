@@ -4,6 +4,17 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Notes sidebar fixes** (2026-11-21, branch `notes-sidebar-order`): Notes moved into the top
+nav list, between Lineage and Roadmap (`NotesSection` in `Sidebar.tsx`; same remembered open
+state); New folder sits next to New note in its header, both shown on hover (the button
+under the tree is gone; `NotesTree` takes `addingFolder`). Separators above Projects and
+between Projects and Epics. Markdown headings: the editor now sizes `#`…`######` lines like
+the rendered view (`markdownHeadings.ts`: line decorations from the markdown syntax tree,
+`.cm-md-h1`… in index.css; no new dependency), and the clean theme sets headings semibold in
+both, as weight 400 Inter headings barely stood out. Tests: `notes.test.tsx` (+1),
+`markdownHeadings.test.ts`. Checks: `pnpm biome ci .`, typecheck, `pnpm test` (626 passed, 2
+skipped); no Rust changes. Tried in the showcase page (dark and clean).
+
 **Release 0.27.1** (2026-11-21, on `main`; notes `docs/releases/0.27.1.md`): 0.27.0 was
 tagged but never built: the release workflow's `pnpm biome ci .` failed on a format error in
 `progress.md` (`*after*`, from the Dock-fix branch); the merge was checked with `biome check

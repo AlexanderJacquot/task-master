@@ -11,7 +11,7 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight, Folder, FolderPlus } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import {
   type MouseEvent,
@@ -405,14 +405,20 @@ function targetOf(event: DragMoveEvent | DragEndEvent): NoteDropTarget | null {
 
 /**
  * The sidebar's Notes (ADR 032): folders, one level deep, then the notes outside any
- * folder. Each note opens its own page.
+ * folder. Each note opens its own page. The section header owns the New folder button;
+ * `addingFolder` shows the name input under the tree.
  */
-export function NotesTree() {
+export function NotesTree({
+  addingFolder,
+  onAddingFolder,
+}: {
+  addingFolder: boolean;
+  onAddingFolder: (adding: boolean) => void;
+}) {
   const store = useTaskStore();
   const notes = useStoreState((s) => s.notes);
   const folders = useStoreState((s) => s.note_folders);
   const [isOpen, setOpen] = useOpenFolders();
-  const [addingFolder, setAddingFolder] = useState(false);
   const tree = useMemo(
     () => noteTree(Object.values(notes), Object.values(folders)),
     [notes, folders],
@@ -501,29 +507,18 @@ export function NotesTree() {
           Markdown pages that can link your tasks. Use + to write one.
         </p>
       )}
-      {addingFolder ? (
+      {addingFolder && (
         <InlineInput
           initial=""
           placeholder="Folder name"
           autoFocus
           className="mt-1"
           onCommit={(name) => {
-            setAddingFolder(false);
+            onAddingFolder(false);
             void createNoteFolder(store, name);
           }}
-          onCancel={() => setAddingFolder(false)}
+          onCancel={() => onAddingFolder(false)}
         />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setAddingFolder(true)}
-          className={cx(
-            "flex items-center gap-2 rounded-lg px-2.5 py-1 text-left text-[12.5px] text-ink-3 hover:bg-hover hover:text-ink",
-            FOCUS,
-          )}
-        >
-          <FolderPlus size={13} /> New folder
-        </button>
       )}
     </DndContext>
   );

@@ -2,6 +2,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   ChevronDown,
   ChevronRight,
+  FolderPlus,
   NotebookPen,
   PanelLeftClose,
   PanelLeftOpen,
@@ -275,6 +276,60 @@ function useOpenSection(id: string, defaultOpen: boolean): [boolean, (open: bool
   return [open, set];
 }
 
+/**
+ * Notes in the top nav list (above Roadmap): a nav-styled row that folds the notes tree
+ * open, with New folder and New note beside it on hover.
+ */
+function NotesSection() {
+  const [open, setOpen] = useOpenSection("notes", true);
+  const [addingFolder, setAddingFolder] = useState(false);
+  const count = useStoreState((s) => Object.keys(s.notes).length);
+  const newNote = useNewNote();
+  return (
+    <section>
+      <div className="group/section flex items-center">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+          className={cx(rowClass, "flex-1 text-left", FOCUS)}
+        >
+          <NotebookPen size={17} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">Notes</span>
+          {count > 0 && <span className="text-[12.5px] text-ink-3 tabular-nums">{count}</span>}
+          {open ? (
+            <ChevronDown size={13} className="shrink-0 text-ink-3" />
+          ) : (
+            <ChevronRight size={13} className="shrink-0 text-ink-3" />
+          )}
+        </button>
+        <IconButton
+          label="New folder"
+          onClick={() => {
+            setOpen(true);
+            setAddingFolder(true);
+          }}
+          className="size-6 opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100"
+        >
+          <FolderPlus size={14} />
+        </IconButton>
+        <IconButton
+          label="New note"
+          onClick={() => void newNote()}
+          className="size-6 opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100"
+        >
+          <Plus size={14} />
+        </IconButton>
+      </div>
+      {open && (
+        <div className="mt-0.5 mb-1 flex flex-col gap-px pl-2">
+          <NotesTree addingFolder={addingFolder} onAddingFolder={setAddingFolder} />
+        </div>
+      )}
+    </section>
+  );
+}
+
 /** A collapsible sidebar section whose open state is remembered per machine. */
 function Collapsible({
   id,
@@ -507,8 +562,6 @@ export function Sidebar({
   const tags = useStoreState((s) => s.tags);
   const views = useStoreState((s) => s.views);
   const statusList = useStoreState((s) => s.statuses);
-  const noteCount = useStoreState((s) => Object.keys(s.notes).length);
-  const newNote = useNewNote();
   const runningAgents = useStoreState(
     (s) => Object.values(s.agent_sessions).filter(isActive).length,
   );
@@ -796,6 +849,7 @@ export function Sidebar({
           >
             Lineage
           </NavItem>
+          <NotesSection />
           <NavItem
             to="/roadmap"
             icon={
@@ -839,7 +893,9 @@ export function Sidebar({
           </NavItem>
         </div>
 
-        <section className="mt-5">
+        <div className="mx-2 mt-4 mb-3 h-px bg-line" />
+
+        <section>
           <div className="group/section flex items-center justify-between pb-1.5">
             <button
               type="button"
@@ -919,17 +975,6 @@ export function Sidebar({
         </section>
 
         <div className="mx-2 mt-4 mb-2 h-px bg-line" />
-
-        <Collapsible
-          id="notes"
-          title="Notes"
-          icon={<NotebookPen size={16} className="shrink-0" />}
-          count={noteCount}
-          onAdd={() => void newNote()}
-          defaultOpen
-        >
-          <NotesTree />
-        </Collapsible>
 
         <Collapsible
           id="epics"

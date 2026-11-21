@@ -446,6 +446,37 @@ html.capture-window body {
   color: var(--tm-ink);
   letter-spacing: -0.012em;
 }
+/* The same headings while editing (markdownHeadings.ts decorates the lines). The spans
+   lose CodeMirror's underline and bold, as the rendered headings have neither. */
+.cm-line:where(.cm-md-h1, .cm-md-h2, .cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6) {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  color: var(--tm-rubric);
+}
+.cm-line:where(.cm-md-h1, .cm-md-h2, .cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6) span {
+  text-decoration: none;
+  font-weight: inherit;
+}
+.cm-line.cm-md-h1 {
+  font-size: 1.6em;
+}
+.cm-line.cm-md-h2 {
+  font-size: 1.35em;
+}
+.cm-line.cm-md-h3 {
+  font-size: 1.15em;
+}
+.cm-line:where(.cm-md-h4, .cm-md-h5, .cm-md-h6) {
+  color: var(--tm-ink-2);
+}
+.clean .cm-line:where(.cm-md-h1, .cm-md-h2, .cm-md-h3) {
+  color: var(--tm-ink);
+  letter-spacing: -0.012em;
+}
+.clean .cm-line:where(.cm-md-h1, .cm-md-h2, .cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6) {
+  font-weight: 600;
+}
 .tm-prose a {
   color: var(--tm-accent);
   text-decoration: underline;
@@ -571,6 +602,10 @@ html.capture-window body {
 /* A heading never sits beside the previous section's drop cap. */
 .tm-dropcap > :where(h1, h2, h3, h4, h5, h6) {
   clear: left;
+}
+/* Sans headings need weight to stand apart from the body (the display face does not). */
+.clean .tm-prose :where(h1, h2, h3, h4, h5, h6) {
+  font-weight: 600;
 }
 
 /* Middle-button pan on the board (useMiddleDragPan): one grabbing hand over everything

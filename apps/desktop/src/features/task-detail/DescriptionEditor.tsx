@@ -13,6 +13,7 @@ import type { Attachment, Task } from "../../lib/types";
 import { useTaskStore } from "../../store/context";
 import { FILE_DROP_EVENT, type FileDropDetail } from "../shell/useFileDrop";
 import { type MarkdownActions, MarkdownView } from "./MarkdownView";
+import { markdownHeadings } from "./markdownHeadings";
 import { PickerBody } from "./TaskPicker";
 
 const base = {
@@ -220,6 +221,7 @@ export function DescriptionEditor({
           ]),
           markdown(),
           syntaxHighlighting(defaultHighlightStyle),
+          markdownHeadings,
           EditorView.lineWrapping,
           placeholder(
             hint ??

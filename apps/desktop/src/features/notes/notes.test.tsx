@@ -91,6 +91,22 @@ describe("notes", () => {
     });
   });
 
+  it("sits above Roadmap; New folder in its header names a folder", async () => {
+    const { executed } = await renderApp("/inbox");
+    await screen.findByRole("heading", { name: "Inbox" });
+    const nav = sidebar();
+    const notes = within(nav).getByRole("button", { name: /^Notes/ });
+    const roadmap = within(nav).getByRole("link", { name: "Roadmap" });
+    expect(notes.compareDocumentPosition(roadmap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(within(nav).getByRole("button", { name: "New folder" }));
+    const input = within(nav).getByPlaceholderText("Folder name");
+    fireEvent.change(input, { target: { value: "Ideas" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(within(nav).getByText("Ideas")).toBeTruthy());
+    expect(executed[0]?.[0]).toMatchObject({ type: "create_note_folder" });
+  });
+
   it("links tasks from the text, and the task lists the note", async () => {
     const t = task({
       id: "0192f0c6-0000-7000-8000-00000000abcd",
