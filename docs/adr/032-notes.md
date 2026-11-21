@@ -1,6 +1,6 @@
 # ADR 032: Notes in the sidebar, linked to tasks
 
-Date: 2026-11-20 · Status: proposed (implemented on branch `notes-page`)
+Date: 2026-11-20 · Status: proposed (implemented on branch `notes-page`; follow-ups on `notes-integrations`)
 
 ## Context
 
@@ -48,6 +48,35 @@ rendered until clicked). Its bar has the folder (a menu that moves it), the atta
 
 - Schema 18: the sync server must be updated with the app (clients push only with the same
   schema).
-- Not in this first version, noted in progress.md under "Later": notes in the command
-  palette and in search, attachments (images) in notes, drag and drop between folders,
-  MCP tools for agents to read and write notes, a project's notes on its page.
+- Not in this first version: the follow-ups below (branch `notes-integrations`).
+
+## Follow-ups (2026-11-21, branch `notes-integrations`)
+
+**Search.** Migration 19 adds `notes_fts` (title, body), kept by triggers like
+`tasks_fts`. `Store::search_notes` matches every word as a prefix, best first (a title
+match weighs 4×), with a snippet. A new IPC read, `search_notes`, feeds the command
+palette: a Notes group lists every note by title, and those the search finds by their
+body, with the words around the match; an action writes a new note.
+
+**Files in notes.** The same migration lets an attachment belong to a note
+(`attachments.note_id`; the CHECK now asks for exactly one of task, meeting or note, so the
+table is rebuilt as in 0015). A note page takes pasted and dropped files like a task
+description (`![name](attachment:<id>)`), lists them under the body, and Settings → Files
+names the note holding a file. A deleted note hides its files (purgeable), undo brings
+them back.
+
+**Drag and drop.** A note's row in the sidebar drags onto a folder (to its end), next to
+another note (into that note's folder, before or after it) or onto a "Drop here for no
+folder" strip. One `UpdateNote` with the folder and the rank.
+
+**A project's notes.** The project page lists the notes about it once there is one:
+linking it, attached to one of its tasks or linking one (an area's include its
+projects'). Its "New note" writes a note that starts with a link to the project: the link
+is the relation, so notes keep no project field.
+
+**MCP.** `list_notes`, `get_note`, `create_note`, `update_note`, `delete_note`;
+`attach_file` and the attachment tools take notes; `search` lists matching notes after
+tasks. Writing a note is always allowed (it is the user's at once, like a project);
+changing or deleting the user's follows Settings → Agents, except notes the server wrote.
+
+- Schema 19 (with 18): the sync server must be updated with the app.

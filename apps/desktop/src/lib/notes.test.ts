@@ -5,6 +5,7 @@ import {
   entityLink,
   linkedTaskIds,
   notePlacement,
+  noteSnippet,
   notesForProject,
   notesForTask,
   noteTitle,
@@ -168,5 +169,18 @@ describe("notes of a project", () => {
 
   it("writes a project link with its brackets escaped", () => {
     expect(projectLinkMarkdown({ id: P, name: "App [v2]" })).toBe(`[App \\[v2\\]](project:${P})`);
+  });
+});
+
+describe("note snippets", () => {
+  it("reads as plain words, without link targets or markdown marks", () => {
+    expect(
+      noteSnippet(
+        "[Budget] approved. First: [Order seeds](task:01a1fb6d-87a8-7000-8000-0000000000aa) then",
+      ),
+    ).toBe("Budget approved. First: Order seeds then");
+    expect(noteSnippet("## Plan\n- **[seed]** list [x](task:01a1fb6d-87a8…")).toBe(
+      "Plan seed list x",
+    );
   });
 });

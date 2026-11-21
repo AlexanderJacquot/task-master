@@ -1,7 +1,7 @@
 import { Popover } from "radix-ui";
 import { type ReactNode, useMemo, useState } from "react";
 import { SearchIcon as Search } from "../../components/TaskIcons";
-import { cx, Dot, INPUT, MENU, MENU_ITEM } from "../../components/ui";
+import { cx, Dot, INPUT, MENU, MENU_ITEM, NO_TEXT_PREDICTION } from "../../components/ui";
 import type { Task } from "../../lib/types";
 import { useStoreState } from "../../store/context";
 import { rankCandidates } from "./hierarchy";
@@ -80,6 +80,7 @@ export function PickerBody({
         <input
           // biome-ignore lint/a11y/noAutofocus: the popover exists to type a search
           autoFocus
+          {...NO_TEXT_PREDICTION}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {

@@ -1,8 +1,8 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Dialog } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { cx } from "../../components/ui";
-import { noteTitle } from "../../lib/notes";
+import { cx, NO_TEXT_PREDICTION } from "../../components/ui";
+import { noteSnippet, noteTitle } from "../../lib/notes";
 import { type PaletteItem, rankItems } from "../../lib/palette";
 import { plainSnippet, speakerLabel } from "../../lib/transcript";
 import type { NoteHit, TranscriptHit } from "../../lib/types";
@@ -243,7 +243,7 @@ export function CommandPalette({
       const n = notes[hit.note_id];
       if (!n) continue;
       found.add(n.id);
-      const snippet = plainSnippet(hit.snippet).trim();
+      const snippet = noteSnippet(hit.snippet);
       list.push({
         key: `note:${n.id}`,
         group: "Notes",
@@ -333,6 +333,7 @@ export function CommandPalette({
         >
           <Dialog.Title className="sr-only">Command palette</Dialog.Title>
           <input
+            {...NO_TEXT_PREDICTION}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);

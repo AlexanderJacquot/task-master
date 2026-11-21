@@ -207,3 +207,17 @@ export function notesForProject(
 export function projectLinkMarkdown(project: { id: string; name: string }): string {
   return `[${linkText(project.name.trim() || "Untitled project")}](${PROJECT_SCHEME}${project.id})`;
 }
+
+/**
+ * A note search snippet as plain words: link targets (`(task:<id>)`, cut short too) and
+ * markdown marks dropped, the match brackets removed.
+ */
+export function noteSnippet(snippet: string): string {
+  return snippet
+    .replace(/\]?\((?:task|project|attachment|https?|mailto):[^)\s]*(?:\)|…|$)/gi, "")
+    .replace(/[[\]]/g, "")
+    .replace(/(^|\s)(?:#{1,6}|[-*+]|>|\d+\.)\s+/g, "$1")
+    .replace(/[*_`~!]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
