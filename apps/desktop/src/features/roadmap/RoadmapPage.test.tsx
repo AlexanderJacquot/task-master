@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, expect, it } from "vitest";
 import type { Api } from "../../lib/api";
 import { isoDate } from "../../lib/dates";
+import { saveOpenOnDoubleClick } from "../../lib/roadmapPrefs";
 import type { Command, Epic, Project, Task } from "../../lib/types";
 import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
@@ -186,6 +187,36 @@ it("schedules an epic from its Schedule button, and opens its timeline from its 
   expect(await screen.findByRole("heading", { name: "Later" })).toBeTruthy();
   fireEvent.click(screen.getByRole("link", { name: "Roadmap /" }));
   expect(await screen.findByRole("heading", { name: "Roadmap" })).toBeTruthy();
+});
+
+/** Presses and releases a bar without moving it, as a click does. */
+function click(title: string) {
+  fireEvent.pointerDown(bar(title), { button: 0, pointerId: 1, clientX: 50, clientY: 10 });
+  fireEvent.pointerUp(timeline(), { pointerId: 1, clientX: 50, clientY: 10 });
+}
+
+it("opens an epic's timeline by double-clicking its bar, unless that is turned off", async () => {
+  const launch = epic({ id: "e1", name: "Launch", target_date: day(20) });
+  const other = epic({ id: "e2", name: "Other", target_date: day(30) });
+  const { store, commands } = await setup({ epics: [launch, other] });
+  // One click selects; clicks on two bars, or a drag between them, are no double-click.
+  click("Launch");
+  click("Other");
+  drag(bar("Launch"), 0, DAY_WIDTH.month * 3);
+  await waitFor(() => expect(store.getState().pending).toBe(0));
+  click("Launch");
+  expect(screen.getByRole("heading", { name: "Roadmap" })).toBeTruthy();
+  click("Launch");
+  expect(await screen.findByRole("heading", { name: "Launch" })).toBeTruthy();
+  expect(commands).toHaveLength(1); // only the drag changed a date
+  cleanup();
+
+  saveOpenOnDoubleClick(false);
+  await setup({ epics: [launch] });
+  click("Launch");
+  click("Launch");
+  expect(screen.getByRole("heading", { name: "Roadmap" })).toBeTruthy();
+  expect(bar("Launch").getAttribute("aria-pressed")).toBe("true");
 });
 
 // ---------------------------------------------------------------------------------------

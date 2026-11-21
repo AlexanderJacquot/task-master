@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { BookmarkIcon as Bookmark, RoadmapIcon } from "../../components/TaskIcons";
 import { Button, cx, FOCUS, InlineInput, Select } from "../../components/ui";
 import { isoDate } from "../../lib/dates";
+import { loadOpenOnDoubleClick } from "../../lib/roadmapPrefs";
 import type { View } from "../../lib/types";
 import { FILTER_NONE } from "../../lib/views";
 import { createView, deleteView, updateEpic, updateTask, updateView } from "../../store/actions";
@@ -86,6 +87,7 @@ export function RoadmapPage({
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [todaySeq, setTodaySeq] = useState(0);
+  const [openOnDoubleClick] = useState(loadOpenOnDoubleClick);
   const today = isoDate();
 
   const all = useMemo(
@@ -328,8 +330,8 @@ export function RoadmapPage({
         </div>
         <p className="mt-2 text-sm text-ink-3">
           {level === "epics"
-            ? "Epics across projects. A bar ends on the epic's target date: drag it to move, drag an end to resize, or drag across an empty row to schedule an epic. Open an epic to line up its tasks."
-            : `${view && epic ? `The tasks of ${epic.name}. ` : ""}A bar ends on the task's due date; the dashed line is the epic's target date.`}
+            ? `Epics across projects. A bar ends on the epic's target date: drag it to move, drag an end to resize, or drag across an empty row to schedule an epic. Open an epic (its name${openOnDoubleClick ? ", or double-click its bar" : ""}) to line up its tasks.`
+            : `${view && epic ? `The tasks of ${epic.name}. ` : ""}A bar ends on the task's due date${openOnDoubleClick ? " (double-click it to open the task)" : ""}; the dashed line is the epic's target date.`}
           {view && " Dates change at once; the rest stays a draft until you save the view."}
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -468,6 +470,7 @@ export function RoadmapPage({
             level === "epics" ? `Open the timeline of ${item.title}` : `Open ${item.title}`
           }
           onOpen={open}
+          openOnDoubleClick={openOnDoubleClick}
           onBar={(id, bar) => void setBar(id, bar)}
           onDeadline={(date) => void setDeadline(date)}
           onToggleGroup={toggleGroup}

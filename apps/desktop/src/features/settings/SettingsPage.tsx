@@ -21,6 +21,7 @@ import {
 import { formatAgo, isoDate } from "../../lib/dates";
 import { loadCloseOnDone, saveCloseOnDone } from "../../lib/detailPrefs";
 import { useOrnaments } from "../../lib/ornaments";
+import { loadOpenOnDoubleClick, saveOpenOnDoubleClick } from "../../lib/roadmapPrefs";
 import { settingsApi } from "../../lib/settingsApi";
 import { loadSoundsOn, playSound, saveSoundsOn } from "../../lib/sounds";
 import {
@@ -391,6 +392,26 @@ function FinishingTasks() {
   );
 }
 
+function Roadmap() {
+  const [open, setOpen] = useState(loadOpenOnDoubleClick);
+  return (
+    <Section title="Roadmap" hint="Remembered on this computer.">
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={open}
+          onChange={(e) => {
+            setOpen(e.target.checked);
+            saveOpenOnDoubleClick(e.target.checked);
+          }}
+          className="accent-accent"
+        />
+        Double-click a bar in the roadmap to open it: an epic's timeline, or a task
+      </label>
+    </Section>
+  );
+}
+
 function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -740,6 +761,7 @@ const GENERAL: SettingsCategory = {
       <Appearance />
       <AddingTasks />
       <FinishingTasks />
+      <Roadmap />
     </>
   ),
 };

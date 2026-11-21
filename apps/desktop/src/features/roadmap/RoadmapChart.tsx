@@ -33,6 +33,8 @@ import {
 export const ROW_HEIGHT = 36;
 export const HEADER_HEIGHT = 52;
 export const NAME_WIDTH = 288;
+/** Two clicks on the same bar within this many milliseconds are a double-click. */
+export const DOUBLE_CLICK_MS = 500;
 
 /** A bar or milestone being dragged: where it started and what it shows now. */
 type Drag =
@@ -69,6 +71,8 @@ export type RoadmapChartProps = {
   /** The name's button: open the task, or the epic's timeline. */
   openLabel(item: Item): string;
   onOpen(id: string): void;
+  /** Double-clicking a bar opens it too (Settings → General → Roadmap). */
+  openOnDoubleClick?: boolean;
   onBar(id: string, bar: Bar): void;
   onDeadline(date: string): void;
   onToggleGroup(key: string): void;
@@ -112,12 +116,18 @@ export function RoadmapChart({
   onSelect,
   openLabel,
   onOpen,
+  openOnDoubleClick = false,
   onBar,
   onDeadline,
   onToggleGroup,
 }: RoadmapChartProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
+  /**
+   * The last click on a bar that did not move it. Pressing a bar captures the pointer on
+   * the chart, so the browser's dblclick never reaches the bar: two such clicks make one.
+   */
+  const lastClick = useRef<{ id: string; at: number } | null>(null);
   const markerId = useId();
   const dayWidth = DAY_WIDTH[zoom];
   const from = dayNumber(range.from);
@@ -241,7 +251,15 @@ export function RoadmapChart({
       if (item)
         onBar(item.id, drag.bar.start === drag.bar.end ? newBar(item, drag.bar.start) : drag.bar);
     } else if (drag.bar.start !== drag.from.start || drag.bar.end !== drag.from.end) {
+      lastClick.current = null;
       onBar(drag.id, drag.bar);
+    } else if (openOnDoubleClick) {
+      const now = Date.now();
+      const previous = lastClick.current;
+      if (previous && previous.id === drag.id && now - previous.at <= DOUBLE_CLICK_MS) {
+        lastClick.current = null;
+        onOpen(drag.id);
+      } else lastClick.current = { id: drag.id, at: now };
     }
   }
   /** ←/→ move a bar a day (with Shift a week); Alt moves its start, Ctrl/⌘ its end. */
@@ -611,10 +629,9 @@ export function RoadmapChart({
                       aria-pressed={isSelected}
                       title={
                         warning ||
-                        `${bar.start} to ${bar.end}${progress}. Drag to move, drag an end to resize; ←/→ move, Alt or Ctrl+←/→ resize.`
+                        `${bar.start} to ${bar.end}${progress}. Drag to move, drag an end to resize; ←/→ move, Alt or Ctrl+←/→ resize${openOnDoubleClick ? "; double-click or Enter opens it" : "; Enter opens it"}.`
                       }
                       onPointerDown={(event) => startBar(event, item, bar)}
-                      onDoubleClick={() => onOpen(item.id)}
                       onKeyDown={(event) => barKey(event, item, bar)}
                       className={cx(
                         "group/bar absolute top-1.5 bottom-1.5 flex cursor-grab items-center overflow-hidden rounded-md border px-2 text-left text-xs shadow-sm active:cursor-grabbing",

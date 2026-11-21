@@ -4,6 +4,16 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Roadmap: double-click a bar to open it** (2026-11-21, branch
+`worktree-roadmap-dblclick-epic`): double-clicking an epic's bar opens its timeline (a
+task's bar opens the task), as its name in the left column does. The bar had an
+`onDoubleClick` that never fired: pressing a bar captures the pointer on the chart for
+dragging, so the browser sends the clicks there. `RoadmapChart` now counts two presses on
+the same bar within 500 ms that do not move it (`DOUBLE_CLICK_MS`). Settings → General →
+Roadmap turns it off (on by default, kept on this computer, `lib/roadmapPrefs.ts`). Test in
+`RoadmapPage.test.tsx`. Tried in the browser showcase (Chromium): a double-click opens the
+epic, with the setting off it only selects the bar. Not tried in the Tauri app (WebKit).
+
 **Release 0.27.1** (2026-11-21, on `main`; notes `docs/releases/0.27.1.md`): 0.27.0 was
 tagged but never built: the release workflow's `pnpm biome ci .` failed on a format error in
 `progress.md` (`*after*`, from the Dock-fix branch); the merge was checked with `biome check
