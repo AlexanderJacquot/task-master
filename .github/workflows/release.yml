@@ -108,7 +108,7 @@ jobs:
       - name: Check the macOS signature
         if: startsWith(matrix.platform, 'macos')
         run: |
-          app="target/${{ matrix.target }}/release/bundle/macos/task-master.app"
+          app="target/${{ matrix.target }}/release/bundle/macos/Task Master.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign -dv "$app" 2>&1 | grep -q 'Signature=adhoc'
           codesign -d --entitlements - "$app" 2>&1 | grep -q 'com.apple.security.device.audio-input'

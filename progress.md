@@ -45,6 +45,14 @@ clippy, `cargo test --workspace`, biome, typecheck, `pnpm test` (605 passed, 2 s
 Tried in the browser showcase (sidebar, new note, title following, `[[` picker, task
 panel). Not yet tried in the Tauri app. Schema 18: update the sync server with the app.
 
+**macOS app named "Task Master"** (2026-11-20, branch `worktree-mac-name-task-master`): the Dock
+and Finder showed `task-master`. `tauri.macos.conf.json` now sets `productName` to `Task
+Master` (macOS only; Linux and Windows artifacts keep `task-master`, so the AUR PKGBUILD is
+untouched). The bundle is `Task Master.app`: updated the signature check in `release.yml` and
+the paths in docs/mcp.md and docs/release.md. App data keeps the same identifier. Not built
+or run here; check the next macOS build (Dock name, in-app update from 0.26.0, the MCP
+sidecar path `/Applications/Task Master.app/Contents/MacOS/task-master-mcp`).
+
 **Release 0.26.0** (2026-11-20, on `main`; notes `docs/releases/0.26.0.md`): the Roadmap
 (epics across projects, a timeline per epic, saved roadmap views; ADR 031), Outlook
 calendar sync on Windows (ADR 030), a Today panel on All tasks with list rows that drag,
