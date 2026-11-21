@@ -7,7 +7,7 @@ import type { Changes, Command, Snapshot } from "../../lib/types";
 import { createAppRouter } from "../../router";
 import { StoreProvider } from "../../store/context";
 import { createTaskStore, type TaskStore } from "../../store/store";
-import { fakeParse, note, noteFolder, STATUS, snapshot, task } from "../../test/fixtures";
+import { fakeParse, note, noteFolder, project, STATUS, snapshot, task } from "../../test/fixtures";
 
 /** A core that confirms every write with what the store optimistically shows. */
 function fakeApi(getStore: () => TaskStore, initial: Partial<Snapshot>, extra: Partial<Api>) {
@@ -265,11 +265,37 @@ describe("notes", () => {
     fireEvent.pointerMove(document, at(10));
     await waitFor(() => expect(header.className).toContain("ring-accent"));
     fireEvent.pointerUp(document, at(10));
+    // The click that ends a real drag, which dnd-kit swallows at the window.
+    fireEvent.click(row);
     await waitFor(() => expect(store.getState().notes[loose.id]?.folder_id).toBe(folder.id));
     expect(executed.at(-1)?.[0]).toMatchObject({
       type: "update_note",
       id: loose.id,
       changes: [{ folder_id: folder.id }, { rank: expect.any(String) }],
+    });
+  });
+
+  it("lists a project's notes on its page, and writes one about it", async () => {
+    const p = project({ id: "0192f0c6-0000-7000-8000-0000000000aa", name: "Garden" });
+    const t = task({ title: "Order seeds", project_id: p.id, status_id: STATUS.todo });
+    const about = note({ title: "Planting plan", body: `For [Garden](project:${p.id})` });
+    const onTask = note({ title: "Seed list", task_id: t.id });
+    const elsewhere = note({ title: "Recipes" });
+    const { router, executed } = await renderApp(`/project/${p.id}`, {
+      projects: [p],
+      tasks: [t],
+      notes: [about, onTask, elsewhere],
+    });
+    const section = await screen.findByRole("region", { name: "Notes" });
+    expect(within(section).getByRole("link", { name: /Planting plan/ })).toBeTruthy();
+    expect(within(section).getByRole("link", { name: /Seed list.*on Order seeds/ })).toBeTruthy();
+    expect(within(section).queryByRole("link", { name: /Recipes/ })).toBeNull();
+
+    fireEvent.click(within(section).getByRole("button", { name: "New note" }));
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/note\//));
+    expect(executed[0]?.[0]).toMatchObject({
+      type: "create_note",
+      note: { body: `[Garden](project:${p.id})\n\n` },
     });
   });
 });

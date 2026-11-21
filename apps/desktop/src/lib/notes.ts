@@ -171,3 +171,39 @@ export function notePlacement(
   const [prev, next] = target.after ? [others[i], others[i + 1]] : [others[i - 1], others[i]];
   return { folderId, before: prev?.rank ?? null, after: next?.rank ?? null };
 }
+
+/** Why a note shows on a project's page. */
+export type ProjectNoteReason = "links-project" | "attached" | "links-task";
+
+/**
+ * The notes about a project (on its page): those linking to it, attached to one of its
+ * tasks, or linking one of its tasks, most recently edited first. `projectIds` are the
+ * project and, for an area, its projects.
+ */
+export function notesForProject(
+  notes: Iterable<Note>,
+  tasks: Record<string, { project_id: string | null }>,
+  projectIds: ReadonlySet<string>,
+): { note: Note; reason: ProjectNoteReason; taskId: string | null }[] {
+  const ofProject = (taskId: string | null | undefined) => {
+    const project = taskId ? tasks[taskId]?.project_id : null;
+    return !!project && projectIds.has(project);
+  };
+  const out: { note: Note; reason: ProjectNoteReason; taskId: string | null }[] = [];
+  for (const note of notes) {
+    const body = note.body.toLowerCase();
+    if ([...projectIds].some((id) => body.includes(`](${PROJECT_SCHEME}${id.toLowerCase()})`)))
+      out.push({ note, reason: "links-project", taskId: null });
+    else if (ofProject(note.task_id)) out.push({ note, reason: "attached", taskId: note.task_id });
+    else {
+      const linked = linkedTaskIds(note.body).find((id) => ofProject(id));
+      if (linked) out.push({ note, reason: "links-task", taskId: linked });
+    }
+  }
+  return out.sort((a, b) => b.note.updated_at - a.note.updated_at);
+}
+
+/** The markdown linking a project, as a note about it starts. */
+export function projectLinkMarkdown(project: { id: string; name: string }): string {
+  return `[${linkText(project.name.trim() || "Untitled project")}](${PROJECT_SCHEME}${project.id})`;
+}

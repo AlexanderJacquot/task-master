@@ -3,14 +3,24 @@ import { DropdownMenu, Popover } from "radix-ui";
 import {
   ArchiveIcon as Archive,
   UnarchiveIcon as ArchiveRestore,
+  FileTextIcon,
   MoreIcon as MoreHorizontal,
   DeleteIcon as Trash2,
 } from "../../components/TaskIcons";
-import { cx, IconButton, MENU, MENU_DANGER, MENU_ITEM, Select } from "../../components/ui";
+import {
+  cx,
+  IconButton,
+  MENU,
+  MENU_DANGER,
+  MENU_ITEM,
+  MENU_SEPARATOR,
+  Select,
+} from "../../components/ui";
 import type { Project } from "../../lib/types";
 import { deleteProject, moveProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { ProjectFolderButton } from "../agents/ProjectFolderButton";
+import { ProjectNotes, useNewProjectNote } from "../notes/ProjectNotes";
 import { MeetingsSection } from "../scribe/MeetingsSection";
 import { EditableTitle } from "../shell/EditableTitle";
 import { ViewPage } from "../shell/ViewPage";
@@ -97,18 +107,22 @@ export function ProjectPage({ project }: { project: Project }) {
   const archived = project.archived_at !== null;
   const area = project.parent_id ? projects[project.parent_id] : undefined;
   const item = MENU_ITEM;
+  const newNote = useNewProjectNote(project);
 
   return (
     <ViewPage
       scope={{ kind: "project", id: project.id }}
       eyebrow={area?.name}
       details={
-        <MeetingsSection
-          link={{ project: project.id }}
-          page={false}
-          limit={3}
-          className="px-10 pb-3"
-        />
+        <>
+          <ProjectNotes project={project} className="px-10 pb-3" />
+          <MeetingsSection
+            link={{ project: project.id }}
+            page={false}
+            limit={3}
+            className="px-10 pb-3"
+          />
+        </>
       }
       title={
         <span className="flex min-w-0 items-center gap-2">
@@ -150,6 +164,10 @@ export function ProjectPage({ project }: { project: Project }) {
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content align="end" sideOffset={6} className={cx(MENU, "min-w-44")}>
+                <DropdownMenu.Item className={item} onSelect={() => void newNote()}>
+                  <FileTextIcon size={14} /> New note about it
+                </DropdownMenu.Item>
+                <DropdownMenu.Separator className={MENU_SEPARATOR} />
                 <DropdownMenu.Item
                   className={item}
                   onSelect={() => void updateProject(store, project.id, [{ archived: !archived }])}

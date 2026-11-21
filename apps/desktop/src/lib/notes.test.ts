@@ -5,9 +5,11 @@ import {
   entityLink,
   linkedTaskIds,
   notePlacement,
+  notesForProject,
   notesForTask,
   noteTitle,
   noteTree,
+  projectLinkMarkdown,
   taskLinkMarkdown,
 } from "./notes";
 
@@ -134,5 +136,37 @@ describe("dropping a dragged note", () => {
     expect(notePlacement(notes, folders, "a", { kind: "note", id: "b", after: false })).toBeNull();
     expect(notePlacement(notes, folders, "b", { kind: "note", id: "a", after: true })).toBeNull();
     expect(notePlacement(notes, folders, "missing", { kind: "folder", id: "f" })).toBeNull();
+  });
+});
+
+describe("notes of a project", () => {
+  const P = "0192f0c6-0000-7000-8000-0000000000aa";
+  const CHILD = "0192f0c6-0000-7000-8000-0000000000ab";
+  const T = "0192f0c6-0000-7000-8000-0000000000b1";
+  const U = "0192f0c6-0000-7000-8000-0000000000b2";
+  const tasks = { [T]: { project_id: P }, [U]: { project_id: CHILD }, other: { project_id: null } };
+
+  it("lists notes linking it, attached to its tasks or linking them, newest first", () => {
+    const linking = note({ body: `About [the app](project:${P.toUpperCase()})`, updated_at: 5 });
+    const attached = note({ task_id: T, updated_at: 9 });
+    const viaTask = note({ body: `see [u](task:${U})`, updated_at: 7 });
+    const unrelated = note({ task_id: "other", body: "nothing" });
+    const all = [linking, attached, viaTask, unrelated];
+    expect(
+      notesForProject(all, tasks, new Set([P])).map((n) => [n.note.id, n.reason, n.taskId]),
+    ).toEqual([
+      [attached.id, "attached", T],
+      [linking.id, "links-project", null],
+    ]);
+    // An area's page includes its projects' notes.
+    expect(notesForProject(all, tasks, new Set([P, CHILD])).map((n) => n.reason)).toEqual([
+      "attached",
+      "links-task",
+      "links-project",
+    ]);
+  });
+
+  it("writes a project link with its brackets escaped", () => {
+    expect(projectLinkMarkdown({ id: P, name: "App [v2]" })).toBe(`[App \\[v2\\]](project:${P})`);
   });
 });

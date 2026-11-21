@@ -8,7 +8,7 @@ import { useStoreState } from "../../store/context";
 import { useNewNote } from "./NotesTree";
 
 /** The first line of text in a note's body, without markdown marks. */
-function excerpt(body: string): string {
+export function excerpt(body: string): string {
   const line = body
     .split("\n")
     .map((l) => l.trim())
