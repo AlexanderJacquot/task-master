@@ -4,6 +4,21 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.27.0** (2026-11-21, on `main`; notes `docs/releases/0.27.0.md`): Notes (ADR
+032: sidebar pages in folders, `[[` task links, notes on task and project pages, images and
+files, drag and drop, palette search, MCP tools), the day planner's lunch break, the macOS
+app named Task Master, and one Dock icon after an update on macOS. Integrated on
+`release-0.27.0` from `notes-integrations` (with `notes-page`), `fix-macos-relaunch-dock`,
+`plan-lunch-toggle` and `worktree-mac-name-task-master`; the iPhone branches (`p0-…`,
+`p1-…`, `p2-…`) stay out, and so does `homepage-infra-tile-order` (older than 0.26.0, never
+merged). Only `progress.md` conflicted. Checks on the merged tree: `cargo fmt --check`,
+clippy, `cargo test --workspace` (357 passed, 8 ignored), biome, typecheck, `pnpm test`
+(623 passed, 2 skipped). A local debug macOS bundle builds as `Task Master.app` (name Task
+Master, same identifier, valid ad-hoc signature). The updater installs into the existing
+bundle path (tauri-plugin-updater drops the archive's top folder), so updated Macs keep
+`task-master.app`; only new .dmg installs are `Task Master.app`. **Schema 19**: the sync
+server must be updated with the desktops.
+
 **Notes integrations** (2026-11-21, branch `notes-integrations`, on top of `notes-page`;
 ADR 032 "Follow-ups"): migration 19 adds `notes_fts` (title, body; triggers like
 `tasks_fts`) and `attachments.note_id` (exactly one of task, meeting, note; table rebuilt).
