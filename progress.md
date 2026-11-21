@@ -23,9 +23,10 @@ passed, 8 ignored), `pnpm biome ci .`, typecheck, `pnpm test` (631 passed, 2 ski
 **Tried in the Tauri app** (a debug bundle with identifier
 `space.solarnexus.taskmaster.roadmapimage`, on a copy of the database, no sync): Save as
 PNG on the roadmap of epics (31 epics, the 16 scheduled ones drawn), Copy as PNG on an epic's
-timeline (2 of 7 tasks scheduled; the clipboard held the PNG), the button off on an epic
-with nothing scheduled. Not tried: Save as SVG in the app (unit-tested; the same path),
-Windows and Linux (WebKitGTK may refuse images on the clipboard: Copy then says so).
+timeline (2 of 7 tasks scheduled; the clipboard held the PNG), Save as SVG on the roadmap
+(valid XML; arrows start past a label beside its bar), the button dimmed and off on an epic
+with nothing scheduled. Not tried: Windows and Linux (WebKitGTK may refuse images on the
+clipboard: Copy then says so).
 
 **Release 0.27.1** (2026-11-21, on `main`; notes `docs/releases/0.27.1.md`): 0.27.0 was
 tagged but never built: the release workflow's `pnpm biome ci .` failed on a format error in
