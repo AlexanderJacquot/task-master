@@ -193,6 +193,25 @@ export function RoadmapPage({
     if (result) setError("");
     else setError(store.getState().lastError ?? "Could not change the date.");
   }
+  /**
+   * A bar taken off the chart (put there by mistake): the epic loses its target date, the
+   * task its due date, and the roadmap forgets its start. Undo puts the date back.
+   */
+  async function clearBar(id: string) {
+    const { [id]: _, ...starts } = layout.starts;
+    if (id in layout.starts) changeLayout({ ...layout, starts });
+    if (selected === id) setSelected(null);
+    const state = store.getState();
+    let result: unknown = true;
+    if (level === "epics") {
+      if (state.epics[id]?.target_date)
+        result = await updateEpic(store, id, [{ target_date: null }]);
+    } else if (state.tasks[id]?.due_date) {
+      result = await updateTask(store, id, [{ due_date: null }]);
+    }
+    if (result) setError("");
+    else setError(store.getState().lastError ?? "Could not remove it from the roadmap.");
+  }
   async function setDeadline(date: string) {
     if (!epicId) return;
     const result = await updateEpic(store, epicId, [{ target_date: date }]);
@@ -458,6 +477,7 @@ export function RoadmapPage({
           zoom={filter.zoom}
           today={today}
           nameHeader={level === "epics" ? "Epic" : "Task"}
+          dateName={level === "epics" ? "target date" : "due date"}
           deadline={deadline}
           selected={selected}
           busy={pending > 0}
@@ -469,6 +489,7 @@ export function RoadmapPage({
           }
           onOpen={open}
           onBar={(id, bar) => void setBar(id, bar)}
+          onClear={(id) => void clearBar(id)}
           onDeadline={(date) => void setDeadline(date)}
           onToggleGroup={toggleGroup}
         />

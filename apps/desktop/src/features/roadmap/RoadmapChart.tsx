@@ -1,5 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { ContextMenu } from "radix-ui";
 import {
   type KeyboardEvent,
   type PointerEvent,
@@ -11,8 +12,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { CalendarPlusIcon } from "../../components/TaskIcons";
-import { cx, FOCUS } from "../../components/ui";
+import { CalendarPlusIcon, CloseIcon, ExternalIcon } from "../../components/TaskIcons";
+import { cx, FOCUS, MENU, MENU_ITEM } from "../../components/ui";
 import {
   addWorkingDays,
   type Bar,
@@ -58,6 +59,8 @@ export type RoadmapChartProps = {
   today: string;
   /** The name column's heading: "Epic" or "Task". */
   nameHeader: string;
+  /** What a bar's end is: "target date" or "due date". */
+  dateName: string;
   deadline: Deadline | null;
   selected: string | null;
   busy: boolean;
@@ -70,6 +73,8 @@ export type RoadmapChartProps = {
   openLabel(item: Item): string;
   onOpen(id: string): void;
   onBar(id: string, bar: Bar): void;
+  /** Takes a bar off the chart: the item has no end date any more (a mistake, undoable). */
+  onClear(id: string): void;
   onDeadline(date: string): void;
   onToggleGroup(key: string): void;
 };
@@ -104,6 +109,7 @@ export function RoadmapChart({
   zoom,
   today,
   nameHeader,
+  dateName,
   deadline,
   selected,
   busy,
@@ -113,6 +119,7 @@ export function RoadmapChart({
   openLabel,
   onOpen,
   onBar,
+  onClear,
   onDeadline,
   onToggleGroup,
 }: RoadmapChartProps) {
@@ -186,7 +193,8 @@ export function RoadmapChart({
   const deadlineDate = drag?.kind === "deadline" ? drag.date : deadline?.date;
 
   function startBar(event: PointerEvent, item: Item, bar: Bar) {
-    if (event.button !== 0 || busy) return;
+    // Ctrl+click is a right-click on macOS: it opens the row's menu, not a drag.
+    if (event.button !== 0 || event.ctrlKey || busy) return;
     event.stopPropagation();
     const handle = (event.target as HTMLElement).closest<HTMLElement>("[data-handle]")?.dataset
       .handle;
@@ -197,7 +205,7 @@ export function RoadmapChart({
   }
   /** Drawing a bar on an unscheduled item's empty track. */
   function startDraw(event: PointerEvent<HTMLElement>, item: Item) {
-    if (event.button !== 0 || busy) return;
+    if (event.button !== 0 || event.ctrlKey || busy) return;
     const left = event.currentTarget.getBoundingClientRect().left;
     const anchor = isoOf(from + Math.floor((event.clientX - left) / dayWidth));
     scrollRef.current?.setPointerCapture?.(event.pointerId);
@@ -244,11 +252,19 @@ export function RoadmapChart({
       onBar(drag.id, drag.bar);
     }
   }
-  /** ←/→ move a bar a day (with Shift a week); Alt moves its start, Ctrl/⌘ its end. */
+  /**
+   * ←/→ move a bar a day (with Shift a week); Alt moves its start, Ctrl/⌘ its end.
+   * Delete or Backspace takes it off the chart.
+   */
   function barKey(event: KeyboardEvent, item: Item, bar: Bar) {
     if (event.key === "Enter") {
       event.preventDefault();
       onOpen(item.id);
+      return;
+    }
+    if (event.key === "Delete" || event.key === "Backspace") {
+      event.preventDefault();
+      if (!busy) onClear(item.id);
       return;
     }
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -532,138 +548,184 @@ export function RoadmapChart({
             const progress =
               item.progress === null ? "" : ` · ${Math.round(item.progress * 100)}% done`;
             return (
-              <div
-                key={item.id}
-                className={cx("absolute left-0 flex", isSelected && "bg-selected/40")}
-                style={{ top, height: ROW_HEIGHT, width: NAME_WIDTH + width }}
-              >
-                <div
-                  className={cx(
-                    "group/name sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-line/70 bg-raised pr-2 pl-7",
-                    isSelected && "bg-selected",
-                  )}
-                  style={{ width: NAME_WIDTH, paddingLeft: 28 + depth * 14 }}
-                >
-                  {item.progress !== null && (
-                    <span
-                      aria-hidden
-                      className="inline-block size-2 shrink-0 rounded-full bg-ink-3"
-                      style={item.color ? { backgroundColor: item.color } : undefined}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => onOpen(item.id)}
-                    title={item.title}
-                    aria-label={openLabel(item)}
-                    className={cx(
-                      "min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm text-ink hover:underline",
-                      done && "text-ink-3 line-through",
-                      depth > 0 && "text-ink-2",
-                      FOCUS,
-                    )}
+              <ContextMenu.Root key={item.id} modal={false}>
+                <ContextMenu.Trigger asChild>
+                  <div
+                    data-row={item.id}
+                    className={cx("absolute left-0 flex", isSelected && "bg-selected/40")}
+                    style={{ top, height: ROW_HEIGHT, width: NAME_WIDTH + width }}
                   >
-                    {item.title}
-                  </button>
-                  {!bar && (
-                    <button
-                      type="button"
-                      aria-label={`Schedule ${item.title} from today`}
-                      title="Schedule from today (or drag across its row)"
-                      disabled={busy}
-                      onClick={() => onBar(item.id, newBar(item, today))}
-                      className={cx(
-                        "flex size-6 shrink-0 items-center justify-center rounded-md text-ink-3 opacity-0 hover:bg-hover hover:text-ink focus-visible:opacity-100 group-hover/name:opacity-100",
-                        FOCUS,
-                      )}
-                    >
-                      <CalendarPlusIcon size={14} />
-                    </button>
-                  )}
-                </div>
-                {/* Drawing a bar is a pointer shortcut; the Schedule button does it from the keyboard. */}
-                <div
-                  data-track={item.id}
-                  className={cx(
-                    "relative shrink-0 border-b border-line/40",
-                    !bar && "cursor-crosshair",
-                  )}
-                  style={{ width }}
-                  onPointerDown={(event) => (bar ? onSelect(item.id) : startDraw(event, item))}
-                >
-                  {!bar && item.span && (
                     <div
-                      aria-hidden
-                      data-span={item.id}
-                      title="Where its tasks are planned"
-                      className="pointer-events-none absolute top-2 bottom-2 rounded-md border border-dashed border-ink-3/50"
-                      style={{
-                        left: x(item.span.start),
-                        width: x(item.span.end) - x(item.span.start) + dayWidth,
-                      }}
-                    />
-                  )}
-                  {bar && (
-                    <button
-                      type="button"
-                      data-bar={item.id}
-                      aria-label={barLabel(item, bar, today)}
-                      aria-pressed={isSelected}
-                      title={
-                        warning ||
-                        `${bar.start} to ${bar.end}${progress}. Drag to move, drag an end to resize; ←/→ move, Alt or Ctrl+←/→ resize.`
-                      }
-                      onPointerDown={(event) => startBar(event, item, bar)}
-                      onDoubleClick={() => onOpen(item.id)}
-                      onKeyDown={(event) => barKey(event, item, bar)}
                       className={cx(
-                        "group/bar absolute top-1.5 bottom-1.5 flex cursor-grab items-center overflow-hidden rounded-md border px-2 text-left text-xs shadow-sm active:cursor-grabbing",
-                        done
-                          ? "border-line-strong bg-done/25 text-ink-3"
-                          : "border-accent/60 bg-accent/20 text-ink",
-                        (overdue || pastDeadline) && "border-danger/70",
-                        warning && "ring-2 ring-danger/60",
-                        isSelected && "ring-2 ring-accent",
-                        FOCUS,
+                        "group/name sticky left-0 z-20 flex shrink-0 items-center gap-1 border-r border-b border-line/70 bg-raised pr-2 pl-7",
+                        isSelected && "bg-selected",
                       )}
-                      style={{
-                        left: x(bar.start),
-                        width: Math.max(dayWidth, x(bar.end) - x(bar.start) + dayWidth),
-                        ...(!done &&
-                          !overdue &&
-                          !pastDeadline &&
-                          item.color && { borderColor: item.color }),
-                      }}
+                      style={{ width: NAME_WIDTH, paddingLeft: 28 + depth * 14 }}
                     >
                       {item.progress !== null && (
                         <span
                           aria-hidden
-                          data-progress={Math.round(item.progress * 100)}
-                          className="pointer-events-none absolute inset-y-0 left-0 bg-accent/35"
+                          className="inline-block size-2 shrink-0 rounded-full bg-ink-3"
+                          style={item.color ? { backgroundColor: item.color } : undefined}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => onOpen(item.id)}
+                        title={item.title}
+                        aria-label={openLabel(item)}
+                        className={cx(
+                          "min-w-0 flex-1 truncate rounded px-1 py-0.5 text-left text-sm text-ink hover:underline",
+                          done && "text-ink-3 line-through",
+                          depth > 0 && "text-ink-2",
+                          FOCUS,
+                        )}
+                      >
+                        {item.title}
+                      </button>
+                      {!bar && (
+                        <button
+                          type="button"
+                          aria-label={`Schedule ${item.title} from today`}
+                          title="Schedule from today (or drag across its row)"
+                          disabled={busy}
+                          onClick={() => onBar(item.id, newBar(item, today))}
+                          className={cx(
+                            "flex size-6 shrink-0 items-center justify-center rounded-md text-ink-3 opacity-0 hover:bg-hover hover:text-ink focus-visible:opacity-100 group-hover/name:opacity-100",
+                            FOCUS,
+                          )}
+                        >
+                          <CalendarPlusIcon size={14} />
+                        </button>
+                      )}
+                      {bar && (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${item.title} from the roadmap`}
+                          title={`Remove from the roadmap: clears its ${dateName} (or select its bar and press Delete)`}
+                          disabled={busy}
+                          onClick={() => onClear(item.id)}
+                          className={cx(
+                            "flex size-6 shrink-0 items-center justify-center rounded-md text-ink-3 opacity-0 hover:bg-hover hover:text-ink focus-visible:opacity-100 group-hover/name:opacity-100",
+                            FOCUS,
+                          )}
+                        >
+                          <CloseIcon size={14} />
+                        </button>
+                      )}
+                    </div>
+                    {/* Drawing a bar is a pointer shortcut; the Schedule button does it from the keyboard. */}
+                    <div
+                      data-track={item.id}
+                      className={cx(
+                        "relative shrink-0 border-b border-line/40",
+                        !bar && "cursor-crosshair",
+                      )}
+                      style={{ width }}
+                      onPointerDown={(event) => (bar ? onSelect(item.id) : startDraw(event, item))}
+                    >
+                      {!bar && item.span && (
+                        <div
+                          aria-hidden
+                          data-span={item.id}
+                          title="Where its tasks are planned"
+                          className="pointer-events-none absolute top-2 bottom-2 rounded-md border border-dashed border-ink-3/50"
                           style={{
-                            width: `${item.progress * 100}%`,
-                            ...(item.color && { backgroundColor: item.color, opacity: 0.35 }),
+                            left: x(item.span.start),
+                            width: x(item.span.end) - x(item.span.start) + dayWidth,
                           }}
                         />
                       )}
-                      <span
-                        data-handle="start"
-                        aria-hidden
-                        className="absolute inset-y-0 left-0 z-[1] w-1.5 cursor-ew-resize hover:bg-accent/40"
-                      />
-                      <span className="pointer-events-none relative truncate">
-                        {item.title}
-                        {item.progress !== null && <span className="text-ink-3">{progress}</span>}
-                      </span>
-                      <span
-                        data-handle="end"
-                        aria-hidden
-                        className="absolute inset-y-0 right-0 z-[1] w-1.5 cursor-ew-resize hover:bg-accent/40"
-                      />
-                    </button>
-                  )}
-                </div>
-              </div>
+                      {bar && (
+                        <button
+                          type="button"
+                          data-bar={item.id}
+                          aria-label={barLabel(item, bar, today)}
+                          aria-pressed={isSelected}
+                          title={
+                            warning ||
+                            `${bar.start} to ${bar.end}${progress}. Drag to move, drag an end to resize; ←/→ move, Alt or Ctrl+←/→ resize; Delete or right-click to remove it from the roadmap.`
+                          }
+                          onPointerDown={(event) => startBar(event, item, bar)}
+                          onDoubleClick={() => onOpen(item.id)}
+                          onKeyDown={(event) => barKey(event, item, bar)}
+                          className={cx(
+                            "group/bar absolute top-1.5 bottom-1.5 flex cursor-grab items-center overflow-hidden rounded-md border px-2 text-left text-xs shadow-sm active:cursor-grabbing",
+                            done
+                              ? "border-line-strong bg-done/25 text-ink-3"
+                              : "border-accent/60 bg-accent/20 text-ink",
+                            (overdue || pastDeadline) && "border-danger/70",
+                            warning && "ring-2 ring-danger/60",
+                            isSelected && "ring-2 ring-accent",
+                            FOCUS,
+                          )}
+                          style={{
+                            left: x(bar.start),
+                            width: Math.max(dayWidth, x(bar.end) - x(bar.start) + dayWidth),
+                            ...(!done &&
+                              !overdue &&
+                              !pastDeadline &&
+                              item.color && { borderColor: item.color }),
+                          }}
+                        >
+                          {item.progress !== null && (
+                            <span
+                              aria-hidden
+                              data-progress={Math.round(item.progress * 100)}
+                              className="pointer-events-none absolute inset-y-0 left-0 bg-accent/35"
+                              style={{
+                                width: `${item.progress * 100}%`,
+                                ...(item.color && { backgroundColor: item.color, opacity: 0.35 }),
+                              }}
+                            />
+                          )}
+                          <span
+                            data-handle="start"
+                            aria-hidden
+                            className="absolute inset-y-0 left-0 z-[1] w-1.5 cursor-ew-resize hover:bg-accent/40"
+                          />
+                          <span className="pointer-events-none relative truncate">
+                            {item.title}
+                            {item.progress !== null && (
+                              <span className="text-ink-3">{progress}</span>
+                            )}
+                          </span>
+                          <span
+                            data-handle="end"
+                            aria-hidden
+                            className="absolute inset-y-0 right-0 z-[1] w-1.5 cursor-ew-resize hover:bg-accent/40"
+                          />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </ContextMenu.Trigger>
+                <ContextMenu.Portal>
+                  <ContextMenu.Content className={cx(MENU, "min-w-52")}>
+                    <ContextMenu.Item className={MENU_ITEM} onSelect={() => onOpen(item.id)}>
+                      <ExternalIcon size={14} /> {openLabel(item)}
+                    </ContextMenu.Item>
+                    {bar ? (
+                      <ContextMenu.Item
+                        className={MENU_ITEM}
+                        disabled={busy}
+                        onSelect={() => onClear(item.id)}
+                      >
+                        <CloseIcon size={14} /> Remove from the roadmap
+                        <span className="ml-auto pl-4 text-xs text-ink-3">Del</span>
+                      </ContextMenu.Item>
+                    ) : (
+                      <ContextMenu.Item
+                        className={MENU_ITEM}
+                        disabled={busy}
+                        onSelect={() => onBar(item.id, newBar(item, today))}
+                      >
+                        <CalendarPlusIcon size={14} /> Schedule from today
+                      </ContextMenu.Item>
+                    )}
+                  </ContextMenu.Content>
+                </ContextMenu.Portal>
+              </ContextMenu.Root>
             );
           })}
         </div>

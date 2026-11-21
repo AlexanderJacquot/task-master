@@ -188,6 +188,29 @@ it("schedules an epic from its Schedule button, and opens its timeline from its 
   expect(await screen.findByRole("heading", { name: "Roadmap" })).toBeTruthy();
 });
 
+it("removes an epic from the roadmap from its right-click menu, clearing its target date", async () => {
+  const launch = epic({ id: "e1", name: "Launch", target_date: day(14) });
+  localStorage.setItem(LAYOUT_KEY, JSON.stringify({ starts: { e1: day(2) } }));
+  const { store, commands } = await setup({ epics: [launch] });
+  fireEvent.contextMenu(bar("Launch"));
+  fireEvent.click(await screen.findByRole("menuitem", { name: /Remove from the roadmap/ }));
+  await waitFor(() => expect(store.getState().epics.e1?.target_date).toBeNull());
+  expect(commands.at(-1)).toEqual([
+    { type: "update_epic", id: "e1", changes: [{ target_date: null }] },
+  ]);
+  // The roadmap forgets where it started; the row stays, ready to be scheduled again.
+  expect(loadLayout().starts.e1).toBeUndefined();
+  expect(screen.queryByRole("button", { name: /^Launch, / })).toBeNull();
+  expect(screen.getByRole("button", { name: "Schedule Launch from today" })).toBeTruthy();
+});
+
+it("removes an epic from the roadmap with the button beside its name", async () => {
+  const launch = epic({ id: "e1", name: "Launch", target_date: day(14) });
+  const { store } = await setup({ epics: [launch] });
+  fireEvent.click(screen.getByRole("button", { name: "Remove Launch from the roadmap" }));
+  await waitFor(() => expect(store.getState().epics.e1?.target_date).toBeNull());
+});
+
 // ---------------------------------------------------------------------------------------
 // An epic's task timeline
 
@@ -221,6 +244,28 @@ it("moves, resizes and nudges a task's bar on its epic's timeline", async () => 
   fireEvent.keyDown(bar("Build"), { key: "ArrowLeft", altKey: true, shiftKey: true });
   await waitFor(() => expect(loadLayout().starts[build.id]).toBe(day(2)));
   expect(store.getState().tasks[build.id]?.due_date).toBe(day(13));
+});
+
+it("removes a task's bar with Delete, clearing its due date, and ignores a Ctrl+click drag", async () => {
+  const launch = epic({ id: "e1", name: "Launch" });
+  const build = task({ title: "Build", epic_id: "e1", due_date: day(10) });
+  const draw = task({ title: "Draw me", epic_id: "e1" });
+  const { store, commands } = await setup(
+    { epics: [launch], tasks: [build, draw] },
+    "/roadmap?epic=e1",
+  );
+  // Ctrl+click is a right-click on macOS: no bar is drawn.
+  const track = document.querySelector(`[data-track='${draw.id}']`) as HTMLElement;
+  fireEvent.pointerDown(track, { button: 0, ctrlKey: true, pointerId: 1, clientX: 10 });
+  fireEvent.pointerUp(timeline(), { pointerId: 1, clientX: 10 });
+  expect(commands).toHaveLength(0);
+
+  fireEvent.keyDown(bar("Build"), { key: "Delete" });
+  await waitFor(() => expect(store.getState().tasks[build.id]?.due_date).toBeNull());
+  expect(commands.at(-1)).toEqual([
+    { type: "update_task", id: build.id, changes: [{ due_date: null }] },
+  ]);
+  expect(screen.getByRole("button", { name: "Schedule Build from today" })).toBeTruthy();
 });
 
 it("schedules a task by drawing across its row, and lists subtasks under their parent", async () => {

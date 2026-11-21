@@ -43,6 +43,10 @@ date, is an empty row: drag across it to draw its bar, or use its Schedule butto
 today, as long as its estimate; two working weeks for an epic). An unscheduled epic shows a
 dashed outline where its tasks are planned, as a guide.
 
+**Taking a bar off.** A bar put there by mistake comes off by right-clicking its row
+("Remove from the roadmap"), Delete on the focused bar, or the × beside its name: the epic's
+target date or the task's due date is cleared (undoable) and the roadmap forgets its start.
+
 **Dependencies.** Arrows go from a prerequisite's end to its dependent's start. Between
 epics they are derived: epic B waits on epic A when a task of B waits on a task of A, so
 there is nothing new to keep. A bar that starts on or before the last day of what it waits

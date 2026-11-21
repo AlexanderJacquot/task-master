@@ -4,6 +4,17 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Remove a bar from the roadmap** (2026-11-21, branch `gantt-remove-item`; ADR 031): an epic
+or task put on the roadmap by mistake comes off it by right-clicking its row ("Remove from
+the roadmap"; an unscheduled row's menu offers "Schedule from today"), Delete/Backspace on
+its focused bar, or the × beside its name on hover. It clears the epic's target date or
+the task's due date (undoable) and the roadmap's start for it; the row stays as an empty
+row while unscheduled items are shown. Ctrl+click (a right-click on macOS) no longer starts
+a drag or draws a bar. Menus are radix `ContextMenu` (already in `radix-ui`). Tests:
+`RoadmapPage.test.tsx` (+3). Checks: clippy, `cargo test --workspace`, `pnpm biome ci .`,
+typecheck, `pnpm test` (626 passed, 2 skipped). Tried in the browser showcase (menu at the
+pointer, schedule then remove, hover ×); not yet in the Tauri app.
+
 **Release 0.27.1** (2026-11-21, on `main`; notes `docs/releases/0.27.1.md`): 0.27.0 was
 tagged but never built: the release workflow's `pnpm biome ci .` failed on a format error in
 `progress.md` (`*after*`, from the Dock-fix branch); the merge was checked with `biome check
