@@ -265,14 +265,14 @@ describe("notes", () => {
     fireEvent.pointerMove(document, at(10));
     await waitFor(() => expect(header.className).toContain("ring-accent"));
     fireEvent.pointerUp(document, at(10));
-    // The click that ends a real drag, which dnd-kit swallows at the window.
-    fireEvent.click(row);
     await waitFor(() => expect(store.getState().notes[loose.id]?.folder_id).toBe(folder.id));
     expect(executed.at(-1)?.[0]).toMatchObject({
       type: "update_note",
       id: loose.id,
       changes: [{ folder_id: folder.id }, { rank: expect.any(String) }],
     });
+    // dnd-kit swallows clicks at the window for 50 ms after a drop: let it go first.
+    await new Promise((resolve) => setTimeout(resolve, 80));
   });
 
   it("lists a project's notes on its page, and writes one about it", async () => {
