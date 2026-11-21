@@ -118,3 +118,56 @@ export function noteTree(notes: Iterable<Note>, folders: Iterable<NoteFolder>): 
     loose: loose.sort(compareRank),
   };
 }
+
+/** Where a dragged note is dropped in the sidebar: on a folder (`null`: the top level), or
+ * just before or after another note. */
+export type NoteDropTarget =
+  | { kind: "folder"; id: string | null }
+  | { kind: "note"; id: string; after: boolean };
+
+/** The folder a dragged note lands in and the ranks either side of its new place. */
+export interface NotePlace {
+  folderId: string | null;
+  before: string | null;
+  after: string | null;
+}
+
+/**
+ * Where `draggedId` goes when dropped on `target`, or null when it would not move. On a
+ * folder it goes to the end; on a note, into that note's folder next to it.
+ */
+export function notePlacement(
+  notes: Record<string, Note>,
+  folders: Record<string, NoteFolder>,
+  draggedId: string,
+  target: NoteDropTarget,
+): NotePlace | null {
+  const dragged = notes[draggedId];
+  if (!dragged) return null;
+  const folderOf = (n: Note) => (n.folder_id && folders[n.folder_id] ? n.folder_id : null);
+  const from = folderOf(dragged);
+  const inFolder = (folderId: string | null) =>
+    Object.values(notes)
+      .filter((n) => folderOf(n) === folderId)
+      .sort(compareRank);
+
+  if (target.kind === "folder") {
+    if (target.id !== null && !folders[target.id]) return null;
+    if (target.id === from) return null;
+    const last = inFolder(target.id).at(-1);
+    return { folderId: target.id, before: last?.rank ?? null, after: null };
+  }
+  const anchor = notes[target.id];
+  if (!anchor || anchor.id === draggedId) return null;
+  const folderId = folderOf(anchor);
+  const all = inFolder(folderId);
+  const at = all.findIndex((n) => n.id === anchor.id);
+  const slot = target.after ? at + 1 : at;
+  // Already right there: the dragged note is the neighbour on that side.
+  if (folderId === from && (all[slot]?.id === draggedId || all[slot - 1]?.id === draggedId))
+    return null;
+  const others = all.filter((n) => n.id !== draggedId);
+  const i = others.findIndex((n) => n.id === anchor.id);
+  const [prev, next] = target.after ? [others[i], others[i + 1]] : [others[i - 1], others[i]];
+  return { folderId, before: prev?.rank ?? null, after: next?.rank ?? null };
+}

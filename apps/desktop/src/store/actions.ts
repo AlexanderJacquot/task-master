@@ -4,7 +4,7 @@
 import { ranksForDrop } from "../lib/board";
 import type { RestorePlan } from "../lib/history";
 import { applyMeetingChanges, cleanParticipants } from "../lib/meetings";
-import { applyNoteChanges, tidy } from "../lib/notes";
+import { applyNoteChanges, type NotePlace, tidy } from "../lib/notes";
 import { rankBetween } from "../lib/rank";
 import { playSound } from "../lib/sounds";
 import {
@@ -1669,6 +1669,26 @@ export function moveNote(store: TaskStore, id: string, folderId: string | null) 
   const note = s.notes[id];
   if (!note || (note.folder_id ?? null) === folderId) return Promise.resolve(null);
   return updateNote(store, id, [{ folder_id: folderId }, { rank: endOfFolder(s.notes, folderId) }]);
+}
+
+/**
+ * Puts a dragged note where the sidebar dropped it (ADR 032): into `place.folderId`,
+ * between the ranks either side. Equal neighbours (from a sync) fall back to the end.
+ */
+export function placeNote(store: TaskStore, id: string, place: NotePlace) {
+  const s = store.getState();
+  const note = s.notes[id];
+  if (!note) return Promise.resolve(null);
+  let rank: string;
+  try {
+    rank = rankBetween(place.before, place.after);
+  } catch {
+    rank = endOfFolder(s.notes, place.folderId);
+  }
+  const changes: NoteChange[] = [];
+  if ((note.folder_id ?? null) !== place.folderId) changes.push({ folder_id: place.folderId });
+  changes.push({ rank });
+  return updateNote(store, id, changes);
 }
 
 export function deleteNote(store: TaskStore, id: string) {

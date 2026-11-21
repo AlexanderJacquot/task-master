@@ -4,6 +4,7 @@ import {
   applyNoteChanges,
   entityLink,
   linkedTaskIds,
+  notePlacement,
   notesForTask,
   noteTitle,
   noteTree,
@@ -76,5 +77,62 @@ describe("note edits", () => {
     );
     expect(next).toMatchObject({ title: "New title", body: "# Hi", task_id: TASK, updated_at: 42 });
     expect(noteTitle({ title: " " })).toBe("Untitled");
+  });
+});
+
+describe("dropping a dragged note", () => {
+  const f = noteFolder({ id: "f", rank: "m" });
+  const a = note({ id: "a", rank: "b" });
+  const b = note({ id: "b", rank: "d" });
+  const c = note({ id: "c", rank: "f" });
+  const x = note({ id: "x", rank: "c", folder_id: "f" });
+  const y = note({ id: "y", rank: "e", folder_id: "f" });
+  const notes = Object.fromEntries([a, b, c, x, y].map((n) => [n.id, n]));
+  const folders = { f };
+
+  it("goes to the end of a folder dropped on, or of the top level", () => {
+    expect(notePlacement(notes, folders, "a", { kind: "folder", id: "f" })).toEqual({
+      folderId: "f",
+      before: "e",
+      after: null,
+    });
+    expect(notePlacement(notes, folders, "x", { kind: "folder", id: null })).toEqual({
+      folderId: null,
+      before: "f",
+      after: null,
+    });
+    // Its own folder, or a folder that is gone: nothing moves.
+    expect(notePlacement(notes, folders, "x", { kind: "folder", id: "f" })).toBeNull();
+    expect(notePlacement(notes, folders, "a", { kind: "folder", id: "gone" })).toBeNull();
+  });
+
+  it("goes before or after a note dropped on, in that note's folder", () => {
+    expect(notePlacement(notes, folders, "c", { kind: "note", id: "a", after: false })).toEqual({
+      folderId: null,
+      before: null,
+      after: "b",
+    });
+    expect(notePlacement(notes, folders, "a", { kind: "note", id: "b", after: true })).toEqual({
+      folderId: null,
+      before: "d",
+      after: "f",
+    });
+    expect(notePlacement(notes, folders, "a", { kind: "note", id: "x", after: true })).toEqual({
+      folderId: "f",
+      before: "c",
+      after: "e",
+    });
+    expect(notePlacement(notes, folders, "y", { kind: "note", id: "c", after: true })).toEqual({
+      folderId: null,
+      before: "f",
+      after: null,
+    });
+  });
+
+  it("does nothing when it would land where it is", () => {
+    expect(notePlacement(notes, folders, "a", { kind: "note", id: "a", after: true })).toBeNull();
+    expect(notePlacement(notes, folders, "a", { kind: "note", id: "b", after: false })).toBeNull();
+    expect(notePlacement(notes, folders, "b", { kind: "note", id: "a", after: true })).toBeNull();
+    expect(notePlacement(notes, folders, "missing", { kind: "folder", id: "f" })).toBeNull();
   });
 });

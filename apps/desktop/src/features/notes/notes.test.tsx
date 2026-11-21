@@ -231,4 +231,45 @@ describe("notes", () => {
       attachment.name,
     );
   });
+
+  it("moves a note dragged onto a folder in the sidebar", async () => {
+    const folder = noteFolder({ name: "Ideas" });
+    const loose = note({ title: "Garden" });
+    const { executed } = await renderApp("/inbox", { notes: [loose], note_folders: [folder] });
+    await screen.findByRole("heading", { name: "Inbox" });
+    // jsdom has no layout: the folder's header sits at y 0–20, the note's row at 40–60.
+    const header = document.querySelector(`[data-note-folder="${folder.id}"]`) as HTMLElement;
+    const row = document.querySelector(`[data-note-row="${loose.id}"]`) as HTMLElement;
+    const box = (top: number) => () =>
+      ({
+        top,
+        bottom: top + 20,
+        left: 0,
+        right: 200,
+        width: 200,
+        height: 20,
+        x: 0,
+        y: top,
+      }) as DOMRect;
+    header.getBoundingClientRect = box(0);
+    row.getBoundingClientRect = box(40);
+    const at = (y: number) => ({
+      button: 0,
+      isPrimary: true,
+      pointerId: 1,
+      clientX: 50,
+      clientY: y,
+    });
+    fireEvent.pointerDown(row, at(50));
+    fireEvent.pointerMove(document, at(30));
+    fireEvent.pointerMove(document, at(10));
+    await waitFor(() => expect(header.className).toContain("ring-accent"));
+    fireEvent.pointerUp(document, at(10));
+    await waitFor(() => expect(store.getState().notes[loose.id]?.folder_id).toBe(folder.id));
+    expect(executed.at(-1)?.[0]).toMatchObject({
+      type: "update_note",
+      id: loose.id,
+      changes: [{ folder_id: folder.id }, { rank: expect.any(String) }],
+    });
+  });
 });
