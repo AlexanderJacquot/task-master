@@ -357,6 +357,16 @@ impl Store {
         query::snapshot(&self.conn)
     }
 
+    /// The roadmap a spec shows, ready to draw (ADR 035): see [`crate::roadmap_image`].
+    pub fn roadmap_image(
+        &self,
+        spec: &crate::model::ViewSpec,
+        options: &crate::roadmap::RoadmapOptions,
+    ) -> Result<crate::roadmap_image::RoadmapImage> {
+        let snapshot = self.snapshot()?;
+        crate::roadmap::roadmap_image(crate::roadmap::RoadmapData::of(&snapshot), spec, options)
+    }
+
     /// Live task ids matching all words of `text` (prefix match), best first.
     pub fn search(&self, text: &str, limit: u32) -> Result<Vec<Id>> {
         query::search(&self.conn, text, limit)

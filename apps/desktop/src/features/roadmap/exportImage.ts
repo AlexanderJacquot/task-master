@@ -1,5 +1,5 @@
 // Export the Roadmap as an image (ADR 034). The core draws the SVG from the rows the page
-// shows (`roadmap_svg`), so the sync server can draw the same one later; PNG is rasterized
+// shows (`roadmap_svg`), and the sync server draws the same one (ADR 035); PNG is rasterized
 // here on a canvas, copied with the clipboard API or written where the user saves it.
 
 import { save } from "@tauri-apps/plugin-dialog";

@@ -6,7 +6,8 @@ claude.ai while your computers are off. You host it yourself: it ships as one Do
 image, `ghcr.io/alexanderjacquot/task-master-server`. Design: `docs/adr/015-sync-server.md`.
 
 An HTTP API for other software (dashboards, scripts) is planned; the `api:read` and
-`api:write` token scopes already exist for it and for the remote MCP endpoint.
+`api:write` token scopes already exist for it, for the remote MCP endpoint and for roadmap
+images (`GET /roadmap.svg`, section 6).
 
 ## 1. How it fits together
 
@@ -189,6 +190,44 @@ repository.
 
 Scopes: `sync` (desktops; desktops signed in with OIDC get one automatically),
 `api:read`, `api:write` (also opens the remote MCP endpoint, docs/mcp.md section 5).
+
+### Roadmap images
+
+`GET /roadmap.svg` draws a roadmap from the server's copy, the same picture as the
+desktop's "Export image" (ADR 034, ADR 035). Send an `api:read`, `api:write` or `sync`
+token as `Authorization: Bearer …` (none needed with `TM_AUTH=none`).
+
+```bash
+# A saved roadmap view: its filters, timescale, bar starts and folded groups
+curl -H "Authorization: Bearer $TOKEN" "$URL/roadmap.svg?view=<view id>" -o roadmap.svg
+# The roadmap of epics of two projects, by quarter, dark
+curl -H "Authorization: Bearer $TOKEN" "$URL/roadmap.svg?projects=<id>,<id>&zoom=quarter&theme=dark" -o roadmap.svg
+```
+
+| Parameter | Goes with | Values |
+| --- | --- | --- |
+| `view` | | A saved roadmap view's id. Nothing below but `zoom`, `theme`, `today`. |
+| `epic` | | An epic's id: its task timeline instead of the roadmap of epics |
+| `projects` | epics | Comma-separated project ids; `none` = epics without a home project. Empty: all |
+| `group` | epics | `project` (default) or `none` |
+| `tags` | `epic` | Comma-separated tag ids; `none` = tasks without tags. Empty: all |
+| `subtasks` | `epic` | `false` leaves subtasks out |
+| `completion` | | `open` (default: active epics, open tasks), `all`, `ready` (tasks not blocked) |
+| `zoom` | any | `day`, `week`, `month` (default for epics), `quarter`; `week` for an epic's tasks |
+| `theme` | any | `clean` (default), `light`, `dark` |
+| `today` | any | `YYYY-MM-DD` for the today line; the server's UTC date by default |
+
+Only scheduled epics (with a target date) and tasks (with a due date) are drawn. **Bar
+starts come from saved views only**: the plain Roadmap page keeps the starts you drag on
+the desktop, never synced, so without `view` bars start by the default rules (a task's
+estimate at 8 hours a day, an epic's earliest task, else two working weeks before its
+target date). Save the roadmap as a view to publish it as you see it.
+
+Errors are JSON (`{"error": "…"}`): `400` for a parameter that is unknown, malformed or
+does not go with the others, a view that is not a roadmap, or nothing scheduled to draw;
+`404` for an unknown view or epic; `401`/`403` for the token. The answer is never cached
+(`Cache-Control: private, no-store`). PNG and share links for `<img>` embeds are
+proposals (ADR 035), not built.
 
 ## 7. Configuration reference
 

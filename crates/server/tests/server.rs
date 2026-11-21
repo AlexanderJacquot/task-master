@@ -1241,3 +1241,195 @@ fn an_anonymous_upload_is_refused_before_its_body_is_read() {
         );
     }
 }
+
+/// `GET /roadmap.svg` with an optional token: status, content type, body.
+fn roadmap_svg(url: &str, token: Option<&str>, query: &str) -> (u16, String, String) {
+    let mut request = http().get(format!("{url}/roadmap.svg{query}"));
+    if let Some(token) = token {
+        request = request.header("Authorization", format!("Bearer {token}"));
+    }
+    let mut response = request.call().unwrap();
+    let kind = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    let body = response.body_mut().read_to_string().unwrap();
+    (response.status().as_u16(), kind, body)
+}
+
+#[test]
+fn roadmap_svg_draws_saved_views_and_queries_for_api_and_sync_tokens() {
+    let (url, state) = server(Config {
+        auth: AuthMode::Token,
+        ..Config::default()
+    });
+    // Data as a device would have pushed it: two epics, tasks that wait on each other.
+    let (epic, view, list_view) = {
+        let mut store = state.store();
+        let project = store
+            .execute(Command::CreateProject {
+                project: NewProject {
+                    name: "Apollo".into(),
+                    ..NewProject::default()
+                },
+            })
+            .unwrap()
+            .projects[0]
+            .id
+            .clone();
+        let mut epic_of = |name: &str, target: &str| {
+            store
+                .execute(Command::CreateEpic {
+                    epic: NewEpic {
+                        name: name.into(),
+                        project_id: Some(project.clone()),
+                        target_date: Some(target.into()),
+                        ..NewEpic::default()
+                    },
+                })
+                .unwrap()
+                .epics[0]
+                .id
+                .clone()
+        };
+        let launch = epic_of("Launch & <go>", "2026-12-18");
+        epic_of("Docs", "2026-12-04");
+        let design = store
+            .execute(Command::CreateTask {
+                task: NewTask {
+                    title: "Design".into(),
+                    epic_id: Some(launch.clone()),
+                    due_date: Some("2026-11-27".into()),
+                    estimate_min: Some(960),
+                    ..NewTask::default()
+                },
+            })
+            .unwrap()
+            .tasks[0]
+            .id
+            .clone();
+        let build = store
+            .execute(Command::CreateTask {
+                task: NewTask {
+                    title: "Build".into(),
+                    epic_id: Some(launch.clone()),
+                    due_date: Some("2026-12-11".into()),
+                    ..NewTask::default()
+                },
+            })
+            .unwrap()
+            .tasks[0]
+            .id
+            .clone();
+        store
+            .execute(Command::UpdateTask {
+                id: build,
+                changes: vec![TaskChange::DependencyIds(vec![design.clone()])],
+            })
+            .unwrap();
+        let mut spec = default_roadmap_spec(Some(launch.clone()));
+        let roadmap = spec.roadmap.as_deref_mut().unwrap();
+        roadmap.starts.insert(design, "2026-11-16".into());
+        let view = store
+            .execute(Command::CreateView {
+                view: NewView {
+                    id: None,
+                    name: "Launch plan".into(),
+                    spec,
+                    rank: None,
+                },
+            })
+            .unwrap()
+            .views[0]
+            .id
+            .clone();
+        let list = store
+            .execute(Command::CreateView {
+                view: NewView {
+                    id: None,
+                    name: "A list".into(),
+                    spec: ViewSpec {
+                        roadmap: None,
+                        ..default_roadmap_spec(None)
+                    },
+                    rank: None,
+                },
+            })
+            .unwrap()
+            .views[0]
+            .id
+            .clone();
+        (launch, view, list)
+    };
+
+    // Tokens: none is refused; api:read, api:write and sync may read it.
+    assert_eq!(roadmap_svg(&url, None, "").0, 401);
+    assert_eq!(roadmap_svg(&url, Some("tm_wrong"), "").0, 401);
+    let read = state.tokens.add("wiki", Scope::ApiRead).unwrap();
+    let write = state.tokens.add("bot", Scope::ApiWrite).unwrap();
+    let sync = state.tokens.add("laptop", Scope::Sync).unwrap();
+
+    // The roadmap of epics, from the query.
+    let (status, kind, svg) = roadmap_svg(&url, Some(&read), "?today=2026-11-21&theme=dark");
+    assert_eq!(status, 200, "{svg}");
+    assert_eq!(kind, "image/svg+xml; charset=utf-8");
+    assert!(svg.starts_with("<svg"), "{svg}");
+    assert!(svg.contains("Launch &amp; &lt;go&gt;"), "names are escaped");
+    assert!(svg.contains("Docs"));
+    assert!(svg.contains("Epics across projects · 2 epics · Nov 21, 2026"));
+    assert!(svg.contains("#0e0e10"), "the dark theme's canvas");
+    for token in [&write, &sync] {
+        assert_eq!(roadmap_svg(&url, Some(token), "?zoom=quarter").0, 200);
+    }
+
+    // A saved view: its name, its epic's tasks, its starts.
+    let (status, _, svg) = roadmap_svg(&url, Some(&read), &format!("?view={view}&zoom=day"));
+    assert_eq!(status, 200, "{svg}");
+    assert!(svg.contains("Launch plan"));
+    assert!(svg.contains("The tasks of Launch &amp; &lt;go&gt; · 2 tasks"));
+    assert!(svg.contains("Design") && svg.contains("Build"));
+    assert!(!svg.contains("Docs"), "only the epic's tasks");
+
+    // An epic's timeline from the query; filters that do not go together are refused.
+    let (status, _, svg) = roadmap_svg(&url, Some(&read), &format!("?epic={epic}&subtasks=false"));
+    assert_eq!(status, 200, "{svg}");
+    assert!(svg.contains("Epic timeline · 2 tasks"));
+    for (query, expected) in [
+        (format!("?view={view}&epic={epic}"), 400),
+        (format!("?view={view}&projects=none"), 400),
+        (format!("?epic={epic}&projects=none"), 400),
+        ("?tags=none".to_owned(), 400),
+        ("?zoom=year".to_owned(), 400),
+        ("?theme=neon".to_owned(), 400),
+        ("?today=tomorrow".to_owned(), 400),
+        ("?colour=red".to_owned(), 400),
+        ("?completion=ready&projects=none".to_owned(), 400), // nothing scheduled
+        (format!("?view={list_view}"), 400),
+        ("?view=01ea0000-0000-7000-8000-000000000000".to_owned(), 404),
+        ("?epic=01ea0000-0000-7000-8000-000000000000".to_owned(), 404),
+    ] {
+        let (status, _, body) = roadmap_svg(&url, Some(&read), &query);
+        assert_eq!(status, expected, "{query}: {body}");
+        assert!(body.contains("\"error\""), "{query}: {body}");
+    }
+}
+
+#[test]
+fn roadmap_svg_is_open_on_a_server_without_auth() {
+    let (url, state) = server(Config::default());
+    state
+        .store()
+        .execute(Command::CreateEpic {
+            epic: NewEpic {
+                name: "Launch".into(),
+                target_date: Some("2026-12-18".into()),
+                ..NewEpic::default()
+            },
+        })
+        .unwrap();
+    let (status, _, svg) = roadmap_svg(&url, None, "?projects=none&group=none");
+    assert_eq!(status, 200, "{svg}");
+    assert!(svg.contains("Epics of No project · 1 epic"));
+}

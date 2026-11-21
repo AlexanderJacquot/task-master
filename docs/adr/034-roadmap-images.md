@@ -57,8 +57,9 @@ placed with a generous width estimate, so they fit in any common sans-serif.
 - "Export image" in the Roadmap's header (both levels, saved roadmap views too): Copy as
   PNG, Save as PNG…, Save as SVG…. Off while nothing is scheduled.
 - The IPC surface gains `roadmap_svg` (a read, like `parse_capture`) and `save_image`.
-- The server endpoint (backlog) calls `render_roadmap`; for PNG it will need a rasterizer
-  (e.g. `resvg`) and fonts in its image, its own decision.
+- The server endpoint calls `render_roadmap`, with the roadmap's rows built by a core port
+  of the page's model (ADR 035, `GET /roadmap.svg`); PNG there needs a rasterizer and a
+  font, proposed in ADR 035.
 - Where the clipboard does not take images (some Linux WebKitGTK versions), Copy reports it
   and saving still works.
 - Month and weekday names in the image are English, whatever the system's locale.

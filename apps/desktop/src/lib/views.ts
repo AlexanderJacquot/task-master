@@ -228,7 +228,8 @@ export function comparator(sort: SortBy, ctx: ViewContext): (a: Task, b: Task) =
   }
 }
 
-function compareStrings(a: string, b: string): number {
+/** Code-unit order: ranks and ids sort byte by byte, as in the core. */
+export function compareStrings(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 

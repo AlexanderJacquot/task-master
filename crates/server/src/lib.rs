@@ -9,6 +9,7 @@ pub mod backup;
 pub mod calendar;
 pub mod config;
 pub mod mcp;
+pub mod roadmap;
 
 use std::convert::Infallible;
 use std::path::PathBuf;
@@ -106,7 +107,7 @@ impl AppState {
 pub struct ApiError(StatusCode, String);
 
 impl ApiError {
-    fn new(status: StatusCode, message: impl Into<String>) -> Self {
+    pub(crate) fn new(status: StatusCode, message: impl Into<String>) -> Self {
         Self(status, message.into())
     }
 }
@@ -128,10 +129,10 @@ impl From<taskmaster_core::Error> for ApiError {
     }
 }
 
-type ApiResult<T> = Result<T, ApiError>;
+pub(crate) type ApiResult<T> = Result<T, ApiError>;
 
 /// Runs store work off the async threads.
-async fn blocking<T: Send + 'static>(
+pub(crate) async fn blocking<T: Send + 'static>(
     f: impl FnOnce() -> ApiResult<T> + Send + 'static,
 ) -> ApiResult<T> {
     tokio::task::spawn_blocking(f)
@@ -142,6 +143,16 @@ async fn blocking<T: Send + 'static>(
 /// Lets the request through when the server needs no auth, or the bearer token's scope
 /// covers `needed`.
 fn authorize(state: &AppState, headers: &HeaderMap, needed: Scope) -> ApiResult<()> {
+    authorize_any(state, headers, &[needed])
+}
+
+/// As [`authorize`], for a request any of `allowed` may make (a read open to devices and
+/// to API tokens).
+pub(crate) fn authorize_any(
+    state: &AppState,
+    headers: &HeaderMap,
+    allowed: &[Scope],
+) -> ApiResult<()> {
     if state.config.auth == AuthMode::None {
         return Ok(());
     }
@@ -152,7 +163,7 @@ fn authorize(state: &AppState, headers: &HeaderMap, needed: Scope) -> ApiResult<
         .map(str::trim)
         .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "this server needs a token"))?;
     match state.tokens.check(token) {
-        Some(scope) if scope.allows(needed) => Ok(()),
+        Some(scope) if allowed.iter().any(|&needed| scope.allows(needed)) => Ok(()),
         Some(scope) => Err(ApiError::new(
             StatusCode::FORBIDDEN,
             format!("a {} token cannot do this", scope.as_str()),
@@ -198,6 +209,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/health", get(|| async { "ok" }))
         .route("/info", get(info))
         .route("/auth/oidc", post(oidc_exchange))
+        // A read for integrations as well as devices (ADR 035): checked in the handler.
+        .route("/roadmap.svg", get(roadmap::svg))
         .merge(sync)
         .with_state(state.clone())
         .merge(mcp::routes(state))

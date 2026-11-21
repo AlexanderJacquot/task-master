@@ -22,6 +22,7 @@ mod ops;
 mod parse;
 mod query;
 pub mod rank;
+mod roadmap;
 mod roadmap_image;
 mod store;
 mod sync;
@@ -58,6 +59,7 @@ pub use notes::{
 pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};
 pub use query::{Activity, FieldChange, TranscriptHit};
+pub use roadmap::{RoadmapData, RoadmapOptions, default_roadmap_spec, roadmap_image};
 pub use roadmap_image::{
     ImageDeadline, ImageLink, ImageRow, ImageTheme, MAX_IMAGE_DAYS, MAX_IMAGE_ROWS, RenderedImage,
     RoadmapImage, render as render_roadmap,

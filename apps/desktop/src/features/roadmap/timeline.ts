@@ -1,8 +1,10 @@
 // The Roadmap's time arithmetic (ADR 031): calendar days as whole numbers, bars from due
 // dates and the roadmap's own starts, the visible range, the scale's ticks, and the rows.
+// The core has a port of the bars, rows and links (`crates/core/src/roadmap.rs`, for the
+// sync server's images, ADR 035): both pass `crates/core/test-vectors/roadmap.json`.
 
 import type { Epic, RoadmapGroup, RoadmapZoom, Task } from "../../lib/types";
-import { FILTER_NONE } from "../../lib/views";
+import { compareStrings, FILTER_NONE } from "../../lib/views";
 
 export type Zoom = RoadmapZoom;
 export type Group = RoadmapGroup;
@@ -310,7 +312,7 @@ export type Row =
 function byStart(a: Item, b: Item): number {
   if (a.bar && b.bar && a.bar.start !== b.bar.start) return a.bar.start < b.bar.start ? -1 : 1;
   if (!!a.bar !== !!b.bar) return a.bar ? -1 : 1;
-  return a.rank.localeCompare(b.rank) || a.id.localeCompare(b.id);
+  return compareStrings(a.rank, b.rank) || compareStrings(a.id, b.id);
 }
 
 /** Items in order, each followed by its subtasks (one level indented, deeper ones too). */
@@ -352,7 +354,7 @@ export function rowsOf(
   for (const item of items) members.set(item.group, [...(members.get(item.group) ?? []), item]);
   const keys = [...members.keys()].sort((a, b) => {
     if (a === FILTER_NONE || b === FILTER_NONE) return a === FILTER_NONE ? 1 : -1;
-    return (owners[a]?.rank ?? "").localeCompare(owners[b]?.rank ?? "") || a.localeCompare(b);
+    return compareStrings(owners[a]?.rank ?? "", owners[b]?.rank ?? "") || compareStrings(a, b);
   });
   const rows: Row[] = [];
   for (const key of keys) {

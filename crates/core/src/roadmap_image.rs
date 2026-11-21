@@ -2,13 +2,14 @@
 //! the whole timeline at once rather than the part that is scrolled into view.
 //!
 //! A pure function of a [`RoadmapImage`]: the rows already worked out by whoever shows the
-//! roadmap (the desktop page now, the sync server later), each with its bar. Only what is
-//! on the timeline is in it: epics and tasks without a bar, and groups with none of them,
-//! stay out, so the image is only bars. The renderer works out the rest: the range of days
-//! (the bars and the target date, a little room on both sides, whole weeks, months or
-//! quarters), the scale, the arrows and what is flagged (late links, overdue bars, bars past
-//! the target date). Text is measured with a width table rather than a font, so labels are
-//! placed conservatively; the image names its fonts and viewers fall back to their own.
+//! roadmap (the desktop page, or `roadmap::roadmap_image` for the sync server, ADR 035),
+//! each with its bar. Only what is on the timeline is in it: epics and tasks without a
+//! bar, and groups with none of them, stay out, so the image is only bars. The renderer
+//! works out the rest: the range of days (the bars and the target date, a little room on
+//! both sides, whole weeks, months or quarters), the scale, the arrows and what is flagged
+//! (late links, overdue bars, bars past the target date). Text is measured with a width
+//! table rather than a font, so labels are placed conservatively; the image names its
+//! fonts and viewers fall back to their own.
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;

@@ -7,12 +7,13 @@ import type { RoadmapImage, View } from "../../lib/types";
 import { FILTER_NONE } from "../../lib/views";
 import { createView, deleteView, updateEpic, updateTask, updateView } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
-import { type Completion, closedTaskIds, filterLineage } from "../lineage/graph";
+import { type Completion, closedTaskIds } from "../lineage/graph";
 import { EditableTitle } from "../shell/EditableTitle";
 import { MultiPick } from "../shell/FilterBar";
 import { useOpenTask } from "../shell/useOpenTask";
 import { ExportImageMenu } from "./ExportImageMenu";
-import { currentImageTheme, imageLinks, imageRows } from "./exportImage";
+import { currentImageTheme } from "./exportImage";
+import { asOfLabel, cancelledTaskIds, roadmapImage, roadmapItems, roadmapTasks } from "./model";
 import { RoadmapChart } from "./RoadmapChart";
 import {
   filterOf,
@@ -27,18 +28,7 @@ import {
   saveFilter,
   saveLayout,
 } from "./saved";
-import {
-  type Bar,
-  barOf,
-  epicItems,
-  type Group,
-  type Item,
-  linksOf,
-  rangeOf,
-  rowsOf,
-  taskItem,
-  type Zoom,
-} from "./timeline";
+import { type Bar, type Group, type Item, linksOf, rangeOf, rowsOf, type Zoom } from "./timeline";
 
 const control = "rounded-lg border border-line-strong bg-raised px-3 py-2 text-sm text-ink";
 
@@ -91,49 +81,26 @@ export function RoadmapPage({
   const [todaySeq, setTodaySeq] = useState(0);
   const today = isoDate();
 
-  const all = useMemo(
-    () =>
-      Object.values(tasks)
-        // Agents' own steps stay off the roadmap, as they stay out of lists by default.
-        .filter((task) => task.owner !== "agent")
-        .sort((a, b) => a.rank.localeCompare(b.rank) || a.id.localeCompare(b.id)),
-    [tasks],
-  );
-  const closed = useMemo(() => closedTaskIds(all, statuses), [all, statuses]);
-  const cancelled = useMemo(() => {
-    const ids = new Set(statuses.filter((s) => s.category === "cancelled").map((s) => s.id));
-    return new Set(all.filter((task) => ids.has(task.status_id)).map((task) => task.id));
-  }, [all, statuses]);
+  const all = useMemo(() => roadmapTasks(tasks), [tasks]);
+  // Done or cancelled among every task: a prerequisite can be an agent's.
+  const closed = useMemo(() => closedTaskIds(Object.values(tasks), statuses), [tasks, statuses]);
+  const cancelled = useMemo(() => cancelledTaskIds(all, statuses), [all, statuses]);
 
-  const items = useMemo((): Item[] => {
-    if (level === "epics") {
-      const picked = filter.projects;
-      const inPicked = (id: string) =>
-        all.some((task) => task.epic_id === id && picked.includes(task.project_id ?? ""));
-      const shown = Object.values(epics).filter(
-        (e) =>
-          (filter.completion === "all" || e.state === "active") &&
-          (!picked.length ||
-            picked.includes(e.project_id ?? FILTER_NONE) ||
-            // An epic without a home project shows with the projects of its tasks.
-            (!e.project_id && inPicked(e.id))),
-      );
-      return epicItems(shown, all, layout.starts, { done: closed, cancelled }, (e) =>
-        filter.group === "project" ? (e.project_id ?? FILTER_NONE) : "",
-      ).filter((item) => filter.unscheduled || item.bar);
-    }
-    if (!epicId) return [];
-    return filterLineage(all, tasks, closed, {
-      project: "",
-      epics: [epicId],
-      tags: filter.tags,
-      completion: filter.completion,
-      linkedOnly: false,
-      subtasks: filter.subtasks,
-    })
-      .filter((task) => filter.unscheduled || task.due_date)
-      .map((task) => taskItem(task, barOf(task, layout.starts), closed.has(task.id)));
-  }, [level, epicId, all, tasks, epics, closed, cancelled, filter, layout.starts]);
+  const items = useMemo(
+    (): Item[] =>
+      roadmapItems({
+        level,
+        epicId,
+        all,
+        tasks,
+        epics,
+        closed,
+        cancelled,
+        filter,
+        starts: layout.starts,
+      }),
+    [level, epicId, all, tasks, epics, closed, cancelled, filter, layout.starts],
+  );
   const collapsed = useMemo(() => new Set(layout.collapsed), [layout.collapsed]);
   const rows = useMemo(
     () =>
@@ -247,42 +214,20 @@ export function RoadmapPage({
     return () => clearTimeout(timer);
   }, [notice]);
 
-  /**
-   * The page as an image (ADR 034): the same rows, filters, timescale, starts and folds, but
-   * only what has a bar. Unscheduled epics or tasks, and groups left empty, stay out.
-   */
+  /** The page as an image (ADR 034): only what has a bar. */
   function exportedImage(): RoadmapImage {
-    const scheduled = items.filter((item) => item.bar);
-    const owners = level === "epics" && filter.group === "project" ? projects : null;
-    const rows = imageRows(rowsOf(scheduled, owners, "No project", collapsed));
-    const asOf = new Date(`${today}T00:00:00Z`).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      timeZone: "UTC",
-    });
-    const picked = filter.projects.map((id) =>
-      id === FILTER_NONE ? "No project" : (projects[id]?.name ?? ""),
-    );
-    const what =
-      level === "epics"
-        ? picked.length
-          ? `Epics of ${picked.filter(Boolean).join(", ")}`
-          : "Epics across projects"
-        : view && epic
-          ? `The tasks of ${epic.name}`
-          : "Epic timeline";
-    return {
-      title: view?.name ?? epic?.name ?? "Roadmap",
-      subtitle: `${what} · ${scheduled.length} ${noun(scheduled.length)} · ${asOf}`,
-      name_header: level === "epics" ? "Epic" : "Task",
-      zoom: filter.zoom,
+    return roadmapImage({
+      level,
+      epic,
+      viewName: view?.name ?? null,
+      items,
+      filter,
+      collapsed,
+      projects,
       today,
-      deadline: deadline ? { date: deadline.date, label: deadline.label } : null,
-      rows,
-      links: imageLinks(links, rows),
+      asOf: asOfLabel(today),
       theme: currentImageTheme(),
-    };
+    });
   }
 
   if (epicId && !epic)
