@@ -57,6 +57,20 @@ a window) and formatting. Checks on the merged tree: `cargo fmt --check`, clippy
 test --workspace` (339 passed, 8 ignored), biome, typecheck, `pnpm test` (595 passed, 2
 skipped). Schema 17, unchanged.
 
+**macOS: no second Dock icon after an update** (2026-11-20, branch
+`fix-macos-relaunch-dock`): after an in-app update the app showed twice in the Dock (the
+pinned icon, and a running one beside it). Cause: Tauri 2.12's restart runs `open -n` on
+the bundle while the old instance is still running, so LaunchServices gives the new one its
+own Dock tile, kept after the old one quits. Now `relaunch.rs` handles a restart at
+`RunEvent::Exit` on macOS: a detached `/bin/sh` waits (up to 30 s) for this pid to exit and
+then runs a plain `open` on the bundle; the app exits before Tauri's own relaunch. Changing
+the data folder (`set_data_dir`) now restarts through `request_restart`, so it takes the
+same path and the scribe/agent shutdown runs too. ADR 009 notes it. Tests: 4 in
+`relaunch.rs` (one runs the script against a real process). Checks: clippy, `cargo test
+--workspace` (343 passed, 8 ignored), biome, `pnpm test` (595 passed, 2 skipped). **Not yet
+tried with a real update**: the fix takes effect from the update *after* the one that
+installs it (the relaunch runs the old app's code).
+
 **Send to agent: Cmd/Ctrl+Enter starts it** (2026-11-19, branch
 `worktree-send-to-agent-cmd-enter`): in the Send to agent dialog, Cmd+Enter (Ctrl+Enter on
 Windows/Linux) from any field starts the session, same as Start / Open in Claude, and does

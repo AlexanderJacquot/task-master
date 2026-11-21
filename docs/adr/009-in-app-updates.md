@@ -15,6 +15,10 @@ number to be visible.
 downloads the bundle for this OS, verifies its signature and installs it;
 `tauri-plugin-process` 2.4.0 relaunches the app afterwards. Windows installs in `passive`
 mode (progress bar, no questions) and closes the app itself.
+On macOS the relaunch is the app's own (`relaunch.rs`, 2026-11-20): Tauri's restart runs
+`open -n` while the old instance still runs, and the Dock gave that new instance a second
+tile next to the pinned one. A detached `sh` now waits for the process to exit, then runs a
+plain `open` on the bundle; moving the data folder restarts the same way.
 
 **Public releases.** The updater cannot authenticate, so the GitHub mirror is public (the
 user's choice over a separate releases repo or a homelab bucket). The Forgejo origin
