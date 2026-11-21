@@ -4,7 +4,14 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
-**Release 0.27.0** (2026-11-21, on `main`; notes `docs/releases/0.27.0.md`): Notes (ADR
+**Release 0.27.1** (2026-11-21, on `main`; notes `docs/releases/0.27.1.md`): 0.27.0 was
+tagged but never built: the release workflow's `pnpm biome ci .` failed on a format error in
+`progress.md` (`*after*`, from the Dock-fix branch); the merge was checked with `biome check
+apps/desktop/src` only. The `v0.27.0` server image was published anyway (same code). 0.27.1
+is the same release; docs/release.md now names `pnpm biome ci .`. Checks: every step of
+`ci.yml`'s check job, run locally as written.
+
+**Release 0.27.0** (2026-11-21, tagged, never published; notes `docs/releases/0.27.0.md`): Notes (ADR
 032: sidebar pages in folders, `[[` task links, notes on task and project pages, images and
 files, drag and drop, palette search, MCP tools), the day planner's lunch break, the macOS
 app named Task Master, and one Dock icon after an update on macOS. Integrated on
@@ -91,7 +98,7 @@ the data folder (`set_data_dir`) now restarts through `request_restart`, so it t
 same path and the scribe/agent shutdown runs too. ADR 009 notes it. Tests: 4 in
 `relaunch.rs` (one runs the script against a real process). Checks: clippy, `cargo test
 --workspace` (343 passed, 8 ignored), biome, `pnpm test` (595 passed, 2 skipped). **Not yet
-tried with a real update**: the fix takes effect from the update *after* the one that
+tried with a real update**: the fix takes effect from the update _after_ the one that
 installs it (the relaunch runs the old app's code).
 
 **Day planner: lunch break toggle** (2026-11-20, branch `plan-lunch-toggle`): Plan mode's

@@ -89,11 +89,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Notes: markdown pages in the sidebar, in folders, linked to your tasks and projects. Type [[ to link a task, paste images and files, drag notes between folders, find them with Ctrl/Cmd+K, and see them on their task's and project's pages; agents can read and write them too. A lunch break in the day planner. On macOS the app is now called Task Master, and an update no longer leaves a second Dock icon (from the next update on).
+            0.27.1 is the first published 0.27 release (0.27.0 was tagged but never built). Notes: markdown pages in the sidebar, in folders, linked to your tasks and projects. Type [[ to link a task, paste images and files, drag notes between folders, find them with Ctrl/Cmd+K, and see them on their task's and project's pages; agents can read and write them too. A lunch break in the day planner. On macOS the app is now called Task Master, and an update no longer leaves a second Dock icon (from the next update on).
 
-            Database schema 19 (0.26.0 was at 17): update your sync server together with your desktops; they sync only at the same schema. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.27.0.
+            Database schema 19 (0.26.0 was at 17): update your sync server together with your desktops; they sync only at the same schema. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.27.1.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.27.0/docs/releases/0.27.0.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.27.1/docs/releases/0.27.1.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

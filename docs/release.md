@@ -50,9 +50,11 @@ fork the project and work on GitHub directly, ignore the mirror and the `.forgej
 
 ## Cutting a release
 
-For v0.27.0, use [the release notes](releases/0.27.0.md). Validate the integrated branch
+For v0.27.1, use [the release notes](releases/0.27.1.md). Validate the integrated branch
 with the same checks as CI before tagging, including `cargo fmt --all -- --check` (v0.16.0
-failed its release build on that check alone and was never published).
+failed its release build on that check alone and was never published) and `pnpm biome ci .`
+over the whole repository, Markdown included (v0.17.0 and v0.27.0 stopped on a format
+error in `progress.md`).
 
 The same tag also publishes the sync server image (`server-image.yml`, ADR 016), with the
 same version as the app. Desktop and server must run the same database schema, so
@@ -63,17 +65,17 @@ together with their desktops.
    and `apps/desktop/package.json` on `main`. The version must grow: the app only offers
    a release newer than itself. Regenerate `Cargo.lock` with `cargo check` so workspace
    package versions match.
-2. `git tag -a v0.27.0 -m … && git push origin main v0.27.0`: `main` and the tag in **one**
+2. `git tag -a v0.27.1 -m … && git push origin main v0.27.1`: `main` and the tag in **one**
    push. The mirror forwards the tag to GitHub. Pushed one after the other (v0.24.0), the
    mirror's sync for `main` finished last and dropped the tag from GitHub: the tag-triggered
    runs then fail at checkout ("couldn't find remote ref refs/tags/…") and publish nothing.
    If that happens, push the tag to GitHub directly (`git push
-   https://github.com/AlexanderJacquot/task-master.git refs/tags/v0.27.0`), which starts new
+   https://github.com/AlexanderJacquot/task-master.git refs/tags/v0.27.1`), which starts new
    runs.
 3. The tag push starts the *release* workflow on GitHub (it did for v0.2.0 and v0.3.0;
    check `gh run list -R AlexanderJacquot/task-master -L 3`). Only if no run appears,
    start it by hand: `gh workflow run release.yml -R AlexanderJacquot/task-master --ref
-   v0.27.0`. Do not do both: two runs publish to the same release.
+   v0.27.1`. Do not do both: two runs publish to the same release.
 4. On GitHub, the *release* workflow builds Linux (.deb, .AppImage, .rpm), Windows
    (.msi, setup .exe) and macOS (arm64 and x86_64 .dmg), plus signed update bundles and
    `latest.json`, and **publishes** the release (about 30–40 minutes on a cold cache).
