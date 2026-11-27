@@ -1,7 +1,7 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
-// Database, Info, Keyboard and Plug have no glyph in the app's icon set yet.
-import { Database, HardDrive, Info, Keyboard, Plug } from "lucide-react";
+// Database, Info, Keyboard, PanelLeft and Plug have no glyph in the app's icon set yet.
+import { Database, HardDrive, Info, Keyboard, PanelLeft, Plug } from "lucide-react";
 import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import {
   AgentsIcon,
@@ -58,6 +58,7 @@ import { FilesSettings } from "./FilesSettings";
 import { McpSettings } from "./McpSettings";
 import { ScribeSettings } from "./ScribeSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
+import { SidebarSettings } from "./SidebarSettings";
 import { SyncSettings } from "./SyncSettings";
 
 const CATEGORIES: Array<{ value: StatusCategory; label: string }> = [
@@ -756,6 +757,7 @@ const GENERAL: SettingsCategory = {
 
 const SETTINGS_CATEGORIES: SettingsCategory[] = [
   GENERAL,
+  { id: "sidebar", label: "Sidebar", icon: PanelLeft, render: () => <SidebarSettings /> },
   { id: "workflow", label: "Workflow", icon: ColumnsIcon, render: () => <Workflow /> },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard, render: () => <Shortcuts /> },
   { id: "sync", label: "Sync", icon: RefreshIcon, render: () => <SyncSettings /> },

@@ -27,6 +27,20 @@ not run. **Not tried in
 the Tauri app, nor on macOS/Linux WebKit**, whose `zoom` coordinate behaviour may differ.
 `DatePicker.test.tsx` fails 3 tests on a fr-FR machine (month names), unrelated.
 
+**Sidebar order and visibility** (2026-11-27, branch `feat/ui-zoom`, not merged). The
+pages at the top of the sidebar (Inbox ... Metrics, Notes included) reorder by dragging
+them in the sidebar (whole row, pointer only; the notes tree inside Notes keeps its own
+drags through `NO_ROW_DRAG`). Settings → Sidebar lists the pages and the sections below
+them (Projects, Team, Epics, Saved views, Tags): a grip to drag (or Space and the arrow
+keys), a checkbox to show or hide, and "Back to the default sidebar". Kept per machine
+in localStorage (`task-master.sidebar-layout`, `lib/sidebarLayout.ts`, a small zustand
+store); a saved layout is cleaned on load and entries added later slot in after their
+default neighbour. The collapsed rail follows the same order and hidden pages. A hidden
+page stays reachable from its shortcut and from Jump to. `components/SortableList.tsx`
+is the shared sortable list. Checked in the showcase: dragging a page in the sidebar,
+hiding Inbox and Today, moving Tags first with the keyboard, the reset. Not tried in the
+Tauri app.
+
 **Release 0.32.0** (2026-11-27, on `main`, tag `v0.32.0`; notes
 `docs/releases/0.32.0.md`): the Scribe entry below (voices from participants, deduction,
 Send to Claude, MCP transcript and summary), now on `main`. Schema 23, unchanged. First
