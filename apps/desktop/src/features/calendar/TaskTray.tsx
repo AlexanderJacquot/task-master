@@ -11,6 +11,7 @@ import { addDays, atMinute, blockMinutes, formatDuration, holdsTime } from "../.
 import { DEFAULT_FOCUS, type PlanFocus } from "../../lib/planner";
 import type { Epic, Project, Status, Task } from "../../lib/types";
 import { compareTasks, inView, isOpen, type ViewContext } from "../../lib/views";
+import { zoomOf } from "../../lib/zoom";
 import { useStoreState } from "../../store/context";
 import { FocusFilter } from "./PlanBar";
 import { type DragData, projectColor, useCalendar } from "./shared";
@@ -110,9 +111,10 @@ export function TaskTray({
   const onResizeStart = (e: ReactPointerEvent<HTMLHRElement>) => {
     e.preventDefault();
     const left = e.currentTarget.parentElement?.getBoundingClientRect().left ?? 0;
+    const zoom = zoomOf(e.currentTarget);
     let last: number | null = null;
     const move = (ev: PointerEvent) => {
-      last = Math.round(Math.min(TRAY_MAX, Math.max(TRAY_MIN, ev.clientX - left)));
+      last = Math.round(Math.min(TRAY_MAX, Math.max(TRAY_MIN, (ev.clientX - left) / zoom)));
       setWidth(last);
     };
     const up = () => {

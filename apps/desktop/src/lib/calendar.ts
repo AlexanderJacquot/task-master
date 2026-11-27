@@ -310,9 +310,12 @@ export function resolveDrop(
   return { kind: "move", blockId: block.id, start_at, end_at };
 }
 
-/** The minute of the day at `clientY` in a time column whose top is at `columnTop`. */
-export function minuteAt(clientY: number, columnTop: number): number {
-  return ((clientY - columnTop) / HOUR_PX) * 60;
+/**
+ * The minute of the day at `clientY` in a time column whose top is at `columnTop`, both in
+ * screen px; `zoom` is the column's interface zoom (lib/zoom.ts).
+ */
+export function minuteAt(clientY: number, columnTop: number, zoom = 1): number {
+  return ((clientY - columnTop) / zoom / HOUR_PX) * 60;
 }
 
 /** Where "Schedule" puts a task: the next quarter hour today, 09:00 on other days. */

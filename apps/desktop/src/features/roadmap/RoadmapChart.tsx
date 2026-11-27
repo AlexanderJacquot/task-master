@@ -14,6 +14,7 @@ import {
 } from "react";
 import { CalendarPlusIcon, CloseIcon, ExternalIcon } from "../../components/TaskIcons";
 import { cx, FOCUS, MENU, MENU_ITEM } from "../../components/ui";
+import { useRegionZoom } from "../../lib/zoom";
 import {
   addWorkingDays,
   type Bar,
@@ -137,6 +138,8 @@ export function RoadmapChart({
   const lastClick = useRef<{ id: string; at: number } | null>(null);
   const markerId = useId();
   const dayWidth = DAY_WIDTH[zoom];
+  // A day in screen px, for pointer distances (the interface zoom, lib/zoom.ts).
+  const screenDay = dayWidth * useRegionZoom();
   const from = dayNumber(range.from);
   const width = range.days * dayWidth;
   const x = (iso: string) => (dayNumber(iso) - from) * dayWidth;
@@ -217,7 +220,7 @@ export function RoadmapChart({
   function startDraw(event: PointerEvent<HTMLElement>, item: Item) {
     if (event.button !== 0 || event.ctrlKey || busy) return;
     const left = event.currentTarget.getBoundingClientRect().left;
-    const anchor = isoOf(from + Math.floor((event.clientX - left) / dayWidth));
+    const anchor = isoOf(from + Math.floor((event.clientX - left) / screenDay));
     scrollRef.current?.setPointerCapture?.(event.pointerId);
     onSelect(item.id);
     setDrag({ kind: "draw", id: item.id, left, anchor, bar: { start: anchor, end: anchor } });
@@ -231,12 +234,12 @@ export function RoadmapChart({
   function move(event: PointerEvent) {
     if (!drag) return;
     if (drag.kind === "draw") {
-      const day = isoOf(from + Math.floor((event.clientX - drag.left) / dayWidth));
+      const day = isoOf(from + Math.floor((event.clientX - drag.left) / screenDay));
       const bar = spanBetween(drag.anchor, day);
       if (bar.start !== drag.bar.start || bar.end !== drag.bar.end) setDrag({ ...drag, bar });
       return;
     }
-    const days = Math.round((event.clientX - drag.originX) / dayWidth);
+    const days = Math.round((event.clientX - drag.originX) / screenDay);
     if (drag.kind === "deadline") {
       const date = isoOf(dayNumber(drag.from) + days);
       if (date !== drag.date) setDrag({ ...drag, date });

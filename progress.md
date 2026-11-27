@@ -4,6 +4,29 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Interface zoom per region, and full epic names on cards** (2026-11-27, branch
+`feat/ui-zoom`, not merged). Ctrl+wheel zooms the region under the pointer on its own:
+the sidebar, or the page with its task panel (`useUiZoom`, `lib/zoom.ts`); steps from 30% to 200%,
+5% apart around 100%, Ctrl+0 over a region resets it, remembered per machine in
+localStorage (`task-master.zoom.sidebar` / `.main`). It is CSS `zoom` on the two region
+wrappers in `Layout`; the title bar's sidebar strip follows the sidebar's zoom. Inside a
+zoomed box layout px stay unscaled but rects, pointer coordinates and position: fixed are
+screen px (checked in Chromium 156), so pointer math divides by `zoomOf(el)` (board
+column resize and middle-drag pan, sidebar and tray resize, calendar `minuteAt`,
+roadmap drags, lineage canvas), sortable transforms go through `unzoomTransform`, and
+drag overlays use `ZoomDragOverlay` (portaled to the body, content zoomed). The lineage
+canvas keeps its own Ctrl+wheel. Portaled menus and dialogs stay at 100%. Board cards:
+the project and epic labels no longer have fixed caps; they take the room they need and
+the tags give way first. Ctrl+0 joins the reserved keys. Checked in the showcase
+(Chromium), page 80% and sidebar 110%: board card drag between columns, sidebar project
+reorder, drawing a calendar block, drawing a roadmap bar and moving a lineage card all
+follow the pointer. Not tried zoomed: list row drag, notes tree drag, calendar block
+move/resize. Checks: tsc, biome on the changed files (the full run fails on this CRLF
+Windows checkout, line endings only), `pnpm test` 714 passed; no Rust touched, cargo
+not run. **Not tried in
+the Tauri app, nor on macOS/Linux WebKit**, whose `zoom` coordinate behaviour may differ.
+`DatePicker.test.tsx` fails 3 tests on a fr-FR machine (month names), unrelated.
+
 **Release 0.32.0** (2026-11-27, on `main`, tag `v0.32.0`; notes
 `docs/releases/0.32.0.md`): the Scribe entry below (voices from participants, deduction,
 Send to Claude, MCP transcript and summary), now on `main`. Schema 23, unchanged. First

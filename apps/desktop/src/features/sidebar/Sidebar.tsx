@@ -51,6 +51,7 @@ import { seenNotice } from "../../lib/team";
 import type { Epic, Project, Tag } from "../../lib/types";
 import { useUpdates } from "../../lib/updater";
 import { inView, isOpen, type ViewContext } from "../../lib/views";
+import { zoomOf } from "../../lib/zoom";
 import { createEpic, createProject, deleteProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { isActive } from "../agents/sessions";
@@ -94,9 +95,11 @@ function SidebarResizer() {
   const onPointerDown = (e: ReactPointerEvent<HTMLHRElement>) => {
     e.preventDefault();
     const left = e.currentTarget.parentElement?.getBoundingClientRect().left ?? 0;
+    const zoom = zoomOf(e.currentTarget);
     let last = 0;
     const move = (ev: PointerEvent) => {
-      last = Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX - left)));
+      const width = (ev.clientX - left) / zoom;
+      last = Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)));
       applySidebarWidth(last);
     };
     const up = () => {

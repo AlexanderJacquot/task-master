@@ -15,6 +15,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode, useEffect, useRef } from "react";
 import type { Project } from "../../lib/types";
+import { unzoomTransform, useRegionZoom } from "../../lib/zoom";
 import { moveProject } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
 
@@ -25,13 +26,14 @@ export interface AreaNode {
 
 function Sortable({ id, children }: { id: string; children: ReactNode }) {
   const { listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const zoom = useRegionZoom();
   return (
     // Pointer drag only: the links inside keep Enter/Space, and keyboard focus, to themselves.
     <div
       ref={setNodeRef}
       onPointerDown={listeners?.onPointerDown as React.PointerEventHandler | undefined}
       style={{
-        transform: CSS.Translate.toString(transform),
+        transform: CSS.Translate.toString(unzoomTransform(transform, zoom)),
         transition,
         opacity: isDragging ? 0.5 : undefined,
       }}
