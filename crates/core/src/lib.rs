@@ -1,0 +1,92 @@
+//! task-master core: all logic and data live here.
+//!
+//! Front ends (the Tauri desktop shell now; a CLI, an MCP server and a sync server later)
+//! are thin adapters over [`Store`]. Every write is a [`Command`] run by
+//! [`Store::execute`], which writes rows and their `ops` entries in one transaction.
+//! See `docs/plan.md`.
+
+mod agent_workflow;
+mod brief;
+pub mod calendar;
+mod clock;
+mod commands;
+mod db;
+mod dump;
+mod error;
+mod events;
+mod files;
+mod history;
+mod model;
+mod notes;
+mod ops;
+mod parse;
+mod query;
+pub mod rank;
+mod roadmap;
+mod roadmap_image;
+mod spaces;
+mod store;
+mod sync;
+mod terminal;
+
+pub use agent_workflow::{AgentWorkflow, IN_PROGRESS_STATUS_ID};
+pub use clock::{new_id, now_ms, utc_date};
+pub use commands::{
+    AgentSessionChange, AttachmentChange, Command, EpicChange, MAX_BLOCK_MS, MAX_COMMENT_CHARS,
+    MAX_NOTE_CHARS, MAX_PARTICIPANTS, MAX_RANK_LEN, MAX_SEGMENTS, MeetingChange, MemberChange,
+    NewAgentNote, NewAgentSession, NewAttachment, NewComment, NewEpic, NewMeeting, NewMember,
+    NewProject, NewSegment, NewStatus, NewTag, NewTask, NewTimeBlock, NewView, PERMISSION_MODES,
+    ProjectChange, SegmentChange, StatusChange, TagChange, TaskChange, TimeBlockChange, ViewChange,
+};
+pub use dump::{EXPORT_FORMAT, ExportFile, ImportSummary};
+pub use error::{Error, Result};
+pub use events::{Changed, EntityRef};
+pub use files::{
+    FileEntry, FileStore, MAX_ATTACHMENT_BYTES, StoredFile, clean_file_name, is_hash, mime_for,
+};
+pub use model::{
+    AgentNote, AgentRuntime, AgentSession, Attachment, BlockOutcome, CanvasPoint, Comment,
+    DueFilter, Epic, EpicState, FILTER_NONE, GroupBy, Id, IsoDate, LaneKeys, LanePositions, Layout,
+    LineageArrange, LineageCompletion, LineageSpec, Meeting, MeetingState, Member, Note,
+    NoteFolder, Priority, Project, ProjectFolder, REVIEW_STATUS_ID, RoadmapGroup, RoadmapSpec,
+    RoadmapZoom, SessionState, ShowAs, Snapshot, SortBy, Space, Status, StatusCategory, Swimlane,
+    Tag, Task, TaskMark, TaskOwner, TerminalSession, TimeBlock, Timestamp, TranscriptSegment,
+    VIEW_SPEC_VERSION, View, ViewFilter, ViewScope, ViewSpec, review_status,
+};
+pub use notes::{
+    MAX_NOTE_BODY_CHARS, MAX_NOTE_TITLE_CHARS, NewNote, NewNoteFolder, NoteChange,
+    NoteFolderChange, NoteHit,
+};
+pub use ops::EntityKind;
+pub use parse::{Capture, NameMatch, Parsed, parse};
+pub use query::{Activity, FieldChange, Notice, TranscriptHit};
+pub use roadmap::{RoadmapData, RoadmapOptions, default_roadmap_spec, roadmap_image};
+pub use roadmap_image::{
+    ImageDeadline, ImageLink, ImageRow, ImageTheme, MAX_IMAGE_DAYS, MAX_IMAGE_ROWS, RenderedImage,
+    RoadmapImage, render as render_roadmap,
+};
+pub use spaces::{Spaces, SpacesHistory};
+pub use store::{ATTACHMENTS_DIR, Changes, PurgeReport, Store, StoredFileInfo};
+pub use sync::{
+    AuthMode, BlobList, IssuedToken, Merged, OidcExchange, OpsPage, PullPage, PushRequest,
+    PushResult, ServerInfo, SyncOp, TeamInfo, TeamMember,
+};
+pub use terminal::{TerminalSessionChange, TerminalSessionRecord, folder_project};
+
+/// Crate version, reported to adapters for diagnostics.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Liveness check used to prove the core → shell → UI wiring.
+pub fn ping() -> String {
+    format!("pong from taskmaster-core v{VERSION}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ping_reports_core_version() {
+        assert_eq!(ping(), format!("pong from taskmaster-core v{VERSION}"));
+    }
+}

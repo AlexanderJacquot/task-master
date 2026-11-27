@@ -1,0 +1,155 @@
+import { describe, expect, it } from "vitest";
+import type { Api } from "../lib/api";
+import type { Attachment, Changes, Command, Meeting, Note, StoredUpload, Task } from "../lib/types";
+import { attachment, fakeParse, meeting, note, snapshot, task } from "../test/fixtures";
+import {
+  attachFiles,
+  attachFilesTo,
+  deleteAttachment,
+  deleteMeeting,
+  renameAttachment,
+} from "./actions";
+import { createTaskStore } from "./store";
+
+function setup(
+  data: { tasks?: Task[]; attachments?: Attachment[]; meetings?: Meeting[]; notes?: Note[] },
+  refuse = false,
+) {
+  const executed: Command[][] = [];
+  const api: Api = {
+    snapshot: async () => snapshot(data),
+    execute: (commands) => {
+      executed.push(commands);
+      if (refuse) return Promise.reject(new Error("no stored file has hash"));
+      return Promise.resolve({
+        batch_id: `b${executed.length}`,
+        op_seq: executed.length,
+        tasks: [],
+        projects: [],
+        epics: [],
+        tags: [],
+        views: [],
+        attachments: [],
+        time_blocks: [],
+        agent_sessions: [],
+        agent_notes: [],
+        meetings: [],
+        transcript_segments: [],
+        terminal_sessions: [],
+        notes: [],
+        note_folders: [],
+        statuses: [],
+      } as Changes);
+    },
+    undo: async () => null,
+    redo: async () => null,
+    search: async () => [],
+    taskActivity: async () => [],
+    parseCapture: async (text) => fakeParse(text),
+    onChanged: async () => () => {},
+  };
+  const store = createTaskStore(api);
+  return { store, executed, ready: store.getState().hydrate() };
+}
+
+const upload = (name: string, mime = "image/png"): StoredUpload => ({
+  hash: "b".repeat(64),
+  size: 10,
+  name,
+  mime,
+});
+
+describe("attachment actions", () => {
+  it("attaches files to a meeting, and deleting the meeting hides them", async () => {
+    const m = meeting();
+    const { store, executed, ready } = setup({ meetings: [m] });
+    await ready;
+    const [added] = await attachFilesTo(store, { meeting: m.id }, [upload("deck.pdf")]);
+    expect(added).toMatchObject({ meeting_id: m.id, task_id: null });
+    expect(executed[0]?.[0]).toEqual({
+      type: "create_attachment",
+      attachment: {
+        id: added?.id,
+        meeting_id: m.id,
+        hash: "b".repeat(64),
+        name: "deck.pdf",
+        mime: "image/png",
+        size: 10,
+      },
+    });
+    await deleteMeeting(store, m.id);
+    expect(executed[1]).toEqual([{ type: "delete_meeting", id: m.id }]);
+    expect(store.getState().meetings[m.id]).toBeUndefined();
+    expect(store.getState().attachments).toEqual({});
+  });
+
+  it("attaches files to a note (ADR 032)", async () => {
+    const n = note({ title: "Diagram" });
+    const { store, executed, ready } = setup({ notes: [n] });
+    await ready;
+    const [added] = await attachFilesTo(store, { note: n.id }, [upload("sketch.png")]);
+    expect(added).toMatchObject({ note_id: n.id, task_id: null, meeting_id: null });
+    expect(executed[0]?.[0]).toEqual({
+      type: "create_attachment",
+      attachment: {
+        id: added?.id,
+        note_id: n.id,
+        hash: "b".repeat(64),
+        name: "sketch.png",
+        mime: "image/png",
+        size: 10,
+      },
+    });
+    expect(store.getState().attachments[added?.id as string]).toBeTruthy();
+    expect(await attachFilesTo(store, { note: "gone" }, [upload("x.png")])).toEqual([]);
+  });
+
+  it("attaches several stored files in one batch, shown at once", async () => {
+    const t = task();
+    const { store, executed, ready } = setup({ tasks: [t] });
+    await ready;
+    const added = await attachFiles(store, t.id, [upload("a.png"), upload("b.pdf", "x/y")]);
+    expect(added.map((a) => a.name)).toEqual(["a.png", "b.pdf"]);
+    expect(executed).toHaveLength(1);
+    expect(executed[0]).toEqual(
+      added.map((a) => ({
+        type: "create_attachment",
+        attachment: {
+          id: a.id,
+          task_id: t.id,
+          hash: a.hash,
+          name: a.name,
+          mime: a.mime,
+          size: 10,
+        },
+      })),
+    );
+    expect(Object.keys(store.getState().attachments).sort()).toEqual(added.map((a) => a.id).sort());
+    expect(new Set(added.map((a) => a.id)).size).toBe(2);
+  });
+
+  it("rolls back and reports when the core refuses", async () => {
+    const t = task();
+    const { store, ready } = setup({ tasks: [t] }, true);
+    await ready;
+    expect(await attachFiles(store, t.id, [upload("a.png")])).toEqual([]);
+    expect(store.getState().attachments).toEqual({});
+    expect(store.getState().lastError).toMatch(/no stored file/);
+  });
+
+  it("renames (trimmed, skipping no-ops) and removes", async () => {
+    const t = task();
+    const a = attachment({ task_id: t.id, name: "old.png" });
+    const { store, executed, ready } = setup({ tasks: [t], attachments: [a] });
+    await ready;
+    expect(await renameAttachment(store, a.id, " old.png ")).toBeNull();
+    await renameAttachment(store, a.id, "  new.png ");
+    expect(store.getState().attachments[a.id]?.name).toBe("new.png");
+    expect(executed.at(-1)).toEqual([
+      { type: "update_attachment", id: a.id, changes: [{ name: "new.png" }] },
+    ]);
+    await deleteAttachment(store, a.id);
+    expect(store.getState().attachments[a.id]).toBeUndefined();
+    expect(executed.at(-1)).toEqual([{ type: "delete_attachment", id: a.id }]);
+  });
+});

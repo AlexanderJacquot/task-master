@@ -1,0 +1,387 @@
+import { useNavigate } from "@tanstack/react-router";
+import { Dialog } from "radix-ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { cx, NO_TEXT_PREDICTION } from "../../components/ui";
+import { noteSnippet, noteTitle } from "../../lib/notes";
+import { type PaletteItem, rankItems } from "../../lib/palette";
+import { plainSnippet, speakerLabel } from "../../lib/transcript";
+import type { NoteHit, TranscriptHit } from "../../lib/types";
+import { categoryOf } from "../../lib/views";
+import { useApi, useStoreState, useTaskStore } from "../../store/context";
+import { useNewNote } from "../notes/NotesTree";
+import { useOpenTask } from "../shell/useOpenTask";
+import { NEW_TASK_INPUT_ID } from "../shell/useShortcuts";
+
+type Runnable = PaletteItem & { run(): void };
+
+/** A search snippet short enough for the hint column. */
+function clip(text: string, max = 56): string {
+  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+}
+
+/**
+ * Ctrl+K: jump to any view, project, epic, tag, task (full-text search over titles and
+ * descriptions), note (titles and bodies), meeting or transcript line, or run an action. Arrow keys move, Enter runs, Escape closes.
+ */
+export function CommandPalette({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange(open: boolean): void;
+}) {
+  const store = useTaskStore();
+  const api = useApi();
+  const navigate = useNavigate();
+  const openTask = useOpenTask();
+  const tasks = useStoreState((s) => s.tasks);
+  const statuses = useStoreState((s) => s.statuses);
+  const projects = useStoreState((s) => s.projects);
+  const epics = useStoreState((s) => s.epics);
+  const tags = useStoreState((s) => s.tags);
+  const views = useStoreState((s) => s.views);
+  const meetings = useStoreState((s) => s.meetings);
+  const notes = useStoreState((s) => s.notes);
+  const noteFolders = useStoreState((s) => s.note_folders);
+  const newNote = useNewNote();
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<string[]>([]);
+  const [lines, setLines] = useState<TranscriptHit[]>([]);
+  const [noteHits, setNoteHits] = useState<NoteHit[]>([]);
+  const [active, setActive] = useState(0);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  // Full-text search, debounced; stale answers are dropped.
+  useEffect(() => {
+    const text = query.trim();
+    if (text.length < 2) {
+      setHits([]);
+      setLines([]);
+      setNoteHits([]);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(() => {
+      api
+        .search(text, 20)
+        .then((ids) => live && setHits(ids))
+        .catch(() => live && setHits([]));
+      api
+        .searchTranscripts?.(text, 6)
+        .then((found) => live && setLines(found))
+        .catch(() => live && setLines([]));
+      api
+        .searchNotes?.(text, 8)
+        .then((found) => live && setNoteHits(found))
+        .catch(() => live && setNoteHits([]));
+    }, 80);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [api, query]);
+
+  useEffect(() => {
+    if (!open) {
+      setQuery("");
+      setActive(0);
+    }
+  }, [open]);
+
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  const go = useCallback(
+    (to: string, params?: Record<string, string>, search: Record<string, string> = {}) => {
+      close();
+      void navigate({ to, params: params as never, search: search as never });
+    },
+    [close, navigate],
+  );
+
+  const items: Runnable[] = useMemo(() => {
+    const folderName = (id: string | null) => (id ? noteFolders[id]?.name : undefined);
+    const list: Runnable[] = [
+      {
+        key: "action:new",
+        group: "Actions",
+        label: "New task",
+        hint: "n",
+        keywords: "add capture create",
+        run: () => {
+          close();
+          requestAnimationFrame(() => document.getElementById(NEW_TASK_INPUT_ID)?.focus());
+        },
+      },
+      {
+        key: "action:note",
+        group: "Actions",
+        label: "New note",
+        keywords: "write page markdown notes",
+        run: () => {
+          close();
+          void newNote();
+        },
+      },
+      {
+        key: "action:plan",
+        group: "Actions",
+        label: "Plan my day",
+        keywords: "today pick schedule",
+        run: () => go("/today", undefined, { plan: "1" }),
+      },
+      {
+        key: "action:undo",
+        group: "Actions",
+        label: "Undo",
+        hint: "Ctrl+Z",
+        run: () => {
+          close();
+          void store.getState().undo();
+        },
+      },
+      {
+        key: "action:redo",
+        group: "Actions",
+        label: "Redo",
+        hint: "Ctrl+Shift+Z",
+        run: () => {
+          close();
+          void store.getState().redo();
+        },
+      },
+      { key: "view:inbox", group: "Views", label: "Inbox", hint: "g i", run: () => go("/inbox") },
+      { key: "view:today", group: "Views", label: "Today", hint: "g t", run: () => go("/today") },
+      {
+        key: "view:calendar",
+        group: "Views",
+        label: "Calendar",
+        hint: "g c",
+        keywords: "schedule week month day time blocks",
+        run: () => go("/calendar"),
+      },
+      { key: "view:all", group: "Views", label: "All tasks", hint: "g a", run: () => go("/all") },
+      {
+        key: "view:roadmap",
+        group: "Views",
+        label: "Roadmap",
+        keywords: "gantt timeline plan schedule milestones",
+        run: () => go("/roadmap"),
+      },
+      {
+        key: "view:metrics",
+        group: "Views",
+        label: "Metrics",
+        keywords: "dashboard statistics creation completion rates AI",
+        run: () => go("/metrics"),
+      },
+      {
+        key: "view:settings",
+        group: "Views",
+        label: "Settings",
+        hint: "g s",
+        keywords: "statuses columns workflow wip theme backup export import data",
+        run: () => go("/settings"),
+      },
+    ];
+    for (const v of Object.values(views)) {
+      list.push({
+        key: `view:${v.id}`,
+        group: "Views",
+        label: v.name,
+        hint: v.spec.lineage
+          ? "saved lineage view"
+          : v.spec.roadmap
+            ? "saved roadmap view"
+            : "saved view",
+        run: () => go("/view/$viewId", { viewId: v.id }),
+      });
+    }
+    for (const p of Object.values(projects)) {
+      list.push({
+        key: `project:${p.id}`,
+        group: "Projects",
+        label: p.name,
+        hint: p.archived_at !== null ? "archived" : undefined,
+        run: () => go("/project/$projectId", { projectId: p.id }),
+      });
+    }
+    for (const e of Object.values(epics)) {
+      list.push({
+        key: `epic:${e.id}`,
+        group: "Epics",
+        label: e.name,
+        hint: e.state === "active" ? undefined : e.state,
+        run: () => go("/epic/$epicId", { epicId: e.id }),
+      });
+    }
+    for (const t of Object.values(tags)) {
+      list.push({
+        key: `tag:${t.id}`,
+        group: "Tags",
+        label: `#${t.name}`,
+        run: () => go("/tag/$tagId", { tagId: t.id }),
+      });
+    }
+    const statusById = Object.fromEntries(statuses.map((s) => [s.id, s]));
+    for (const id of hits) {
+      const t = tasks[id];
+      if (!t || categoryOf(t, { statuses: statusById }) === "done") continue;
+      list.push({
+        key: `task:${id}`,
+        group: "Tasks",
+        label: t.title,
+        hint: t.project_id ? projects[t.project_id]?.name : "Inbox",
+        run: () => {
+          close();
+          openTask(id);
+        },
+      });
+    }
+    // Notes found by full-text search first (in the core's order, with the words around
+    // the match), then every other note, matched on its title.
+    const found = new Set<string>();
+    for (const hit of noteHits) {
+      const n = notes[hit.note_id];
+      if (!n) continue;
+      found.add(n.id);
+      const snippet = noteSnippet(hit.snippet);
+      list.push({
+        key: `note:${n.id}`,
+        group: "Notes",
+        label: noteTitle(n),
+        hint: snippet && snippet !== n.title ? clip(snippet) : folderName(n.folder_id),
+        run: () => go("/note/$noteId", { noteId: n.id }),
+      });
+    }
+    for (const n of Object.values(notes)) {
+      if (found.has(n.id)) continue;
+      list.push({
+        key: `note:${n.id}`,
+        group: "Notes",
+        label: noteTitle(n),
+        hint: folderName(n.folder_id),
+        run: () => go("/note/$noteId", { noteId: n.id }),
+      });
+    }
+    for (const m of Object.values(meetings)) {
+      list.push({
+        key: `meeting:${m.id}`,
+        group: "Meetings",
+        label: m.title || "Untitled meeting",
+        hint: new Date(m.started_at).toLocaleDateString(),
+        keywords: m.participants.join(" "),
+        run: () => go("/meeting/$meetingId", { meetingId: m.id }),
+      });
+    }
+    for (const hit of lines) {
+      const m = meetings[hit.meeting_id];
+      if (!m) continue;
+      list.push({
+        key: `line:${hit.segment_id}`,
+        group: "Transcripts",
+        label: `${speakerLabel(hit.speaker, m.speakers)}: ${plainSnippet(hit.snippet)}`,
+        hint: m.title,
+        run: () => go("/meeting/$meetingId", { meetingId: m.id }, { line: hit.segment_id }),
+      });
+    }
+    return list;
+  }, [
+    views,
+    projects,
+    epics,
+    tags,
+    hits,
+    tasks,
+    statuses,
+    meetings,
+    lines,
+    notes,
+    noteHits,
+    noteFolders,
+    newNote,
+    store,
+    openTask,
+    close,
+    go,
+  ]);
+
+  const results = useMemo(() => {
+    const ranked = rankItems(items, query, {
+      searchHits: new Set([
+        ...hits.map((id) => `task:${id}`),
+        ...lines.map((l) => `line:${l.segment_id}`),
+        ...noteHits.map((h) => `note:${h.note_id}`),
+      ]),
+    });
+    const byKey = new Map(items.map((i) => [i.key, i]));
+    return ranked.map((r) => byKey.get(r.key) as Runnable);
+  }, [items, query, hits, lines, noteHits]);
+
+  const current = Math.min(active, Math.max(results.length - 1, 0));
+  useEffect(() => {
+    listRef.current
+      ?.querySelector(`[data-index="${current}"]`)
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [current]);
+
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[2px]" />
+        <Dialog.Content
+          aria-describedby={undefined}
+          className="tex-sheet fixed top-[14%] left-1/2 z-50 w-[38rem] max-w-[calc(100vw-2rem)] -translate-x-1/2 overflow-hidden rounded-2xl border border-line-strong bg-overlay shadow-2xl shadow-black/40"
+        >
+          <Dialog.Title className="sr-only">Command palette</Dialog.Title>
+          <input
+            {...NO_TEXT_PREDICTION}
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setActive(0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActive((a) => Math.min(a + 1, results.length - 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActive((a) => Math.max(a - 1, 0));
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                results[current]?.run();
+              }
+            }}
+            placeholder="Jump to a view, project, epic, tag, task or note… or run an action"
+            aria-label="Command"
+            className="w-full border-b border-line bg-transparent px-5 py-4 text-[17px] text-ink placeholder:text-ink-3 focus:outline-none"
+          />
+          <ul ref={listRef} className="max-h-96 overflow-y-auto p-1.5" aria-label="Results">
+            {results.length === 0 && <li className="px-4 py-3 text-sm text-ink-3">No matches</li>}
+            {results.map((item, i) => (
+              <li key={item.key} data-index={i}>
+                {(i === 0 || results[i - 1]?.group !== item.group) && (
+                  <p className="px-3 pt-2.5 pb-1 font-display text-[13px] tracking-wide text-ink-3">
+                    {item.group}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onMouseMove={() => setActive(i)}
+                  onClick={() => item.run()}
+                  aria-current={i === current}
+                  className={cx(
+                    "flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-ink",
+                    i === current && "bg-selected",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                  {item.hint && <span className="text-xs text-ink-3">{item.hint}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}

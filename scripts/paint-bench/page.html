@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- Paint benchmark page: a rough copy of the app layout (sidebar, board columns of cards,
+     a text field) that, for 6 seconds, moves a card across the board and types a
+     character every frame, so the background under them repaints like it does when you
+     drag a task or type. run.sh replaces CANDIDATE_CSS with the CSS under test.
+     The page is in light mode, so write rules without the :root:not(.dark) prefix. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+html, body { margin: 0; height: 100%; font: 14.5px sans-serif; color: #3a2a14; }
+#app { display: flex; height: 100%; overflow: hidden; background-color: #f3ead6; }
+.tex-sidebar { width: 260px; flex: none; overflow: auto; background-color: #ece1c8; }
+main { flex: 1; overflow: auto; position: relative; }
+.cols { display: flex; gap: 16px; padding: 24px; }
+.col { width: 280px; display: flex; flex-direction: column; gap: 8px; }
+.card { background: #fbf6ea; border: 1px solid #d8c8a4; border-radius: 8px; padding: 10px;
+  box-shadow: 0 1px 2px rgb(60 40 10 / .12), 0 4px 12px rgb(60 40 10 / .08); }
+#drag { position: absolute; left: 0; top: 0; width: 260px; z-index: 5; }
+textarea { width: 600px; height: 160px; margin: 24px; background: transparent;
+  border: 1px solid #c9b78f; }
+/* CANDIDATE_CSS */
+</style>
+</head>
+<body>
+<div id="app" class="tex-canvas">
+  <nav class="tex-sidebar" id="nav"></nav>
+  <main>
+    <div class="cols" id="cols"></div>
+    <textarea id="ta"></textarea>
+    <div id="drag" class="card">Dragged task</div>
+  </main>
+</div>
+<script>
+const nav = document.getElementById("nav");
+for (let i = 0; i < 30; i++) nav.insertAdjacentHTML("beforeend", `<div style="padding:6px 14px">Item ${i}</div>`);
+const cols = document.getElementById("cols");
+for (let c = 0; c < 4; c++) {
+  let html = '<div class="col">';
+  for (let i = 0; i < 7; i++) html += `<div class="card">Task ${c * 7 + i} with a reasonably long title<br><small>Due tomorrow</small></div>`;
+  cols.insertAdjacentHTML("beforeend", `${html}</div>`);
+}
+const ta = document.getElementById("ta");
+const drag = document.getElementById("drag");
+const frames = [];
+let last = 0;
+let t0 = 0;
+function step(t) {
+  if (!t0) { t0 = t; last = t; document.title = "start"; }
+  frames.push(t - last);
+  last = t;
+  const k = (t - t0) / 1000;
+  drag.style.transform = `translate(${300 + 250 * Math.sin(k * 2)}px, ${200 + 150 * Math.cos(k * 3)}px)`;
+  ta.value += "abcdefghij "[frames.length % 11];
+  ta.focus();
+  if (t - t0 < 6000) { requestAnimationFrame(step); return; }
+  frames.shift();
+  frames.sort((a, b) => a - b);
+  const avg = frames.reduce((a, b) => a + b, 0) / frames.length;
+  document.title = JSON.stringify({
+    frames: frames.length,
+    avg_ms: Math.round(avg * 10) / 10,
+    p95_ms: Math.round(frames[Math.floor(frames.length * 0.95)]),
+  });
+}
+setTimeout(() => requestAnimationFrame(step), 1500);
+</script>
+</body>
+</html>

@@ -1,0 +1,305 @@
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { commands, events } from "../bindings";
+import type {
+  Activity,
+  AgentActivity,
+  AgentNote,
+  AgentSession,
+  AgentSettings,
+  AgentStart,
+  CalendarEvent,
+  CalendarStatus,
+  Capture,
+  Changed,
+  Changes,
+  ClaudeCheck,
+  Command,
+  CommandError,
+  EventRange,
+  GitInfo,
+  JoinMode,
+  McpSetup,
+  NoteHit,
+  Notice,
+  PlanUsage,
+  ProjectFolder,
+  Snapshot,
+  Space,
+  StoredUpload,
+  SyncStatus,
+  TerminalScan,
+  TranscriptHit,
+  TranscriptSegment,
+} from "./types";
+
+/** A failure reported by the core (`invalid`, `not_found`, `internal`) or by Tauri itself. */
+export class ApiError extends Error {
+  constructor(
+    readonly kind: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+type Result<T> = { status: "ok"; data: T } | { status: "error"; error: CommandError | string };
+
+async function unwrap<T>(call: Promise<Result<T>>): Promise<T> {
+  const result = await call;
+  if (result.status === "ok") return result.data;
+  const { error } = result;
+  // Framework failures (unknown command, bad argument) arrive as plain strings.
+  if (typeof error === "string") throw new ApiError("internal", error);
+  throw new ApiError(error.kind, error.message);
+}
+
+/** Everything the UI may ask of the core. Injected into the store so tests can fake it. */
+export interface Api {
+  snapshot(): Promise<Snapshot>;
+  /** `space` names where rows without a container go (ADR 033); the personal space by default. */
+  execute(commands: Command[], space?: Space): Promise<Changes>;
+  /** The team space's live entities; `null` without a team (ADR 033). Absent in some tests. */
+  teamSnapshot?(): Promise<Snapshot | null>;
+  /** Moves a personal project to the team space (ADR 033). */
+  shareProject?(projectId: string): Promise<Changes>;
+  /** Mentions and assignments by teammates after op `after`, newest first (ADR 033). */
+  teamNotices?(after: number, limit: number): Promise<Notice[]>;
+  undo(): Promise<Changes | null>;
+  redo(): Promise<Changes | null>;
+  search(text: string, limit: number): Promise<string[]>;
+  taskActivity(taskId: string, limit: number): Promise<Activity[]>;
+  /** Reads a quick-capture line (read-only). `today` is the local date. */
+  parseCapture(text: string, today: string): Promise<Capture>;
+  /** A meeting's transcript (Scribe); absent in tests that do not need it. */
+  transcript?(meetingId: string): Promise<TranscriptSegment[]>;
+  /** Transcript lines matching every word, best first. */
+  searchTranscripts?(text: string, limit: number): Promise<TranscriptHit[]>;
+  /** Notes matching every word of their title or body, best first (ADR 032). */
+  searchNotes?(text: string, limit: number): Promise<NoteHit[]>;
+  onChanged(handler: (event: Changed) => void): Promise<() => void>;
+  /** Attachments and links; absent where there is no file system (some tests). */
+  files?: FilesApi;
+  /** The calendar connection (ADR 014); absent in tests that do not need it. */
+  calendar?: CalendarApi;
+  /** The sync server (ADR 015); absent in tests that do not need it. */
+  sync?: SyncApi;
+  /** Claude Code sessions (ADR 017); absent in tests that do not need it. */
+  agents?: AgentsApi;
+}
+
+/** Claude Code sessions started from tasks, their settings and project folders. */
+export interface AgentsApi {
+  /** Starts a session; it is recorded (as failed) even when Claude Code cannot start. */
+  start(input: AgentStart): Promise<AgentSession>;
+  /** A follow-up message to an ended session. */
+  send(sessionId: string, message: string): Promise<void>;
+  cancel(sessionId: string): Promise<void>;
+  openTerminal(sessionId: string): Promise<void>;
+  /** Brings up a session's conversation in the Claude desktop app (ADR 029). */
+  openDesktop(sessionId: string): Promise<void>;
+  /** What running sessions are doing now. */
+  live(): Promise<AgentActivity[]>;
+  /** The opening context a session on this task would get. */
+  brief(taskId: string): Promise<string>;
+  notes(taskId: string, sessionId: string | null, limit: number): Promise<AgentNote[]>;
+  settings(): Promise<AgentSettings>;
+  saveSettings(settings: AgentSettings): Promise<AgentSettings>;
+  /** Checks Claude Code runs with these settings (not saved). */
+  detect(settings: AgentSettings): Promise<ClaudeCheck>;
+  /** The Claude plan's 5-hour and weekly usage, read with Claude Code's sign-in. */
+  planUsage(): Promise<PlanUsage>;
+  /** Reads the Claude Code sessions run in a terminal now (their new transcripts). */
+  scanTerminal(): Promise<TerminalScan>;
+  /** Installed WSL distributions (empty outside Windows). */
+  distros(): Promise<string[]>;
+  /** This computer's MCP server, for adding it to the user's own Claude (Settings → MCP). */
+  mcpSetup(): Promise<McpSetup>;
+  /** This device's id: sessions with it ran here, so their folders exist here. */
+  device(): Promise<string>;
+  folders(): Promise<ProjectFolder[]>;
+  setFolder(projectId: string, path: string | null): Promise<ProjectFolder[]>;
+  /** Where the project folder's git repository stands; null when it is not one. */
+  projectGit(projectId: string): Promise<GitInfo | null>;
+  /** Asks for a folder; null when cancelled. */
+  pickFolder(): Promise<string | null>;
+  /** Called with each activity update (`activity: null` when a run stopped). */
+  onActivity(handler: (event: AgentActivity) => void): Promise<() => void>;
+}
+
+export const tauriAgents: AgentsApi = {
+  start: (input) => unwrap(commands.agentStart(input)),
+  send: async (sessionId, message) => {
+    await unwrap(commands.agentSend(sessionId, message));
+  },
+  cancel: async (sessionId) => {
+    await unwrap(commands.agentCancel(sessionId));
+  },
+  openTerminal: async (sessionId) => {
+    await unwrap(commands.agentOpenTerminal(sessionId));
+  },
+  openDesktop: async (sessionId) => {
+    await unwrap(commands.agentOpenDesktop(sessionId));
+  },
+  live: () => unwrap(commands.agentLive()),
+  brief: (taskId) => unwrap(commands.agentBrief(taskId)),
+  notes: (taskId, sessionId, limit) => unwrap(commands.agentNotes(taskId, sessionId, limit)),
+  settings: () => unwrap(commands.agentSettings()),
+  saveSettings: (settings) => unwrap(commands.setAgentSettings(settings)),
+  detect: (settings) => unwrap(commands.detectClaude(settings)),
+  planUsage: () => unwrap(commands.claudePlanUsage()),
+  scanTerminal: () => unwrap(commands.scanTerminalSessions()),
+  distros: () => commands.listWslDistros(),
+  mcpSetup: () => commands.mcpSetup(),
+  device: () => unwrap(commands.agentDevice()),
+  folders: () => unwrap(commands.projectFolders()),
+  setFolder: (projectId, path) => unwrap(commands.setProjectFolder(projectId, path)),
+  projectGit: (projectId) => unwrap(commands.projectGit(projectId)),
+  pickFolder: async () => {
+    const picked = await open({ directory: true, multiple: false });
+    return typeof picked === "string" ? picked : null;
+  },
+  onActivity: (handler) => events.agentActivity.listen((event) => handler(event.payload)),
+};
+
+/** Sync with a task-master server: connect, sign in, join, status. */
+export interface SyncApi {
+  status(): Promise<SyncStatus>;
+  /** Reads the server's `/info` and saves its address. */
+  connect(url: string): Promise<SyncStatus>;
+  /** Saves (after checking) a token made on the server. */
+  setToken(token: string): Promise<SyncStatus>;
+  /** Signs in with the server's OpenID provider in the browser (up to 5 minutes). */
+  signIn(): Promise<SyncStatus>;
+  /** Starts syncing: merge this device's data with the server's, or replace it. */
+  join(mode: JoinMode): Promise<SyncStatus>;
+  syncNow(): Promise<SyncStatus>;
+  disconnect(): Promise<SyncStatus>;
+  /** Called when a round starts and ends, and when the account changes. */
+  onChanged(handler: (status: SyncStatus) => void): Promise<() => void>;
+}
+
+export const tauriSync: SyncApi = {
+  status: () => commands.syncStatus(),
+  connect: (url) => unwrap(commands.syncConnect(url)),
+  setToken: (token) => unwrap(commands.syncSetToken(token)),
+  signIn: () => unwrap(commands.syncSignIn()),
+  join: (mode) => unwrap(commands.syncJoin(mode)),
+  syncNow: () => commands.syncNow(),
+  disconnect: () => unwrap(commands.syncDisconnect()),
+  onChanged: (handler) => events.syncChanged.listen((event) => handler(event.payload)),
+};
+
+/**
+ * Calendar sync with Google, a CalDAV account (ADR 037) or, on Windows, classic Outlook
+ * (ADR 030): settings, status and
+ * the read-only events of shown calendars.
+ */
+export interface CalendarApi {
+  status(): Promise<CalendarStatus>;
+  /** Opens the Google sign-in in the browser and waits for it (up to 5 minutes). */
+  connect(clientId: string, clientSecret: string): Promise<CalendarStatus>;
+  disconnect(): Promise<CalendarStatus>;
+  setShown(calendarId: string, shown: boolean): Promise<CalendarStatus>;
+  syncNow(): Promise<CalendarStatus>;
+  setRunner?(runner: "this_device" | "server"): Promise<CalendarStatus>;
+  /** Classic Outlook on this PC: no sign-in, Outlook's own account is used. */
+  connectOutlook?(): Promise<CalendarStatus>;
+  disconnectOutlook?(): Promise<CalendarStatus>;
+  /** Shows an event of the Outlook calendar in Outlook. */
+  openInOutlook?(eventId: string): Promise<void>;
+  /**
+   * A CalDAV account (iCloud, Fastmail, Nextcloud; ADR 037): checks the sign-in and keeps
+   * the password in the OS keychain. An empty password keeps the stored one.
+   */
+  connectCaldav?(serverUrl: string, username: string, password: string): Promise<CalendarStatus>;
+  disconnectCaldav?(): Promise<CalendarStatus>;
+  events(range: EventRange): Promise<CalendarEvent[]>;
+  /** Called when a sync starts and ends. */
+  onSynced(handler: (status: CalendarStatus) => void): Promise<() => void>;
+}
+
+export const tauriCalendar: CalendarApi = {
+  status: () => unwrap(commands.calendarStatus()),
+  setRunner: (runner) => unwrap(commands.setCalendarRunner(runner)),
+  connect: (clientId, clientSecret) => unwrap(commands.googleConnect(clientId, clientSecret)),
+  disconnect: () => unwrap(commands.googleDisconnect()),
+  connectOutlook: () => unwrap(commands.outlookConnect()),
+  disconnectOutlook: () => unwrap(commands.outlookDisconnect()),
+  openInOutlook: async (eventId) => {
+    await unwrap(commands.outlookOpenEvent(eventId));
+  },
+  connectCaldav: (serverUrl, username, password) =>
+    unwrap(commands.caldavConnect(serverUrl, username, password)),
+  disconnectCaldav: () => unwrap(commands.caldavDisconnect()),
+  setShown: (calendarId, shown) => unwrap(commands.setCalendarShown(calendarId, shown)),
+  syncNow: () => unwrap(commands.calendarSyncNow()),
+  events: (range) => unwrap(commands.calendarEvents(range)),
+  onSynced: (handler) => events.calendarSynced.listen((event) => handler(event.payload)),
+};
+
+/**
+ * Attachment content and the OS around it (ADR 011). Storing content is not a data edit:
+ * the attachment row is then created through `execute`.
+ */
+export interface FilesApi {
+  /** Copies a file from disk into the attachment folder. */
+  storeFile(path: string): Promise<StoredUpload>;
+  /** Stores pasted bytes (base64). */
+  storeData(name: string, mime: string, base64: string): Promise<StoredUpload>;
+  /** Opens the attachment in its default app. */
+  open(id: string): Promise<void>;
+  /** Asks where to save a copy, then writes it. Resolves false when cancelled. */
+  saveCopy(id: string, name: string): Promise<boolean>;
+  /** Opens an http(s)/mailto link outside the app. */
+  openUrl(url: string): Promise<void>;
+  /** Asks for files to attach; empty when cancelled. */
+  pickFiles(): Promise<string[]>;
+  /** URL the webview loads the attachment from. */
+  url(id: string): string;
+}
+
+export const tauriFiles: FilesApi = {
+  storeFile: (path) => unwrap(commands.storeFile(path)),
+  storeData: (name, mime, base64) => unwrap(commands.storeData(name, mime, base64)),
+  open: async (id) => {
+    await unwrap(commands.openAttachment(id));
+  },
+  saveCopy: async (id, name) => {
+    const path = await save({ defaultPath: name });
+    if (!path) return false;
+    await unwrap(commands.saveAttachment(id, path));
+    return true;
+  },
+  openUrl: async (url) => {
+    await unwrap(commands.openUrl(url));
+  },
+  pickFiles: async () => {
+    const picked = await open({ multiple: true, directory: false });
+    if (!picked) return [];
+    return Array.isArray(picked) ? picked : [picked];
+  },
+  url: (id) => convertFileSrc(id, "tm"),
+};
+
+export const tauriApi: Api = {
+  snapshot: () => unwrap(commands.snapshot()),
+  execute: (list, space) => unwrap(commands.execute(list, space ?? null)),
+  teamSnapshot: () => unwrap(commands.teamSnapshot()),
+  shareProject: (projectId) => unwrap(commands.shareProject(projectId)),
+  teamNotices: (after, limit) => unwrap(commands.teamNotices(after, limit)),
+  undo: () => unwrap(commands.undo()),
+  redo: () => unwrap(commands.redo()),
+  search: (text, limit) => unwrap(commands.search(text, limit)),
+  taskActivity: (taskId, limit) => unwrap(commands.taskActivity(taskId, limit)),
+  parseCapture: (text, today) => unwrap(commands.parseCapture(text, today)),
+  transcript: (meetingId) => unwrap(commands.meetingTranscript(meetingId)),
+  searchTranscripts: (text, limit) => unwrap(commands.searchTranscripts(text, limit)),
+  searchNotes: (text, limit) => unwrap(commands.searchNotes(text, limit)),
+  onChanged: (handler) => events.storeChanged.listen((event) => handler(event.payload)),
+  files: tauriFiles,
+  calendar: tauriCalendar,
+  sync: tauriSync,
+  agents: tauriAgents,
+};

@@ -1,0 +1,73 @@
+[package]
+name = "taskmaster-desktop"
+description = "task-master desktop shell: thin Tauri adapter over taskmaster-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "taskmaster_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5", features = [] }
+
+[dependencies]
+taskmaster-core = { workspace = true, features = ["specta"] }
+# Sync with the task-master server (ADR 015, M13).
+taskmaster-client = { path = "../../../crates/client" }
+# Classic Outlook's calendar through COM, on Windows (ADR 030).
+taskmaster-outlook = { path = "../../../crates/outlook" }
+tauri = { version = "2.12", features = [] }
+tauri-plugin-dialog = "2.8.3"
+tauri-plugin-global-shortcut = "2.4.1"
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-process = "2.4.0"
+tauri-plugin-updater = "2.14.0"
+# Remote backup to an S3-compatible store (Garage): request signing + a small HTTP client.
+rusty-s3 = "0.10.2"
+ureq = "3.4.3"
+url = "2.5"
+serde_json = "1"
+# Pasted attachment content arrives base64-encoded (ADR 011); already in the tree.
+base64 = "0.23.1"
+# Google sign-in (ADR 014): PKCE challenge and random verifier; both already in the tree.
+sha2 = "0.11.1"
+getrandom = "0.3.4"
+# Release candidates: pinned exactly (plan, section 10 risks).
+specta = "=2.0.0-rc.26"
+tauri-specta = { version = "=2.0.0-rc.26", features = ["derive", "typescript"] }
+specta-typescript = "=0.0.13"
+serde = { version = "1", features = ["derive"] }
+# Scribe recordings (ADR 026): pure-Rust Opus codec in an Ogg container. opus-rs is young
+# and releases often: pinned exactly.
+opus-rs = "=0.1.42"
+ogg = "0.9.2"
+# The CalDAV password in the OS keychain (ADR 037).
+keyring = "4.2"
+
+# Microphone and system-sound capture (ADR 026): WASAPI loopback on Windows, a CoreAudio
+# process tap on macOS. Speaker separation: sherpa-onnx, linked statically from its
+# prebuilt libraries. Linux builds without them (no recording there yet).
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+cpal = "0.18.2"
+sherpa-onnx = { version = "2.0.1", default-features = false, features = ["static"] }
+
+# Transcription: whisper.cpp, built from source (cmake); Metal on macOS, CPU on Windows.
+# Build options for portable CPU code are in `.cargo/config.toml`.
+[target.'cfg(target_os = "windows")'.dependencies]
+whisper-rs = "0.16.0"
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.16.0", features = ["metal"] }
+# Quick capture over full-screen apps: the capture window becomes a non-activating NSPanel
+# (ADR 027). The unsafe AppKit calls live in that crate; this one stays free of unsafe code.
+taskmaster-macos-panel = { path = "../../../crates/macos-panel" }
+
+# Linux tests and lint still build the speech engines (`scribe/engine.rs`).
+[target.'cfg(not(any(target_os = "windows", target_os = "macos")))'.dev-dependencies]
+whisper-rs = "0.16.0"
+sherpa-onnx = { version = "2.0.1", default-features = false, features = ["static"] }
+
+[lints]
+workspace = true

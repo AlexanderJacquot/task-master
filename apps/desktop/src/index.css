@@ -1,0 +1,682 @@
+@import "tailwindcss";
+@import "@fontsource/medievalsharp/latin.css";
+@import "@fontsource-variable/source-serif-4/opsz.css";
+@import "@fontsource-variable/source-serif-4/opsz-italic.css";
+@import "@fontsource-variable/inter/opsz.css";
+@import "@fontsource-variable/inter/opsz-italic.css";
+
+/* Theme (settings): `clean` on <html> is the clean look (the default, ADR 039), `dark` a
+   dark theme. Both together are clean dark; `dark` alone the medieval dark theme; neither
+   the parchment one. `lib/theme.ts` sets them from the choice (light, dark or following
+   the system, and the optional medieval look).
+   ADR 008: every color is a variable that each theme fills in. Components use the
+   semantic names (canvas, ink, accent...); the neutral and blue scales are remapped to
+   each theme's tones so older `neutral-*` / `blue-*` classes follow along. */
+@custom-variant dark (&:where(.dark, .dark *));
+/* `clean:` for the few places the clean theme draws differently (ADR 021). */
+@custom-variant clean (&:where(.clean, .clean *));
+
+@theme {
+  --font-display: "MedievalSharp", "Source Serif 4 Variable", Georgia, serif;
+  --font-sans: "Source Serif 4 Variable", Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, monospace;
+
+  --color-canvas: var(--tm-canvas);
+  --color-sidebar: var(--tm-sidebar);
+  --color-raised: var(--tm-raised);
+  --color-overlay: var(--tm-overlay);
+  --color-ink: var(--tm-ink);
+  --color-ink-2: var(--tm-ink-2);
+  --color-ink-3: var(--tm-ink-3);
+  --color-line: var(--tm-line);
+  --color-line-strong: var(--tm-line-strong);
+  --color-hover: var(--tm-hover);
+  --color-selected: var(--tm-selected);
+  --color-accent: var(--tm-accent);
+  --color-accent-hover: var(--tm-accent-hover);
+  --color-accent-ink: var(--tm-accent-ink);
+  --color-danger: var(--tm-danger);
+  /* Section and group headings: rubric red on parchment, bright ink in the dark. */
+  --color-rubric: var(--tm-rubric);
+  /* Priority tones (text; pills tint their background with the same color). */
+  --color-urgent: var(--tm-urgent);
+  --color-high: var(--tm-high);
+  /* Finished subtasks and progress bars. */
+  --color-done: var(--tm-done);
+  --color-white: var(--tm-white);
+
+  --color-neutral-50: var(--tm-n-50);
+  --color-neutral-100: var(--tm-n-100);
+  --color-neutral-200: var(--tm-n-200);
+  --color-neutral-300: var(--tm-n-300);
+  --color-neutral-400: var(--tm-n-400);
+  --color-neutral-500: var(--tm-n-500);
+  --color-neutral-600: var(--tm-n-600);
+  --color-neutral-700: var(--tm-n-700);
+  --color-neutral-800: var(--tm-n-800);
+  --color-neutral-900: var(--tm-n-900);
+  --color-neutral-950: var(--tm-n-950);
+
+  --color-blue-50: var(--tm-a-50);
+  --color-blue-100: var(--tm-a-100);
+  --color-blue-200: var(--tm-a-200);
+  --color-blue-300: var(--tm-a-300);
+  --color-blue-400: var(--tm-a-400);
+  --color-blue-500: var(--tm-a-500);
+  --color-blue-600: var(--tm-a-600);
+  --color-blue-700: var(--tm-a-700);
+  --color-blue-800: var(--tm-a-800);
+  --color-blue-900: var(--tm-a-900);
+  --color-blue-950: var(--tm-a-950);
+}
+
+/* Parchment: warm vellum, brown-black ink, rubric red. */
+:root {
+  color-scheme: light;
+  --tm-canvas: #f3eada;
+  --tm-sidebar: #eadcbf;
+  --tm-raised: #f9f2e3;
+  --tm-overlay: #fbf6ea;
+  --tm-ink: #2b2116;
+  --tm-ink-2: #5c4a36;
+  --tm-ink-3: #6e5a44;
+  --tm-line: rgb(90 60 20 / 0.15);
+  --tm-line-strong: rgb(90 60 20 / 0.26);
+  --tm-hover: rgb(90 60 20 / 0.06);
+  --tm-selected: rgb(90 60 20 / 0.1);
+  --tm-accent: #8b2e1f;
+  --tm-accent-hover: #74261a;
+  --tm-accent-ink: #f8f1e1;
+  --tm-danger: #a3301f;
+  --tm-rubric: #8b2e1f;
+  --tm-urgent: #a3301f;
+  --tm-high: #a8521c;
+  --tm-done: #3f7a52;
+  --tm-white: #fbf6ea;
+
+  --tm-n-50: #f8f0df;
+  --tm-n-100: #efe3cb;
+  --tm-n-200: #e3d3b2;
+  --tm-n-300: #d0bc96;
+  --tm-n-400: #a8926f;
+  --tm-n-500: #6e5a44;
+  --tm-n-600: #5c4a36;
+  --tm-n-700: #4a3a29;
+  --tm-n-800: #3d3022;
+  --tm-n-900: #2b2116;
+  --tm-n-950: #1e170f;
+
+  --tm-a-50: #f6e6df;
+  --tm-a-100: #eed0c5;
+  --tm-a-200: #dea594;
+  --tm-a-300: #c97a65;
+  --tm-a-400: #b0503b;
+  --tm-a-500: #9c3a28;
+  --tm-a-600: #8b2e1f;
+  --tm-a-700: #74261a;
+  --tm-a-800: #5c1f15;
+  --tm-a-900: #451710;
+  --tm-a-950: #2c0e09;
+}
+
+/* Medieval dark: near-black layers, soft white ink, gold. */
+:root.dark {
+  color-scheme: dark;
+  --tm-canvas: #0e0e10;
+  --tm-sidebar: #141416;
+  --tm-raised: #1b1b1f;
+  --tm-overlay: #1d1d21;
+  --tm-ink: #ededf0;
+  --tm-ink-2: #a8a8b3;
+  --tm-ink-3: #8a8a95;
+  --tm-line: rgb(255 255 255 / 0.07);
+  --tm-line-strong: rgb(255 255 255 / 0.13);
+  --tm-hover: rgb(255 255 255 / 0.05);
+  --tm-selected: rgb(255 255 255 / 0.08);
+  --tm-accent: #d9a54a;
+  --tm-accent-hover: #e6b660;
+  --tm-accent-ink: #1a1408;
+  --tm-danger: #f2857a;
+  --tm-rubric: #d4d4da;
+  --tm-urgent: #f2857a;
+  --tm-high: #f0a868;
+  --tm-done: #6fbf8a;
+  --tm-white: #f5f5f7;
+
+  --tm-n-50: #f5f5f7;
+  --tm-n-100: #ededf0;
+  --tm-n-200: #d4d4da;
+  --tm-n-300: #b4b4bd;
+  --tm-n-400: #9a9aa4;
+  --tm-n-500: #84848e;
+  --tm-n-600: #5f5f68;
+  --tm-n-700: #3a3a41;
+  --tm-n-800: #26262b;
+  --tm-n-900: #18181b;
+  --tm-n-950: #0e0e10;
+
+  --tm-a-50: #fbf3e1;
+  --tm-a-100: #f5e3b8;
+  --tm-a-200: #ecd08c;
+  --tm-a-300: #e4bd66;
+  --tm-a-400: #ddb055;
+  --tm-a-500: #d9a54a;
+  --tm-a-600: #c48f35;
+  --tm-a-700: #a3742a;
+  --tm-a-800: #7d5920;
+  --tm-a-900: #4f3915;
+  --tm-a-950: #2e210c;
+}
+
+/* Clean (ADR 021, the default since ADR 039): a plain, Notion-like light theme. White pages, a soft grey sidebar,
+   warm charcoal ink, one blue accent, Inter (bundled) and no textures or ornaments.
+   The medieval display face becomes a semibold sans (see the type rules further down). */
+:root.clean {
+  color-scheme: light;
+  --font-display:
+    "Inter Variable", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+    Arial, sans-serif;
+  --font-sans: var(--font-display);
+
+  --tm-canvas: #ffffff;
+  --tm-sidebar: #f8f8f7;
+  --tm-raised: #ffffff;
+  --tm-overlay: #ffffff;
+  --tm-ink: #37352f;
+  --tm-ink-2: #6b6a66;
+  --tm-ink-3: #8a8984;
+  --tm-line: rgb(55 53 47 / 0.09);
+  --tm-line-strong: rgb(55 53 47 / 0.16);
+  --tm-hover: rgb(55 53 47 / 0.055);
+  --tm-selected: rgb(55 53 47 / 0.085);
+  --tm-accent: #2383e2;
+  --tm-accent-hover: #1a73cc;
+  --tm-accent-ink: #ffffff;
+  --tm-danger: #d44c47;
+  --tm-rubric: #5f5e5b;
+  --tm-urgent: #d44c47;
+  --tm-high: #cb6d18;
+  --tm-done: #448361;
+  --tm-white: #ffffff;
+
+  --tm-n-50: #fbfbfa;
+  --tm-n-100: #f4f4f2;
+  --tm-n-200: #e9e9e7;
+  --tm-n-300: #d5d5d2;
+  --tm-n-400: #a6a5a1;
+  --tm-n-500: #8a8984;
+  --tm-n-600: #6b6a66;
+  --tm-n-700: #55534e;
+  --tm-n-800: #43413b;
+  --tm-n-900: #37352f;
+  --tm-n-950: #252421;
+
+  --tm-a-50: #eef5fd;
+  --tm-a-100: #dbeafb;
+  --tm-a-200: #b7d5f6;
+  --tm-a-300: #88baef;
+  --tm-a-400: #559ce8;
+  --tm-a-500: #378fe6;
+  --tm-a-600: #2383e2;
+  --tm-a-700: #1a6fc4;
+  --tm-a-800: #175a9e;
+  --tm-a-900: #144a80;
+  --tm-a-950: #0d2f52;
+}
+
+/* Clean dark (ADR 039): the clean theme at night, not the candlelit medieval one. Soft
+   charcoal layers rather than black, warm off-white ink, hairline white borders and the
+   same blue accent, a little brighter to hold its contrast. */
+:root.clean.dark {
+  color-scheme: dark;
+  --tm-canvas: #191919;
+  --tm-sidebar: #202020;
+  --tm-raised: #252525;
+  --tm-overlay: #2a2a2a;
+  --tm-ink: #e8e7e4;
+  --tm-ink-2: #a3a29e;
+  --tm-ink-3: #82817d;
+  --tm-line: rgb(255 255 255 / 0.085);
+  --tm-line-strong: rgb(255 255 255 / 0.15);
+  --tm-hover: rgb(255 255 255 / 0.055);
+  --tm-selected: rgb(255 255 255 / 0.09);
+  --tm-accent: #3b91ea;
+  --tm-accent-hover: #5aa3ee;
+  --tm-accent-ink: #ffffff;
+  --tm-danger: #eb6f68;
+  --tm-rubric: #a3a29e;
+  --tm-urgent: #eb6f68;
+  --tm-high: #e0893b;
+  --tm-done: #55b080;
+  --tm-white: #f7f7f6;
+
+  --tm-n-50: #f7f7f6;
+  --tm-n-100: #e8e7e4;
+  --tm-n-200: #d0cfcb;
+  --tm-n-300: #b3b2ae;
+  --tm-n-400: #969591;
+  --tm-n-500: #82817d;
+  --tm-n-600: #5c5b58;
+  --tm-n-700: #3d3c3a;
+  --tm-n-800: #2c2c2b;
+  --tm-n-900: #202020;
+  --tm-n-950: #191919;
+
+  --tm-a-50: #e9f2fc;
+  --tm-a-100: #cfe3f9;
+  --tm-a-200: #a6cbf4;
+  --tm-a-300: #7cb3ef;
+  --tm-a-400: #5aa3ee;
+  --tm-a-500: #3b91ea;
+  --tm-a-600: #2383e2;
+  --tm-a-700: #1b6bbb;
+  --tm-a-800: #185592;
+  --tm-a-900: #143f6a;
+  --tm-a-950: #0d2742;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-canvas font-sans text-ink antialiased;
+  font-size: 14.5px;
+  line-height: 1.45;
+  font-optical-sizing: auto;
+}
+
+/* The quick-capture window is transparent; its rounded panel paints the background. */
+html.capture-window,
+html.capture-window body {
+  background: transparent;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--tm-accent) 30%, transparent);
+}
+
+/* Clean type: Notion-sized sans body, and the display face's places (titles, section
+   headings, primary buttons) set as tight semibold sans instead. Unlayered on purpose, so
+   these win over the `tracking-wide` and `font-normal` utilities written for MedievalSharp.
+   Display text tinted with the accent (dialog titles, the sidebar name) goes back to ink:
+   in this theme blue is for actions only. */
+:root.clean body {
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+:root.clean .font-display {
+  font-weight: 600;
+  letter-spacing: -0.011em;
+}
+:root.clean :where(button, a).font-display {
+  font-weight: 500;
+  letter-spacing: 0;
+}
+:root.clean .font-display.text-accent {
+  color: var(--tm-ink);
+}
+
+/* Parchment texture: a pre-rendered calfskin tile under the CSS vignettes. The dark and
+   clean themes stay flat. Images, never fine repeating gradients: WebKitGTK rasterizes those per pixel
+   on the CPU for every repaint (docs/rendering-performance.md). The WebPs are translucent
+   overlays generated by scripts/parchment/generate.py, so they sit on each surface's own
+   colour token.
+
+   Weathering (Settings > Appearance, lib/weathering.ts) adds optional layers, switched on
+   by `wx-*` classes on <html>. Each is a variable that stays `none` until its class is
+   set, so an unused image is never fetched or decoded. Window-sized layers are stretched
+   to the window; the sidebar pins them to the window with `fixed` so they line up with the
+   canvas behind it. The coffee stain keeps its own size in the board's lower right. */
+:root {
+  --wx-burnt: none;
+  --wx-fold: none;
+  --wx-water: none;
+  --wx-coffee: none;
+}
+:root.wx-burnt {
+  --wx-burnt: url("./assets/parchment/parchment-burnt.webp");
+}
+:root.wx-fold {
+  --wx-fold: url("./assets/parchment/parchment-fold.webp");
+}
+:root.wx-water {
+  --wx-water: url("./assets/parchment/parchment-water.webp");
+}
+:root.wx-coffee {
+  --wx-coffee: url("./assets/parchment/parchment-coffee.webp");
+}
+
+:root:not(.dark, .clean) .tex-canvas,
+:root:not(.dark, .clean) .tex-canvas-pinned {
+  background-image:
+    var(--wx-burnt), var(--wx-fold), var(--wx-water), var(--wx-coffee),
+    radial-gradient(ellipse 140% 120% at 50% 45%, rgb(0 0 0 / 0) 55%, rgb(120 80 30 / 0.1) 100%),
+    url("./assets/parchment/parchment-calfskin.webp");
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    auto,
+    auto,
+    auto;
+  background-position:
+    0 0,
+    0 0,
+    0 0,
+    right 48px bottom 24px,
+    0 0,
+    0 0;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+}
+
+/* The same canvas texture on an opaque sticky bar (the board's column headers). The window is
+   the canvas, so pinning every layer to the viewport makes the bar line up with the texture
+   behind it instead of showing a flat or restarted patch. */
+:root:not(.dark, .clean) .tex-canvas-pinned {
+  background-attachment: fixed;
+}
+
+:root:not(.dark, .clean) .tex-sidebar {
+  background-image:
+    var(--wx-burnt), var(--wx-fold), var(--wx-water),
+    radial-gradient(
+      ellipse 160% 100% at 0% 50%,
+      rgb(255 250 235 / 0.35) 0%,
+      rgb(255 250 235 / 0) 70%
+    ),
+    url("./assets/parchment/parchment-calfskin.webp");
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    auto,
+    auto;
+  background-attachment: fixed, fixed, fixed, scroll, scroll;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+}
+
+:root:not(.dark, .clean) .tex-sheet {
+  background-image:
+    radial-gradient(
+      ellipse 110% 80% at 50% 30%,
+      rgb(255 252 243 / 0.7) 0%,
+      rgb(255 252 243 / 0) 65%
+    ),
+    radial-gradient(ellipse 130% 110% at 50% 50%, rgb(0 0 0 / 0) 70%, rgb(140 95 35 / 0.09) 100%),
+    url("./assets/parchment/parchment-calfskin.webp");
+}
+
+/* Menus, dropdowns and pickers (MENU in components/ui.tsx): a soft layered shadow and a
+   quick scale-in from the side they open on. */
+.tm-menu {
+  box-shadow:
+    0 1px 2px rgb(70 45 10 / 0.08),
+    0 10px 28px -6px rgb(70 45 10 / 0.22);
+  transform-origin: var(
+    --radix-select-content-transform-origin,
+    var(
+      --radix-dropdown-menu-content-transform-origin,
+      var(
+        --radix-context-menu-content-transform-origin,
+        var(--radix-popover-content-transform-origin)
+      )
+    )
+  );
+}
+.dark .tm-menu {
+  box-shadow:
+    0 0 0 1px rgb(0 0 0 / 0.35),
+    0 12px 32px -6px rgb(0 0 0 / 0.65);
+}
+.clean .tm-menu {
+  box-shadow:
+    0 0 0 1px rgb(15 15 15 / 0.04),
+    0 3px 6px rgb(15 15 15 / 0.06),
+    0 9px 24px rgb(15 15 15 / 0.12);
+}
+.clean.dark .tm-menu {
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.06),
+    0 3px 6px rgb(0 0 0 / 0.3),
+    0 12px 28px rgb(0 0 0 / 0.45);
+}
+.tm-menu[data-state="open"] {
+  animation: tm-menu-in 110ms ease-out;
+}
+@keyframes tm-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tm-menu[data-state="open"] {
+    animation: none;
+  }
+}
+
+/* Thin, quiet scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--tm-line-strong) transparent;
+}
+
+/* Rendered task descriptions (MarkdownView). Colors come from the theme variables, so
+   both themes follow; sizes are relative to the container's font size. */
+.tm-prose {
+  color: var(--tm-ink);
+  overflow-wrap: anywhere;
+}
+/* An @mention of a team member in rendered markdown (lib/mentions.ts). */
+.tm-mention {
+  border-radius: 0.25rem;
+  padding: 0 0.125rem;
+  font-weight: 500;
+  background: color-mix(in srgb, var(--tm-accent) 15%, transparent);
+}
+.tm-prose > :first-child {
+  margin-top: 0;
+}
+.tm-prose > :last-child {
+  margin-bottom: 0;
+}
+.tm-prose :where(p, ul, ol, blockquote, pre, table, hr) {
+  margin: 0.6em 0;
+}
+.tm-prose :where(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  line-height: 1.25;
+  margin: 1em 0 0.4em;
+  color: var(--tm-rubric);
+}
+.tm-prose h1 {
+  font-size: 1.6em;
+}
+.tm-prose h2 {
+  font-size: 1.35em;
+}
+.tm-prose h3 {
+  font-size: 1.15em;
+}
+.tm-prose :where(h4, h5, h6) {
+  font-size: 1em;
+  color: var(--tm-ink-2);
+}
+.clean .tm-prose :where(h1, h2, h3) {
+  color: var(--tm-ink);
+  letter-spacing: -0.012em;
+}
+/* The same headings while editing (markdownHeadings.ts decorates the lines). The spans
+   lose CodeMirror's underline and bold, as the rendered headings have neither. */
+.cm-line:where(.cm-md-h1, .cm-md-h2, .cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6) {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  line-height: 1.4;
+  color: var(--tm-rubric);
+}
+.cm-line:where(.cm-md-h1, .cm-md-h2, .cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6) span {
+  text-decoration: none;
+  font-weight: inherit;
+}
+.cm-line.cm-md-h1 {
+  font-size: 1.6em;
+}
+.cm-line.cm-md-h2 {
+  font-size: 1.35em;
+}
+.cm-line.cm-md-h3 {
+  font-size: 1.15em;
+}
+.cm-line:where(.cm-md-h4, .cm-md-h5, .cm-md-h6) {
+  color: var(--tm-ink-2);
+}
+.clean .cm-line:where(.cm-md-h1, .cm-md-h2, .cm-md-h3) {
+  color: var(--tm-ink);
+  letter-spacing: -0.012em;
+}
+.clean .cm-line:where(.cm-md-h1, .cm-md-h2, .cm-md-h3, .cm-md-h4, .cm-md-h5, .cm-md-h6) {
+  font-weight: 600;
+}
+.tm-prose a {
+  color: var(--tm-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tm-prose a:hover {
+  color: var(--tm-accent-hover);
+}
+.tm-prose :where(ul, ol) {
+  padding-left: 1.4em;
+}
+.tm-prose ul {
+  list-style: disc;
+}
+.tm-prose ol {
+  list-style: decimal;
+}
+.tm-prose li {
+  margin: 0.15em 0;
+}
+.tm-prose li::marker {
+  color: var(--tm-ink-3);
+}
+.tm-prose li.task-list-item {
+  list-style: none;
+  margin-left: -1.3em;
+}
+.tm-prose li.task-list-item > input[type="checkbox"] {
+  accent-color: var(--tm-accent);
+  margin-right: 0.45em;
+  vertical-align: -0.1em;
+  cursor: pointer;
+}
+.tm-prose li.task-list-item > input[type="checkbox"]:disabled {
+  cursor: default;
+}
+.tm-prose li.task-list-item:has(> input:checked) {
+  color: var(--tm-ink-3);
+  text-decoration: line-through;
+}
+.tm-prose blockquote {
+  border-left: 3px solid var(--tm-line-strong);
+  padding-left: 0.9em;
+  color: var(--tm-ink-2);
+  font-style: italic;
+}
+.tm-prose code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--tm-hover);
+  border: 1px solid var(--tm-line);
+  border-radius: 4px;
+  padding: 0.05em 0.3em;
+}
+.tm-prose pre {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  line-height: 1.5;
+  background: var(--tm-hover);
+  border: 1px solid var(--tm-line);
+  border-radius: 8px;
+  padding: 0.7em 0.9em;
+  overflow-x: auto;
+}
+.tm-prose pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 1em;
+}
+.tm-prose hr {
+  border: 0;
+  border-top: 1px solid var(--tm-line-strong);
+}
+.tm-prose table {
+  border-collapse: collapse;
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  font-size: 0.92em;
+}
+.tm-prose :where(th, td) {
+  border: 1px solid var(--tm-line-strong);
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+.tm-prose th {
+  background: var(--tm-hover);
+  font-weight: 600;
+}
+.tm-prose :where(strong, b) {
+  font-weight: 650;
+}
+.tm-prose del {
+  color: var(--tm-ink-3);
+}
+
+/* Drop cap in task descriptions (page and side panel): the first letter of an opening paragraph, in the
+   display face and rubric color, two lines tall. Only on the rendered view (the editor
+   measures lines, so it never gets one). Each heading opens a new one: full size under
+   a top-level heading, smaller under the lower ones. */
+.tm-dropcap > p:first-child::first-letter,
+.tm-dropcap > :where(h1, h2, h3, h4, h5, h6) + p::first-letter {
+  float: left;
+  font-family: var(--font-display);
+  color: var(--tm-rubric);
+  font-size: 3.35em;
+  line-height: 0.85;
+  padding: 0.06em 0.08em 0 0;
+}
+.tm-dropcap > :where(h2, h3, h4, h5, h6) + p::first-letter {
+  font-size: 2.4em;
+  padding-top: 0.08em;
+}
+/* The clean theme has no drop caps. */
+:root.clean .tm-dropcap > p:first-child::first-letter,
+:root.clean .tm-dropcap > :where(h1, h2, h3, h4, h5, h6) + p::first-letter {
+  float: none;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+}
+/* A heading never sits beside the previous section's drop cap. */
+.tm-dropcap > :where(h1, h2, h3, h4, h5, h6) {
+  clear: left;
+}
+/* Sans headings need weight to stand apart from the body (the display face does not). */
+.clean .tm-prose :where(h1, h2, h3, h4, h5, h6) {
+  font-weight: 600;
+}
+
+/* Middle-button pan on the board (useMiddleDragPan): one grabbing hand over everything
+   (unlayered, so it beats the cards' cursor-grab utility) and no selection while dragging. */
+[data-panning],
+[data-panning] * {
+  cursor: grabbing;
+  user-select: none;
+}

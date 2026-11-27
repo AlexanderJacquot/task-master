@@ -1,0 +1,159 @@
+# Lint, test and build on every branch push and PR (ADR 010, ADR 041). Runs on the public
+# GitHub repository, where Actions minutes are free; version tags are left to release.yml.
+
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["v*"]
+  pull_request:
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    # whisper-rs-sys generates its bindings here with the runner's preinstalled libclang
+    # (clang 13-15 ship on ubuntu-22.04), like release.yml; local Linux builds use its
+    # shipped bindings instead (devenv.nix, .cargo/config.toml).
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v6.1.0
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl file pkg-config libssl-dev \
+            libwebkit2gtk-4.1-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # rustup reads the pinned toolchain from rust-toolchain.toml.
+      - name: Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: swatinem/rust-cache@v2.9.2
+
+      # sherpa-onnx-sys downloads its libraries into target/sherpa-onnx-prebuilt. rust-cache
+      # deletes every file there but keeps the folders, and the build script only checks that
+      # `lib/` exists: it never downloads again, and building the crate fails with "could not
+      # find native static library `sherpa-onnx-c-api`" (v0.28.0, v0.28.1). Without the
+      # library itself, drop the folder and the crate's build outputs so the script runs
+      # and downloads it.
+      - name: Re-download sherpa-onnx when its libraries are not cached
+        shell: bash
+        run: |
+          if [ -d target ] && ! find target/sherpa-onnx-prebuilt -type f \
+            -name '*sherpa-onnx-c-api*' 2>/dev/null | grep -q .; then
+            rm -rf target/sherpa-onnx-prebuilt
+            find target -maxdepth 4 \( -path '*/build/sherpa-onnx-sys-*' \
+              -o -path '*/.fingerprint/sherpa-onnx-sys-*' \) -prune -exec rm -rf {} +
+          fi
+
+      # pnpm version comes from `packageManager` in package.json.
+      - uses: pnpm/action-setup@v6.1.0
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rust format
+        run: cargo fmt --all --check
+
+      - name: Rust lint
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --workspace --locked
+
+      # The export_bindings test regenerates bindings.ts; it must match the committed copy.
+      - name: Bindings up to date
+        run: git diff --exit-code -- apps/desktop/src/bindings.ts
+
+      - name: TS lint and format
+        run: pnpm biome ci .
+
+      - name: TS typecheck
+        run: pnpm typecheck
+
+      - name: TS tests
+        run: pnpm test
+
+      # Unsigned: update bundles are only made by release.yml (ADR 009). The sidecar config
+      # builds the MCP server and bundles it next to the app (ADR 017).
+      - name: Tauri build
+        run: pnpm --filter desktop tauri build --bundles deb --config src-tauri/tauri.sidecar.conf.json
+
+  # Scribe's audio capture (ADR 026) only compiles on Windows and macOS: lint and test the
+  # desktop crate there too, so a break shows before a release tag.
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.platform }}
+    env:
+      CARGO_TERM_COLOR: always
+      # What tauri-cli builds the release for (`minimumSystemVersion`): whisper.cpp needs
+      # 10.15. Ignored on Windows.
+      MACOSX_DEPLOYMENT_TARGET: "10.15"
+    steps:
+      - uses: actions/checkout@v6.1.0
+
+      - name: Rust toolchain
+        shell: bash
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          if [ "$RUNNER_OS" = macOS ]; then rustup target add x86_64-apple-darwin; fi
+
+      # v2: caches from before MACOSX_DEPLOYMENT_TARGET recompile sherpa-onnx-sys without
+      # its build script, whose downloaded libraries rust-cache does not keep.
+      - uses: swatinem/rust-cache@v2.9.2
+        with:
+          key: native-v2-${{ matrix.platform }}
+
+      # sherpa-onnx-sys downloads its libraries into target/sherpa-onnx-prebuilt. rust-cache
+      # deletes every file there but keeps the folders, and the build script only checks that
+      # `lib/` exists: it never downloads again, and building the crate fails with "could not
+      # find native static library `sherpa-onnx-c-api`" (v0.28.0, v0.28.1). Without the
+      # library itself, drop the folder and the crate's build outputs so the script runs
+      # and downloads it.
+      - name: Re-download sherpa-onnx when its libraries are not cached
+        shell: bash
+        run: |
+          if [ -d target ] && ! find target/sherpa-onnx-prebuilt -type f \
+            -name '*sherpa-onnx-c-api*' 2>/dev/null | grep -q .; then
+            rm -rf target/sherpa-onnx-prebuilt
+            find target -maxdepth 4 \( -path '*/build/sherpa-onnx-sys-*' \
+              -o -path '*/.fingerprint/sherpa-onnx-sys-*' \) -prune -exec rm -rf {} +
+          fi
+
+      # `generate_context!` wants the frontend folder; the UI itself is not needed here.
+      - name: Frontend placeholder
+        shell: bash
+        run: mkdir -p apps/desktop/dist
+
+      - name: Rust lint (desktop)
+        run: cargo clippy -p taskmaster-desktop --all-targets --locked -- -D warnings
+
+      - name: Rust tests (desktop)
+        run: cargo test -p taskmaster-desktop --locked
+
+      # task-master-mcp.exe carries a version resource on Windows (crates/mcp/build.rs,
+      # ADR 036), which only the Windows resource compiler builds.
+      - name: Rust build (MCP server, Windows)
+        if: runner.os == 'Windows'
+        run: cargo build -p taskmaster-mcp --locked
+
+      # The Intel release is cross-built on this Arm runner: build its native code too.
+      - name: Rust check (desktop, Intel macOS)
+        if: runner.os == 'macOS'
+        run: cargo check -p taskmaster-desktop --locked --target x86_64-apple-darwin

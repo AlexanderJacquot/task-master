@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="How task-master's Windows releases are built and code-signed, and who may approve a signature." />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#191919" media="(prefers-color-scheme: dark)" />
+    <title>Code signing policy — task-master</title>
+    <link rel="canonical" href="https://alexanderjacquot.github.io/task-master/code-signing.html" />
+    <link rel="icon" type="image/svg+xml" href="assets/logo.svg" />
+    <link rel="icon" type="image/png" href="assets/app-icon.png" />
+    <link rel="stylesheet" href="assets/site.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header"><a class="brand" href="./" aria-label="task-master home"><img src="assets/logo.svg" alt="" width="32" height="32" /><span>task-master</span></a><nav aria-label="Main navigation"><a href="./">Home</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a></nav></header>
+    <main id="main" class="document">
+      <p class="eyebrow">Releases</p>
+      <h1>Code signing policy</h1>
+      <p class="updated">Effective date: <time datetime="2026-11-22">22 November 2026</time></p>
+      <p class="intro">Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a>.</p>
+      <section aria-labelledby="what"><h2 id="what">1. What is signed</h2><p>The Windows files of each <a href="https://github.com/AlexanderJacquot/task-master/releases">task-master release</a> are signed: the app (<code>taskmaster-desktop.exe</code>), its MCP server (<code>task-master-mcp.exe</code>), the setup <code>.exe</code> and the <code>.msi</code>. Windows shows SignPath Foundation as their publisher.</p><p>They are built from the <a href="https://github.com/AlexanderJacquot/task-master">public source code</a> by the project's <a href="https://github.com/AlexanderJacquot/task-master/blob/main/.github/workflows/release.yml">release workflow</a> on GitHub-hosted runners, from a version tag. Nothing built elsewhere, including on a maintainer's computer, is signed. Third-party libraries built into the app keep their own open-source licenses.</p></section>
+      <section aria-labelledby="team"><h2 id="team">2. Team roles</h2><dl class="permissions"><div><dt>Committers and reviewers</dt><dd><a href="https://github.com/AlexanderJacquot">Alexander Jacquot</a>. Changes from anyone else are reviewed by him before they are merged.</dd></div><div><dt>Approvers</dt><dd><a href="https://github.com/AlexanderJacquot">Alexander Jacquot</a>. Every signing request is approved by hand in SignPath.</dd></div></dl><p>Team members use multi-factor authentication on GitHub and SignPath.</p></section>
+      <section aria-labelledby="privacy"><h2 id="privacy">3. Privacy</h2><p>The app stores your tasks on your device. It contacts GitHub to check for updates. It contacts other services only when you use them: your own sync server, Google Calendar, backup storage, Hugging Face to download transcription models, and Anthropic with your own Claude login to show your Claude plan usage. The <a href="privacy.html">privacy policy</a> has the details.</p></section>
+      <section id="contact" aria-labelledby="contact-title"><h2 id="contact-title">4. Reporting a problem</h2><p>If you find a signed file that was not built this way, or have a question about this policy, open an issue on the <a href="https://github.com/AlexanderJacquot/task-master/issues">project support page</a>.</p></section>
+    </main>
+    <footer class="site-footer"><span>task-master · An independent project</span><nav aria-label="Legal and support"><a href="./">Home</a><a href="privacy.html">Privacy policy</a><a href="terms.html">Terms of service</a><a href="code-signing.html" aria-current="page">Code signing policy</a><a href="#contact">Contact</a></nav></footer>
+  </body>
+</html>

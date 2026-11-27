@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <title>Task Master</title>
+  <defs>
+    <linearGradient id="tm-tile" x1="0" y1="32" x2="0" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#33322f"/>
+      <stop offset="1" stop-color="#1c1b1a"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="448" height="448" rx="104" fill="url(#tm-tile)"/>
+  <rect x="33.5" y="33.5" width="445" height="445" rx="102.5" stroke="#ffffff" stroke-opacity=".08" stroke-width="3"/>
+  <rect x="112" y="307" width="288" height="58" rx="29" fill="#ffffff" fill-opacity=".32"/>
+  <rect x="150" y="227" width="212" height="58" rx="29" fill="#ffffff" fill-opacity=".64"/>
+  <rect x="188" y="147" width="136" height="58" rx="29" fill="#3b91ea"/>
+  <path d="M234 177l15 14 30-31" stroke="#ffffff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

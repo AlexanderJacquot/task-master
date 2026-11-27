@@ -1,0 +1,2844 @@
+//! Commands: the only way to change data. Each one validates against the current state and
+//! compiles to row [`Change`]s applied through the op engine, inside the caller's batch.
+
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
+
+use crate::clock::{check_date, check_id, new_id};
+use crate::error::{Error, Result};
+use crate::model::{
+    AgentRuntime, BlockOutcome, EpicState, FILTER_NONE, Id, IsoDate, MeetingState, Priority,
+    SessionState, ShowAs, Status, StatusCategory, Task, TaskOwner, Timestamp, VIEW_SPEC_VERSION,
+    ViewScope, ViewSpec,
+};
+use crate::ops::{Batch, Change, Entity, OpKind};
+use crate::{files, query, rank};
+
+/// A user action. Several commands sent together form one undoable batch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Command {
+    CreateTask {
+        task: NewTask,
+    },
+    UpdateTask {
+        id: Id,
+        changes: Vec<TaskChange>,
+    },
+    /// Drag and drop: new column and position.
+    MoveTask {
+        id: Id,
+        status_id: Id,
+        rank: String,
+    },
+    /// Makes the task a subtask of `parent_id`, or a top-level task when `None`.
+    /// The task (and its subtasks) take the parent's project and epic.
+    SetParent {
+        id: Id,
+        parent_id: Option<Id>,
+    },
+    /// Soft-deletes the task and all its subtasks.
+    DeleteTask {
+        id: Id,
+    },
+    TagTask {
+        task_id: Id,
+        tag_id: Id,
+    },
+    UntagTask {
+        task_id: Id,
+        tag_id: Id,
+    },
+    CreateProject {
+        project: NewProject,
+    },
+    UpdateProject {
+        id: Id,
+        changes: Vec<ProjectChange>,
+    },
+    /// Refused while the project still holds tasks, epics or child projects.
+    DeleteProject {
+        id: Id,
+    },
+    CreateEpic {
+        epic: NewEpic,
+    },
+    UpdateEpic {
+        id: Id,
+        changes: Vec<EpicChange>,
+    },
+    /// Detaches its tasks, then deletes the epic.
+    DeleteEpic {
+        id: Id,
+    },
+    CreateTag {
+        tag: NewTag,
+    },
+    UpdateTag {
+        id: Id,
+        changes: Vec<TagChange>,
+    },
+    /// Removes the tag from every task, then deletes it.
+    DeleteTag {
+        id: Id,
+    },
+    /// A workflow column (settings).
+    CreateStatus {
+        status: NewStatus,
+    },
+    UpdateStatus {
+        id: Id,
+        changes: Vec<StatusChange>,
+    },
+    /// Refused while tasks are in it, or when it is the last `todo` or `done` column.
+    DeleteStatus {
+        id: Id,
+    },
+    CreateView {
+        view: NewView,
+    },
+    UpdateView {
+        id: Id,
+        changes: Vec<ViewChange>,
+    },
+    DeleteView {
+        id: Id,
+    },
+    /// Records a file already stored by hash (see `FileStore`) as attached to a task.
+    CreateAttachment {
+        attachment: NewAttachment,
+    },
+    UpdateAttachment {
+        id: Id,
+        changes: Vec<AttachmentChange>,
+    },
+    /// Detaches the file. Its content stays stored, so undo brings it back.
+    DeleteAttachment {
+        id: Id,
+    },
+    /// Places a task on the calendar.
+    CreateTimeBlock {
+        block: NewTimeBlock,
+    },
+    /// Moves, resizes or sets the outcome of a block. The result must still end after it
+    /// starts.
+    UpdateTimeBlock {
+        id: Id,
+        changes: Vec<TimeBlockChange>,
+    },
+    DeleteTimeBlock {
+        id: Id,
+    },
+    /// Records a Claude Code run started on this device (docs/adr/017). Usually sent with
+    /// [`crate::Store::execute_without_undo`]: sessions are not user edits.
+    CreateAgentSession {
+        session: NewAgentSession,
+    },
+    /// Only the device that started the session may update it. Leaving `running` sets
+    /// `ended_at`; going back to `running` (a follow-up turn) clears it.
+    UpdateAgentSession {
+        id: Id,
+        changes: Vec<AgentSessionChange>,
+    },
+    /// Removes a finished session (and its notes) from the task's history.
+    DeleteAgentSession {
+        id: Id,
+    },
+    /// A progress line from the agent, on its session's task.
+    AddAgentNote {
+        note: NewAgentNote,
+    },
+    /// Adds a meeting (Scribe, ADR 025).
+    CreateMeeting {
+        meeting: NewMeeting,
+    },
+    /// Edits a meeting. The result must still end after it starts.
+    UpdateMeeting {
+        id: Id,
+        changes: Vec<MeetingChange>,
+    },
+    /// Removes a meeting; its attachments are hidden with it, and undo brings both back.
+    DeleteMeeting {
+        id: Id,
+    },
+    /// Replaces a meeting's transcript (Scribe, M20): its live segments are removed and
+    /// these written, the speaker names cleared, `transcribed_at` set and the meeting moved
+    /// to `review`. One batch, so one undo.
+    SetTranscript {
+        meeting_id: Id,
+        segments: Vec<NewSegment>,
+    },
+    /// Corrects a transcript segment.
+    UpdateSegment {
+        id: Id,
+        changes: Vec<SegmentChange>,
+    },
+    /// Cuts a segment in two at a character of its text (`at`, counted in characters);
+    /// the time is shared in proportion. The second part gets `new_id`.
+    SplitSegment {
+        id: Id,
+        at: u32,
+        new_id: Option<Id>,
+    },
+    DeleteSegment {
+        id: Id,
+    },
+    /// Gives every segment of speaker `from` to `to` (one voice found as two).
+    ReassignSpeaker {
+        meeting_id: Id,
+        from: String,
+        to: String,
+    },
+    /// Records Claude Code sessions run in a terminal, as read from their transcripts on
+    /// this device (M21, ADR 028): new ones are added with the project whose folder holds
+    /// them, known ones updated; the app's own runs and sessions the user removed are
+    /// skipped. Usually sent with [`crate::Store::execute_without_undo`].
+    RecordTerminalSessions {
+        sessions: Vec<crate::terminal::TerminalSessionRecord>,
+    },
+    /// Sets a terminal session's project or task by hand.
+    UpdateTerminalSession {
+        id: Id,
+        changes: Vec<crate::terminal::TerminalSessionChange>,
+    },
+    /// Removes a terminal session from the totals; reading its transcript again does not
+    /// bring it back.
+    DeleteTerminalSession {
+        id: Id,
+    },
+    /// Adds a note (ADR 032).
+    CreateNote {
+        note: crate::notes::NewNote,
+    },
+    UpdateNote {
+        id: Id,
+        changes: Vec<crate::notes::NoteChange>,
+    },
+    /// Removes a note; undo brings it back.
+    DeleteNote {
+        id: Id,
+    },
+    CreateNoteFolder {
+        folder: crate::notes::NewNoteFolder,
+    },
+    UpdateNoteFolder {
+        id: Id,
+        changes: Vec<crate::notes::NoteFolderChange>,
+    },
+    /// Moves the folder's notes to the top level, then deletes it.
+    DeleteNoteFolder {
+        id: Id,
+    },
+    /// Sets this person's marks on a task of the team space (ADR 033), in their personal
+    /// space. The front end edits `today_on` on any task; the spaces layer turns that into
+    /// this command for team tasks.
+    SetTaskMark {
+        task_id: Id,
+        today_on: Option<IsoDate>,
+    },
+    /// Adds a person to the team space (ADR 033). Only the server writes members, from its
+    /// users; it refuses member ops pushed by a device.
+    CreateMember {
+        member: NewMember,
+    },
+    UpdateMember {
+        id: Id,
+        changes: Vec<MemberChange>,
+    },
+    /// Removes a person; their tasks keep the assignee id, shown as a former member.
+    DeleteMember {
+        id: Id,
+    },
+    /// Adds a comment to a task (ADR 033), written as the store's author.
+    CreateComment {
+        comment: NewComment,
+    },
+    /// Changes a comment's text; in a team space only its author may.
+    UpdateComment {
+        id: Id,
+        body: String,
+    },
+    /// Removes a comment; in a team space only its author may. Undo brings it back.
+    DeleteComment {
+        id: Id,
+    },
+}
+
+/// Longest comment, in characters.
+pub const MAX_COMMENT_CHARS: usize = 20_000;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewComment {
+    /// Client-generated UUID; generated when absent.
+    pub id: Option<Id>,
+    pub task_id: Id,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewMember {
+    /// The server's user id.
+    pub id: Id,
+    pub name: String,
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MemberChange {
+    Name(String),
+    Color(Option<String>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewAgentSession {
+    pub id: Option<Id>,
+    pub task_id: Id,
+    /// A UUID, given to `claude --session-id`.
+    pub claude_session_id: String,
+    pub folder: String,
+    pub runtime: AgentRuntime,
+    /// One of [`PERMISSION_MODES`].
+    pub permission_mode: String,
+    /// Claude Code `--model`; `None` for the default.
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub prompt: String,
+}
+
+/// Claude Code `--permission-mode` values a session may use.
+pub const PERMISSION_MODES: &[&str] = &["default", "acceptEdits", "plan", "bypassPermissions"];
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum AgentSessionChange {
+    State(SessionState),
+    Summary(Option<String>),
+    CostUsdMicros(Option<i64>),
+    Turns(Option<i64>),
+    DurationMs(Option<i64>),
+    Error(Option<String>),
+    /// The conversation's own id, once known: a session opened in the desktop app gets
+    /// one there, not from the app (M22).
+    ClaudeSessionId(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewAgentNote {
+    pub id: Option<Id>,
+    pub session_id: Id,
+    pub body: String,
+}
+
+/// Longest agent note, in characters.
+pub const MAX_NOTE_CHARS: usize = 4000;
+
+/// Fields for a new task. Only `title` is required; the rest have defaults.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct NewTask {
+    /// Client-generated UUID (for optimistic UIs); generated when absent.
+    pub id: Option<Id>,
+    pub title: String,
+    pub description: String,
+    /// `agent` for an agent's own tasks; defaults to `me`.
+    pub owner: TaskOwner,
+    /// Defaults to the parent's project; `None` puts the task in the Inbox.
+    pub project_id: Option<Id>,
+    /// Defaults to the parent's epic.
+    pub epic_id: Option<Id>,
+    pub parent_id: Option<Id>,
+    /// Defaults to the first status in the `todo` category.
+    pub status_id: Option<Id>,
+    pub priority: Priority,
+    pub due_date: Option<IsoDate>,
+    pub today_on: Option<IsoDate>,
+    pub estimate_min: Option<i64>,
+    /// Defaults to the end of its status column.
+    pub rank: Option<String>,
+    pub tag_ids: Vec<Id>,
+    /// A member of the team space (ADR 033); only on team tasks.
+    #[serde(default)]
+    pub assignee_id: Option<Id>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum TaskChange {
+    DependencyIds(Vec<Id>),
+    /// Adopting an agent task: `agent` → `me`.
+    Owner(TaskOwner),
+    Title(String),
+    Description(String),
+    Priority(Priority),
+    DueDate(Option<IsoDate>),
+    TodayOn(Option<IsoDate>),
+    EstimateMin(Option<i64>),
+    /// A live member of the team space, or `None` (ADR 033).
+    AssigneeId(Option<Id>),
+    /// Subtasks that shared the old project follow.
+    ProjectId(Option<Id>),
+    /// Subtasks that shared the old epic follow.
+    EpicId(Option<Id>),
+    StatusId(Id),
+    Rank(String),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct NewProject {
+    pub id: Option<Id>,
+    pub name: String,
+    /// The area this project sits in. Areas cannot themselves have a parent.
+    pub parent_id: Option<Id>,
+    pub color: Option<String>,
+    pub icon: Option<String>,
+    pub rank: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectChange {
+    Name(String),
+    Color(Option<String>),
+    Icon(Option<String>),
+    ParentId(Option<Id>),
+    Rank(String),
+    Archived(bool),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct NewEpic {
+    pub id: Option<Id>,
+    pub name: String,
+    pub color: Option<String>,
+    pub icon: Option<String>,
+    pub project_id: Option<Id>,
+    pub description: Option<String>,
+    pub target_date: Option<IsoDate>,
+    pub rank: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum EpicChange {
+    Color(Option<String>),
+    Icon(Option<String>),
+    Name(String),
+    Description(Option<String>),
+    TargetDate(Option<IsoDate>),
+    State(EpicState),
+    ProjectId(Option<Id>),
+    Rank(String),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(default)]
+pub struct NewTag {
+    pub id: Option<Id>,
+    /// A leading `#` is stripped. No whitespace.
+    pub name: String,
+    pub color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewStatus {
+    pub id: Option<Id>,
+    pub name: String,
+    pub category: StatusCategory,
+    pub color: Option<String>,
+    pub rank: Option<String>,
+    pub wip_limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum StatusChange {
+    Name(String),
+    /// Refused while tasks are in the column (their `completed_at` would no longer agree).
+    Category(StatusCategory),
+    Color(Option<String>),
+    Rank(String),
+    /// `None` removes the limit.
+    WipLimit(Option<i64>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewView {
+    pub id: Option<Id>,
+    pub name: String,
+    pub spec: ViewSpec,
+    pub rank: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum ViewChange {
+    Name(String),
+    Spec(Box<ViewSpec>),
+    Rank(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewAttachment {
+    pub id: Option<Id>,
+    /// The task, meeting or note it is attached to: exactly one of the three.
+    #[serde(default)]
+    pub task_id: Option<Id>,
+    #[serde(default)]
+    pub meeting_id: Option<Id>,
+    #[serde(default)]
+    pub note_id: Option<Id>,
+    /// From `FileStore::put_*`.
+    pub hash: String,
+    /// Folders are stripped.
+    pub name: String,
+    /// Guessed from the name when absent.
+    pub mime: Option<String>,
+    pub size: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum AttachmentChange {
+    Name(String),
+}
+
+/// Longest time block: one day.
+pub const MAX_BLOCK_MS: i64 = 24 * 60 * 60 * 1000;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewTimeBlock {
+    pub id: Option<Id>,
+    pub task_id: Id,
+    /// Unix ms.
+    pub start_at: Timestamp,
+    /// Unix ms, after `start_at`, at most [`MAX_BLOCK_MS`] later.
+    pub end_at: Timestamp,
+    /// Defaults to `planned`.
+    #[serde(default)]
+    pub outcome: Option<BlockOutcome>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum TimeBlockChange {
+    StartAt(Timestamp),
+    EndAt(Timestamp),
+    Outcome(BlockOutcome),
+}
+
+/// Most participants a meeting may list.
+pub const MAX_PARTICIPANTS: usize = 100;
+/// Longest participant name.
+const MAX_PARTICIPANT_CHARS: usize = 200;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewMeeting {
+    pub id: Option<Id>,
+    pub title: String,
+    /// Unix ms.
+    pub started_at: Timestamp,
+    /// Unix ms, after `started_at`, at most [`MAX_BLOCK_MS`] later. `None` while
+    /// recording.
+    #[serde(default)]
+    pub ended_at: Option<Timestamp>,
+    #[serde(default)]
+    pub project_id: Option<Id>,
+    #[serde(default)]
+    pub epic_id: Option<Id>,
+    #[serde(default)]
+    pub task_id: Option<Id>,
+    /// Defaults to `scheduled`.
+    #[serde(default)]
+    pub state: Option<MeetingState>,
+    /// Trimmed; blanks and repeats (ignoring case) are dropped.
+    #[serde(default)]
+    pub participants: Vec<String>,
+    #[serde(default)]
+    pub notes: String,
+    /// Defaults to `busy`.
+    #[serde(default)]
+    pub show_as: Option<ShowAs>,
+    /// Defaults to private.
+    #[serde(default)]
+    pub private: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum MeetingChange {
+    Title(String),
+    StartedAt(Timestamp),
+    EndedAt(Option<Timestamp>),
+    ProjectId(Option<Id>),
+    EpicId(Option<Id>),
+    TaskId(Option<Id>),
+    /// Entering `validated` records when; leaving it clears that.
+    State(MeetingState),
+    Participants(Vec<String>),
+    Notes(String),
+    Summary(Option<String>),
+    /// How it shows in calendars (ADR 038).
+    ShowAs(ShowAs),
+    /// Others who can see the calendar see only taken time.
+    Private(bool),
+    /// Names a transcript speaker key (`"s1"`), or clears its name with `None`.
+    SpeakerName {
+        speaker: String,
+        name: Option<String>,
+    },
+}
+
+/// Longest transcript a meeting may have, in segments.
+pub const MAX_SEGMENTS: usize = 20_000;
+/// Longest segment text.
+const MAX_SEGMENT_CHARS: usize = 10_000;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+pub struct NewSegment {
+    #[serde(default)]
+    pub id: Option<Id>,
+    pub start_ms: i64,
+    pub end_ms: i64,
+    /// `"me"` or `"s1"`, `"s2"`, …
+    pub speaker: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum SegmentChange {
+    /// Marks the segment edited.
+    Text(String),
+    Speaker(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "snake_case")]
+pub enum TagChange {
+    Name(String),
+    Color(Option<String>),
+}
+
+pub(crate) fn run(b: &mut Batch<'_, '_>, command: Command) -> Result<()> {
+    match command {
+        Command::CreateTask { task } => create_task(b, task),
+        Command::UpdateTask { id, changes } => update_task(b, &id, changes),
+        Command::MoveTask {
+            id,
+            status_id,
+            rank,
+        } => update_task(
+            b,
+            &id,
+            vec![TaskChange::StatusId(status_id), TaskChange::Rank(rank)],
+        ),
+        Command::SetParent { id, parent_id } => set_parent(b, &id, parent_id),
+        Command::DeleteTask { id } => delete_task(b, &id),
+        Command::TagTask { task_id, tag_id } => tag_task(b, &task_id, &tag_id, true),
+        Command::UntagTask { task_id, tag_id } => tag_task(b, &task_id, &tag_id, false),
+        Command::CreateProject { project } => create_project(b, project),
+        Command::UpdateProject { id, changes } => update_project(b, &id, changes),
+        Command::DeleteProject { id } => delete_project(b, &id),
+        Command::CreateEpic { epic } => create_epic(b, epic),
+        Command::UpdateEpic { id, changes } => update_epic(b, &id, changes),
+        Command::DeleteEpic { id } => delete_epic(b, &id),
+        Command::CreateTag { tag } => create_tag(b, tag),
+        Command::UpdateTag { id, changes } => update_tag(b, &id, changes),
+        Command::DeleteTag { id } => delete_tag(b, &id),
+        Command::CreateStatus { status } => create_status(b, status),
+        Command::UpdateStatus { id, changes } => update_status(b, &id, changes),
+        Command::DeleteStatus { id } => delete_status(b, &id),
+        Command::CreateView { view } => create_view(b, view),
+        Command::UpdateView { id, changes } => update_view(b, &id, changes),
+        Command::DeleteView { id } => delete_view(b, &id),
+        Command::CreateAttachment { attachment } => create_attachment(b, attachment),
+        Command::UpdateAttachment { id, changes } => update_attachment(b, &id, changes),
+        Command::DeleteAttachment { id } => delete_attachment(b, &id),
+        Command::CreateTimeBlock { block } => create_time_block(b, block),
+        Command::UpdateTimeBlock { id, changes } => update_time_block(b, &id, changes),
+        Command::DeleteTimeBlock { id } => delete_time_block(b, &id),
+        Command::CreateAgentSession { session } => create_agent_session(b, session),
+        Command::UpdateAgentSession { id, changes } => update_agent_session(b, &id, changes),
+        Command::DeleteAgentSession { id } => delete_agent_session(b, &id),
+        Command::AddAgentNote { note } => add_agent_note(b, note),
+        Command::CreateMeeting { meeting } => create_meeting(b, meeting),
+        Command::UpdateMeeting { id, changes } => update_meeting(b, &id, changes),
+        Command::DeleteMeeting { id } => delete_meeting(b, &id),
+        Command::SetTranscript {
+            meeting_id,
+            segments,
+        } => set_transcript(b, &meeting_id, segments),
+        Command::UpdateSegment { id, changes } => update_segment(b, &id, changes),
+        Command::SplitSegment { id, at, new_id } => split_segment(b, &id, at, new_id),
+        Command::DeleteSegment { id } => delete_segment(b, &id),
+        Command::ReassignSpeaker {
+            meeting_id,
+            from,
+            to,
+        } => reassign_speaker(b, &meeting_id, &from, &to),
+        Command::RecordTerminalSessions { sessions } => crate::terminal::record(b, sessions),
+        Command::UpdateTerminalSession { id, changes } => crate::terminal::update(b, &id, changes),
+        Command::DeleteTerminalSession { id } => crate::terminal::delete(b, &id),
+        Command::CreateNote { note } => crate::notes::create_note(b, note),
+        Command::UpdateNote { id, changes } => crate::notes::update_note(b, &id, changes),
+        Command::DeleteNote { id } => crate::notes::delete_note(b, &id),
+        Command::CreateNoteFolder { folder } => crate::notes::create_folder(b, folder),
+        Command::UpdateNoteFolder { id, changes } => crate::notes::update_folder(b, &id, changes),
+        Command::DeleteNoteFolder { id } => crate::notes::delete_folder(b, &id),
+        Command::SetTaskMark { task_id, today_on } => set_task_mark(b, &task_id, today_on),
+        Command::CreateMember { member } => create_member(b, member),
+        Command::UpdateMember { id, changes } => update_member(b, &id, changes),
+        Command::DeleteMember { id } => delete_member(b, &id),
+        Command::CreateComment { comment } => create_comment(b, comment),
+        Command::UpdateComment { id, body } => update_comment(b, &id, &body),
+        Command::DeleteComment { id } => delete_comment(b, &id),
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// Tasks
+
+fn create_task(b: &mut Batch<'_, '_>, n: NewTask) -> Result<()> {
+    let id = client_id(n.id)?;
+    let title = non_empty("title", &n.title)?;
+    let parent = n
+        .parent_id
+        .as_deref()
+        .map(|p| live_task(b, p))
+        .transpose()?;
+    let project_id = n
+        .project_id
+        .or_else(|| parent.as_ref().and_then(|p| p.project_id.clone()));
+    let epic_id = n
+        .epic_id
+        .or_else(|| parent.as_ref().and_then(|p| p.epic_id.clone()));
+    if let Some(p) = &project_id {
+        live_project(b, p)?;
+    }
+    if let Some(e) = &epic_id {
+        live_epic(b, e)?;
+    }
+    let status = match &n.status_id {
+        Some(s) => live_status(b, s)?,
+        None => default_status(b)?,
+    };
+    check_optional_date("due_date", n.due_date.as_deref())?;
+    check_optional_date("today_on", n.today_on.as_deref())?;
+    check_estimate(n.estimate_min)?;
+    let rank = match n.rank {
+        Some(r) => {
+            rank::validate(&r)?;
+            r
+        }
+        None => rank::key_between(last_task_rank(b, &status.id)?.as_deref(), None)?,
+    };
+    let mut tag_ids = n.tag_ids;
+    tag_ids.sort();
+    tag_ids.dedup();
+    for tag in &tag_ids {
+        live_tag(b, tag)?;
+    }
+    let completed_at = (status.category == StatusCategory::Done).then_some(b.now);
+    if let Some(member) = &n.assignee_id {
+        live_member(b, member)?;
+    }
+    let mut row = json!({
+            "project_id": project_id,
+            "epic_id": epic_id,
+            "parent_id": n.parent_id,
+            "status_id": status.id,
+            "title": title,
+            "description": n.description,
+            "owner": n.owner.as_str(),
+            "priority": n.priority.to_db(),
+            "due_date": n.due_date,
+            "today_on": n.today_on,
+            "estimate_min": n.estimate_min,
+            "rank": rank,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "completed_at": completed_at,
+            "deleted_at": null,
+    });
+    // Who a team task is for and who made it (ADR 033); personal tasks have neither.
+    if let Some(member) = n.assignee_id {
+        row["assignee_id"] = json!(member);
+    }
+    if let Some(author) = b.author.clone() {
+        row["reporter_id"] = json!(author);
+    }
+    b.apply(Change::new(Entity::Task, &id, OpKind::Create, row))?;
+    rebalance_if_long(b, &status.id, &rank)?;
+    for tag in tag_ids {
+        b.apply(Change::new(
+            Entity::TaskTag,
+            &id,
+            OpKind::Link,
+            json!({ "tag_id": tag }),
+        ))?;
+    }
+    Ok(())
+}
+
+fn update_task(b: &mut Batch<'_, '_>, id: &str, changes: Vec<TaskChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_task needs at least one change"));
+    }
+    let task = live_task(b, id)?;
+    let mut patch = Map::new();
+    let mut new_project = None;
+    let mut new_epic = None;
+    for change in changes {
+        let (key, value) = match change {
+            TaskChange::DependencyIds(mut ids) => {
+                ids.sort();
+                ids.dedup();
+                for dependency in &ids {
+                    if !task.dependency_ids.contains(dependency) {
+                        live_task(b, dependency)?;
+                    }
+                    let cycle: bool = b.tx.query_row(
+                        "WITH RECURSIVE ancestors(id) AS (
+                            SELECT ?1 UNION
+                            SELECT j.value FROM tasks t, json_each(t.dependency_ids) j
+                            JOIN ancestors a ON t.id = a.id
+                        ) SELECT EXISTS(SELECT 1 FROM ancestors WHERE id = ?2)",
+                        rusqlite::params![dependency, id],
+                        |r| r.get(0),
+                    )?;
+                    if cycle {
+                        return Err(Error::invalid("Dependencies cannot form a circular chain"));
+                    }
+                }
+                ("dependency_ids", json!(serde_json::to_string(&ids)?))
+            }
+            TaskChange::Owner(o) => ("owner", json!(o.as_str())),
+            TaskChange::Title(t) => ("title", json!(non_empty("title", &t)?)),
+            TaskChange::Description(d) => ("description", json!(d)),
+            TaskChange::Priority(p) => ("priority", json!(p.to_db())),
+            TaskChange::DueDate(d) => {
+                check_optional_date("due_date", d.as_deref())?;
+                ("due_date", json!(d))
+            }
+            TaskChange::TodayOn(d) => {
+                check_optional_date("today_on", d.as_deref())?;
+                ("today_on", json!(d))
+            }
+            TaskChange::EstimateMin(m) => {
+                check_estimate(m)?;
+                ("estimate_min", json!(m))
+            }
+            TaskChange::AssigneeId(member) => {
+                if let Some(m) = &member {
+                    live_member(b, m)?;
+                }
+                ("assignee_id", json!(member))
+            }
+            TaskChange::ProjectId(p) => {
+                if let Some(p) = &p {
+                    live_project(b, p)?;
+                }
+                new_project = Some(p.clone());
+                ("project_id", json!(p))
+            }
+            TaskChange::EpicId(e) => {
+                if let Some(e) = &e {
+                    live_epic(b, e)?;
+                }
+                new_epic = Some(e.clone());
+                ("epic_id", json!(e))
+            }
+            TaskChange::StatusId(s) => {
+                let new = live_status(b, &s)?;
+                let old = query::status(b.tx, &task.status_id)?;
+                let (was_done, is_done) = (
+                    old.category == StatusCategory::Done,
+                    new.category == StatusCategory::Done,
+                );
+                if is_done && !was_done {
+                    patch.insert("completed_at".into(), json!(b.now));
+                } else if was_done && !is_done {
+                    patch.insert("completed_at".into(), Value::Null);
+                }
+                ("status_id", json!(new.id))
+            }
+            TaskChange::Rank(r) => {
+                rank::validate(&r)?;
+                ("rank", json!(r))
+            }
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    let status_id = patch
+        .get("status_id")
+        .and_then(Value::as_str)
+        .unwrap_or(&task.status_id)
+        .to_owned();
+    let rank = patch.get("rank").and_then(Value::as_str).map(str::to_owned);
+    b.apply(Change::new(
+        Entity::Task,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))?;
+    if let Some(rank) = rank {
+        rebalance_if_long(b, &status_id, &rank)?;
+    }
+    cascade_containers(b, &task, new_project.as_ref(), new_epic.as_ref())
+}
+
+/// Rank keys longer than this trigger a rebalance of their column (plan section 10).
+pub const MAX_RANK_LEN: usize = 32;
+
+/// Rewrites every rank in the column with short evenly spaced keys, keeping the order,
+/// when `rank` (just written) is too long. Runs inside the caller's batch, so one undo
+/// reverts the move and the rebalance together. The ops carry only `rank` (no
+/// `updated_at`): bookkeeping, not an edit, so the activity feed skips them.
+fn rebalance_if_long(b: &mut Batch<'_, '_>, status_id: &str, rank: &str) -> Result<()> {
+    if rank.len() <= MAX_RANK_LEN {
+        return Ok(());
+    }
+    let column: Vec<(Id, String)> = {
+        let mut stmt = b.tx.prepare_cached(
+            "SELECT id, rank FROM tasks WHERE status_id = ?1 AND deleted_at IS NULL
+             ORDER BY rank, id",
+        )?;
+        let rows = stmt.query_map([status_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect::<rusqlite::Result<_>>()?
+    };
+    let mut prev: Option<String> = None;
+    for (id, old) in column {
+        let key = rank::key_between(prev.as_deref(), None)?;
+        if key != old {
+            b.apply(Change::new(
+                Entity::Task,
+                &id,
+                OpKind::Update,
+                json!({ "rank": key }),
+            ))?;
+        }
+        prev = Some(key);
+    }
+    Ok(())
+}
+
+/// Moves subtasks along when a task changes project or epic: a subtask follows when its
+/// value matched the task's old one (it was inherited, not set on purpose).
+fn cascade_containers(
+    b: &mut Batch<'_, '_>,
+    task: &Task,
+    new_project: Option<&Option<Id>>,
+    new_epic: Option<&Option<Id>>,
+) -> Result<()> {
+    if new_project.is_none() && new_epic.is_none() {
+        return Ok(());
+    }
+    for sub_id in descendants(b, &task.id)? {
+        let sub = query::task(b.tx, &sub_id)?;
+        let mut patch = Map::new();
+        if let Some(p) = new_project
+            && sub.project_id == task.project_id
+        {
+            patch.insert("project_id".into(), json!(p));
+        }
+        if let Some(e) = new_epic
+            && sub.epic_id == task.epic_id
+        {
+            patch.insert("epic_id".into(), json!(e));
+        }
+        if !patch.is_empty() {
+            patch.insert("updated_at".into(), json!(b.now));
+            b.apply(Change::new(
+                Entity::Task,
+                &sub_id,
+                OpKind::Update,
+                Value::Object(patch),
+            ))?;
+        }
+    }
+    Ok(())
+}
+
+fn set_parent(b: &mut Batch<'_, '_>, id: &str, parent_id: Option<Id>) -> Result<()> {
+    let task = live_task(b, id)?;
+    let mut patch = Map::new();
+    let mut containers = None;
+    if let Some(p) = &parent_id {
+        if p == id {
+            return Err(Error::invalid("a task cannot be its own parent"));
+        }
+        let parent = live_task(b, p)?;
+        if descendants(b, id)?.contains(p) {
+            return Err(Error::invalid(
+                "cannot move a task under one of its own subtasks",
+            ));
+        }
+        patch.insert("project_id".into(), json!(parent.project_id));
+        patch.insert("epic_id".into(), json!(parent.epic_id));
+        containers = Some((parent.project_id, parent.epic_id));
+    }
+    patch.insert("parent_id".into(), json!(parent_id));
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Task,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))?;
+    if let Some((project, epic)) = containers {
+        cascade_containers(b, &task, Some(&project), Some(&epic))?;
+    }
+    Ok(())
+}
+
+fn delete_task(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_task(b, id)?;
+    let mut ids = vec![id.to_owned()];
+    ids.extend(descendants(b, id)?);
+    for task_id in ids {
+        b.apply(Change::new(
+            Entity::Task,
+            &task_id,
+            OpKind::Delete,
+            json!({ "deleted_at": b.now, "updated_at": b.now }),
+        ))?;
+    }
+    Ok(())
+}
+
+fn tag_task(b: &mut Batch<'_, '_>, task_id: &str, tag_id: &str, link: bool) -> Result<()> {
+    let task = live_task(b, task_id)?;
+    if link {
+        live_tag(b, tag_id)?;
+    }
+    if task.tag_ids.iter().any(|t| t == tag_id) == link {
+        return Ok(()); // already in the requested state
+    }
+    let kind = if link { OpKind::Link } else { OpKind::Unlink };
+    b.apply(Change::new(
+        Entity::TaskTag,
+        task_id,
+        kind,
+        json!({ "tag_id": tag_id }),
+    ))?;
+    b.apply(Change::new(
+        Entity::Task,
+        task_id,
+        OpKind::Update,
+        json!({ "updated_at": b.now }),
+    ))
+}
+
+// ---------------------------------------------------------------------------------------
+// Projects
+
+fn create_project(b: &mut Batch<'_, '_>, n: NewProject) -> Result<()> {
+    let id = client_id(n.id)?;
+    let name = non_empty("name", &n.name)?;
+    if let Some(p) = &n.parent_id {
+        check_area(b, p)?;
+    }
+    let rank = match n.rank {
+        Some(r) => {
+            rank::validate(&r)?;
+            r
+        }
+        None => {
+            let last: Option<String> = b.tx.query_row(
+                "SELECT MAX(rank) FROM projects WHERE parent_id IS ?1 AND deleted_at IS NULL",
+                [&n.parent_id],
+                |r| r.get(0),
+            )?;
+            rank::key_between(last.as_deref(), None)?
+        }
+    };
+    b.apply(Change::new(
+        Entity::Project,
+        &id,
+        OpKind::Create,
+        json!({
+            "parent_id": n.parent_id,
+            "name": name,
+            "color": n.color,
+            "icon": n.icon,
+            "rank": rank,
+            "archived_at": null,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+/// Projects nest one level: the parent must be a top-level project (an area).
+fn check_area(b: &Batch<'_, '_>, parent_id: &str) -> Result<()> {
+    let parent = live_project(b, parent_id)?;
+    if parent.parent_id.is_some() {
+        return Err(Error::invalid(format!(
+            "'{}' is already inside an area; projects nest one level only",
+            parent.name
+        )));
+    }
+    Ok(())
+}
+
+fn update_project(b: &mut Batch<'_, '_>, id: &str, changes: Vec<ProjectChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_project needs at least one change"));
+    }
+    let project = live_project(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            ProjectChange::Name(n) => ("name", json!(non_empty("name", &n)?)),
+            ProjectChange::Color(c) => ("color", json!(c)),
+            ProjectChange::Icon(i) => ("icon", json!(i)),
+            ProjectChange::Rank(r) => {
+                rank::validate(&r)?;
+                ("rank", json!(r))
+            }
+            ProjectChange::Archived(archived) => {
+                let at = match (archived, project.archived_at) {
+                    (true, Some(at)) => Some(at),
+                    (true, None) => Some(b.now),
+                    (false, _) => None,
+                };
+                ("archived_at", json!(at))
+            }
+            ProjectChange::ParentId(p) => {
+                if let Some(p) = &p {
+                    if p == id {
+                        return Err(Error::invalid("a project cannot contain itself"));
+                    }
+                    check_area(b, p)?;
+                    if count(
+                        b,
+                        "SELECT COUNT(*) FROM projects WHERE parent_id = ?1 AND deleted_at IS NULL",
+                        id,
+                    )? > 0
+                    {
+                        return Err(Error::invalid(format!(
+                            "'{}' contains projects, so it cannot move into an area",
+                            project.name
+                        )));
+                    }
+                }
+                ("parent_id", json!(p))
+            }
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Project,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_project(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    let project = live_project(b, id)?;
+    let tasks = count(
+        b,
+        "SELECT COUNT(*) FROM tasks WHERE project_id = ?1 AND deleted_at IS NULL",
+        id,
+    )?;
+    let epics = count(
+        b,
+        "SELECT COUNT(*) FROM epics WHERE project_id = ?1 AND deleted_at IS NULL",
+        id,
+    )?;
+    let children = count(
+        b,
+        "SELECT COUNT(*) FROM projects WHERE parent_id = ?1 AND deleted_at IS NULL",
+        id,
+    )?;
+    if tasks + epics + children > 0 {
+        return Err(Error::invalid(format!(
+            "'{}' still has {tasks} task(s), {epics} epic(s) and {children} project(s); \
+             move or delete them first, or archive the project",
+            project.name
+        )));
+    }
+    b.apply(Change::new(
+        Entity::Project,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+// ---------------------------------------------------------------------------------------
+// Epics
+
+fn create_epic(b: &mut Batch<'_, '_>, n: NewEpic) -> Result<()> {
+    let id = client_id(n.id)?;
+    let name = non_empty("name", &n.name)?;
+    if let Some(p) = &n.project_id {
+        live_project(b, p)?;
+    }
+    check_optional_date("target_date", n.target_date.as_deref())?;
+    let rank = match n.rank {
+        Some(r) => {
+            rank::validate(&r)?;
+            r
+        }
+        None => {
+            let last: Option<String> = b.tx.query_row(
+                "SELECT MAX(rank) FROM epics WHERE deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )?;
+            rank::key_between(last.as_deref(), None)?
+        }
+    };
+    b.apply(Change::new(
+        Entity::Epic,
+        &id,
+        OpKind::Create,
+        json!({
+            "project_id": n.project_id,
+            "name": name,
+            "color": n.color,
+            "icon": n.icon,
+            "description": n.description,
+            "target_date": n.target_date,
+            "state": EpicState::Active.as_str(),
+            "rank": rank,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn update_epic(b: &mut Batch<'_, '_>, id: &str, changes: Vec<EpicChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_epic needs at least one change"));
+    }
+    live_epic(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            EpicChange::Color(c) => ("color", json!(c)),
+            EpicChange::Icon(i) => ("icon", json!(i)),
+            EpicChange::Name(n) => ("name", json!(non_empty("name", &n)?)),
+            EpicChange::Description(d) => ("description", json!(d)),
+            EpicChange::TargetDate(d) => {
+                check_optional_date("target_date", d.as_deref())?;
+                ("target_date", json!(d))
+            }
+            EpicChange::State(s) => ("state", json!(s.as_str())),
+            EpicChange::ProjectId(p) => {
+                if let Some(p) = &p {
+                    live_project(b, p)?;
+                }
+                ("project_id", json!(p))
+            }
+            EpicChange::Rank(r) => {
+                rank::validate(&r)?;
+                ("rank", json!(r))
+            }
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Epic,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_epic(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_epic(b, id)?;
+    for task_id in ids(
+        b,
+        "SELECT id FROM tasks WHERE epic_id = ?1 AND deleted_at IS NULL",
+        id,
+    )? {
+        b.apply(Change::new(
+            Entity::Task,
+            &task_id,
+            OpKind::Update,
+            json!({ "epic_id": null, "updated_at": b.now }),
+        ))?;
+    }
+    b.apply(Change::new(
+        Entity::Epic,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+// ---------------------------------------------------------------------------------------
+// Tags
+
+fn create_tag(b: &mut Batch<'_, '_>, n: NewTag) -> Result<()> {
+    let id = client_id(n.id)?;
+    let name = tag_name(b, &n.name, &id)?;
+    b.apply(Change::new(
+        Entity::Tag,
+        &id,
+        OpKind::Create,
+        json!({
+            "name": name,
+            "color": n.color,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+/// Normalizes a tag name and checks no other live tag has it (case-insensitive).
+fn tag_name(b: &Batch<'_, '_>, raw: &str, own_id: &str) -> Result<String> {
+    let name = non_empty("tag name", raw.trim().trim_start_matches('#'))?;
+    if name.chars().any(char::is_whitespace) {
+        return Err(Error::invalid(format!(
+            "tag '{name}' cannot contain spaces"
+        )));
+    }
+    let taken: i64 = b.tx.query_row(
+        "SELECT COUNT(*) FROM tags
+         WHERE name = ?1 COLLATE NOCASE AND deleted_at IS NULL AND id != ?2",
+        [&name, own_id],
+        |r| r.get(0),
+    )?;
+    if taken > 0 {
+        return Err(Error::invalid(format!("tag '{name}' already exists")));
+    }
+    Ok(name)
+}
+
+fn update_tag(b: &mut Batch<'_, '_>, id: &str, changes: Vec<TagChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_tag needs at least one change"));
+    }
+    live_tag(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            TagChange::Name(n) => ("name", json!(tag_name(b, &n, id)?)),
+            TagChange::Color(c) => ("color", json!(c)),
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Tag,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_tag(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_tag(b, id)?;
+    for task_id in ids(b, "SELECT task_id FROM task_tags WHERE tag_id = ?1", id)? {
+        b.apply(Change::new(
+            Entity::TaskTag,
+            &task_id,
+            OpKind::Unlink,
+            json!({ "tag_id": id }),
+        ))?;
+        b.apply(Change::new(
+            Entity::Task,
+            &task_id,
+            OpKind::Update,
+            json!({ "updated_at": b.now }),
+        ))?;
+    }
+    b.apply(Change::new(
+        Entity::Tag,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+// ---------------------------------------------------------------------------------------
+// Helpers
+
+// ---------------------------------------------------------------------------------------
+// Statuses
+
+fn check_wip(limit: Option<i64>) -> Result<()> {
+    match limit {
+        Some(n) if !(1..=999).contains(&n) => Err(Error::invalid(format!(
+            "WIP limit must be between 1 and 999, got {n}"
+        ))),
+        _ => Ok(()),
+    }
+}
+
+fn status_name(b: &Batch<'_, '_>, raw: &str, own_id: &str) -> Result<String> {
+    let name = non_empty("status name", raw)?;
+    let taken: i64 = b.tx.query_row(
+        "SELECT COUNT(*) FROM statuses
+         WHERE name = ?1 COLLATE NOCASE AND deleted_at IS NULL AND id != ?2",
+        [&name, own_id],
+        |r| r.get(0),
+    )?;
+    if taken > 0 {
+        return Err(Error::invalid(format!("status '{name}' already exists")));
+    }
+    Ok(name)
+}
+
+/// The app needs a `todo` column (new tasks) and a `done` column (the checkbox).
+fn check_keeps_workflow(b: &Batch<'_, '_>, status: &Status) -> Result<()> {
+    if !matches!(status.category, StatusCategory::Todo | StatusCategory::Done) {
+        return Ok(());
+    }
+    let others: i64 = b.tx.query_row(
+        "SELECT COUNT(*) FROM statuses WHERE category = ?1 AND deleted_at IS NULL AND id != ?2",
+        [status.category.as_str(), &status.id],
+        |r| r.get(0),
+    )?;
+    if others == 0 {
+        return Err(Error::invalid(format!(
+            "'{}' is the last {} column; add another one first",
+            status.name,
+            status.category.as_str()
+        )));
+    }
+    Ok(())
+}
+
+fn tasks_in(b: &Batch<'_, '_>, status_id: &str) -> Result<i64> {
+    count(
+        b,
+        "SELECT COUNT(*) FROM tasks WHERE status_id = ?1 AND deleted_at IS NULL",
+        status_id,
+    )
+}
+
+fn create_status(b: &mut Batch<'_, '_>, n: NewStatus) -> Result<()> {
+    let id = client_id(n.id)?;
+    let name = status_name(b, &n.name, &id)?;
+    check_wip(n.wip_limit)?;
+    let rank = match n.rank {
+        Some(r) => {
+            rank::validate(&r)?;
+            r
+        }
+        None => {
+            let last: Option<String> = b.tx.query_row(
+                "SELECT MAX(rank) FROM statuses WHERE deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )?;
+            rank::key_between(last.as_deref(), None)?
+        }
+    };
+    b.apply(Change::new(
+        Entity::Status,
+        &id,
+        OpKind::Create,
+        json!({
+            "name": name,
+            "category": n.category.as_str(),
+            "color": n.color,
+            "rank": rank,
+            "wip_limit": n.wip_limit,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn update_status(b: &mut Batch<'_, '_>, id: &str, changes: Vec<StatusChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_status needs at least one change"));
+    }
+    let status = live_status(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            StatusChange::Name(n) => ("name", json!(status_name(b, &n, id)?)),
+            StatusChange::Category(c) => {
+                if c != status.category {
+                    let n = tasks_in(b, id)?;
+                    if n > 0 {
+                        return Err(Error::invalid(format!(
+                            "'{}' holds {n} task(s); move them before changing its category",
+                            status.name
+                        )));
+                    }
+                    check_keeps_workflow(b, &status)?;
+                }
+                ("category", json!(c.as_str()))
+            }
+            StatusChange::Color(c) => ("color", json!(c)),
+            StatusChange::Rank(r) => {
+                rank::validate(&r)?;
+                ("rank", json!(r))
+            }
+            StatusChange::WipLimit(l) => {
+                check_wip(l)?;
+                ("wip_limit", json!(l))
+            }
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Status,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_status(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    let status = live_status(b, id)?;
+    let n = tasks_in(b, id)?;
+    if n > 0 {
+        return Err(Error::invalid(format!(
+            "'{}' still holds {n} task(s); move them to another column first",
+            status.name
+        )));
+    }
+    check_keeps_workflow(b, &status)?;
+    b.apply(Change::new(
+        Entity::Status,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+fn live_status(b: &Batch<'_, '_>, id: &str) -> Result<Status> {
+    let status = query::status(b.tx, id)?;
+    if status.deleted_at.is_some() {
+        return Err(Error::not_found("status", id));
+    }
+    Ok(status)
+}
+
+// ---------------------------------------------------------------------------------------
+// Saved views
+
+/// Checks the version and that the scope and filters name live entities and statuses.
+/// Stored as JSON text; the ops log keeps that text, so undo restores it byte for byte.
+fn view_spec_json(b: &Batch<'_, '_>, spec: &ViewSpec) -> Result<String> {
+    if spec.version != VIEW_SPEC_VERSION {
+        return Err(Error::invalid(format!(
+            "view spec version {} is not supported (expected {VIEW_SPEC_VERSION})",
+            spec.version
+        )));
+    }
+    match &spec.scope {
+        ViewScope::Inbox | ViewScope::Today | ViewScope::All => {}
+        ViewScope::Project { id } => drop(live_project(b, id)?),
+        ViewScope::Epic { id } => drop(live_epic(b, id)?),
+        ViewScope::Tag { id } => drop(live_tag(b, id)?),
+    }
+    let f = &spec.filter;
+    for id in &f.status_ids {
+        live_status(b, id)?;
+    }
+    for id in &f.project_ids {
+        live_project(b, id)?;
+    }
+    for id in f.epic_ids.iter().filter(|id| *id != FILTER_NONE) {
+        live_epic(b, id)?;
+    }
+    for id in f.tag_ids.iter().filter(|id| *id != FILTER_NONE) {
+        live_tag(b, id)?;
+    }
+    if let Some(lineage) = &spec.lineage {
+        // The Lineage page filters on one project at most, over every task.
+        if spec.scope != ViewScope::All || f.project_ids.len() > 1 {
+            return Err(Error::invalid(
+                "a lineage view covers all tasks and at most one project",
+            ));
+        }
+        if let Some(id) = &lineage.around {
+            live_task(b, id)?;
+        }
+    }
+    if let Some(roadmap) = &spec.roadmap {
+        if spec.scope != ViewScope::All {
+            return Err(Error::invalid("a roadmap view covers all tasks"));
+        }
+        if spec.lineage.is_some() {
+            return Err(Error::invalid(
+                "a view is either a lineage view or a roadmap view",
+            ));
+        }
+        if let Some(id) = &roadmap.epic {
+            live_epic(b, id)?;
+        }
+        for start in roadmap.starts.values() {
+            check_date("roadmap start", start)?;
+        }
+    }
+    Ok(serde_json::to_string(spec)?)
+}
+
+fn create_view(b: &mut Batch<'_, '_>, n: NewView) -> Result<()> {
+    let id = client_id(n.id)?;
+    let name = non_empty("name", &n.name)?;
+    let spec = view_spec_json(b, &n.spec)?;
+    let rank = match n.rank {
+        Some(r) => {
+            rank::validate(&r)?;
+            r
+        }
+        None => {
+            let last: Option<String> = b.tx.query_row(
+                "SELECT MAX(rank) FROM views WHERE deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )?;
+            rank::key_between(last.as_deref(), None)?
+        }
+    };
+    b.apply(Change::new(
+        Entity::View,
+        &id,
+        OpKind::Create,
+        json!({
+            "name": name,
+            "spec": spec,
+            "rank": rank,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn update_view(b: &mut Batch<'_, '_>, id: &str, changes: Vec<ViewChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_view needs at least one change"));
+    }
+    live_view(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            ViewChange::Name(n) => ("name", json!(non_empty("name", &n)?)),
+            ViewChange::Spec(spec) => ("spec", json!(view_spec_json(b, &spec)?)),
+            ViewChange::Rank(r) => {
+                rank::validate(&r)?;
+                ("rank", json!(r))
+            }
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::View,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_view(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_view(b, id)?;
+    b.apply(Change::new(
+        Entity::View,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+fn live_view(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::View> {
+    let view = query::view(b.tx, id)?;
+    if view.deleted_at.is_some() {
+        return Err(Error::not_found("view", id));
+    }
+    Ok(view)
+}
+
+// ---------------------------------------------------------------------------------------
+// Attachments
+
+/// What an attachment belongs to.
+enum Owner {
+    Task(Id),
+    Meeting(Id),
+    Note(Id),
+}
+
+fn attachment_owner(a: &crate::model::Attachment) -> Result<Owner> {
+    match (&a.task_id, &a.meeting_id, &a.note_id) {
+        (Some(task_id), None, None) => Ok(Owner::Task(task_id.clone())),
+        (None, Some(meeting_id), None) => Ok(Owner::Meeting(meeting_id.clone())),
+        (None, None, Some(note_id)) => Ok(Owner::Note(note_id.clone())),
+        _ => Err(Error::invalid(format!(
+            "attachment {} has no single owner",
+            a.id
+        ))),
+    }
+}
+
+/// Bumps the owner's `updated_at`, so views of it refresh.
+fn touch_owner(b: &mut Batch<'_, '_>, owner: &Owner) -> Result<()> {
+    match owner {
+        Owner::Task(id) => touch_task(b, id),
+        Owner::Meeting(id) => b.apply(Change::new(
+            Entity::Meeting,
+            id,
+            OpKind::Update,
+            json!({ "updated_at": b.now }),
+        )),
+        Owner::Note(id) => b.apply(Change::new(
+            Entity::Note,
+            id,
+            OpKind::Update,
+            json!({ "updated_at": b.now }),
+        )),
+    }
+}
+
+fn create_attachment(b: &mut Batch<'_, '_>, n: NewAttachment) -> Result<()> {
+    let id = client_id(n.id)?;
+    let owner = match (&n.task_id, &n.meeting_id, &n.note_id) {
+        (Some(task_id), None, None) => {
+            live_task(b, task_id)?;
+            Owner::Task(task_id.clone())
+        }
+        (None, Some(meeting_id), None) => {
+            live_meeting(b, meeting_id)?;
+            Owner::Meeting(meeting_id.clone())
+        }
+        (None, None, Some(note_id)) => {
+            crate::notes::live_note(b, note_id)?;
+            Owner::Note(note_id.clone())
+        }
+        _ => {
+            return Err(Error::invalid(
+                "an attachment belongs to exactly one task, meeting or note",
+            ));
+        }
+    };
+    if !files::is_hash(&n.hash) {
+        return Err(Error::invalid(format!("'{}' is not a file hash", n.hash)));
+    }
+    if !(0..=files::MAX_ATTACHMENT_BYTES).contains(&n.size) {
+        return Err(Error::invalid(format!(
+            "attachments are limited to {} MB",
+            files::MAX_ATTACHMENT_BYTES / 1_048_576
+        )));
+    }
+    let name = files::clean_file_name(&n.name);
+    let mime = match n.mime.as_deref().map(str::trim) {
+        Some(m) if !m.is_empty() && m.contains('/') && !m.chars().any(char::is_whitespace) => {
+            m.to_ascii_lowercase()
+        }
+        _ => files::mime_for(&name).to_owned(),
+    };
+    b.apply(Change::new(
+        Entity::Attachment,
+        &id,
+        OpKind::Create,
+        json!({
+            "task_id": n.task_id,
+            "meeting_id": n.meeting_id,
+            "note_id": n.note_id,
+            "hash": n.hash,
+            "name": name,
+            "mime": mime,
+            "size": n.size,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))?;
+    touch_owner(b, &owner)
+}
+
+/// Bumps the task's `updated_at`, as tag changes do, so views of it refresh.
+fn touch_task(b: &mut Batch<'_, '_>, task_id: &str) -> Result<()> {
+    // A team task lives in another database (ADR 033): its row is not this batch's.
+    if b.linked.contains(task_id) {
+        return Ok(());
+    }
+    b.apply(Change::new(
+        Entity::Task,
+        task_id,
+        OpKind::Update,
+        json!({ "updated_at": b.now }),
+    ))
+}
+
+fn update_attachment(
+    b: &mut Batch<'_, '_>,
+    id: &str,
+    changes: Vec<AttachmentChange>,
+) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid(
+            "update_attachment needs at least one change",
+        ));
+    }
+    let owner = attachment_owner(&live_attachment(b, id)?)?;
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            AttachmentChange::Name(n) => (
+                "name",
+                json!(files::clean_file_name(&non_empty("name", &n)?)),
+            ),
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Attachment,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))?;
+    touch_owner(b, &owner)
+}
+
+fn delete_attachment(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    let owner = attachment_owner(&live_attachment(b, id)?)?;
+    b.apply(Change::new(
+        Entity::Attachment,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))?;
+    touch_owner(b, &owner)
+}
+
+fn live_attachment(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Attachment> {
+    let attachment = query::attachment(b.tx, id)?;
+    if attachment.deleted_at.is_some() {
+        return Err(Error::not_found("attachment", id));
+    }
+    Ok(attachment)
+}
+
+// ---------------------------------------------------------------------------------------
+// Time blocks
+
+fn check_block_times(start_at: Timestamp, end_at: Timestamp) -> Result<()> {
+    if start_at < 0 {
+        return Err(Error::invalid("a time block cannot start before 1970"));
+    }
+    if end_at <= start_at {
+        return Err(Error::invalid("a time block must end after it starts"));
+    }
+    if end_at - start_at > MAX_BLOCK_MS {
+        return Err(Error::invalid("a time block can last at most 24 hours"));
+    }
+    Ok(())
+}
+
+fn create_time_block(b: &mut Batch<'_, '_>, n: NewTimeBlock) -> Result<()> {
+    let id = client_id(n.id)?;
+    linked_task(b, &n.task_id)?;
+    check_block_times(n.start_at, n.end_at)?;
+    b.apply(Change::new(
+        Entity::TimeBlock,
+        &id,
+        OpKind::Create,
+        json!({
+            "task_id": n.task_id,
+            "start_at": n.start_at,
+            "end_at": n.end_at,
+            "outcome": n.outcome.unwrap_or_default().as_str(),
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))?;
+    touch_task(b, &n.task_id)
+}
+
+fn update_time_block(b: &mut Batch<'_, '_>, id: &str, changes: Vec<TimeBlockChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid(
+            "update_time_block needs at least one change",
+        ));
+    }
+    let block = live_time_block(b, id)?;
+    let (mut start_at, mut end_at) = (block.start_at, block.end_at);
+    let mut patch = Map::new();
+    for change in changes {
+        match change {
+            TimeBlockChange::StartAt(t) => {
+                start_at = t;
+                patch.insert("start_at".into(), json!(t));
+            }
+            TimeBlockChange::EndAt(t) => {
+                end_at = t;
+                patch.insert("end_at".into(), json!(t));
+            }
+            TimeBlockChange::Outcome(o) => {
+                patch.insert("outcome".into(), json!(o.as_str()));
+            }
+        }
+    }
+    check_block_times(start_at, end_at)?;
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::TimeBlock,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))?;
+    touch_task(b, &block.task_id)
+}
+
+fn delete_time_block(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    let task_id = live_time_block(b, id)?.task_id;
+    b.apply(Change::new(
+        Entity::TimeBlock,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))?;
+    touch_task(b, &task_id)
+}
+
+fn live_time_block(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::TimeBlock> {
+    let block = query::time_block(b.tx, id)?;
+    if block.deleted_at.is_some() {
+        return Err(Error::not_found("time block", id));
+    }
+    Ok(block)
+}
+
+// ---------------------------------------------------------------------------------------
+// Meetings (ADR 025)
+
+fn check_meeting_times(started_at: Timestamp, ended_at: Option<Timestamp>) -> Result<()> {
+    if started_at < 0 {
+        return Err(Error::invalid("a meeting cannot start before 1970"));
+    }
+    if let Some(end) = ended_at {
+        if end <= started_at {
+            return Err(Error::invalid("a meeting must end after it starts"));
+        }
+        if end - started_at > MAX_BLOCK_MS {
+            return Err(Error::invalid("a meeting can last at most 24 hours"));
+        }
+    }
+    Ok(())
+}
+
+/// Names with their spaces tidied, blanks and repeats (ignoring case) dropped, as the JSON
+/// array the column stores.
+fn participants_json(names: &[String]) -> Result<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for name in names {
+        let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+        if name.is_empty() || !seen.insert(name.to_lowercase()) {
+            continue;
+        }
+        if name.chars().count() > MAX_PARTICIPANT_CHARS {
+            return Err(Error::invalid(format!(
+                "a participant's name is limited to {MAX_PARTICIPANT_CHARS} characters"
+            )));
+        }
+        out.push(name);
+    }
+    if out.len() > MAX_PARTICIPANTS {
+        return Err(Error::invalid(format!(
+            "a meeting lists at most {MAX_PARTICIPANTS} participants"
+        )));
+    }
+    Ok(serde_json::to_string(&out)?)
+}
+
+fn create_meeting(b: &mut Batch<'_, '_>, n: NewMeeting) -> Result<()> {
+    let id = client_id(n.id)?;
+    let title = non_empty("title", &n.title)?;
+    check_meeting_times(n.started_at, n.ended_at)?;
+    if let Some(project_id) = &n.project_id {
+        linked_project(b, project_id)?;
+    }
+    if let Some(epic_id) = &n.epic_id {
+        linked_epic(b, epic_id)?;
+    }
+    if let Some(task_id) = &n.task_id {
+        linked_task(b, task_id)?;
+    }
+    let state = n.state.unwrap_or_default();
+    b.apply(Change::new(
+        Entity::Meeting,
+        &id,
+        OpKind::Create,
+        json!({
+            "title": title,
+            "started_at": n.started_at,
+            "ended_at": n.ended_at,
+            "project_id": n.project_id,
+            "epic_id": n.epic_id,
+            "task_id": n.task_id,
+            "state": state.as_str(),
+            "participants": participants_json(&n.participants)?,
+            "notes": n.notes,
+            "summary": null,
+            "transcribed_at": null,
+            "validated_at": (state == MeetingState::Validated).then_some(b.now),
+            "show_as": n.show_as.unwrap_or_default().as_str(),
+            "private": i64::from(n.private.unwrap_or(true)),
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn update_meeting(b: &mut Batch<'_, '_>, id: &str, changes: Vec<MeetingChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_meeting needs at least one change"));
+    }
+    let meeting = live_meeting(b, id)?;
+    let (mut started_at, mut ended_at) = (meeting.started_at, meeting.ended_at);
+    let mut patch = Map::new();
+    for change in changes {
+        let (key, value) = match change {
+            MeetingChange::Title(t) => ("title", json!(non_empty("title", &t)?)),
+            MeetingChange::StartedAt(t) => {
+                started_at = t;
+                ("started_at", json!(t))
+            }
+            MeetingChange::EndedAt(t) => {
+                ended_at = t;
+                ("ended_at", json!(t))
+            }
+            MeetingChange::ProjectId(p) => {
+                if let Some(p) = &p {
+                    linked_project(b, p)?;
+                }
+                ("project_id", json!(p))
+            }
+            MeetingChange::EpicId(e) => {
+                if let Some(e) = &e {
+                    linked_epic(b, e)?;
+                }
+                ("epic_id", json!(e))
+            }
+            MeetingChange::TaskId(t) => {
+                if let Some(t) = &t {
+                    linked_task(b, t)?;
+                }
+                ("task_id", json!(t))
+            }
+            MeetingChange::State(state) => {
+                let validated_at = match (state, meeting.validated_at) {
+                    (MeetingState::Validated, Some(at)) => Some(at),
+                    (MeetingState::Validated, None) => Some(b.now),
+                    _ => None,
+                };
+                if validated_at != meeting.validated_at {
+                    patch.insert("validated_at".into(), json!(validated_at));
+                }
+                ("state", json!(state.as_str()))
+            }
+            MeetingChange::Participants(names) => {
+                ("participants", json!(participants_json(&names)?))
+            }
+            MeetingChange::Notes(n) => ("notes", json!(n)),
+            MeetingChange::Summary(s) => ("summary", json!(trimmed(s))),
+            MeetingChange::ShowAs(show_as) => ("show_as", json!(show_as.as_str())),
+            MeetingChange::Private(private) => ("private", json!(i64::from(private))),
+            MeetingChange::SpeakerName { speaker, name } => {
+                check_speaker(&speaker)?;
+                let mut names = match patch.get("speakers").and_then(Value::as_str) {
+                    Some(current) => serde_json::from_str(current).unwrap_or_default(),
+                    None => meeting.speakers.clone(),
+                };
+                match trimmed(name) {
+                    Some(name) if name.chars().count() > MAX_PARTICIPANT_CHARS => {
+                        return Err(Error::invalid(format!(
+                            "a speaker name has at most {MAX_PARTICIPANT_CHARS} characters"
+                        )));
+                    }
+                    Some(name) => names.insert(speaker, name),
+                    None => names.remove(&speaker),
+                };
+                ("speakers", json!(serde_json::to_string(&names)?))
+            }
+        };
+        patch.insert(key.into(), value);
+    }
+    check_meeting_times(started_at, ended_at)?;
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Meeting,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_meeting(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_meeting(b, id)?;
+    b.apply(Change::new(
+        Entity::Meeting,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+fn live_meeting(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Meeting> {
+    let meeting = query::meeting(b.tx, id)?;
+    if meeting.deleted_at.is_some() {
+        return Err(Error::not_found("meeting", id));
+    }
+    Ok(meeting)
+}
+
+// ---------------------------------------------------------------------------------------
+// Transcripts (Scribe, M20)
+
+/// `"me"`, or `"s"` and a number.
+fn check_speaker(key: &str) -> Result<()> {
+    let numbered = key
+        .strip_prefix('s')
+        .is_some_and(|n| !n.is_empty() && n.len() <= 4 && n.bytes().all(|c| c.is_ascii_digit()));
+    if key == "me" || numbered {
+        Ok(())
+    } else {
+        Err(Error::invalid(format!(
+            "speaker '{key}' is not \"me\" or \"s1\", \"s2\", …"
+        )))
+    }
+}
+
+fn check_segment_text(text: &str) -> Result<String> {
+    let text = text.trim();
+    if text.chars().count() > MAX_SEGMENT_CHARS {
+        return Err(Error::invalid(format!(
+            "a transcript segment has at most {MAX_SEGMENT_CHARS} characters"
+        )));
+    }
+    Ok(text.to_owned())
+}
+
+fn live_segment(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::TranscriptSegment> {
+    let segment = query::segment(b.tx, id)?;
+    if segment.deleted_at.is_some() {
+        return Err(Error::not_found("transcript segment", id));
+    }
+    live_meeting(b, &segment.meeting_id)?;
+    Ok(segment)
+}
+
+fn set_transcript(
+    b: &mut Batch<'_, '_>,
+    meeting_id: &str,
+    segments: Vec<NewSegment>,
+) -> Result<()> {
+    live_meeting(b, meeting_id)?;
+    if segments.len() > MAX_SEGMENTS {
+        return Err(Error::invalid(format!(
+            "a transcript has at most {MAX_SEGMENTS} segments"
+        )));
+    }
+    for old in query::transcript(b.tx, meeting_id)? {
+        b.apply(Change::new(
+            Entity::TranscriptSegment,
+            &old.id,
+            OpKind::Delete,
+            json!({ "deleted_at": b.now, "updated_at": b.now }),
+        ))?;
+    }
+    for n in segments {
+        let id = client_id(n.id)?;
+        check_speaker(&n.speaker)?;
+        if n.start_ms < 0 || n.end_ms < n.start_ms {
+            return Err(Error::invalid("a segment must end after it starts"));
+        }
+        let text = check_segment_text(&n.text)?;
+        if text.is_empty() {
+            continue;
+        }
+        b.apply(Change::new(
+            Entity::TranscriptSegment,
+            &id,
+            OpKind::Create,
+            json!({
+                "meeting_id": meeting_id,
+                "start_ms": n.start_ms,
+                "end_ms": n.end_ms,
+                "speaker": n.speaker,
+                "text": text,
+                "edited": 0,
+                "created_at": b.now,
+                "updated_at": b.now,
+                "deleted_at": null,
+            }),
+        ))?;
+    }
+    b.apply(Change::new(
+        Entity::Meeting,
+        meeting_id,
+        OpKind::Update,
+        json!({
+            "state": MeetingState::Review.as_str(),
+            "transcribed_at": b.now,
+            "validated_at": null,
+            "speakers": "{}",
+            "updated_at": b.now,
+        }),
+    ))
+}
+
+fn update_segment(b: &mut Batch<'_, '_>, id: &str, changes: Vec<SegmentChange>) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid("update_segment needs at least one change"));
+    }
+    live_segment(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        match change {
+            SegmentChange::Text(text) => {
+                let text = check_segment_text(&text)?;
+                if text.is_empty() {
+                    return Err(Error::invalid(
+                        "a segment cannot be empty; delete it instead",
+                    ));
+                }
+                patch.insert("text".into(), json!(text));
+                patch.insert("edited".into(), json!(1));
+            }
+            SegmentChange::Speaker(speaker) => {
+                check_speaker(&speaker)?;
+                patch.insert("speaker".into(), json!(speaker));
+            }
+        }
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn split_segment(b: &mut Batch<'_, '_>, id: &str, at: u32, new_id: Option<Id>) -> Result<()> {
+    let segment = live_segment(b, id)?;
+    let chars: Vec<char> = segment.text.chars().collect();
+    let at = at as usize;
+    let first: String = chars[..at.min(chars.len())].iter().collect();
+    let second: String = chars[at.min(chars.len())..].iter().collect();
+    let (first, second) = (first.trim(), second.trim());
+    if first.is_empty() || second.is_empty() {
+        return Err(Error::invalid(
+            "split a segment between two words, not at its start or end",
+        ));
+    }
+    let new_id = client_id(new_id)?;
+    let span = segment.end_ms - segment.start_ms;
+    let cut = segment.start_ms + span * at as i64 / chars.len().max(1) as i64;
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        id,
+        OpKind::Update,
+        json!({ "text": first, "end_ms": cut, "edited": 1, "updated_at": b.now }),
+    ))?;
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        &new_id,
+        OpKind::Create,
+        json!({
+            "meeting_id": segment.meeting_id,
+            "start_ms": cut,
+            "end_ms": segment.end_ms,
+            "speaker": segment.speaker,
+            "text": second,
+            "edited": 1,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+fn delete_segment(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_segment(b, id)?;
+    b.apply(Change::new(
+        Entity::TranscriptSegment,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))
+}
+
+fn reassign_speaker(b: &mut Batch<'_, '_>, meeting_id: &str, from: &str, to: &str) -> Result<()> {
+    live_meeting(b, meeting_id)?;
+    check_speaker(from)?;
+    check_speaker(to)?;
+    if from == to {
+        return Ok(());
+    }
+    for segment in query::transcript(b.tx, meeting_id)? {
+        if segment.speaker == from {
+            b.apply(Change::new(
+                Entity::TranscriptSegment,
+                &segment.id,
+                OpKind::Update,
+                json!({ "speaker": to, "updated_at": b.now }),
+            ))?;
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------
+// Agent sessions (docs/adr/017)
+
+fn create_agent_session(b: &mut Batch<'_, '_>, n: NewAgentSession) -> Result<()> {
+    let id = client_id(n.id)?;
+    linked_task(b, &n.task_id)?;
+    check_id(&n.claude_session_id)?;
+    let folder = non_empty("folder", &n.folder)?;
+    check_permission_mode(&n.permission_mode)?;
+    let model = n
+        .model
+        .as_deref()
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_owned);
+    if model
+        .as_deref()
+        .is_some_and(|m| m.starts_with('-') || m.contains(char::is_whitespace))
+    {
+        return Err(Error::invalid("invalid model name"));
+    }
+    let device_id = b.device_id().to_owned();
+    b.apply(Change::new(
+        Entity::AgentSession,
+        &id,
+        OpKind::Create,
+        json!({
+            "task_id": n.task_id,
+            "device_id": device_id,
+            "claude_session_id": n.claude_session_id,
+            "folder": folder,
+            "runtime": n.runtime.as_str(),
+            "permission_mode": n.permission_mode,
+            "model": model,
+            "prompt": n.prompt.trim(),
+            "state": SessionState::Running.as_str(),
+            "started_at": b.now,
+            "ended_at": null,
+            "summary": null,
+            "cost_usd_micros": null,
+            "turns": null,
+            "duration_ms": null,
+            "error": null,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))?;
+    touch_task(b, &n.task_id)
+}
+
+fn check_permission_mode(mode: &str) -> Result<()> {
+    if PERMISSION_MODES.contains(&mode) {
+        Ok(())
+    } else {
+        Err(Error::invalid(format!(
+            "unknown permission mode '{mode}' (expected one of {})",
+            PERMISSION_MODES.join(", ")
+        )))
+    }
+}
+
+fn update_agent_session(
+    b: &mut Batch<'_, '_>,
+    id: &str,
+    changes: Vec<AgentSessionChange>,
+) -> Result<()> {
+    if changes.is_empty() {
+        return Err(Error::invalid(
+            "update_agent_session needs at least one change",
+        ));
+    }
+    let session = own_session(b, id)?;
+    let mut patch = Map::new();
+    let mut ended = false;
+    for change in changes {
+        let (key, value) = match change {
+            AgentSessionChange::State(s) => {
+                // `ended_at` is set when a session stops being active (running or in a
+                // terminal) and cleared when it becomes active again.
+                let active = s.is_active();
+                if active != session.state.is_active() {
+                    patch.insert(
+                        "ended_at".into(),
+                        if active { Value::Null } else { json!(b.now) },
+                    );
+                    ended = !active;
+                }
+                ("state", json!(s.as_str()))
+            }
+            AgentSessionChange::Summary(s) => ("summary", json!(trimmed(s))),
+            AgentSessionChange::CostUsdMicros(c) => {
+                if c.is_some_and(|c| c < 0) {
+                    return Err(Error::invalid("cost cannot be negative"));
+                }
+                ("cost_usd_micros", json!(c))
+            }
+            AgentSessionChange::Turns(t) => {
+                if t.is_some_and(|t| t < 0) {
+                    return Err(Error::invalid("turns cannot be negative"));
+                }
+                ("turns", json!(t))
+            }
+            AgentSessionChange::DurationMs(d) => {
+                if d.is_some_and(|d| d < 0) {
+                    return Err(Error::invalid("duration cannot be negative"));
+                }
+                ("duration_ms", json!(d))
+            }
+            AgentSessionChange::Error(e) => ("error", json!(trimmed(e))),
+            AgentSessionChange::ClaudeSessionId(c) => {
+                crate::clock::check_id(&c)?;
+                ("claude_session_id", json!(c))
+            }
+        };
+        patch.insert(key.into(), value);
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::AgentSession,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))?;
+    if ended {
+        touch_task(b, &session.task_id)?;
+    }
+    Ok(())
+}
+
+fn delete_agent_session(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    let session = own_session(b, id)?;
+    if session.state.is_active() {
+        return Err(Error::invalid(
+            "stop the session (or mark it done) before removing it",
+        ));
+    }
+    for note_id in ids(
+        b,
+        "SELECT id FROM agent_notes WHERE session_id = ?1 AND deleted_at IS NULL",
+        id,
+    )? {
+        b.apply(Change::new(
+            Entity::AgentNote,
+            &note_id,
+            OpKind::Delete,
+            json!({ "deleted_at": b.now, "updated_at": b.now }),
+        ))?;
+    }
+    b.apply(Change::new(
+        Entity::AgentSession,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": b.now, "updated_at": b.now }),
+    ))?;
+    touch_task(b, &session.task_id)
+}
+
+fn add_agent_note(b: &mut Batch<'_, '_>, n: NewAgentNote) -> Result<()> {
+    let id = client_id(n.id)?;
+    let session = own_session(b, &n.session_id)?;
+    linked_task(b, &session.task_id)?;
+    let body = non_empty("note", &n.body)?;
+    if body.chars().count() > MAX_NOTE_CHARS {
+        return Err(Error::invalid(format!(
+            "a note is limited to {MAX_NOTE_CHARS} characters"
+        )));
+    }
+    b.apply(Change::new(
+        Entity::AgentNote,
+        &id,
+        OpKind::Create,
+        json!({
+            "session_id": session.id,
+            "task_id": session.task_id,
+            "body": body,
+            "created_at": b.now,
+            "updated_at": b.now,
+            "deleted_at": null,
+        }),
+    ))?;
+    touch_task(b, &session.task_id)
+}
+
+/// A live session started by this device (only its device runs and updates it). A
+/// session in the desktop app has no process to own: any device may record it.
+fn own_session(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::AgentSession> {
+    let session = query::agent_session(b.tx, id)?;
+    if session.deleted_at.is_some() {
+        return Err(Error::not_found("agent session", id));
+    }
+    if session.device_id != b.device_id() && session.state != SessionState::Desktop {
+        return Err(Error::invalid(
+            "this session runs on another device; only that device can change it",
+        ));
+    }
+    Ok(session)
+}
+
+/// Trims an optional text; blank becomes `None`.
+fn trimmed(value: Option<String>) -> Option<String> {
+    value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
+}
+
+pub(crate) fn client_id(id: Option<Id>) -> Result<Id> {
+    match id {
+        Some(id) => {
+            check_id(&id)?;
+            Ok(id)
+        }
+        None => Ok(new_id()),
+    }
+}
+
+fn non_empty(field: &str, value: &str) -> Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(Error::invalid(format!("{field} cannot be empty")));
+    }
+    Ok(trimmed.to_owned())
+}
+
+fn check_optional_date(field: &str, value: Option<&str>) -> Result<()> {
+    value.map_or(Ok(()), |v| check_date(field, v))
+}
+
+fn check_estimate(minutes: Option<i64>) -> Result<()> {
+    match minutes {
+        Some(m) if m < 0 => Err(Error::invalid("estimate cannot be negative")),
+        _ => Ok(()),
+    }
+}
+
+fn comment_body(body: &str) -> Result<String> {
+    let body = non_empty("comment", body)?;
+    if body.chars().count() > MAX_COMMENT_CHARS {
+        return Err(Error::invalid(format!(
+            "a comment is limited to {MAX_COMMENT_CHARS} characters"
+        )));
+    }
+    Ok(body)
+}
+
+fn create_comment(b: &mut Batch<'_, '_>, n: NewComment) -> Result<()> {
+    let id = client_id(n.id)?;
+    live_task(b, &n.task_id)?;
+    let body = comment_body(&n.body)?;
+    let now = b.now;
+    let author = b.author.clone();
+    b.apply(Change::new(
+        Entity::Comment,
+        &id,
+        OpKind::Create,
+        json!({
+            "task_id": n.task_id,
+            "body": body,
+            "author_id": author,
+            "created_at": now,
+            "updated_at": now,
+            "deleted_at": null,
+        }),
+    ))
+}
+
+/// A live comment this batch's author may change: in a team space, their own.
+fn own_comment(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Comment> {
+    let comment = query::comment(b.tx, id)?;
+    if comment.deleted_at.is_some() {
+        return Err(Error::not_found("comment", id));
+    }
+    if b.author.is_some() && comment.author_id != b.author {
+        return Err(Error::invalid("only its author can change a comment"));
+    }
+    Ok(comment)
+}
+
+fn update_comment(b: &mut Batch<'_, '_>, id: &str, body: &str) -> Result<()> {
+    let comment = own_comment(b, id)?;
+    let body = comment_body(body)?;
+    if body == comment.body {
+        return Ok(());
+    }
+    let now = b.now;
+    b.apply(Change::new(
+        Entity::Comment,
+        id,
+        OpKind::Update,
+        json!({ "body": body, "updated_at": now }),
+    ))
+}
+
+fn delete_comment(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    own_comment(b, id)?;
+    let now = b.now;
+    b.apply(Change::new(
+        Entity::Comment,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": now, "updated_at": now }),
+    ))
+}
+
+fn live_member(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Member> {
+    let member = query::member(b.tx, id)?;
+    if member.deleted_at.is_some() {
+        return Err(Error::not_found("member", id));
+    }
+    Ok(member)
+}
+
+fn create_member(b: &mut Batch<'_, '_>, n: NewMember) -> Result<()> {
+    check_id(&n.id)?;
+    let name = non_empty("name", &n.name)?;
+    let now = b.now;
+    match query::member(b.tx, &n.id) {
+        Ok(existing) => {
+            if existing.deleted_at.is_some() {
+                b.apply(Change::new(
+                    Entity::Member,
+                    &n.id,
+                    OpKind::Restore,
+                    json!({ "deleted_at": null, "updated_at": now }),
+                ))?;
+            }
+            update_member(
+                b,
+                &n.id,
+                vec![MemberChange::Name(name), MemberChange::Color(n.color)],
+            )
+        }
+        Err(Error::NotFound { .. }) => b.apply(Change::new(
+            Entity::Member,
+            &n.id,
+            OpKind::Create,
+            json!({
+                "name": name,
+                "color": n.color,
+                "created_at": now,
+                "updated_at": now,
+                "deleted_at": null,
+            }),
+        )),
+        Err(e) => Err(e),
+    }
+}
+
+fn update_member(b: &mut Batch<'_, '_>, id: &str, changes: Vec<MemberChange>) -> Result<()> {
+    let member = live_member(b, id)?;
+    let mut patch = Map::new();
+    for change in changes {
+        match change {
+            MemberChange::Name(name) => {
+                let name = non_empty("name", &name)?;
+                if name != member.name {
+                    patch.insert("name".into(), json!(name));
+                }
+            }
+            MemberChange::Color(color) => {
+                if color != member.color {
+                    patch.insert("color".into(), json!(color));
+                }
+            }
+        }
+    }
+    if patch.is_empty() {
+        return Ok(());
+    }
+    patch.insert("updated_at".into(), json!(b.now));
+    b.apply(Change::new(
+        Entity::Member,
+        id,
+        OpKind::Update,
+        Value::Object(patch),
+    ))
+}
+
+fn delete_member(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
+    live_member(b, id)?;
+    let now = b.now;
+    b.apply(Change::new(
+        Entity::Member,
+        id,
+        OpKind::Delete,
+        json!({ "deleted_at": now, "updated_at": now }),
+    ))
+}
+
+fn set_task_mark(b: &mut Batch<'_, '_>, task_id: &str, today_on: Option<IsoDate>) -> Result<()> {
+    check_id(task_id)?;
+    linked_task(b, task_id)?;
+    check_optional_date("today", today_on.as_deref())?;
+    let now = b.now;
+    match query::task_mark(b.tx, task_id)? {
+        None => b.apply(Change::new(
+            Entity::TaskMark,
+            task_id,
+            OpKind::Create,
+            json!({ "today_on": today_on, "created_at": now, "updated_at": now }),
+        )),
+        Some(mark) if mark.today_on == today_on && mark.deleted_at.is_none() => Ok(()),
+        Some(mark) => {
+            if mark.deleted_at.is_some() {
+                b.apply(Change::new(
+                    Entity::TaskMark,
+                    task_id,
+                    OpKind::Restore,
+                    json!({ "deleted_at": null }),
+                ))?;
+            }
+            b.apply(Change::new(
+                Entity::TaskMark,
+                task_id,
+                OpKind::Update,
+                json!({ "today_on": today_on, "updated_at": now }),
+            ))
+        }
+    }
+}
+
+/// A live task here, or a live task of the team space a personal row may point at
+/// (ADR 033). For rows that only reference a task, never for the task's own edits.
+pub(crate) fn linked_task(b: &Batch<'_, '_>, id: &str) -> Result<()> {
+    if b.linked.contains(id) {
+        return Ok(());
+    }
+    live_task(b, id).map(|_| ())
+}
+
+fn linked_project(b: &Batch<'_, '_>, id: &str) -> Result<()> {
+    if b.linked.contains(id) {
+        return Ok(());
+    }
+    live_project(b, id).map(|_| ())
+}
+
+fn linked_epic(b: &Batch<'_, '_>, id: &str) -> Result<()> {
+    if b.linked.contains(id) {
+        return Ok(());
+    }
+    live_epic(b, id).map(|_| ())
+}
+
+pub(crate) fn live_task(b: &Batch<'_, '_>, id: &str) -> Result<Task> {
+    let task = query::task(b.tx, id)?;
+    if task.deleted_at.is_some() {
+        return Err(Error::not_found("task", id));
+    }
+    Ok(task)
+}
+
+fn live_project(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Project> {
+    let project = query::project(b.tx, id)?;
+    if project.deleted_at.is_some() {
+        return Err(Error::not_found("project", id));
+    }
+    Ok(project)
+}
+
+fn live_epic(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Epic> {
+    let epic = query::epic(b.tx, id)?;
+    if epic.deleted_at.is_some() {
+        return Err(Error::not_found("epic", id));
+    }
+    Ok(epic)
+}
+
+fn live_tag(b: &Batch<'_, '_>, id: &str) -> Result<crate::model::Tag> {
+    let tag = query::tag(b.tx, id)?;
+    if tag.deleted_at.is_some() {
+        return Err(Error::not_found("tag", id));
+    }
+    Ok(tag)
+}
+
+fn default_status(b: &Batch<'_, '_>) -> Result<crate::model::Status> {
+    let id: String = b.tx.query_row(
+        "SELECT id FROM statuses WHERE deleted_at IS NULL
+         ORDER BY category != 'todo', rank LIMIT 1",
+        [],
+        |r| r.get(0),
+    )?;
+    query::status(b.tx, &id)
+}
+
+fn last_task_rank(b: &Batch<'_, '_>, status_id: &str) -> Result<Option<String>> {
+    Ok(b.tx.query_row(
+        "SELECT MAX(rank) FROM tasks WHERE status_id = ?1 AND deleted_at IS NULL",
+        [status_id],
+        |r| r.get(0),
+    )?)
+}
+
+/// Ids of all live subtasks, at any depth.
+fn descendants(b: &Batch<'_, '_>, id: &str) -> Result<Vec<Id>> {
+    ids(
+        b,
+        "WITH RECURSIVE sub(id) AS (
+           SELECT id FROM tasks WHERE parent_id = ?1 AND deleted_at IS NULL
+           UNION
+           SELECT t.id FROM tasks t JOIN sub ON t.parent_id = sub.id WHERE t.deleted_at IS NULL
+         )
+         SELECT id FROM sub",
+        id,
+    )
+}
+
+fn ids(b: &Batch<'_, '_>, sql: &str, param: &str) -> Result<Vec<Id>> {
+    let mut stmt = b.tx.prepare_cached(sql)?;
+    let rows = stmt.query_map([param], |r| r.get(0))?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+fn count(b: &Batch<'_, '_>, sql: &str, param: &str) -> Result<i64> {
+    Ok(b.tx.query_row(sql, [param], |r| r.get(0))?)
+}

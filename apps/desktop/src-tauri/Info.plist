@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the app's Info.plist by Tauri (its keys win). -->
+<plist version="1.0">
+<dict>
+  <!-- The app is named Task Master (productName, tauri.macos.conf.json), but an in-app update
+       keeps the folder it replaces, and Macs updated from 0.26 or older have
+       /Applications/task-master.app. macOS shows the folder's name unless it equals this
+       non-localized display name, in which case it shows the localized one ("Task Master",
+       macos/en.lproj/InfoPlist.strings). A new install (Task Master.app) or a folder the user
+       renamed shows its own name. ADR 009. -->
+  <key>CFBundleDisplayName</key>
+  <string>task-master</string>
+  <key>LSHasLocalizedDisplayName</key>
+  <true/>
+  <!-- Scribe (ADR 025, ADR 026) records meetings: macOS shows these when it asks for the
+       microphone and for the computer's sound. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Scribe records your voice in the meetings you record. The audio stays on this Mac.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>Scribe records the computer's sound in the meetings you record, so the other people on a call are in the recording too. The audio stays on this Mac.</string>
+</dict>
+</plist>

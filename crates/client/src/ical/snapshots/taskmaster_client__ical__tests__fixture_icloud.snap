@@ -1,0 +1,8 @@
+---
+source: crates/client/src/ical/tests.rs
+expression: "lines.join(\"\\n\")"
+---
+2026-11-03 17:30 → 2026-11-03 18:00 | Run club (Tuesday) | 20261102T073000Z
+2026-11-11 → 2026-11-12 (all day) | Armistice | -
+2026-11-20 19:00 → 2026-11-20 22:30 | Dinner, at Léa's | -
+2026-11-30 07:30 → 2026-11-30 08:00 | Run club | 20261130T073000Z

@@ -1,0 +1,1 @@
+ALTER TABLE tasks ADD COLUMN dependency_ids TEXT NOT NULL DEFAULT '[]';

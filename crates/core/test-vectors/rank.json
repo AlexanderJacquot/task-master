@@ -1,0 +1,32 @@
+{
+  "description": "Shared vectors for key_between(a, b). The Rust core (crates/core/src/rank.rs) and the TS side (fractional-indexing) must both pass them. null = open end; error = must reject.",
+  "cases": [
+    { "a": null, "b": null, "expected": "a0" },
+    { "a": null, "b": "a0", "expected": "Zz" },
+    { "a": null, "b": "Zz", "expected": "Zy" },
+    { "a": "a0", "b": null, "expected": "a1" },
+    { "a": "a1", "b": null, "expected": "a2" },
+    { "a": "a0", "b": "a1", "expected": "a0V" },
+    { "a": "a1", "b": "a2", "expected": "a1V" },
+    { "a": "a0V", "b": "a1", "expected": "a0l" },
+    { "a": "Zz", "b": "a0", "expected": "ZzV" },
+    { "a": "Zz", "b": "a1", "expected": "a0" },
+    { "a": null, "b": "Y00", "expected": "Xzzz" },
+    { "a": "bzz", "b": null, "expected": "c000" },
+    { "a": "a0", "b": "a0V", "expected": "a0G" },
+    { "a": "a0", "b": "a0G", "expected": "a08" },
+    { "a": "b125", "b": "b129", "expected": "b127" },
+    { "a": "a0", "b": "a1V", "expected": "a1" },
+    { "a": "Zz", "b": "a01", "expected": "a0" },
+    { "a": null, "b": "a0V", "expected": "a0" },
+    { "a": null, "b": "b999", "expected": "b99" },
+    { "a": null, "b": "A00000000000000000000000000", "error": true },
+    { "a": null, "b": "A000000000000000000000000001", "expected": "A000000000000000000000000000V" },
+    { "a": "zzzzzzzzzzzzzzzzzzzzzzzzzzy", "b": null, "expected": "zzzzzzzzzzzzzzzzzzzzzzzzzzz" },
+    { "a": "zzzzzzzzzzzzzzzzzzzzzzzzzzz", "b": null, "expected": "zzzzzzzzzzzzzzzzzzzzzzzzzzzV" },
+    { "a": "a00", "b": null, "error": true },
+    { "a": "a00", "b": "a1", "error": true },
+    { "a": "0", "b": "1", "error": true },
+    { "a": "a1", "b": "a0", "error": true }
+  ]
+}

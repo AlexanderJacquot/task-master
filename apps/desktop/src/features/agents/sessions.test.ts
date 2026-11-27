@@ -1,0 +1,158 @@
+import { describe, expect, it } from "vitest";
+import type { AgentSession, ProjectFolder } from "../../lib/types";
+import { agentSession, project, task } from "../../test/fixtures";
+import {
+  defaultFolder,
+  desktopAppPossible,
+  folderName,
+  formatCost,
+  formatDayHeading,
+  formatDuration,
+  recentFolders,
+  sessionsByDay,
+  shownSession,
+  sortedSessions,
+} from "./sessions";
+
+const byId = (list: AgentSession[]) => Object.fromEntries(list.map((s) => [s.id, s]));
+/** The fixtures' device. */
+const HERE = "this-device";
+
+function folder(project_id: string, path: string, runtime: "native" | "wsl" = "native") {
+  return { project_id, path, runtime, updated_at: 1 } satisfies ProjectFolder;
+}
+
+describe("which session shows", () => {
+  it("a task's chip shows its running session, else its newest", () => {
+    const old = agentSession({ task_id: "t", started_at: 10, state: "running" });
+    const newer = agentSession({ task_id: "t", started_at: 20, state: "failed" });
+    const other = agentSession({ task_id: "u", started_at: 30 });
+    expect(shownSession(byId([old, newer, other]), "t")?.id).toBe(old.id);
+    expect(shownSession(byId([{ ...old, state: "done" }, newer]), "t")?.id).toBe(newer.id);
+    expect(shownSession(byId([other]), "t")).toBeUndefined();
+  });
+
+  it("treats a session in a terminal as active", () => {
+    const old = agentSession({ task_id: "t", started_at: 10, state: "terminal" });
+    const newer = agentSession({ task_id: "t", started_at: 20 });
+    expect(shownSession(byId([old, newer]), "t")?.id).toBe(old.id);
+    expect(sortedSessions(byId([old, newer]))[0]?.id).toBe(old.id);
+  });
+
+  it("lists running sessions first, then newest first", () => {
+    const a = agentSession({ started_at: 10 });
+    const b = agentSession({ started_at: 30 });
+    const c = agentSession({ started_at: 5, state: "running" });
+    expect(sortedSessions(byId([a, b, c])).map((s) => s.id)).toEqual([c.id, b.id, a.id]);
+  });
+});
+
+describe("where a new session starts", () => {
+  const app = project({ id: "p", parent_id: "area" });
+  const projects = { p: app, area: project({ id: "area" }) };
+
+  it("prefers the task's last folder, then its project's, then its area's, then the latest", () => {
+    const t = task({ project_id: "p" });
+    const elsewhere = agentSession({ task_id: "x", folder: "/recent", started_at: 50 });
+    const own = agentSession({ task_id: t.id, folder: "/own", started_at: 10 });
+    const folders = [folder("p", "/project"), folder("area", "/area")];
+
+    expect(defaultFolder(t, byId([own, elsewhere]), folders, projects, "native", HERE)).toBe(
+      "/own",
+    );
+    expect(defaultFolder(t, byId([elsewhere]), folders, projects, "native", HERE)).toBe("/project");
+    expect(defaultFolder(t, byId([elsewhere]), folders.slice(1), projects, "native", HERE)).toBe(
+      "/area",
+    );
+    expect(defaultFolder(t, byId([elsewhere]), [], projects, "native", HERE)).toBe("/recent");
+    expect(defaultFolder(t, {}, [], projects, "native", HERE)).toBe("");
+  });
+
+  it("ignores folders of the other runtime", () => {
+    const t = task({ project_id: "p" });
+    const wsl = agentSession({ task_id: t.id, folder: "/home/me/app", runtime: "wsl" });
+    const folders = [folder("p", "C:\\code\\app", "native"), folder("p", "/srv/app", "wsl")];
+    expect(defaultFolder(t, byId([wsl]), folders, projects, "native", HERE)).toBe("C:\\code\\app");
+    expect(defaultFolder(t, {}, folders, projects, "wsl", HERE)).toBe("/srv/app");
+  });
+
+  it("ignores folders of sessions that ran on another device", () => {
+    const t = task({ project_id: "p" });
+    const linux = { device_id: "linux-box", folder: "/home/me/app", started_at: 50 };
+    const ownThere = agentSession({ ...linux, task_id: t.id });
+    const recentThere = agentSession({ ...linux, task_id: "x" });
+    const ownHere = agentSession({ task_id: t.id, folder: "/Users/me/app", started_at: 10 });
+    const folders = [folder("p", "/Users/me/project")];
+
+    expect(defaultFolder(t, byId([ownThere, ownHere]), folders, projects, "native", HERE)).toBe(
+      "/Users/me/app",
+    );
+    expect(defaultFolder(t, byId([ownThere, recentThere]), folders, projects, "native", HERE)).toBe(
+      "/Users/me/project",
+    );
+    expect(defaultFolder(t, byId([ownThere, recentThere]), [], projects, "native", HERE)).toBe("");
+    expect(recentFolders(byId([ownThere, recentThere, ownHere]), "native", HERE)).toEqual([
+      "/Users/me/app",
+    ]);
+  });
+
+  it("offers recent folders newest first, once each", () => {
+    const list = [
+      agentSession({ folder: "/a", started_at: 1 }),
+      agentSession({ folder: "/b", started_at: 2 }),
+      agentSession({ folder: "/a", started_at: 3 }),
+      agentSession({ folder: "/w", started_at: 4, runtime: "wsl" }),
+    ];
+    expect(recentFolders(byId(list), "native", HERE)).toEqual(["/a", "/b"]);
+    expect(recentFolders(byId(list), "native", HERE, 1)).toEqual(["/a"]);
+  });
+});
+
+describe("days", () => {
+  it("splits sessions by the local day they started on, keeping the order", () => {
+    const at = (d: number, h: number) => new Date(2026, 10, d, h).getTime();
+    const late = agentSession({ started_at: at(12, 23) });
+    const early = agentSession({ started_at: at(12, 0) });
+    const before = agentSession({ started_at: at(10, 9) });
+    expect(sessionsByDay([late, early, before])).toEqual([
+      { day: "2026-11-12", sessions: [late, early] },
+      { day: "2026-11-10", sessions: [before] },
+    ]);
+    expect(sessionsByDay([])).toEqual([]);
+  });
+
+  it("names today and yesterday, then the date, with the year when not this one", () => {
+    expect(formatDayHeading("2026-11-12", "2026-11-12")).toBe("Today");
+    expect(formatDayHeading("2026-11-11", "2026-11-12")).toBe("Yesterday");
+    expect(formatDayHeading("2026-11-09", "2026-11-12")).toContain("9");
+    expect(formatDayHeading("2026-11-09", "2026-11-12")).not.toContain("2026");
+    expect(formatDayHeading("2025-12-30", "2026-01-02")).toContain("2025");
+  });
+});
+
+describe("formatting", () => {
+  it("formats cost, duration and folder names", () => {
+    expect(formatCost(null)).toBeNull();
+    expect(formatCost(0)).toBe("$0.00");
+    expect(formatCost(4_500)).toBe("$0.0045");
+    expect(formatCost(1_200_000)).toBe("$1.20");
+    expect(formatDuration(44_600)).toBe("45 s");
+    expect(formatDuration(3 * 60_000)).toBe("3 min");
+    expect(formatDuration(65 * 60_000)).toBe("1 h 05");
+    expect(folderName("/home/me/code/app/")).toBe("app");
+    expect(folderName("C:\\Users\\me\\task-master")).toBe("task-master");
+    expect(folderName("\\\\wsl.localhost\\Ubuntu\\home\\me\\x")).toBe("x");
+  });
+});
+
+describe("the Claude desktop app", () => {
+  it("is offered on macOS and Windows when agents run on this computer", () => {
+    const mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15";
+    const win = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+    const linux = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15";
+    expect(desktopAppPossible("native", mac)).toBe(true);
+    expect(desktopAppPossible("native", win)).toBe(true);
+    expect(desktopAppPossible("wsl", win)).toBe(false);
+    expect(desktopAppPossible("native", linux)).toBe(false);
+  });
+});

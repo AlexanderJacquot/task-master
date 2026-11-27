@@ -1,0 +1,327 @@
+// @vitest-environment jsdom
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { Api } from "../../lib/api";
+import { getTimers, setTimers } from "../../lib/timer";
+import type { Changes, Command } from "../../lib/types";
+import { StoreProvider } from "../../store/context";
+import { createTaskStore } from "../../store/store";
+import { fakeParse, STATUS, snapshot } from "../../test/fixtures";
+import { type CaptureControls, CaptureWindow } from "./CaptureWindow";
+
+/** Records what the window was asked to do; plain functions, as CLAUDE.md asks. */
+/** `expanded` settles when the window has grown (at once by default). */
+function fakeControls(expanded: () => Promise<void> = async () => {}) {
+  const calls: string[] = [];
+  let blur: (() => void) | null = null;
+  let opened: (() => void) | null = null;
+  const controls: CaptureControls = {
+    hide: async () => {
+      calls.push("hide");
+    },
+    expand: async () => {
+      calls.push("expand");
+      await expanded();
+    },
+    onOpened: async (handler) => {
+      opened = handler;
+      return () => {};
+    },
+    onBlur: async (handler) => {
+      blur = handler;
+      return () => {};
+    },
+  };
+  return { controls, calls, blur: () => blur?.(), open: () => opened?.() };
+}
+
+async function renderWindow({
+  failDelete = false,
+  expanded,
+}: {
+  failDelete?: boolean;
+  expanded?: () => Promise<void>;
+} = {}) {
+  const executed: Command[][] = [];
+  const api: Api = {
+    snapshot: async () => snapshot(),
+    execute: async (commands) => {
+      executed.push(commands);
+      if (failDelete && commands.some((command) => command.type === "delete_task")) {
+        throw new Error("Deletion failed");
+      }
+      return {
+        batch_id: `b${executed.length}`,
+        op_seq: executed.length,
+        tasks: [],
+        projects: [],
+        epics: [],
+        tags: [],
+        views: [],
+        attachments: [],
+        time_blocks: [],
+        agent_sessions: [],
+        agent_notes: [],
+        meetings: [],
+        transcript_segments: [],
+        terminal_sessions: [],
+        notes: [],
+        note_folders: [],
+        statuses: [],
+      } as Changes;
+    },
+    undo: async () => null,
+    redo: async () => null,
+    search: async () => [],
+    taskActivity: async () => [],
+    parseCapture: async (text) => fakeParse(text),
+    onChanged: async () => () => {},
+    files: {
+      storeData: async () => {
+        throw new Error("not used");
+      },
+      storeFile: async () => {
+        throw new Error("not used");
+      },
+      open: async () => {},
+      saveCopy: async () => false,
+      openUrl: async () => {},
+      pickFiles: async () => [],
+      url: (id) => `tm://localhost/${id}`,
+    },
+  };
+  const store = createTaskStore(api);
+  await store.getState().hydrate();
+  const fake = fakeControls(expanded);
+  render(
+    <StoreProvider store={store} api={api}>
+      <CaptureWindow controls={fake.controls} />
+    </StoreProvider>,
+  );
+  const input = await screen.findByRole("textbox", { name: "New task" });
+  return { fake, executed, input, store };
+}
+
+beforeEach(() => setTimers([]));
+afterEach(cleanup);
+
+describe("the quick-capture window", () => {
+  it("saves on Enter and hides, without growing", async () => {
+    const { fake, executed, input } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Buy milk" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(executed.length).toBe(1));
+    await waitFor(() => expect(fake.calls).toEqual(["hide"]));
+    expect(screen.queryByRole("region", { name: "Description" })).toBeNull();
+  });
+
+  it("starts no timer on a plain Enter", async () => {
+    const { fake, input } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Buy bread" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fake.calls).toEqual(["hide"]));
+    expect(getTimers()).toEqual([]);
+  });
+
+  it("saves, starts the task's timer and hides on Alt+Enter", async () => {
+    const { fake, input, store } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Fix the build" } });
+    fireEvent.keyDown(input, { key: "Enter", altKey: true });
+    await screen.findByText("Saved, timer running ✓");
+    const task = Object.values(store.getState().tasks).find((t) => t.title === "Fix the build");
+    expect(getTimers().map((t) => t.task_id)).toEqual([task?.id]);
+    // Started work moves to in progress, as from the task's own Start timer.
+    await waitFor(() =>
+      expect(store.getState().tasks[task?.id ?? ""]?.status_id).toBe(STATUS.inProgress),
+    );
+    await waitFor(() => expect(fake.calls).toEqual(["hide"]));
+    expect(screen.queryByRole("region", { name: "Description" })).toBeNull();
+  });
+
+  it("saves and starts the timer from its button", async () => {
+    const { fake, input, store } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Review the PR" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add and start timer" }));
+    await waitFor(() => expect(fake.calls).toEqual(["hide"]));
+    const task = Object.values(store.getState().tasks).find((t) => t.title === "Review the PR");
+    expect(getTimers().map((t) => t.task_id)).toEqual([task?.id]);
+  });
+
+  it("grows into the task editor on Shift+Enter and stays open on blur", async () => {
+    const { fake, executed, input } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Write the report" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    await screen.findByRole("region", { name: "Description" });
+    expect(executed.length).toBe(1);
+    expect(fake.calls).toEqual(["expand"]);
+    expect((screen.getByRole("textbox", { name: "Title" }) as HTMLTextAreaElement).value).toBe(
+      "Write the report",
+    );
+    expect(screen.getByRole("region", { name: "Subtasks" })).toBeTruthy();
+    // Ready to write: the cursor is in the description editor.
+    const description = screen.getByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
+    expect(document.activeElement?.classList.contains("cm-content")).toBe(true);
+
+    act(() => fake.blur());
+    expect(fake.calls).toEqual(["expand"]);
+  });
+
+  it("opens the editor only once the window has grown, so the description keeps the cursor", async () => {
+    // On macOS growing the window takes the keyboard from the page for a moment; an
+    // editor already open would lose focus and close.
+    let grown = () => {};
+    const expanded = new Promise<void>((resolve) => {
+      grown = resolve;
+    });
+    const { fake, input } = await renderWindow({ expanded: () => expanded });
+    fireEvent.change(input, { target: { value: "Write the report" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    await waitFor(() => expect(fake.calls).toEqual(["expand"]));
+    expect(screen.queryByRole("region", { name: "Description" })).toBeNull();
+
+    await act(async () => grown());
+    const description = await screen.findByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
+  });
+
+  it("stays open when growing the window reports a blur (Windows)", async () => {
+    // On Windows Tauri reports the WebView2 control's focus changes as the window's, and
+    // resizing and refocusing it can blur it before the editor is open.
+    let fake: ReturnType<typeof fakeControls> | undefined;
+    const { input, fake: rendered } = await renderWindow({
+      expanded: async () => {
+        fake?.blur();
+      },
+    });
+    fake = rendered;
+    fireEvent.change(input, { target: { value: "Write the report" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    const description = await screen.findByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
+    expect(rendered.calls).toEqual(["expand"]);
+  });
+
+  it("hides on blur again once reopened after an expanded edit", async () => {
+    const { fake, input } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Plan the trip" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    await screen.findByRole("region", { name: "Description" });
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(fake.calls).toEqual(["expand", "hide"]));
+    act(() => fake.open());
+    await screen.findByRole("textbox", { name: "New task" });
+    act(() => fake.blur());
+    await waitFor(() => expect(fake.calls).toEqual(["expand", "hide", "hide"]));
+  });
+
+  it("still opens the editor when the window cannot grow", async () => {
+    const { input } = await renderWindow({
+      expanded: async () => {
+        throw new Error("no resize");
+      },
+    });
+    fireEvent.change(input, { target: { value: "Write the report" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    const description = await screen.findByRole("region", { name: "Description" });
+    await waitFor(() => expect(description.contains(document.activeElement)).toBe(true));
+  });
+
+  it("leaves a field on the first Esc, closes on the next, and opens small again", async () => {
+    const { fake, input } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Plan the trip" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    const title = await screen.findByRole("textbox", { name: "Title" });
+
+    title.focus();
+    fireEvent.keyDown(title, { key: "Escape" });
+    expect(document.activeElement).not.toBe(title);
+    expect(fake.calls).toEqual(["expand"]);
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(fake.calls).toEqual(["expand", "hide"]));
+    await screen.findByRole("textbox", { name: "New task" });
+
+    act(() => fake.open());
+    expect(screen.queryByRole("region", { name: "Description" })).toBeNull();
+  });
+
+  it("saves the field being edited and closes on Ctrl+Enter", async () => {
+    const { fake, executed, input, store } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Draft title" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    const title = await screen.findByRole("textbox", { name: "Title" });
+
+    title.focus();
+    fireEvent.change(title, { target: { value: "Final title" } });
+    // Captured before any field sees it, so the description editor adds no line.
+    const event = new KeyboardEvent("keydown", {
+      key: "Enter",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    act(() => {
+      title.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+    await waitFor(() => expect(fake.calls).toEqual(["expand", "hide"]));
+    expect(executed.length).toBe(2);
+    expect(Object.values(store.getState().tasks).some((t) => t.title === "Final title")).toBe(true);
+    await screen.findByRole("textbox", { name: "New task" });
+  });
+
+  it("deletes the expanded task and closes the popup", async () => {
+    const { fake, executed, input, store } = await renderWindow();
+    fireEvent.change(input, { target: { value: "Unwanted task" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    await screen.findByRole("textbox", { name: "Title" });
+    const task = Object.values(store.getState().tasks).find((t) => t.title === "Unwanted task");
+    expect(task).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete task" }));
+
+    await waitFor(() => expect(fake.calls).toEqual(["expand", "hide"]));
+    expect(executed[1]).toEqual([{ type: "delete_task", id: task?.id }]);
+    expect(store.getState().tasks[task?.id ?? ""]).toBeUndefined();
+    await screen.findByRole("textbox", { name: "New task" });
+  });
+
+  it("keeps the editor open and allows retrying if deletion fails", async () => {
+    const { fake, executed, input, store } = await renderWindow({ failDelete: true });
+    fireEvent.change(input, { target: { value: "Keep until deleted" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    await screen.findByRole("textbox", { name: "Title" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete task" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Could not delete");
+    expect(fake.calls).toEqual(["expand"]);
+    expect((screen.getByRole("textbox", { name: "Title" }) as HTMLTextAreaElement).value).toBe(
+      "Keep until deleted",
+    );
+    expect(
+      Object.values(store.getState().tasks).some((t) => t.title === "Keep until deleted"),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Delete task" }));
+    await waitFor(() => expect(executed.length).toBe(3));
+  });
+
+  for (const button of ["Done", "Close"]) {
+    it(`keeps the expanded task when closed with ${button}`, async () => {
+      const { fake, executed, input, store } = await renderWindow();
+      fireEvent.change(input, { target: { value: "Keep this task" } });
+      fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+      await screen.findByRole("textbox", { name: "Title" });
+
+      fireEvent.click(screen.getByRole("button", { name: button }));
+
+      await waitFor(() => expect(fake.calls).toEqual(["expand", "hide"]));
+      expect(executed.length).toBe(1);
+      expect(Object.values(store.getState().tasks).some((t) => t.title === "Keep this task")).toBe(
+        true,
+      );
+    });
+  }
+});

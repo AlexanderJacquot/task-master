@@ -1,0 +1,7 @@
+---
+source: crates/client/src/ical/tests.rs
+expression: "lines.join(\"\\n\")"
+---
+2026-11-05 08:00 → 2026-11-05 09:30 | Monthly team meeting | 20261105T080000Z
+2026-11-16 → 2026-11-19 (all day) | Training | -
+2026-11-24 15:00 → 2026-11-24 16:00 | Customer call | -

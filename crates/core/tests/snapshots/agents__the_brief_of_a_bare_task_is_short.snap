@@ -1,0 +1,14 @@
+---
+source: crates/core/tests/agents.rs
+expression: s.agent_brief(&task.id).unwrap()
+---
+# Task: Tidy up
+
+- Id: `0190f0a0-0000-7000-8000-000000000099`
+- Status: To do (todo)
+- Priority: normal
+- Project: none (Inbox)
+
+## Description
+
+_No description._

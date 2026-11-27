@@ -1,0 +1,134 @@
+import type { AgentsApi } from "../lib/api";
+import type {
+  AgentActivity,
+  AgentNote,
+  AgentSession,
+  AgentSettings,
+  AgentStart,
+  GitInfo,
+  McpSetup,
+  PlanUsage,
+  ProjectFolder,
+} from "../lib/types";
+import { agentSession } from "./fixtures";
+
+/**
+ * The shell's agent commands for tests (ADR 017): records calls, starts sessions as running
+ * rows, and lets the test push activity events as the shell would.
+ */
+export function fakeAgents(
+  opts: {
+    settings?: Partial<AgentSettings>;
+    folders?: ProjectFolder[];
+    notes?: AgentNote[];
+    live?: AgentActivity[];
+    planUsage?: PlanUsage | Error;
+    /** Why opening a conversation in the desktop app fails. */
+    openDesktop?: Error;
+    /** The repository found in each folder (by path); none elsewhere. */
+    repos?: Record<string, GitInfo>;
+    /** This computer's MCP server (Settings → MCP); a macOS install by default. */
+    mcpSetup?: Partial<McpSetup>;
+  } = {},
+) {
+  const calls: string[] = [];
+  const started: AgentStart[] = [];
+  let settings: AgentSettings = {
+    runtime: "native",
+    wsl_distro: null,
+    claude_path: "claude",
+    terminal: null,
+    permission_mode: "acceptEdits",
+    model: null,
+    started_status_id: null,
+    done_status_id: null,
+    directive: null,
+    edit_user_tasks: true,
+    limits: { day_usd_micros: null, week_usd_micros: null, month_usd_micros: null },
+    import_terminal_sessions: true,
+    ...opts.settings,
+  };
+  let folders = opts.folders ?? [];
+  let listener: ((e: AgentActivity) => void) | null = null;
+  const api: AgentsApi = {
+    start: async (input) => {
+      started.push(input);
+      const session: AgentSession = agentSession({
+        task_id: input.task_id,
+        folder: input.folder,
+        permission_mode: input.permission_mode ?? settings.permission_mode,
+        model: input.model ?? null,
+        prompt: input.prompt,
+        state: input.surface === "desktop" ? "desktop" : "running",
+        started_at: Date.now(),
+        ended_at: null,
+      });
+      calls.push(`start ${session.id}`);
+      return session;
+    },
+    send: async (id, message) => {
+      calls.push(`send ${id} ${message}`);
+    },
+    cancel: async (id) => {
+      calls.push(`cancel ${id}`);
+    },
+    openTerminal: async (id) => {
+      calls.push(`terminal ${id}`);
+    },
+    openDesktop: async (id) => {
+      calls.push(`desktop ${id}`);
+      if (opts.openDesktop instanceof Error) throw opts.openDesktop;
+    },
+    live: async () => opts.live ?? [],
+    brief: async (taskId) => `# Brief of ${taskId}`,
+    notes: async () => opts.notes ?? [],
+    settings: async () => settings,
+    saveSettings: async (next) => {
+      calls.push("save settings");
+      settings = next;
+      return settings;
+    },
+    detect: async (s) => ({ path: `/usr/bin/${s.claude_path}`, version: "2.1.318" }),
+    planUsage: async () => {
+      calls.push("plan usage");
+      if (opts.planUsage instanceof Error) throw opts.planUsage;
+      return opts.planUsage ?? { plan: null, windows: [], fetched_at: 1 };
+    },
+    scanTerminal: async () => {
+      calls.push("scan terminal");
+      return { read: 0, recorded: 0 };
+    },
+    distros: async () => [],
+    mcpSetup: async () => ({
+      os: "mac",
+      server: "/Applications/Task Master.app/Contents/MacOS/task-master-mcp",
+      wsl_server: null,
+      appimage: false,
+      problem: null,
+      ...opts.mcpSetup,
+    }),
+    device: async () => "this-device",
+    folders: async () => folders,
+    setFolder: async (project_id, path) => {
+      calls.push(`folder ${project_id} ${path}`);
+      folders = folders.filter((f) => f.project_id !== project_id);
+      if (path) folders.push({ project_id, path, runtime: settings.runtime, updated_at: 1 });
+      return folders;
+    },
+    projectGit: async (project_id) => {
+      calls.push(`git ${project_id}`);
+      const path = folders.find((f) => f.project_id === project_id)?.path;
+      return (path && opts.repos?.[path]) || null;
+    },
+    pickFolder: async () => "/picked",
+    onActivity: async (handler) => {
+      listener = handler;
+      return () => {
+        listener = null;
+      };
+    },
+  };
+  const activity = (session_id: string, text: string | null) =>
+    listener?.({ session_id, activity: text });
+  return { api, calls, started, activity };
+}

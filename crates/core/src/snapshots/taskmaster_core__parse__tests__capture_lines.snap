@@ -1,0 +1,124 @@
+---
+source: crates/core/src/parse.rs
+expression: parsed
+---
+- - "Fix DNS on watch #homelab @Homelab !high ^fri +epic:IaC"
+  - title: Fix DNS on watch
+    tags:
+      - homelab
+    project: Homelab
+    epic: IaC
+    priority: high
+    due_date: 2026-11-06
+    warnings: []
+- - Call mum
+  - title: Call mum
+    tags: []
+    project: ~
+    epic: ~
+    priority: ~
+    due_date: ~
+    warnings: []
+- - Pay rent ^today !u
+  - title: Pay rent
+    tags: []
+    project: ~
+    epic: ~
+    priority: urgent
+    due_date: 2026-11-04
+    warnings: []
+- - "Book flights @\"Perso / Admin\" ^tomorrow"
+  - title: Book flights
+    tags: []
+    project: Perso / Admin
+    epic: ~
+    priority: ~
+    due_date: 2026-11-05
+    warnings: []
+- - "Renew passport ^12-01 #admin #Admin #papers"
+  - title: Renew passport
+    tags:
+      - admin
+      - papers
+    project: ~
+    epic: ~
+    priority: ~
+    due_date: 2026-12-01
+    warnings: []
+- - "Draft roadmap ^+2w +epic:\"Go freelance\""
+  - title: Draft roadmap
+    tags: []
+    project: ~
+    epic: Go freelance
+    priority: ~
+    due_date: 2026-11-18
+    warnings: []
+- - Water plants ^wed
+  - title: Water plants
+    tags: []
+    project: ~
+    epic: ~
+    priority: ~
+    due_date: 2026-11-04
+    warnings: []
+- - Old report ^01-15
+  - title: Old report
+    tags: []
+    project: ~
+    epic: ~
+    priority: ~
+    due_date: 2027-01-15
+    warnings: []
+- - "email bob@example.com about C# and 50% off"
+  - title: "email bob@example.com about C# and 50% off"
+    tags: []
+    project: ~
+    epic: ~
+    priority: ~
+    due_date: ~
+    warnings: []
+- - "Typo ^someday !maybe +epic:"
+  - title: "Typo ^someday !maybe +epic:"
+    tags: []
+    project: ~
+    epic: ~
+    priority: ~
+    due_date: ~
+    warnings:
+      - "'^someday' is not a date"
+      - "'!maybe' is not a priority"
+      - "'+epic:' needs an epic name"
+- - Last wins !low !urgent @Work @Home
+  - title: Last wins
+    tags: []
+    project: Home
+    epic: ~
+    priority: urgent
+    due_date: ~
+    warnings: []
+- - "Unclosed @\"Perso Admin"
+  - title: "Unclosed @\"Perso Admin"
+    tags: []
+    project: ~
+    epic: ~
+    priority: ~
+    due_date: ~
+    warnings: []
+- - "  spaced   out   title  "
+  - title: spaced out title
+    tags: []
+    project: ~
+    epic: ~
+    priority: ~
+    due_date: ~
+    warnings: []
+- - "#only #tags"
+  - title: ""
+    tags:
+      - only
+      - tags
+    project: ~
+    epic: ~
+    priority: ~
+    due_date: ~
+    warnings: []

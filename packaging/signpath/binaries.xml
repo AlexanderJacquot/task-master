@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration "binaries" (ADR 036): the app and the MCP server, signed
+  before the installers are bundled from them. The release uploads them flat in one
+  workflow artifact (release.yml, "Windows - collect the executables"). Paste this into
+  SignPath (project task-master, Artifact configurations, slug "binaries").
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file-set product-name="task-master" product-version="${version}">
+      <include path="taskmaster-desktop.exe" />
+      <include path="task-master-mcp-x86_64-pc-windows-msvc.exe" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

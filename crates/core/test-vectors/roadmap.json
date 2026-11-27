@@ -1,0 +1,1865 @@
+{
+  "about": "Shared by crates/core/src/roadmap.rs and apps/desktop/src/features/roadmap/model.test.ts: the roadmap each spec shows, as the image's model.",
+  "data": {
+    "tasks": [
+      {
+        "dependency_ids": [],
+        "id": "01ea0000-0000-7000-8000-00000000d001",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "Design the launch",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-11-27",
+        "today_on": null,
+        "estimate_min": 960,
+        "rank": "a0",
+        "tag_ids": ["01ea0000-0000-7000-8000-0000000000f1"],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": ["01ea0000-0000-7000-8000-00000000d001"],
+        "id": "01ea0000-0000-7000-8000-00000000d002",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "Build it",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-12-11",
+        "today_on": null,
+        "estimate_min": 2400,
+        "rank": "a1",
+        "tag_ids": ["01ea0000-0000-7000-8000-0000000000f1", "01ea0000-0000-7000-8000-0000000000f2"],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": [],
+        "id": "01ea0000-0000-7000-8000-00000000d003",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": "01ea0000-0000-7000-8000-00000000d002",
+        "status_id": "s-todo",
+        "title": "Build the API",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-12-09",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a0",
+        "tag_ids": ["01ea0000-0000-7000-8000-0000000000f2"],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": [
+          "01ea0000-0000-7000-8000-00000000d002",
+          "01ea0000-0000-7000-8000-00000000d010"
+        ],
+        "id": "01ea0000-0000-7000-8000-00000000d004",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "Test it",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-12-16",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a2",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": [],
+        "id": "01ea0000-0000-7000-8000-00000000d005",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-done",
+        "title": "Spike",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-11-20",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a3",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": [],
+        "id": "01ea0000-0000-7000-8000-00000000d006",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-cancelled",
+        "title": "Dropped idea",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-12-01",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a4",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": [],
+        "id": "01ea0000-0000-7000-8000-00000000d007",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "Not planned yet",
+        "description": "",
+        "priority": "normal",
+        "due_date": null,
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "A5",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": ["01ea0000-0000-7000-8000-00000000d007"],
+        "id": "01ea0000-0000-7000-8000-00000000d008",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "Waits on the unplanned",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-12-14",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a6",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": ["01ea0000-0000-7000-8000-00000000d005"],
+        "id": "01ea0000-0000-7000-8000-00000000d009",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "Waits on the spike",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-12-15",
+        "today_on": null,
+        "estimate_min": 1500,
+        "rank": "a7",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": [],
+        "id": "01ea0000-0000-7000-8000-00000000d010",
+        "owner": "agent",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-done",
+        "title": "Agent: check the build",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-11-25",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a8",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": ["01ea0000-0000-7000-8000-00000000d010"],
+        "id": "01ea0000-0000-7000-8000-00000000d011",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "Waits on the agent",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-12-17",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a9",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": [],
+        "id": "01ea0000-0000-7000-8000-00000000d012",
+        "owner": "me",
+        "project_id": null,
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e1",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "Press kit",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-12-04",
+        "today_on": null,
+        "estimate_min": -30,
+        "rank": "aA",
+        "tag_ids": ["01ea0000-0000-7000-8000-0000000000f1"],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": ["01ea0000-0000-7000-8000-00000000d002"],
+        "id": "01ea0000-0000-7000-8000-00000000d013",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000b",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e3",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "Schema",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2027-01-15",
+        "today_on": null,
+        "estimate_min": 4800,
+        "rank": "a0",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": ["01ea0000-0000-7000-8000-00000000d013"],
+        "id": "01ea0000-0000-7000-8000-00000000d014",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000b",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e3",
+        "parent_id": null,
+        "status_id": "s-backlog",
+        "title": "Backfill",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2027-01-27",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a1",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": [],
+        "id": "01ea0000-0000-7000-8000-00000000d015",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000b",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e3",
+        "parent_id": "01ea0000-0000-7000-8000-00000000d014",
+        "status_id": "s-todo",
+        "title": "Cut over",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2027-01-29",
+        "today_on": null,
+        "estimate_min": 240,
+        "rank": "a0",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": ["01ea0000-0000-7000-8000-00000000d013"],
+        "id": "01ea0000-0000-7000-8000-00000000d016",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000b",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e4",
+        "parent_id": null,
+        "status_id": "s-todo",
+        "title": "Remove the flags",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-12-10",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a0",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      },
+      {
+        "dependency_ids": [],
+        "id": "01ea0000-0000-7000-8000-00000000d017",
+        "owner": "me",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "epic_id": "01ea0000-0000-7000-8000-0000000000e5",
+        "parent_id": null,
+        "status_id": "s-done",
+        "title": "Old work",
+        "description": "",
+        "priority": "normal",
+        "due_date": "2026-11-05",
+        "today_on": null,
+        "estimate_min": null,
+        "rank": "a0",
+        "tag_ids": [],
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "completed_at": null,
+        "deleted_at": null
+      }
+    ],
+    "epics": [
+      {
+        "id": "01ea0000-0000-7000-8000-0000000000e1",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "name": "Launch",
+        "color": "#cc3333",
+        "icon": null,
+        "description": null,
+        "target_date": "2026-12-18",
+        "state": "active",
+        "rank": "a0",
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "01ea0000-0000-7000-8000-0000000000e2",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "name": "Docs",
+        "color": null,
+        "icon": null,
+        "description": null,
+        "target_date": "2026-12-04",
+        "state": "active",
+        "rank": "a1",
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "01ea0000-0000-7000-8000-0000000000e3",
+        "project_id": "01ea0000-0000-7000-8000-00000000000b",
+        "name": "Migration",
+        "color": "#38a",
+        "icon": null,
+        "description": null,
+        "target_date": "2027-01-29",
+        "state": "active",
+        "rank": "a0",
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "01ea0000-0000-7000-8000-0000000000e4",
+        "project_id": null,
+        "name": "Cleanup",
+        "color": null,
+        "icon": null,
+        "description": null,
+        "target_date": "2026-12-11",
+        "state": "active",
+        "rank": "b0",
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "01ea0000-0000-7000-8000-0000000000e5",
+        "project_id": "01ea0000-0000-7000-8000-00000000000a",
+        "name": "Old release",
+        "color": null,
+        "icon": null,
+        "description": null,
+        "target_date": "2026-11-06",
+        "state": "done",
+        "rank": "a2",
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "01ea0000-0000-7000-8000-0000000000e6",
+        "project_id": "01ea0000-0000-7000-8000-00000000000c",
+        "name": "Someday",
+        "color": null,
+        "icon": null,
+        "description": null,
+        "target_date": null,
+        "state": "active",
+        "rank": "a0",
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "01ea0000-0000-7000-8000-0000000000e7",
+        "project_id": "01ea0000-0000-7000-8000-00000000000b",
+        "name": "Abandoned",
+        "color": null,
+        "icon": null,
+        "description": null,
+        "target_date": "2027-02-26",
+        "state": "dropped",
+        "rank": "Z0",
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "01ea0000-0000-7000-8000-0000000000e8",
+        "project_id": null,
+        "name": "Floating",
+        "color": null,
+        "icon": null,
+        "description": null,
+        "target_date": "2027-03-05",
+        "state": "active",
+        "rank": "a0",
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      }
+    ],
+    "projects": [
+      {
+        "id": "01ea0000-0000-7000-8000-00000000000a",
+        "parent_id": null,
+        "name": "Apollo",
+        "color": "#3366cc",
+        "icon": null,
+        "rank": "a1",
+        "archived_at": null,
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "01ea0000-0000-7000-8000-00000000000b",
+        "parent_id": null,
+        "name": "Borealis",
+        "color": null,
+        "icon": null,
+        "rank": "Zz",
+        "archived_at": null,
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "01ea0000-0000-7000-8000-00000000000c",
+        "parent_id": null,
+        "name": "Cygnus",
+        "color": null,
+        "icon": null,
+        "rank": "a2",
+        "archived_at": 1763683200000,
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      }
+    ],
+    "statuses": [
+      {
+        "id": "s-backlog",
+        "name": "Backlog",
+        "category": "backlog",
+        "color": null,
+        "rank": "a0",
+        "wip_limit": null,
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "s-todo",
+        "name": "To do",
+        "category": "todo",
+        "color": null,
+        "rank": "a1",
+        "wip_limit": null,
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "s-done",
+        "name": "Done",
+        "category": "done",
+        "color": null,
+        "rank": "a2",
+        "wip_limit": null,
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      },
+      {
+        "id": "s-cancelled",
+        "name": "Cancelled",
+        "category": "cancelled",
+        "color": null,
+        "rank": "a3",
+        "wip_limit": null,
+        "created_at": 1763683200000,
+        "updated_at": 1763683200000,
+        "deleted_at": null
+      }
+    ]
+  },
+  "defaults": {
+    "epics": {
+      "filter": {
+        "status_ids": [],
+        "priorities": [],
+        "project_ids": [],
+        "epic_ids": [],
+        "tag_ids": [],
+        "due": null
+      },
+      "group_by": "status",
+      "sort": "default",
+      "layout": "list",
+      "swimlane": "none",
+      "show_subtasks": true,
+      "show_cancelled": false,
+      "show_agent_tasks": false,
+      "show_closed_lanes": false,
+      "lineage": null,
+      "roadmap": {
+        "epic": null,
+        "completion": "open",
+        "group": "project",
+        "zoom": "month",
+        "starts": {},
+        "collapsed": [],
+        "hide_unscheduled": false
+      },
+      "version": 1,
+      "scope": {
+        "kind": "all"
+      }
+    },
+    "tasks": {
+      "filter": {
+        "status_ids": [],
+        "priorities": [],
+        "project_ids": [],
+        "epic_ids": [],
+        "tag_ids": [],
+        "due": null
+      },
+      "group_by": "status",
+      "sort": "default",
+      "layout": "list",
+      "swimlane": "none",
+      "show_subtasks": true,
+      "show_cancelled": false,
+      "show_agent_tasks": false,
+      "show_closed_lanes": false,
+      "lineage": null,
+      "roadmap": {
+        "epic": "01ea0000-0000-7000-8000-0000000000e1",
+        "completion": "open",
+        "group": "none",
+        "zoom": "week",
+        "starts": {},
+        "collapsed": [],
+        "hide_unscheduled": false
+      },
+      "version": 1,
+      "scope": {
+        "kind": "all"
+      }
+    }
+  },
+  "cases": [
+    {
+      "name": "epics: the page's defaults",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": null,
+          "completion": "open",
+          "group": "project",
+          "zoom": "month",
+          "starts": {},
+          "collapsed": [],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": null,
+        "today": "2026-11-21",
+        "theme": "clean"
+      },
+      "expected": {
+        "title": "Roadmap",
+        "subtitle": "Epics across projects · 5 epics · Nov 21, 2026",
+        "name_header": "Epic",
+        "zoom": "month",
+        "today": "2026-11-21",
+        "deadline": null,
+        "rows": [
+          {
+            "kind": "group",
+            "label": "Borealis",
+            "color": null,
+            "count": 1,
+            "start": "2027-01-04",
+            "end": "2027-01-29"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e3",
+            "title": "Migration",
+            "depth": 0,
+            "start": "2027-01-04",
+            "end": "2027-01-29",
+            "done": false,
+            "progress": 0,
+            "color": "#38a"
+          },
+          {
+            "kind": "group",
+            "label": "Apollo",
+            "color": "#3366cc",
+            "count": 2,
+            "start": "2026-11-20",
+            "end": "2026-12-18"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e1",
+            "title": "Launch",
+            "depth": 0,
+            "start": "2026-11-20",
+            "end": "2026-12-18",
+            "done": false,
+            "progress": 0.1,
+            "color": "#cc3333"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e2",
+            "title": "Docs",
+            "depth": 0,
+            "start": "2026-11-23",
+            "end": "2026-12-04",
+            "done": false,
+            "progress": 0,
+            "color": null
+          },
+          {
+            "kind": "group",
+            "label": "No project",
+            "color": null,
+            "count": 2,
+            "start": "2026-12-10",
+            "end": "2027-03-05"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e4",
+            "title": "Cleanup",
+            "depth": 0,
+            "start": "2026-12-10",
+            "end": "2026-12-11",
+            "done": false,
+            "progress": 0,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e8",
+            "title": "Floating",
+            "depth": 0,
+            "start": "2027-02-22",
+            "end": "2027-03-05",
+            "done": false,
+            "progress": 0,
+            "color": null
+          }
+        ],
+        "links": [
+          {
+            "from": "01ea0000-0000-7000-8000-0000000000e1",
+            "to": "01ea0000-0000-7000-8000-0000000000e3"
+          },
+          {
+            "from": "01ea0000-0000-7000-8000-0000000000e3",
+            "to": "01ea0000-0000-7000-8000-0000000000e4"
+          }
+        ],
+        "theme": "clean"
+      }
+    },
+    {
+      "name": "epics: every state, no groups, starts, by quarter, dark",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": null,
+          "completion": "all",
+          "group": "none",
+          "zoom": "quarter",
+          "starts": {
+            "01ea0000-0000-7000-8000-0000000000e1": "2026-11-02",
+            "01ea0000-0000-7000-8000-0000000000e3": "2027-02-10",
+            "01ea0000-0000-7000-8000-0000000000e7": "2027-01-04"
+          },
+          "collapsed": [],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": "Everything",
+        "today": "2026-11-21",
+        "theme": "dark"
+      },
+      "expected": {
+        "title": "Everything",
+        "subtitle": "Epics across projects · 7 epics · Nov 21, 2026",
+        "name_header": "Epic",
+        "zoom": "quarter",
+        "today": "2026-11-21",
+        "deadline": null,
+        "rows": [
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e1",
+            "title": "Launch",
+            "depth": 0,
+            "start": "2026-11-02",
+            "end": "2026-12-18",
+            "done": false,
+            "progress": 0.1,
+            "color": "#cc3333"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e5",
+            "title": "Old release",
+            "depth": 0,
+            "start": "2026-11-05",
+            "end": "2026-11-06",
+            "done": true,
+            "progress": 1,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e2",
+            "title": "Docs",
+            "depth": 0,
+            "start": "2026-11-23",
+            "end": "2026-12-04",
+            "done": false,
+            "progress": 0,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e4",
+            "title": "Cleanup",
+            "depth": 0,
+            "start": "2026-12-10",
+            "end": "2026-12-11",
+            "done": false,
+            "progress": 0,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e7",
+            "title": "Abandoned",
+            "depth": 0,
+            "start": "2027-01-04",
+            "end": "2027-02-26",
+            "done": true,
+            "progress": 0,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e3",
+            "title": "Migration",
+            "depth": 0,
+            "start": "2027-01-29",
+            "end": "2027-01-29",
+            "done": false,
+            "progress": 0,
+            "color": "#38a"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e8",
+            "title": "Floating",
+            "depth": 0,
+            "start": "2027-02-22",
+            "end": "2027-03-05",
+            "done": false,
+            "progress": 0,
+            "color": null
+          }
+        ],
+        "links": [
+          {
+            "from": "01ea0000-0000-7000-8000-0000000000e1",
+            "to": "01ea0000-0000-7000-8000-0000000000e3"
+          },
+          {
+            "from": "01ea0000-0000-7000-8000-0000000000e3",
+            "to": "01ea0000-0000-7000-8000-0000000000e4"
+          }
+        ],
+        "theme": "dark"
+      }
+    },
+    {
+      "name": "epics of Borealis and of no project",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": ["01ea0000-0000-7000-8000-00000000000b", "none"],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": null,
+          "completion": "open",
+          "group": "project",
+          "zoom": "month",
+          "starts": {},
+          "collapsed": [],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": "Borealis plan",
+        "today": "2026-11-21",
+        "theme": "light"
+      },
+      "expected": {
+        "title": "Borealis plan",
+        "subtitle": "Epics of Borealis, No project · 3 epics · Nov 21, 2026",
+        "name_header": "Epic",
+        "zoom": "month",
+        "today": "2026-11-21",
+        "deadline": null,
+        "rows": [
+          {
+            "kind": "group",
+            "label": "Borealis",
+            "color": null,
+            "count": 1,
+            "start": "2027-01-04",
+            "end": "2027-01-29"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e3",
+            "title": "Migration",
+            "depth": 0,
+            "start": "2027-01-04",
+            "end": "2027-01-29",
+            "done": false,
+            "progress": 0,
+            "color": "#38a"
+          },
+          {
+            "kind": "group",
+            "label": "No project",
+            "color": null,
+            "count": 2,
+            "start": "2026-12-10",
+            "end": "2027-03-05"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e4",
+            "title": "Cleanup",
+            "depth": 0,
+            "start": "2026-12-10",
+            "end": "2026-12-11",
+            "done": false,
+            "progress": 0,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e8",
+            "title": "Floating",
+            "depth": 0,
+            "start": "2027-02-22",
+            "end": "2027-03-05",
+            "done": false,
+            "progress": 0,
+            "color": null
+          }
+        ],
+        "links": [
+          {
+            "from": "01ea0000-0000-7000-8000-0000000000e3",
+            "to": "01ea0000-0000-7000-8000-0000000000e4"
+          }
+        ],
+        "theme": "light"
+      }
+    },
+    {
+      "name": "epics of Apollo and a project that is gone",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [
+            "01ea0000-0000-7000-8000-00000000000a",
+            "01ea0000-0000-7000-8000-000000000099"
+          ],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": null,
+          "completion": "all",
+          "group": "project",
+          "zoom": "month",
+          "starts": {},
+          "collapsed": [],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": null,
+        "today": "2027-01-04",
+        "theme": "clean"
+      },
+      "expected": {
+        "title": "Roadmap",
+        "subtitle": "Epics of Apollo · 3 epics · Jan 4, 2027",
+        "name_header": "Epic",
+        "zoom": "month",
+        "today": "2027-01-04",
+        "deadline": null,
+        "rows": [
+          {
+            "kind": "group",
+            "label": "Apollo",
+            "color": "#3366cc",
+            "count": 3,
+            "start": "2026-11-05",
+            "end": "2026-12-18"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e5",
+            "title": "Old release",
+            "depth": 0,
+            "start": "2026-11-05",
+            "end": "2026-11-06",
+            "done": true,
+            "progress": 1,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e1",
+            "title": "Launch",
+            "depth": 0,
+            "start": "2026-11-20",
+            "end": "2026-12-18",
+            "done": false,
+            "progress": 0.1,
+            "color": "#cc3333"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e2",
+            "title": "Docs",
+            "depth": 0,
+            "start": "2026-11-23",
+            "end": "2026-12-04",
+            "done": false,
+            "progress": 0,
+            "color": null
+          }
+        ],
+        "links": [],
+        "theme": "clean"
+      }
+    },
+    {
+      "name": "epics by project, Apollo folded",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": null,
+          "completion": "open",
+          "group": "project",
+          "zoom": "month",
+          "starts": {},
+          "collapsed": ["01ea0000-0000-7000-8000-00000000000a"],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": "Folded",
+        "today": "2026-11-21",
+        "theme": "clean"
+      },
+      "expected": {
+        "title": "Folded",
+        "subtitle": "Epics across projects · 5 epics · Nov 21, 2026",
+        "name_header": "Epic",
+        "zoom": "month",
+        "today": "2026-11-21",
+        "deadline": null,
+        "rows": [
+          {
+            "kind": "group",
+            "label": "Borealis",
+            "color": null,
+            "count": 1,
+            "start": "2027-01-04",
+            "end": "2027-01-29"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e3",
+            "title": "Migration",
+            "depth": 0,
+            "start": "2027-01-04",
+            "end": "2027-01-29",
+            "done": false,
+            "progress": 0,
+            "color": "#38a"
+          },
+          {
+            "kind": "group",
+            "label": "Apollo",
+            "color": "#3366cc",
+            "count": 2,
+            "start": "2026-11-20",
+            "end": "2026-12-18"
+          },
+          {
+            "kind": "group",
+            "label": "No project",
+            "color": null,
+            "count": 2,
+            "start": "2026-12-10",
+            "end": "2027-03-05"
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e4",
+            "title": "Cleanup",
+            "depth": 0,
+            "start": "2026-12-10",
+            "end": "2026-12-11",
+            "done": false,
+            "progress": 0,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-0000000000e8",
+            "title": "Floating",
+            "depth": 0,
+            "start": "2027-02-22",
+            "end": "2027-03-05",
+            "done": false,
+            "progress": 0,
+            "color": null
+          }
+        ],
+        "links": [
+          {
+            "from": "01ea0000-0000-7000-8000-0000000000e3",
+            "to": "01ea0000-0000-7000-8000-0000000000e4"
+          }
+        ],
+        "theme": "clean"
+      }
+    },
+    {
+      "name": "tasks: the page's defaults",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": "01ea0000-0000-7000-8000-0000000000e1",
+          "completion": "open",
+          "group": "none",
+          "zoom": "week",
+          "starts": {},
+          "collapsed": [],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": null,
+        "today": "2026-11-21",
+        "theme": "clean"
+      },
+      "expected": {
+        "title": "Launch",
+        "subtitle": "Epic timeline · 8 tasks · Nov 21, 2026",
+        "name_header": "Task",
+        "zoom": "week",
+        "today": "2026-11-21",
+        "deadline": {
+          "date": "2026-12-18",
+          "label": "Launch"
+        },
+        "rows": [
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d001",
+            "title": "Design the launch",
+            "depth": 0,
+            "start": "2026-11-26",
+            "end": "2026-11-27",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d012",
+            "title": "Press kit",
+            "depth": 0,
+            "start": "2026-12-04",
+            "end": "2026-12-04",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d002",
+            "title": "Build it",
+            "depth": 0,
+            "start": "2026-12-07",
+            "end": "2026-12-11",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d003",
+            "title": "Build the API",
+            "depth": 1,
+            "start": "2026-12-09",
+            "end": "2026-12-09",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d009",
+            "title": "Waits on the spike",
+            "depth": 0,
+            "start": "2026-12-10",
+            "end": "2026-12-15",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d008",
+            "title": "Waits on the unplanned",
+            "depth": 0,
+            "start": "2026-12-14",
+            "end": "2026-12-14",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d004",
+            "title": "Test it",
+            "depth": 0,
+            "start": "2026-12-16",
+            "end": "2026-12-16",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d011",
+            "title": "Waits on the agent",
+            "depth": 0,
+            "start": "2026-12-17",
+            "end": "2026-12-17",
+            "done": false,
+            "progress": null,
+            "color": null
+          }
+        ],
+        "links": [
+          {
+            "from": "01ea0000-0000-7000-8000-00000000d001",
+            "to": "01ea0000-0000-7000-8000-00000000d002"
+          },
+          {
+            "from": "01ea0000-0000-7000-8000-00000000d002",
+            "to": "01ea0000-0000-7000-8000-00000000d004"
+          }
+        ],
+        "theme": "clean"
+      }
+    },
+    {
+      "name": "tasks: open and done, no subtasks, tagged ui, starts, by day",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": ["01ea0000-0000-7000-8000-0000000000f1"],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": false,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": "01ea0000-0000-7000-8000-0000000000e1",
+          "completion": "all",
+          "group": "none",
+          "zoom": "day",
+          "starts": {
+            "01ea0000-0000-7000-8000-00000000d001": "2026-11-23",
+            "01ea0000-0000-7000-8000-00000000d012": "2026-12-10",
+            "01ea0000-0000-7000-8000-00000000d002": "2026-11-30"
+          },
+          "collapsed": [],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": "Launch, UI",
+        "today": "2026-11-21",
+        "theme": "light"
+      },
+      "expected": {
+        "title": "Launch, UI",
+        "subtitle": "The tasks of Launch · 3 tasks · Nov 21, 2026",
+        "name_header": "Task",
+        "zoom": "day",
+        "today": "2026-11-21",
+        "deadline": {
+          "date": "2026-12-18",
+          "label": "Launch"
+        },
+        "rows": [
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d001",
+            "title": "Design the launch",
+            "depth": 0,
+            "start": "2026-11-23",
+            "end": "2026-11-27",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d002",
+            "title": "Build it",
+            "depth": 0,
+            "start": "2026-11-30",
+            "end": "2026-12-11",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d012",
+            "title": "Press kit",
+            "depth": 0,
+            "start": "2026-12-04",
+            "end": "2026-12-04",
+            "done": false,
+            "progress": null,
+            "color": null
+          }
+        ],
+        "links": [
+          {
+            "from": "01ea0000-0000-7000-8000-00000000d001",
+            "to": "01ea0000-0000-7000-8000-00000000d002"
+          }
+        ],
+        "theme": "light"
+      }
+    },
+    {
+      "name": "tasks: ready only",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": "01ea0000-0000-7000-8000-0000000000e1",
+          "completion": "ready",
+          "group": "none",
+          "zoom": "week",
+          "starts": {},
+          "collapsed": [],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": "Ready",
+        "today": "2026-11-21",
+        "theme": "clean"
+      },
+      "expected": {
+        "title": "Ready",
+        "subtitle": "The tasks of Launch · 5 tasks · Nov 21, 2026",
+        "name_header": "Task",
+        "zoom": "week",
+        "today": "2026-11-21",
+        "deadline": {
+          "date": "2026-12-18",
+          "label": "Launch"
+        },
+        "rows": [
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d001",
+            "title": "Design the launch",
+            "depth": 0,
+            "start": "2026-11-26",
+            "end": "2026-11-27",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d012",
+            "title": "Press kit",
+            "depth": 0,
+            "start": "2026-12-04",
+            "end": "2026-12-04",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d003",
+            "title": "Build the API",
+            "depth": 0,
+            "start": "2026-12-09",
+            "end": "2026-12-09",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d009",
+            "title": "Waits on the spike",
+            "depth": 0,
+            "start": "2026-12-10",
+            "end": "2026-12-15",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d011",
+            "title": "Waits on the agent",
+            "depth": 0,
+            "start": "2026-12-17",
+            "end": "2026-12-17",
+            "done": false,
+            "progress": null,
+            "color": null
+          }
+        ],
+        "links": [],
+        "theme": "clean"
+      }
+    },
+    {
+      "name": "tasks: without tags, and all",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": ["none"],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": "01ea0000-0000-7000-8000-0000000000e1",
+          "completion": "all",
+          "group": "none",
+          "zoom": "week",
+          "starts": {},
+          "collapsed": [],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": null,
+        "today": "2026-11-21",
+        "theme": "dark"
+      },
+      "expected": {
+        "title": "Launch",
+        "subtitle": "Epic timeline · 6 tasks · Nov 21, 2026",
+        "name_header": "Task",
+        "zoom": "week",
+        "today": "2026-11-21",
+        "deadline": {
+          "date": "2026-12-18",
+          "label": "Launch"
+        },
+        "rows": [
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d005",
+            "title": "Spike",
+            "depth": 0,
+            "start": "2026-11-20",
+            "end": "2026-11-20",
+            "done": true,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d006",
+            "title": "Dropped idea",
+            "depth": 0,
+            "start": "2026-12-01",
+            "end": "2026-12-01",
+            "done": true,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d009",
+            "title": "Waits on the spike",
+            "depth": 0,
+            "start": "2026-12-10",
+            "end": "2026-12-15",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d008",
+            "title": "Waits on the unplanned",
+            "depth": 0,
+            "start": "2026-12-14",
+            "end": "2026-12-14",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d004",
+            "title": "Test it",
+            "depth": 0,
+            "start": "2026-12-16",
+            "end": "2026-12-16",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d011",
+            "title": "Waits on the agent",
+            "depth": 0,
+            "start": "2026-12-17",
+            "end": "2026-12-17",
+            "done": false,
+            "progress": null,
+            "color": null
+          }
+        ],
+        "links": [
+          {
+            "from": "01ea0000-0000-7000-8000-00000000d005",
+            "to": "01ea0000-0000-7000-8000-00000000d009"
+          }
+        ],
+        "theme": "dark"
+      }
+    },
+    {
+      "name": "tasks of Migration, a subtask under its parent",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": "01ea0000-0000-7000-8000-0000000000e3",
+          "completion": "open",
+          "group": "none",
+          "zoom": "month",
+          "starts": {
+            "01ea0000-0000-7000-8000-00000000d014": "2027-01-18"
+          },
+          "collapsed": [],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": null,
+        "today": "2026-11-21",
+        "theme": "clean"
+      },
+      "expected": {
+        "title": "Migration",
+        "subtitle": "Epic timeline · 3 tasks · Nov 21, 2026",
+        "name_header": "Task",
+        "zoom": "month",
+        "today": "2026-11-21",
+        "deadline": {
+          "date": "2027-01-29",
+          "label": "Migration"
+        },
+        "rows": [
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d013",
+            "title": "Schema",
+            "depth": 0,
+            "start": "2027-01-04",
+            "end": "2027-01-15",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d014",
+            "title": "Backfill",
+            "depth": 0,
+            "start": "2027-01-18",
+            "end": "2027-01-27",
+            "done": false,
+            "progress": null,
+            "color": null
+          },
+          {
+            "kind": "item",
+            "id": "01ea0000-0000-7000-8000-00000000d015",
+            "title": "Cut over",
+            "depth": 1,
+            "start": "2027-01-29",
+            "end": "2027-01-29",
+            "done": false,
+            "progress": null,
+            "color": null
+          }
+        ],
+        "links": [
+          {
+            "from": "01ea0000-0000-7000-8000-00000000d013",
+            "to": "01ea0000-0000-7000-8000-00000000d014"
+          }
+        ],
+        "theme": "clean"
+      }
+    },
+    {
+      "name": "tasks of an epic with none",
+      "spec": {
+        "filter": {
+          "status_ids": [],
+          "priorities": [],
+          "project_ids": [],
+          "epic_ids": [],
+          "tag_ids": [],
+          "due": null
+        },
+        "group_by": "status",
+        "sort": "default",
+        "layout": "list",
+        "swimlane": "none",
+        "show_subtasks": true,
+        "show_cancelled": false,
+        "show_agent_tasks": false,
+        "show_closed_lanes": false,
+        "lineage": null,
+        "roadmap": {
+          "epic": "01ea0000-0000-7000-8000-0000000000e2",
+          "completion": "open",
+          "group": "none",
+          "zoom": "week",
+          "starts": {},
+          "collapsed": [],
+          "hide_unscheduled": false
+        },
+        "version": 1,
+        "scope": {
+          "kind": "all"
+        }
+      },
+      "options": {
+        "view_name": null,
+        "today": "2026-11-21",
+        "theme": "clean"
+      },
+      "expected": {
+        "title": "Docs",
+        "subtitle": "Epic timeline · 0 tasks · Nov 21, 2026",
+        "name_header": "Task",
+        "zoom": "week",
+        "today": "2026-11-21",
+        "deadline": {
+          "date": "2026-12-04",
+          "label": "Docs"
+        },
+        "rows": [],
+        "links": [],
+        "theme": "clean"
+      }
+    }
+  ]
+}

@@ -1,0 +1,783 @@
+// @vitest-environment jsdom
+import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it } from "vitest";
+import type { Api } from "../../lib/api";
+import { addDays, atMinute } from "../../lib/calendar";
+import { isoDate } from "../../lib/dates";
+import type { Changes, Command, Task, TimeBlock } from "../../lib/types";
+import { createAppRouter } from "../../router";
+import { StoreProvider } from "../../store/context";
+import { createTaskStore, type TaskStore } from "../../store/store";
+import { fakeCalendar } from "../../test/fakeCalendar";
+import { fakeParse, STATUS, snapshot, task, timeBlock } from "../../test/fixtures";
+
+const today = isoDate();
+
+function fakeApi(data: { tasks: Task[]; time_blocks: TimeBlock[] }, extra: Partial<Api> = {}) {
+  const executed: Command[][] = [];
+  const api: Api = {
+    ...extra,
+    snapshot: async () => snapshot(data),
+    execute: async (commands) => {
+      executed.push(commands);
+      return {
+        batch_id: `b${executed.length}`,
+        op_seq: executed.length,
+        tasks: [],
+        projects: [],
+        epics: [],
+        tags: [],
+        views: [],
+        attachments: [],
+        time_blocks: [],
+        agent_sessions: [],
+        agent_notes: [],
+        meetings: [],
+        transcript_segments: [],
+        terminal_sessions: [],
+        notes: [],
+        note_folders: [],
+        statuses: [],
+      } as Changes;
+    },
+    undo: async () => null,
+    redo: async () => null,
+    search: async () => [],
+    taskActivity: async () => [],
+    parseCapture: async (text) => fakeParse(text),
+    onChanged: async () => () => {},
+  };
+  return { api, executed };
+}
+
+const planned = task({ title: "Write the report", today_on: today, estimate_min: 30 });
+const due = task({ title: "Pay rent", due_date: addDays(today, 1) });
+const other = task({ title: "Fix the gate" });
+const blocked = task({ title: "Dentist" });
+const block = timeBlock({
+  task_id: blocked.id,
+  start_at: atMinute(today, 10 * 60),
+  end_at: atMinute(today, 11 * 60),
+});
+
+let store: TaskStore;
+let fake: ReturnType<typeof fakeApi>;
+
+async function renderCalendar(path = "/calendar", extra: Partial<Api> = {}) {
+  fake = fakeApi({ tasks: [planned, due, other, blocked], time_blocks: [block] }, extra);
+  store = createTaskStore(fake.api);
+  await store.getState().hydrate();
+  const router = createAppRouter(createMemoryHistory({ initialEntries: [path] }));
+  render(
+    <StoreProvider store={store} api={fake.api}>
+      <RouterProvider router={router} />
+    </StoreProvider>,
+  );
+  return router;
+}
+
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
+
+describe("the calendar", () => {
+  it("shows the week with blocks, day plans and the task tray", async () => {
+    await renderCalendar();
+    expect(await screen.findByRole("heading", { name: "Calendar" })).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "week" }) as HTMLElement).getAttribute("aria-pressed"),
+    ).toBe("true");
+    const column = screen.getByTestId(`time-column-${today}`);
+    expect(within(column).getByRole("button", { name: /^Dentist, / })).toBeTruthy();
+    expect(within(column).getByTestId("now-line")).toBeTruthy();
+    // Planned today: in today's lane and in the tray's Today list.
+    expect(
+      within(screen.getByTestId(`day-lane-${today}`)).getByText("Write the report"),
+    ).toBeTruthy();
+    const tray = screen.getByRole("complementary", { name: "Tasks to schedule" });
+    expect(
+      within(within(tray).getByRole("list", { name: "Today's tasks" })).getByText(
+        "Write the report",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(within(tray).getByRole("list", { name: "Other tasks" })).getByText("Fix the gate"),
+    ).toBeTruthy();
+  });
+
+  it("narrows the tray's other tasks by search", async () => {
+    await renderCalendar();
+    const list = await screen.findByRole("list", { name: "Other tasks" });
+    fireEvent.change(screen.getByRole("searchbox", { name: "Find a task" }), {
+      target: { value: "gate" },
+    });
+    expect(within(list).getByText("Fix the gate")).toBeTruthy();
+    expect(within(list).queryByText("Dentist")).toBeNull();
+  });
+
+  it("filters the tray outside Plan mode, and clears the filter", async () => {
+    localStorage.setItem(
+      "task-master.calendar-plan",
+      JSON.stringify({ focus: { projectIds: [], epicIds: [], statusIds: [STATUS.inProgress] } }),
+    );
+    await renderCalendar();
+    const tray = await screen.findByRole("complementary", { name: "Tasks to schedule" });
+    expect(within(tray).getByRole("button", { name: /^Filter\s*· 1$/ })).toBeTruthy();
+    expect(within(tray).getByRole("button", { name: "Filter by status" })).toBeTruthy();
+    expect(within(tray).queryByText("Fix the gate")).toBeNull();
+    expect(within(tray).queryByText("Write the report")).toBeNull();
+
+    fireEvent.click(within(tray).getByRole("button", { name: "Clear filter" }));
+    expect(within(tray).getByText("Fix the gate")).toBeTruthy();
+    expect(within(tray).getByText("Write the report")).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem("task-master.calendar-plan") ?? "{}").focus).toEqual({
+      projectIds: [],
+      epicIds: [],
+      statusIds: [],
+    });
+  });
+
+  it("picks several statuses in the tray filter", async () => {
+    localStorage.setItem(
+      "task-master.calendar-plan",
+      JSON.stringify({ focus: { projectIds: [], epicIds: [], statusIds: [STATUS.inProgress] } }),
+    );
+    await renderCalendar();
+    const tray = await screen.findByRole("complementary", { name: "Tasks to schedule" });
+    expect(within(tray).queryByText("Fix the gate")).toBeNull();
+    fireEvent.click(within(tray).getByRole("button", { name: "Filter by status" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: "To do" }));
+    expect(within(tray).getByText("Fix the gate")).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem("task-master.calendar-plan") ?? "{}").focus).toEqual({
+      projectIds: [],
+      epicIds: [],
+      statusIds: [STATUS.inProgress, STATUS.todo],
+    });
+  });
+
+  it("resizes the tray by dragging its edge, and remembers the width", async () => {
+    await renderCalendar();
+    const tray = await screen.findByRole("complementary", { name: "Tasks to schedule" });
+    expect(tray.style.width).toBe("256px");
+    const handle = within(tray).getByRole("separator", { name: "Resize task list" });
+    fireEvent.pointerDown(handle, { clientX: 256 });
+    fireEvent.pointerMove(window, { clientX: 420 });
+    fireEvent.pointerUp(window);
+    expect(tray.style.width).toBe("420px");
+    expect(localStorage.getItem("task-master.calendar-tray-width")).toBe("420");
+    // Clamped to the maximum.
+    fireEvent.pointerDown(handle, { clientX: 420 });
+    fireEvent.pointerMove(window, { clientX: 5000 });
+    fireEvent.pointerUp(window);
+    expect(tray.style.width).toBe("640px");
+    fireEvent.doubleClick(handle);
+    expect(tray.style.width).toBe("256px");
+    expect(localStorage.getItem("task-master.calendar-tray-width")).toBeNull();
+  });
+
+  it("schedules a task from the tray at the next free quarter hour", async () => {
+    await renderCalendar();
+    fireEvent.click(await screen.findByRole("button", { name: "Schedule Write the report" }));
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    const [command] = fake.executed[0] ?? [];
+    expect(command).toMatchObject({ type: "create_time_block", block: { task_id: planned.id } });
+    const created = command?.type === "create_time_block" ? command.block : null;
+    expect(created && created.end_at - created.start_at).toBe(30 * 60_000);
+    expect(created && created.start_at % (15 * 60_000)).toBe(0);
+    // After now (late in the evening the slot stops at 23:45).
+    expect(created && created.start_at >= Date.now() - 15 * 60_000).toBe(true);
+    const blocks = screen.getAllByTestId("time-block").map((b) => b.getAttribute("aria-label"));
+    expect(blocks.some((label) => label?.startsWith("Write the report"))).toBe(true);
+  });
+
+  it("sets a block's outcome and removes it from its menu", async () => {
+    await renderCalendar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dentist, / }));
+    const menu = await screen.findByRole("dialog", { name: "Time block" });
+    fireEvent.click(within(menu).getByRole("button", { name: "Cancelled" }));
+    await waitFor(() =>
+      expect(fake.executed[0]).toEqual([
+        { type: "update_time_block", id: block.id, changes: [{ outcome: "cancelled" }] },
+      ]),
+    );
+    fireEvent.click(within(menu).getByRole("button", { name: "Remove" }));
+    await waitFor(() =>
+      expect(fake.executed[1]).toEqual([{ type: "delete_time_block", id: block.id }]),
+    );
+    expect(screen.queryByRole("button", { name: /^Dentist, / })).toBeNull();
+  });
+
+  it("moves a scheduled task from Other tasks to Today", async () => {
+    await renderCalendar();
+    const others = await screen.findByRole("list", { name: "Other tasks" });
+    fireEvent.click(within(others).getByRole("button", { name: "Schedule Fix the gate" }));
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(within(others).queryByText("Fix the gate")).toBeNull();
+    expect(
+      within(screen.getByRole("list", { name: "Today's tasks" })).getByText("Fix the gate"),
+    ).toBeTruthy();
+  });
+
+  it("removes tasks scheduled for another day from the tray and restores them when removed", async () => {
+    localStorage.setItem("task-master.calendar-mode", "day");
+    await renderCalendar();
+    await screen.findByTestId(`time-column-${today}`);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    const others = screen.getByRole("list", { name: "Other tasks" });
+    fireEvent.click(within(others).getByRole("button", { name: "Schedule Fix the gate" }));
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    const tray = screen.getByRole("complementary", { name: "Tasks to schedule" });
+    expect(within(tray).queryByText("Fix the gate")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Fix the gate, / }));
+    fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Time block" })).getByRole("button", {
+        name: "Remove",
+      }),
+    );
+    await waitFor(() => expect(within(others).getByText("Fix the gate")).toBeTruthy());
+  });
+
+  it("opens the task from a block's menu", async () => {
+    const router = await renderCalendar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dentist, / }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open task" }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ task: blocked.id }));
+  });
+
+  it("switches to month and day views, and remembers the choice", async () => {
+    await renderCalendar();
+    fireEvent.click(await screen.findByRole("button", { name: "month" }));
+    const cell = screen.getByTestId(`month-cell-${today}`);
+    expect(within(cell).getByText("Dentist")).toBeTruthy();
+    expect(within(cell).getByText("Write the report")).toBeTruthy();
+    expect(localStorage.getItem("task-master.calendar-mode")).toBe("month");
+
+    // A day number opens that day.
+    fireEvent.click(within(cell).getByRole("button", { name: /^Open / }));
+    expect(
+      (screen.getByRole("button", { name: "day" }) as HTMLElement).getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(screen.getAllByTestId(/^time-column-/)).toHaveLength(1);
+    expect(screen.getByTestId(`time-column-${today}`)).toBeTruthy();
+  });
+
+  it("shows today and the next two days in the three-day view", async () => {
+    await renderCalendar();
+    fireEvent.click(await screen.findByRole("button", { name: "3 days" }));
+    expect(localStorage.getItem("task-master.calendar-mode")).toBe("three_day");
+    expect(screen.getAllByTestId(/^time-column-/)).toHaveLength(3);
+    for (const offset of [0, 1, 2]) {
+      expect(screen.getByTestId(`time-column-${addDays(today, offset)}`)).toBeTruthy();
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Next 3 days" }));
+    expect(screen.getByTestId(`time-column-${addDays(today, 3)}`)).toBeTruthy();
+    expect(screen.queryByTestId(`time-column-${today}`)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(screen.getByTestId(`time-column-${today}`)).toBeTruthy();
+  });
+
+  it("moves by a period and comes back with Today", async () => {
+    localStorage.setItem("task-master.calendar-mode", "day");
+    await renderCalendar();
+    await screen.findByTestId(`time-column-${today}`);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    const tomorrow = addDays(today, 1);
+    expect(screen.getByTestId(`time-column-${tomorrow}`)).toBeTruthy();
+    // Due tomorrow: shown in that day's lane.
+    expect(within(screen.getByTestId(`day-lane-${tomorrow}`)).getByText("Pay rent")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(screen.getByTestId(`time-column-${today}`)).toBeTruthy();
+  });
+
+  it("is in the sidebar and on g c", async () => {
+    const router = await renderCalendar("/inbox");
+    await screen.findByRole("heading", { name: "Inbox" });
+    fireEvent.keyDown(window, { key: "g" });
+    fireEvent.keyDown(window, { key: "c" });
+    expect(await screen.findByRole("heading", { name: "Calendar" })).toBeTruthy();
+    expect(router.state.location.pathname).toBe("/calendar");
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: /Calendar/ })).toBeTruthy();
+  });
+});
+
+describe("replanning a block", () => {
+  it("Not done, replan marks it missed, then plans it again at a picked time", async () => {
+    await renderCalendar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dentist, / }));
+    const menu = await screen.findByRole("dialog", { name: "Time block" });
+    fireEvent.click(within(menu).getByRole("button", { name: "Not done, replan" }));
+    await waitFor(() =>
+      expect(fake.executed[0]).toEqual([
+        { type: "update_time_block", id: block.id, changes: [{ outcome: "missed" }] },
+      ]),
+    );
+    const replan = within(menu).getByRole("group", { name: "Replan" });
+    fireEvent.click(within(replan).getByRole("button", { name: "Pick a time…" }));
+    const day = addDays(today, 3);
+    fireEvent.change(within(replan).getByLabelText("Day"), { target: { value: day } });
+    fireEvent.change(within(replan).getByLabelText("Time"), { target: { value: "14:00" } });
+    fireEvent.click(within(replan).getByRole("button", { name: "Plan" }));
+    await waitFor(() => expect(fake.executed).toHaveLength(2));
+    expect(fake.executed[1]).toMatchObject([
+      {
+        type: "create_time_block",
+        block: {
+          task_id: blocked.id,
+          start_at: atMinute(day, 14 * 60),
+          end_at: atMinute(day, 15 * 60),
+          outcome: "planned",
+        },
+      },
+    ]);
+    // The menu closes once the block is replanned.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Time block" })).toBeNull());
+  });
+
+  it("Worked, replan logs the time, and Not now leaves the task to plan later", async () => {
+    await renderCalendar();
+    fireEvent.click(await screen.findByRole("button", { name: /^Dentist, / }));
+    const menu = await screen.findByRole("dialog", { name: "Time block" });
+    fireEvent.click(within(menu).getByRole("button", { name: "Worked, replan" }));
+    await waitFor(() =>
+      expect(fake.executed[0]).toEqual([
+        { type: "update_time_block", id: block.id, changes: [{ outcome: "worked" }] },
+      ]),
+    );
+    fireEvent.click(within(menu).getByRole("button", { name: /^Not now/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Time block" })).toBeNull());
+    expect(fake.executed).toHaveLength(1);
+  });
+});
+
+describe("the daily review", () => {
+  const yesterday = addDays(today, -1);
+  const bank = task({ title: "Call the bank" });
+  const gate = task({ title: "Fix the fence" });
+  const first = timeBlock({
+    task_id: bank.id,
+    start_at: atMinute(yesterday, 9 * 60),
+    end_at: atMinute(yesterday, 10 * 60),
+  });
+  const second = timeBlock({
+    task_id: gate.id,
+    start_at: atMinute(yesterday, 11 * 60),
+    end_at: atMinute(yesterday, 12 * 60),
+  });
+  const reviewed = timeBlock({
+    task_id: gate.id,
+    start_at: atMinute(yesterday, 13 * 60),
+    end_at: atMinute(yesterday, 14 * 60),
+    outcome: "worked",
+  });
+
+  async function renderReview() {
+    fake = fakeApi({ tasks: [bank, gate], time_blocks: [first, second, reviewed] });
+    store = createTaskStore(fake.api);
+    await store.getState().hydrate();
+    const router = createAppRouter(createMemoryHistory({ initialEntries: ["/calendar"] }));
+    render(
+      <StoreProvider store={store} api={fake.api}>
+        <RouterProvider router={router} />
+      </StoreProvider>,
+    );
+  }
+
+  it("goes through the blocks that ended without an outcome, one at a time", async () => {
+    await renderReview();
+    const button = await screen.findByRole("button", { name: /^Review/ });
+    expect(button.textContent).toContain("2");
+    fireEvent.click(button);
+    const dialog = await screen.findByRole("dialog", { name: "Review the day" });
+    expect(within(dialog).getByText("1 of 2")).toBeTruthy();
+    expect(within(dialog).getByText("Call the bank")).toBeTruthy();
+    expect(within(dialog).getByText(/^Yesterday · /)).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(fake.executed[0]?.[0]).toEqual({
+      type: "update_time_block",
+      id: first.id,
+      changes: [{ outcome: "done" }],
+    });
+
+    expect(within(dialog).getByText("2 of 2")).toBeTruthy();
+    expect(within(dialog).getByText("Fix the fence")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Skip" }));
+    expect(
+      within(dialog).getByText(
+        "All caught up: 1 block reviewed. 1 left as planned for the next review.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Review the day" })).toBeNull(),
+    );
+    // The skipped block is still waiting.
+    expect(screen.getByRole("button", { name: /^Review/ }).textContent).toContain("1");
+  });
+
+  it("replans a block from the review before moving on", async () => {
+    await renderReview();
+    fireEvent.click(await screen.findByRole("button", { name: /^Review/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Review the day" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Not done, replan" }));
+    await waitFor(() =>
+      expect(fake.executed[0]).toEqual([
+        { type: "update_time_block", id: first.id, changes: [{ outcome: "missed" }] },
+      ]),
+    );
+    const replan = within(dialog).getByRole("group", { name: "Replan" });
+    fireEvent.click(within(replan).getByRole("button", { name: "Pick a time…" }));
+    fireEvent.change(within(replan).getByLabelText("Day"), {
+      target: { value: addDays(today, 2) },
+    });
+    fireEvent.change(within(replan).getByLabelText("Time"), { target: { value: "09:30" } });
+    fireEvent.click(within(replan).getByRole("button", { name: "Plan" }));
+    await waitFor(() => expect(within(dialog).getByText("2 of 2")).toBeTruthy());
+    expect(fake.executed[1]).toMatchObject([
+      {
+        type: "create_time_block",
+        block: { task_id: bank.id, start_at: atMinute(addDays(today, 2), 9 * 60 + 30) },
+      },
+    ]);
+  });
+});
+
+describe("creating a task on the grid", () => {
+  // jsdom puts every column at the top of the viewport: clientY = minutes / 60 × 48 px.
+  const y = (hour: number) => hour * 48;
+
+  it("drags to set the time, then creates the task and its block in one batch", async () => {
+    await renderCalendar();
+    const column = await screen.findByTestId(`time-column-${today}`);
+    fireEvent.pointerDown(column, { button: 0, clientY: y(9) });
+    fireEvent.pointerMove(window, { clientY: y(10.75) });
+    fireEvent.pointerUp(window, { clientY: y(10.75) });
+
+    const box = await screen.findByRole("dialog", { name: "New task on the calendar" });
+    expect(within(box).getByText(/2 h/)).toBeTruthy();
+    const input = within(box).getByLabelText("New task");
+    fireEvent.change(input, { target: { value: "Gym session" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    const [create, schedule] = fake.executed[0] ?? [];
+    expect(create).toMatchObject({ type: "create_task", task: { title: "Gym session" } });
+    expect(schedule).toMatchObject({
+      type: "create_time_block",
+      block: { start_at: atMinute(today, 9 * 60), end_at: atMinute(today, 11 * 60) },
+    });
+    expect(create?.type === "create_task" && schedule?.type === "create_time_block").toBe(true);
+    if (create?.type === "create_task" && schedule?.type === "create_time_block") {
+      expect(schedule.block.task_id).toBe(create.task.id);
+    }
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "New task on the calendar" })).toBeNull(),
+    );
+    const labels = screen.getAllByTestId("time-block").map((b) => b.getAttribute("aria-label"));
+    expect(labels.some((l) => l?.startsWith("Gym session"))).toBe(true);
+  });
+
+  it("a click makes a one-hour slot, and Cancel leaves nothing behind", async () => {
+    await renderCalendar();
+    const column = await screen.findByTestId(`time-column-${today}`);
+    fireEvent.pointerDown(column, { button: 0, clientY: y(14.2) });
+    fireEvent.pointerUp(window, { clientY: y(14.2) });
+    const box = await screen.findByRole("dialog", { name: "New task on the calendar" });
+    expect(within(box).getByText(/1 h/)).toBeTruthy();
+    fireEvent.click(within(box).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByTestId("draft-block")).toBeNull());
+    expect(fake.executed).toHaveLength(0);
+  });
+});
+
+describe("resizing a block", () => {
+  const y = (hour: number) => hour * 48;
+  const dentist = async () =>
+    within(await screen.findByTestId(`time-column-${today}`)).getByRole("button", {
+      name: /^Dentist, /,
+    });
+
+  it("drags the bottom edge to change the end, without opening the menu", async () => {
+    await renderCalendar();
+    const handle = within(await dentist()).getByTestId("resize-handle");
+    fireEvent.pointerDown(handle, { button: 0, clientY: y(11) });
+    fireEvent.pointerMove(window, { clientY: y(12.6) });
+    expect((await dentist()).textContent).toContain("2 h 30");
+    fireEvent.pointerUp(window, { clientY: y(12.6) });
+    fireEvent.click(await dentist());
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(fake.executed[0]).toEqual([
+      {
+        type: "update_time_block",
+        id: block.id,
+        changes: [{ end_at: atMinute(today, 12 * 60 + 30) }],
+      },
+    ]);
+    expect(screen.queryByRole("dialog", { name: "Time block" })).toBeNull();
+  });
+
+  it("drags the top edge to change the start, keeping at least a quarter hour", async () => {
+    await renderCalendar();
+    const handle = within(await dentist()).getByTestId("resize-handle-start");
+    fireEvent.pointerDown(handle, { button: 0, clientY: y(10) });
+    fireEvent.pointerMove(window, { clientY: y(11.5) });
+    fireEvent.pointerUp(window, { clientY: y(11.5) });
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(fake.executed[0]).toEqual([
+      {
+        type: "update_time_block",
+        id: block.id,
+        changes: [{ start_at: atMinute(today, 10 * 60 + 45) }],
+      },
+    ]);
+  });
+
+  it("Shift+arrows lengthen and shorten a block by a quarter hour", async () => {
+    await renderCalendar();
+    fireEvent.keyDown(await dentist(), { key: "ArrowDown", shiftKey: true });
+    await waitFor(() => expect(fake.executed).toHaveLength(1));
+    expect(fake.executed[0]?.[0]).toMatchObject({
+      changes: [{ end_at: atMinute(today, 11 * 60 + 15) }],
+    });
+  });
+});
+
+describe("events from Google Calendar", () => {
+  const standup = {
+    calendar_id: "me@example.com",
+    id: "ev1",
+    title: "Standup",
+    start_at: atMinute(today, 10 * 60 + 30),
+    end_at: atMinute(today, 10 * 60 + 45),
+    start_date: null,
+    end_date: null,
+    location: "Room 4",
+    link: "https://calendar.google.com/event?eid=1",
+    color: "#0b8043",
+    show_as: "busy" as const,
+    private: false,
+  };
+  const holiday = {
+    ...standup,
+    id: "ev2",
+    title: "Holiday",
+    start_at: null,
+    end_at: null,
+    start_date: today,
+    end_date: addDays(today, 2),
+    location: null,
+  };
+  const sources = [
+    {
+      id: "me@example.com",
+      name: "Me",
+      color: "#0b8043",
+      primary: true,
+      target: false,
+      shown: true,
+      synced_at: 1,
+    },
+  ];
+
+  it("shows them read-only beside the blocks, with a link to Google", async () => {
+    const calendar = fakeCalendar(
+      { connected: true, last_sync_at: Date.now() - 120_000, sources },
+      [standup, holiday],
+    );
+    const opened: string[] = [];
+    await renderCalendar("/calendar", {
+      calendar: calendar.api,
+      files: {
+        storeFile: async () => ({ hash: "", size: 0, name: "", mime: "" }),
+        storeData: async () => ({ hash: "", size: 0, name: "", mime: "" }),
+        open: async () => {},
+        saveCopy: async () => false,
+        openUrl: async (url) => {
+          opened.push(url);
+        },
+        pickFiles: async () => [],
+        url: (id) => id,
+      },
+    });
+    const column = await screen.findByTestId(`time-column-${today}`);
+    const event = await within(column).findByRole("button", { name: /^Standup, .*calendar event/ });
+    // It overlaps the Dentist block (10:00 to 11:00): they share the column.
+    expect(within(column).getByRole("button", { name: /^Dentist, / })).toBeTruthy();
+    expect(within(screen.getByTestId(`day-lane-${today}`)).getByText("Holiday")).toBeTruthy();
+    expect(screen.getByText(/Google Calendar synced 2 min ago/)).toBeTruthy();
+
+    fireEvent.click(event);
+    const details = await screen.findByRole("dialog", { name: "Calendar event" });
+    expect(within(details).getByText("Room 4")).toBeTruthy();
+    expect(within(details).getByText(/Me · read-only/)).toBeTruthy();
+    fireEvent.click(within(details).getByRole("button", { name: "Open in Google Calendar" }));
+    expect(opened).toEqual([standup.link]);
+
+    // On Sunday, tomorrow belongs to the next displayed week.
+    if (new Date(`${today}T12:00:00`).getDay() === 0) {
+      fireEvent.click(screen.getByRole("button", { name: "Next week" }));
+    }
+    expect(
+      within(await screen.findByTestId(`day-lane-${addDays(today, 1)}`)).getByText("Holiday"),
+    ).toBeTruthy();
+
+    // The week's range was asked for.
+    expect((calendar.ranges.at(-1)?.to_date ?? "") > today).toBe(true);
+  });
+
+  it("draws tentative and private events apart and names them in the details", async () => {
+    const maybe = { ...standup, id: "ev3", title: "Maybe lunch", show_as: "tentative" as const };
+    const secret = {
+      ...standup,
+      id: "ev4",
+      title: "Doctor",
+      start_at: atMinute(today, 15 * 60),
+      end_at: atMinute(today, 16 * 60),
+      private: true,
+    };
+    const calendar = fakeCalendar({ connected: true, sources }, [maybe, secret]);
+    await renderCalendar("/calendar", { calendar: calendar.api });
+    const column = await screen.findByTestId(`time-column-${today}`);
+    const tentative = await within(column).findByRole("button", {
+      name: /^Maybe lunch, .*\(calendar event, tentative\)$/,
+    });
+    expect(tentative.style.borderStyle).toBe("dotted");
+    const hidden = within(column).getByRole("button", {
+      name: /^Doctor, .*\(calendar event, private\)$/,
+    });
+    expect(hidden.style.borderStyle).toBe("dashed");
+    expect(within(hidden).getByLabelText("Private")).toBeTruthy();
+    fireEvent.click(tentative);
+    const details = await screen.findByRole("dialog", { name: "Calendar event" });
+    expect(within(details).getByText("Tentative")).toBeTruthy();
+  });
+
+  it("opens Outlook events in Outlook when Outlook is the connected calendar", async () => {
+    const meeting = { ...standup, id: "00000000ABCD", link: null, color: null };
+    const calendar = fakeCalendar(
+      {
+        connected: true,
+        outlook: "me@company.example",
+        last_sync_at: Date.now() - 60_000,
+        sources: [
+          {
+            id: "me@example.com",
+            name: "Calendar",
+            color: null,
+            primary: true,
+            target: true,
+            shown: true,
+            synced_at: 1,
+          },
+        ],
+      },
+      [meeting],
+    );
+    await renderCalendar("/calendar", { calendar: calendar.api });
+    expect(await screen.findByText(/Outlook synced 1 min ago/)).toBeTruthy();
+    const column = await screen.findByTestId(`time-column-${today}`);
+    fireEvent.click(
+      await within(column).findByRole("button", { name: /^Standup, .*calendar event/ }),
+    );
+    const details = await screen.findByRole("dialog", { name: "Calendar event" });
+    expect(within(details).queryByRole("button", { name: "Open in Google Calendar" })).toBeNull();
+    fireEvent.click(within(details).getByRole("button", { name: "Open in Outlook" }));
+    expect(calendar.calls).toEqual(["open 00000000ABCD"]);
+  });
+
+  it("re-reads events after a sync and in the month view", async () => {
+    const calendar = fakeCalendar({ connected: true, sources }, [standup]);
+    await renderCalendar("/calendar", { calendar: calendar.api });
+    await screen.findAllByTestId("calendar-event");
+    const before = calendar.ranges.length;
+    act(() => calendar.synced({ syncing: false, last_sync_at: Date.now() }));
+    await waitFor(() => expect(calendar.ranges.length).toBe(before + 1));
+
+    fireEvent.click(screen.getByRole("button", { name: "month" }));
+    const cell = screen.getByTestId(`month-cell-${today}`);
+    await waitFor(() => expect(within(cell).getByText("Standup")).toBeTruthy());
+  });
+});
+
+describe("planning the calendar", () => {
+  it("suggests a plan for the shown day and approves it as one batch", async () => {
+    localStorage.setItem("task-master.calendar-mode", "day");
+    await renderCalendar();
+    await screen.findByRole("heading", { name: "Calendar" });
+    // Tomorrow, so working hours are never past.
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(screen.getByTestId("plan-summary").textContent).toMatch(/tasks to plan · 8 h free/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Suggest" }));
+    const column = screen.getByTestId(`time-column-${addDays(today, 1)}`);
+    const proposed = within(column).getAllByTestId("proposed-block");
+    expect(proposed.length).toBeGreaterThanOrEqual(3);
+    expect(
+      within(column).getByRole("button", { name: /^Suggested: Write the report, / }),
+    ).toBeTruthy();
+
+    // Leave one out, then approve the rest.
+    fireEvent.click(
+      within(column).getByRole("button", { name: "Leave Write the report out of the plan" }),
+    );
+    expect(within(column).getAllByTestId("proposed-block")).toHaveLength(proposed.length - 1);
+    const before = fake.executed.length;
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(fake.executed.length).toBe(before + 1));
+    const batch = fake.executed.at(-1) ?? [];
+    expect(batch).toHaveLength(proposed.length - 1);
+    expect(batch.every((c) => c.type === "create_time_block")).toBe(true);
+    // Approved: drawn as real blocks, no proposals left.
+    await waitFor(() => expect(within(column).queryAllByTestId("proposed-block")).toHaveLength(0));
+    expect(within(column).getAllByTestId("time-block").length).toBeGreaterThanOrEqual(batch.length);
+  });
+
+  it("keeps a lunch break out of the free time when asked, and remembers it", async () => {
+    localStorage.setItem("task-master.calendar-mode", "day");
+    await renderCalendar();
+    await screen.findByRole("heading", { name: "Calendar" });
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(screen.getByTestId("plan-summary").textContent).toMatch(/· 8 h free/);
+    expect(screen.queryByRole("combobox", { name: "Lunch at" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lunch" }));
+    expect(screen.getByTestId("plan-summary").textContent).toMatch(/· 7 h free/);
+    expect(screen.getByRole("combobox", { name: "Lunch at" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Lunch length" })).toBeTruthy();
+    expect(JSON.parse(localStorage.getItem("task-master.calendar-plan") ?? "{}").hours).toEqual(
+      expect.objectContaining({ lunch: true, lunchStartMin: 12 * 60, lunchMin: 60 }),
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Lunch" }));
+    expect(screen.getByTestId("plan-summary").textContent).toMatch(/· 8 h free/);
+  });
+
+  it("narrows the tray and the plan to the focus, and remembers it", async () => {
+    // A focus saved before it took several values of each.
+    localStorage.setItem(
+      "task-master.calendar-plan",
+      JSON.stringify({ focus: { projectId: "inbox", epicId: null, statusId: STATUS.inProgress } }),
+    );
+    await renderCalendar();
+    await screen.findByRole("heading", { name: "Calendar" });
+    fireEvent.click(screen.getByRole("button", { name: "Plan" }));
+    expect(screen.getByTestId("plan-summary").textContent).toMatch(/^0 tasks to plan/);
+    expect(screen.getByRole("button", { name: "Suggest" })).toHaveProperty("disabled", true);
+    expect(screen.queryByRole("button", { name: /^Fix the gate/ })).toBeNull();
+    // The focus is the tray's filter: its selects sit in the tray, not the plan bar.
+    const bar = screen.getByRole("region", { name: "Plan" });
+    expect(within(bar).queryByRole("button", { name: "Filter by project" })).toBeNull();
+    const tray = screen.getByRole("complementary", { name: "Tasks to schedule" });
+    expect(within(tray).getByRole("button", { name: "Filter by project" })).toBeTruthy();
+    // Month view has no plan.
+    fireEvent.click(screen.getByRole("button", { name: "month" }));
+    expect(screen.queryByRole("region", { name: "Plan" })).toBeNull();
+  });
+});

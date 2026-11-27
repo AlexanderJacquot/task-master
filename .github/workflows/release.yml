@@ -1,0 +1,306 @@
+# Installers for Linux, Windows and macOS (plan M6; ADR 001 and 007). Runs on GitHub only
+# (ADR 041): Forgejo reads .forgejo/workflows and ignores this folder while that exists.
+#
+# Release: bump `version` in apps/desktop/src-tauri/tauri.conf.json, push `main` and a
+# `v<version>` tag to GitHub; this builds and publishes the release.
+# Installed apps update from it (ADR 009): update bundles are signed with the key in the
+# TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) secrets and listed in latest.json. Windows
+# executables and installers are code-signed through SignPath (ADR 036) once the SignPath
+# variables exist; until then they are built the same way, unsigned. macOS bundles are
+# ad-hoc signed (`tauri.macos.conf.json`, ADR 027) so Apple Silicon does not call them
+# damaged; a Developer ID comes later.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: check
+    permissions:
+      contents: write
+      # SignPath reads the unsigned workflow artifacts (ADR 036).
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+            target: aarch64-apple-darwin
+          - platform: macos-latest
+            args: --target x86_64-apple-darwin
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.platform }}
+    env:
+      # Windows code signing (ADR 036): on once the SignPath project is approved and its
+      # variables and API token are set (docs/release.md, setup step 5).
+      SIGN_WINDOWS: ${{ matrix.platform == 'windows-latest' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    steps:
+      - uses: actions/checkout@v6.1.0
+
+      - name: Install Linux build dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      # rustup reads the pinned toolchain from rust-toolchain.toml.
+      - name: Rust toolchain
+        shell: bash
+        run: |
+          rustup show active-toolchain
+          if [ -n "${{ matrix.target }}" ]; then rustup target add "${{ matrix.target }}"; fi
+
+      - uses: swatinem/rust-cache@v2.9.2
+        with:
+          key: ${{ matrix.platform }}-${{ matrix.target }}
+
+      # sherpa-onnx-sys downloads its libraries into target/sherpa-onnx-prebuilt. rust-cache
+      # deletes every file there but keeps the folders, and the build script only checks that
+      # `lib/` exists: it never downloads again, and building the crate fails with "could not
+      # find native static library `sherpa-onnx-c-api`" (v0.28.0, v0.28.1). Without the
+      # library itself, drop the folder and the crate's build outputs so the script runs
+      # and downloads it.
+      - name: Re-download sherpa-onnx when its libraries are not cached
+        shell: bash
+        run: |
+          if [ -d target ] && ! find target/sherpa-onnx-prebuilt -type f \
+            -name '*sherpa-onnx-c-api*' 2>/dev/null | grep -q .; then
+            rm -rf target/sherpa-onnx-prebuilt
+            find target -maxdepth 4 \( -path '*/build/sherpa-onnx-sys-*' \
+              -o -path '*/.fingerprint/sherpa-onnx-sys-*' \) -prune -exec rm -rf {} +
+          fi
+
+      # pnpm version comes from `packageManager` in package.json.
+      - uses: pnpm/action-setup@v6.1.0
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Windows (ADR 036): the executables inside the installers must be signed too, so the
+      # build is split. Build the app, have SignPath sign both executables, bundle the
+      # installers from them, have SignPath sign those, then sign the update files again
+      # (their signatures cover the installers' bytes). Each SignPath request waits for a
+      # manual approval in SignPath. Without the SignPath variables the signing steps are
+      # skipped and the same steps make unsigned installers. tauri-action then only uploads
+      # them (scripts/windows-prebuilt.mjs stands in for its build).
+      - name: Windows - read the version
+        id: version
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "version=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Windows - build the app and the MCP server
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop
+        run: pnpm tauri build --no-bundle --config src-tauri/tauri.updater.conf.json --config src-tauri/tauri.sidecar.conf.json
+
+      - name: Windows - collect the executables
+        if: env.SIGN_WINDOWS == 'true'
+        shell: bash
+        run: |
+          mkdir -p signing/binaries
+          cp target/release/taskmaster-desktop.exe signing/binaries/
+          cp apps/desktop/src-tauri/binaries/task-master-mcp-x86_64-pc-windows-msvc.exe signing/binaries/
+
+      - name: Windows - upload the executables for signing
+        id: unsigned-binaries
+        if: env.SIGN_WINDOWS == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: windows-unsigned-binaries
+          path: signing/binaries/
+          retention-days: 1
+
+      - name: Windows - sign the executables (approve the request in SignPath)
+        if: env.SIGN_WINDOWS == 'true'
+        uses: signpath/github-action-submit-signing-request@v3.2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: binaries
+          github-artifact-id: ${{ steps.unsigned-binaries.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signing/binaries-signed
+
+      - name: Windows - put the signed executables in place
+        if: env.SIGN_WINDOWS == 'true'
+        shell: bash
+        run: |
+          cp signing/binaries-signed/taskmaster-desktop.exe target/release/
+          cp signing/binaries-signed/task-master-mcp-x86_64-pc-windows-msvc.exe apps/desktop/src-tauri/binaries/
+
+      - name: Windows - bundle the installers
+        if: runner.os == 'Windows'
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri bundle --config src-tauri/tauri.updater.conf.json --config src-tauri/tauri.sidecar.conf.json
+
+      - name: Windows - collect the installers
+        if: env.SIGN_WINDOWS == 'true'
+        shell: bash
+        run: |
+          mkdir -p signing/installers
+          cp target/release/bundle/nsis/*-setup.exe target/release/bundle/msi/*.msi signing/installers/
+
+      - name: Windows - upload the installers for signing
+        id: unsigned-installers
+        if: env.SIGN_WINDOWS == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: windows-unsigned-installers
+          path: signing/installers/
+          retention-days: 1
+
+      - name: Windows - sign the installers (approve the request in SignPath)
+        if: env.SIGN_WINDOWS == 'true'
+        uses: signpath/github-action-submit-signing-request@v3.2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: installers
+          github-artifact-id: ${{ steps.unsigned-installers.outputs.artifact-id }}
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+          wait-for-completion-timeout-in-seconds: 7200
+          output-artifact-directory: signing/installers-signed
+
+      - name: Windows - put the signed installers in place
+        if: env.SIGN_WINDOWS == 'true'
+        shell: bash
+        run: |
+          cp signing/installers-signed/*-setup.exe target/release/bundle/nsis/
+          cp signing/installers-signed/*.msi target/release/bundle/msi/
+
+      # Bound to the version like `tauri build` does, so `requireSignedVersion` holds.
+      - name: Windows - sign the update files
+        if: runner.os == 'Windows'
+        shell: bash
+        working-directory: apps/desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for f in ../../target/release/bundle/nsis/*-setup.exe ../../target/release/bundle/msi/*.msi; do
+            rm -f "$f.sig"
+            pnpm tauri signer sign --app-version "${{ steps.version.outputs.version }}" "$f"
+          done
+
+      - name: Windows - check the Authenticode signatures
+        if: env.SIGN_WINDOWS == 'true'
+        shell: pwsh
+        run: |
+          $files = @(
+            "target/release/taskmaster-desktop.exe",
+            "apps/desktop/src-tauri/binaries/task-master-mcp-x86_64-pc-windows-msvc.exe"
+          ) + (Get-ChildItem target/release/bundle/nsis/*-setup.exe, target/release/bundle/msi/*.msi).FullName
+          foreach ($f in $files) {
+            $s = Get-AuthenticodeSignature $f
+            if ($s.Status -ne 'Valid') { throw "${f}: $($s.Status) $($s.StatusMessage)" }
+            Write-Output "${f}: $($s.SignerCertificate.Subject)"
+          }
+
+      # `tauri.updater.conf.json` turns on the signed update bundles; tauri-action then
+      # writes latest.json, which the app reads from releases/latest (ADR 009).
+      # `tauri.sidecar.conf.json` builds the MCP server for the target and installs it next
+      # to the app as `task-master-mcp` (ADR 017). On Windows the steps above built
+      # everything and tauri-action only uploads it.
+      - uses: tauri-apps/tauri-action@v1.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tauriScript: ${{ matrix.platform == 'windows-latest' && 'node scripts/windows-prebuilt.mjs' || 'pnpm tauri' }}
+          tagName: ${{ github.ref_name }}
+          releaseName: task-master ${{ github.ref_name }}
+          releaseBody: |
+            Scribe on Windows transcribes many times faster: the speech engine was compiled without optimization (thanks to samuelld85-blip, issue #1). Meeting recordings play again on every OS. The update manifest lists every platform again, so Apple Silicon Macs and Linux, which never saw 0.31.0, update to this release.
+
+            Database schema 23, as in 0.29 and 0.30: no server migration, but desktops and the sync server should still run the same version. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.31.1.
+
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.31.1/docs/releases/0.31.1.md
+
+            Installed apps (0.2.0 and later) pick this up from Settings → About.
+            New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.
+          releaseDraft: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }} --config src-tauri/tauri.updater.conf.json --config src-tauri/tauri.sidecar.conf.json
+
+      # The whole bundle, sidecar included, must carry one valid ad-hoc signature: a broken
+      # seal is what makes Gatekeeper call a downloaded app "damaged" (ADR 027). Under the
+      # hardened runtime the microphone needs its entitlement (Scribe, ADR 026).
+      - name: Check the macOS signature
+        if: startsWith(matrix.platform, 'macos')
+        run: |
+          app="target/${{ matrix.target }}/release/bundle/macos/Task Master.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -q 'Signature=adhoc'
+          codesign -d --entitlements - "$app" 2>&1 | grep -q 'com.apple.security.device.audio-input'
+
+  # Each build job's tauri-action rewrites latest.json with its own platforms, and jobs that
+  # finish close together overwrite each other (v0.31.0 lost darwin-aarch64 and Linux).
+  # Once every build is done, write it again from the release's signed update files
+  # (ADR 009). It still uploads when a platform is missing, then fails so the run shows it.
+  updater-json:
+    needs: build
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6.1.0
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 24
+      - name: Write latest.json from the release's files
+        run: node apps/desktop/scripts/updater-json.mjs "$TAG" latest.json
+      - name: Upload latest.json
+        if: ${{ !cancelled() && hashFiles('latest.json') != '' }}
+        run: gh release upload "$TAG" latest.json --clobber -R "$GITHUB_REPOSITORY"
+
+  # Arch Linux package task-master-bin (ADR 018), after the release is published: a failure
+  # here leaves the installers and in-app updates untouched. Until the AUR_SSH_PRIVATE_KEY
+  # secret exists (AUR registration is closed for now), this job builds and checks the
+  # package, then fails on purpose at the publish step. Stable tags only: pkgver cannot
+  # hold a pre-release suffix.
+  aur:
+    needs: build
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-') }}
+    uses: ./.github/workflows/aur.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit

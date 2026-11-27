@@ -1,0 +1,17 @@
+# Checks run on GitHub: .github/workflows/ci.yml (ADR 010, ADR 041).
+#
+# This file stays on purpose. Forgejo only pull-mirrors the GitHub repository, but while
+# `.forgejo/workflows` exists it ignores `.github/workflows`; without it, a mirror with
+# Actions on would run the GitHub release workflow too.
+# It only runs when started by hand, and only says where the checks went.
+
+name: ci (moved to GitHub)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  moved:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "CI runs on GitHub (.github/workflows/ci.yml)."
