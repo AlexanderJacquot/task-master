@@ -4,6 +4,25 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Meeting reports in nested Notes folders; notes link epics and meetings** (2026-11-27,
+branch `feat/meeting-notes`, ADR 042, not merged). Schema 24 (`0024_nested_note_folders`):
+`note_folders.parent_id`; `CreateNoteFolder` takes a parent, `UpdateNoteFolder` gains
+`ParentId` (no move into itself or a subfolder, at most 8 levels), deleting a folder moves
+its notes and subfolders up one level; the sidebar draws the tree, a folder's menu has
+"New folder inside" and "Move to", note menus and the note page list folders by path. Note
+bodies take `[text](epic:<id>)` and `[text](meeting:<id>)`, drawn as chips; `[[` searches
+tasks, projects, epics and meetings (`task-detail/LinkPicker.tsx`). The epic page lists its
+notes and has a Notes layout beside List and Board (`ViewPage` `notes`); the project page
+also lists notes linking one of its epics or meetings; a meeting page lists the notes
+linking it. The meeting's follow-up session (ADR 040) is now asked to file the meeting under a project and
+epic when it has none (new MCP tool `link_meeting`, never replaces a link) and to write
+the report with `create_note` in `Project / Epic / Meeting notes` (MCP folder paths, missing
+levels created), attached to the meeting's task. Scribe shows "Up next" (the meeting in
+progress or starting within 15 minutes, not yet recorded) with Record. MCP: folders by
+path in listings and `get_note`. Checked: clippy, core and MCP tests, Vitest (3 fr-FR
+DatePicker failures, unrelated), the showcase for links and notes on the epic page. Not
+tried yet in the Tauri app: Up next with Record, the nested tree, a real follow-up session.
+
 **Release 0.32.0** (2026-11-27, on `main`, tag `v0.32.0`; notes
 `docs/releases/0.32.0.md`): the Scribe entry below (voices from participants, deduction,
 Send to Claude, MCP transcript and summary), now on `main`. Schema 23, unchanged. First

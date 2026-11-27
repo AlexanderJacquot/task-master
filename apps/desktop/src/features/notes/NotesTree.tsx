@@ -43,7 +43,16 @@ import {
   MENU_LABEL,
   MENU_SEPARATOR,
 } from "../../components/ui";
-import { type NoteDropTarget, notePlacement, noteTitle, noteTree } from "../../lib/notes";
+import {
+  type FolderNode,
+  folderAndInside,
+  folderOptions,
+  type NoteDropTarget,
+  notePlacement,
+  notesInside,
+  noteTitle,
+  noteTree,
+} from "../../lib/notes";
 import type { Note, NoteFolder, Space } from "../../lib/types";
 import {
   createNote,
@@ -112,7 +121,7 @@ function NoteMenu({
   onOpenChange,
 }: {
   note: Note;
-  folders: NoteFolder[];
+  folders: FolderChoice[];
   open: boolean;
   onOpenChange(open: boolean): void;
 }) {
@@ -142,14 +151,14 @@ function NoteMenu({
                 </DropdownMenu.Item>
               )}
               {folders
-                .filter((f) => f.id !== note.folder_id)
+                .filter((f) => f.folder.id !== note.folder_id)
                 .map((f) => (
                   <DropdownMenu.Item
-                    key={f.id}
+                    key={f.folder.id}
                     className={MENU_ITEM}
-                    onSelect={() => void moveNote(store, note.id, f.id)}
+                    onSelect={() => void moveNote(store, note.id, f.folder.id)}
                   >
-                    <Folder size={14} /> {f.name}
+                    <Folder size={14} /> <span className="truncate">{f.path}</span>
                   </DropdownMenu.Item>
                 ))}
               <DropdownMenu.Separator className={MENU_SEPARATOR} />
@@ -170,6 +179,9 @@ function NoteMenu({
   );
 }
 
+/** A folder as menus offer it: with its path from the top (ADR 042). */
+type FolderChoice = ReturnType<typeof folderOptions>[number];
+
 /** Droppable ids: a note's row, a folder's header, the top level (`folder:`). */
 const NOTE_PREFIX = "note:";
 const FOLDER_PREFIX = "folder:";
@@ -180,7 +192,7 @@ function NoteRow({
   hint,
 }: {
   note: Note;
-  folders: NoteFolder[];
+  folders: FolderChoice[];
   /** Where a note dragged over this row would land. */
   hint: "before" | "after" | null;
 }) {
@@ -230,26 +242,38 @@ function NoteRow({
   );
 }
 
-/** A folder's ⋯ menu (also on right-click): new note, rename, delete. */
+/**
+ * A folder's ⋯ menu (also on right-click): new note, new folder inside, rename, move to
+ * another folder (ADR 042), delete.
+ */
 function FolderMenu({
   folder,
+  folders,
   open,
   onOpenChange,
   onNewNote,
+  onNewFolder,
   onRename,
 }: {
   folder: NoteFolder;
+  folders: FolderChoice[];
   open: boolean;
   onOpenChange(open: boolean): void;
   onNewNote(): void;
+  onNewFolder(): void;
   onRename(): void;
 }) {
   const store = useTaskStore();
+  const all = useStoreState((s) => s.note_folders);
+  const blocked = folderAndInside(all, folder.id);
+  const targets = folders.filter(
+    (f) => !blocked.has(f.folder.id) && f.folder.id !== folder.parent_id,
+  );
   return (
     <DropdownMenu.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <DropdownMenu.Trigger
         aria-label={`${folder.name} actions`}
-        title="New note, rename, delete"
+        title="New note, new folder, rename, move, delete"
         className={toolClass}
       >
         <MoreHorizontal size={15} />
@@ -259,13 +283,41 @@ function FolderMenu({
           <DropdownMenu.Item className={MENU_ITEM} onSelect={onNewNote}>
             <Plus size={14} /> New note here
           </DropdownMenu.Item>
+          <DropdownMenu.Item className={MENU_ITEM} onSelect={onNewFolder}>
+            <FolderPlus size={14} /> New folder inside
+          </DropdownMenu.Item>
           <DropdownMenu.Item className={MENU_ITEM} onSelect={onRename}>
             <Pencil size={14} /> Rename
           </DropdownMenu.Item>
+          {(targets.length > 0 || folder.parent_id) && (
+            <>
+              <DropdownMenu.Separator className={MENU_SEPARATOR} />
+              <div className={MENU_LABEL}>Move to</div>
+              {folder.parent_id && (
+                <DropdownMenu.Item
+                  className={MENU_ITEM}
+                  onSelect={() => void updateNoteFolder(store, folder.id, [{ parent_id: null }])}
+                >
+                  <Folder size={14} /> Top level
+                </DropdownMenu.Item>
+              )}
+              {targets.map((f) => (
+                <DropdownMenu.Item
+                  key={f.folder.id}
+                  className={MENU_ITEM}
+                  onSelect={() =>
+                    void updateNoteFolder(store, folder.id, [{ parent_id: f.folder.id }])
+                  }
+                >
+                  <Folder size={14} /> <span className="truncate">{f.path}</span>
+                </DropdownMenu.Item>
+              ))}
+            </>
+          )}
           <DropdownMenu.Separator className={MENU_SEPARATOR} />
           <DropdownMenu.Item
             className={cx(MENU_ITEM, MENU_DANGER)}
-            title="Its notes move out of the folder"
+            title="Its notes and folders move up one level"
             onSelect={() => void deleteNoteFolder(store, folder.id)}
           >
             <Trash2 size={14} /> Delete folder
@@ -278,21 +330,30 @@ function FolderMenu({
 
 function FolderRow({
   folder,
+  folders,
   count,
+  empty,
   open,
   onToggle,
+  space,
   children,
 }: {
   folder: NoteFolder;
+  folders: FolderChoice[];
+  /** Notes inside, subfolders included. */
   count: number;
+  /** Nothing inside at all. */
+  empty: boolean;
   open: boolean;
   onToggle(open: boolean): void;
+  space: Space;
   children: ReactNode;
 }) {
   const store = useTaskStore();
   const newNote = useNewNote();
   const [menu, setMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
+  const [addingFolder, setAddingFolder] = useState(false);
   const drop = useDroppable({ id: `${FOLDER_PREFIX}${folder.id}` });
   const add = () => {
     onToggle(true);
@@ -348,9 +409,14 @@ function FolderRow({
           </IconButton>
           <FolderMenu
             folder={folder}
+            folders={folders}
             open={menu}
             onOpenChange={setMenu}
             onNewNote={add}
+            onNewFolder={() => {
+              onToggle(true);
+              setAddingFolder(true);
+            }}
             onRename={() => setRenaming(true)}
           />
           <span className="w-5 text-right text-[12.5px] text-ink-3 tabular-nums">
@@ -361,7 +427,22 @@ function FolderRow({
       {open && (
         <div className={FOLD_CHILDREN_CLASS}>
           {children}
-          {count === 0 && <p className="px-2.5 py-1 text-[12.5px] text-ink-3">Empty folder</p>}
+          {addingFolder && (
+            <InlineInput
+              initial=""
+              placeholder="Folder name"
+              autoFocus
+              className="my-px"
+              onCommit={(name) => {
+                setAddingFolder(false);
+                void createNoteFolder(store, name, space, folder.id);
+              }}
+              onCancel={() => setAddingFolder(false)}
+            />
+          )}
+          {empty && !addingFolder && (
+            <p className="px-2.5 py-1 text-[12.5px] text-ink-3">Empty folder</p>
+          )}
         </div>
       )}
     </div>
@@ -402,8 +483,8 @@ function targetOf(event: DragMoveEvent | DragEndEvent): NoteDropTarget | null {
 }
 
 /**
- * The sidebar's Notes (ADR 032): folders, one level deep, then the notes outside any
- * folder. Each note opens its own page. The section header owns the New folder button;
+ * The sidebar's Notes (ADR 032): the folder tree (folders nest, ADR 042), then the notes
+ * outside any folder. Each note opens its own page. The section header owns the New folder button;
  * `addingFolder` shows the name input under the tree.
  */
 export function NotesTree({
@@ -432,7 +513,12 @@ export function NotesTree({
       Object.values(folders).filter((f) => mine(f.id)),
     );
   }, [notes, folders, teamIds, space]);
-  const folderList = tree.folders.map((f) => f.folder);
+  const choices = useMemo(() => {
+    const mine = Object.fromEntries(
+      Object.entries(folders).filter(([id]) => (teamIds[id] === true) === (space === "team")),
+    );
+    return folderOptions(mine);
+  }, [folders, teamIds, space]);
   const empty = !tree.loose.length && !tree.folders.length;
 
   // Drag a note onto a folder (to its end), next to another note, or onto the top level.
@@ -472,6 +558,23 @@ export function NotesTree({
         : "before"
       : null;
   const draggedNote = dragged ? notes[dragged] : undefined;
+  const renderFolder = (node: FolderNode): ReactNode => (
+    <FolderRow
+      key={node.folder.id}
+      folder={node.folder}
+      folders={choices}
+      count={notesInside(node)}
+      empty={!node.notes.length && !node.children.length}
+      open={isOpen(node.folder.id)}
+      onToggle={(open) => setOpen(node.folder.id, open)}
+      space={space}
+    >
+      {node.children.map((child) => renderFolder(child))}
+      {node.notes.map((n) => (
+        <NoteRow key={n.id} note={n} folders={choices} hint={hintFor(n.id)} />
+      ))}
+    </FolderRow>
+  );
 
   return (
     <DndContext
@@ -486,21 +589,9 @@ export function NotesTree({
       onDragEnd={onDragEnd}
       onDragCancel={end}
     >
-      {tree.folders.map(({ folder, notes: inside }) => (
-        <FolderRow
-          key={folder.id}
-          folder={folder}
-          count={inside.length}
-          open={isOpen(folder.id)}
-          onToggle={(open) => setOpen(folder.id, open)}
-        >
-          {inside.map((n) => (
-            <NoteRow key={n.id} note={n} folders={folderList} hint={hintFor(n.id)} />
-          ))}
-        </FolderRow>
-      ))}
+      {tree.folders.map((node) => renderFolder(node))}
       {tree.loose.map((n) => (
-        <NoteRow key={n.id} note={n} folders={folderList} hint={hintFor(n.id)} />
+        <NoteRow key={n.id} note={n} folders={choices} hint={hintFor(n.id)} />
       ))}
       {draggedNote?.folder_id && <TopLevelDrop />}
       <DragOverlay dropAnimation={null}>

@@ -4,7 +4,6 @@ import { defaultHighlightStyle, syntaxHighlighting } from "@codemirror/language"
 import { EditorState, Prec } from "@codemirror/state";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import {
   MentionMenu,
   type MentionState,
@@ -12,16 +11,14 @@ import {
   useMentionList,
 } from "../../components/MentionMenu";
 import { EditIcon as Pencil } from "../../components/TaskIcons";
-import { cx, MENU } from "../../components/ui";
+import { cx } from "../../components/ui";
 import { toggleTaskItem } from "../../lib/attachments";
 import { mentionAt, mentionText } from "../../lib/mentions";
-import { taskLinkMarkdown } from "../../lib/notes";
-import type { Attachment, Member, Task } from "../../lib/types";
-import { useTaskStore } from "../../store/context";
+import type { Attachment, Member } from "../../lib/types";
 import { FILE_DROP_EVENT, type FileDropDetail } from "../shell/useFileDrop";
+import { type LinkPick, LinkPicker } from "./LinkPicker";
 import { type MarkdownActions, MarkdownView } from "./MarkdownView";
 import { markdownHeadings } from "./markdownHeadings";
-import { PickerBody } from "./TaskPicker";
 
 const base = {
   "&": { backgroundColor: "transparent", color: "var(--tm-ink)" },
@@ -53,52 +50,6 @@ const THEMES = {
 export interface Uploader {
   files(files: File[]): Promise<string | null>;
   paths(paths: string[]): Promise<string | null>;
-}
-
-/** Where `[[` was typed: the picker opens under it and replaces it with the link. */
-interface LinkPick {
-  from: number;
-  left: number;
-  top: number;
-}
-
-/**
- * The task search opened by typing `[[` (ADR 032). Picking inserts `[title](task:<id>)`;
- * Esc or a click outside leaves the brackets as typed.
- */
-function TaskLinkPicker({
-  at,
-  onPick,
-  onCancel,
-}: {
-  at: LinkPick;
-  onPick(task: Task): void;
-  onCancel(): void;
-}) {
-  const store = useTaskStore();
-  const left = Math.max(8, Math.min(at.left, window.innerWidth - 336));
-  return createPortal(
-    <>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: a click outside closes the search; Esc in its box is the keyboard path */}
-      <div className="fixed inset-0 z-40" onMouseDown={onCancel} />
-      <div
-        role="dialog"
-        aria-label="Link a task"
-        style={{ left, top: at.top + 6 }}
-        className={cx(MENU, "fixed z-50 w-80 max-w-[calc(100vw-1rem)] p-2")}
-      >
-        <PickerBody
-          label="Link a task"
-          candidates={() =>
-            Object.values(store.getState().tasks).sort((a, b) => b.updated_at - a.updated_at)
-          }
-          onPick={onPick}
-          onEscape={onCancel}
-        />
-      </div>
-    </>,
-    document.body,
-  );
 }
 
 /** `text` placed at `pos` on lines of its own. */
@@ -441,9 +392,9 @@ export function DescriptionEditor({
         </button>
       )}
       {linkPick && editing && (
-        <TaskLinkPicker
+        <LinkPicker
           at={linkPick}
-          onPick={(task) => closePicker(taskLinkMarkdown(task))}
+          onPick={(markdown) => closePicker(markdown)}
           onCancel={() => closePicker()}
         />
       )}

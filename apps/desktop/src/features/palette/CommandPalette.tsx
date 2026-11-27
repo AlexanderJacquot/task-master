@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Dialog } from "radix-ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cx, NO_TEXT_PREDICTION } from "../../components/ui";
-import { noteSnippet, noteTitle } from "../../lib/notes";
+import { folderPath, noteSnippet, noteTitle } from "../../lib/notes";
 import { type PaletteItem, rankItems } from "../../lib/palette";
 import { plainSnippet, speakerLabel } from "../../lib/transcript";
 import type { NoteHit, TranscriptHit } from "../../lib/types";
@@ -98,7 +98,8 @@ export function CommandPalette({
   );
 
   const items: Runnable[] = useMemo(() => {
-    const folderName = (id: string | null) => (id ? noteFolders[id]?.name : undefined);
+    const folderName = (id: string | null) =>
+      id && noteFolders[id] ? folderPath(noteFolders, id) : undefined;
     const list: Runnable[] = [
       {
         key: "action:new",

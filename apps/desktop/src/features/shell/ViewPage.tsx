@@ -4,6 +4,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   BookmarkIcon as Bookmark,
   ColumnsIcon as Columns3,
+  FileTextIcon,
   FilterIcon as Filter,
   ListIcon as List,
   UndoIcon as Reset,
@@ -117,6 +118,7 @@ export function ViewPage({
   details,
   eyebrow,
   todayPanel,
+  notes,
 }: {
   scope: ViewScope;
   title: ReactNode;
@@ -125,6 +127,8 @@ export function ViewPage({
   eyebrow?: ReactNode;
   /** Offer the Today panel beside the tasks (All tasks), to drag tasks into today. */
   todayPanel?: boolean;
+  /** A Notes layout beside List and Board, showing this (an epic's notes, ADR 042). */
+  notes?: ReactNode;
 }) {
   const [display, setDisplay] = useViewPrefs(scope);
   return (
@@ -137,6 +141,7 @@ export function ViewPage({
       actions={actions}
       details={details}
       todayPanel={todayPanel}
+      notes={notes}
     />
   );
 }
@@ -230,9 +235,12 @@ function ViewBody({
   details,
   eyebrow,
   todayPanel,
+  notes,
 }: {
   scope: ViewScope;
   title: ReactNode;
+  /** A Notes layout beside List and Board, showing this instead of the tasks. */
+  notes?: ReactNode;
   /** Small line above the title (a project's area). */
   eyebrow?: ReactNode;
   display: ViewDisplay;
@@ -247,6 +255,8 @@ function ViewBody({
   const store = useTaskStore();
   const navigate = useNavigate();
   const api = useApi();
+  const [notesShown, setNotesShown] = useState(false);
+  const showingNotes = notesShown && notes !== undefined;
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [searchIds, setSearchIds] = useState<Set<string> | null>(null);
@@ -513,12 +523,15 @@ function ViewBody({
                 <button
                   key={layout}
                   type="button"
-                  aria-pressed={display.layout === layout}
-                  onClick={() => setDisplay({ layout })}
+                  aria-pressed={!showingNotes && display.layout === layout}
+                  onClick={() => {
+                    setNotesShown(false);
+                    setDisplay({ layout });
+                  }}
                   className={cx(
                     "flex items-center gap-1.5 rounded-[7px] px-3 py-1 capitalize transition-colors",
                     FOCUS,
-                    display.layout === layout
+                    !showingNotes && display.layout === layout
                       ? "bg-selected text-ink shadow-sm"
                       : "text-ink-2 hover:text-ink",
                   )}
@@ -527,6 +540,21 @@ function ViewBody({
                   {layout}
                 </button>
               ))}
+              {notes !== undefined && (
+                <button
+                  type="button"
+                  aria-pressed={showingNotes}
+                  onClick={() => setNotesShown(true)}
+                  className={cx(
+                    "flex items-center gap-1.5 rounded-[7px] px-3 py-1 transition-colors",
+                    FOCUS,
+                    showingNotes ? "bg-selected text-ink shadow-sm" : "text-ink-2 hover:text-ink",
+                  )}
+                >
+                  <FileTextIcon size={14} />
+                  Notes
+                </button>
+              )}
             </fieldset>
             <Popover.Root>
               <Popover.Trigger asChild>
@@ -681,7 +709,8 @@ function ViewBody({
           </div>
         </header>
         {details}
-        {filtersShown && (
+        {showingNotes && <div className="min-h-0 flex-1 px-10 pt-2 pb-8">{notes}</div>}
+        {!showingNotes && filtersShown && (
           <FilterBar
             filter={display.filter}
             onChange={(filter) => setDisplay({ filter })}
@@ -692,114 +721,118 @@ function ViewBody({
             projectId={stableScope.kind === "project" ? stableScope.id : undefined}
           />
         )}
-        <div className="grid grid-cols-2 items-start gap-3 px-10 pt-1 pb-2">
-          <CaptureBox
-            id={NEW_TASK_INPUT_ID}
-            className="min-w-0"
-            defaults={withDefaultProject(
-              captureDefaults(scope, today),
-              projects,
-              scope.kind === "inbox",
-            )}
-            placeholder={`Add a task${typeof title === "string" ? ` to ${title}` : ""}…   ${CAPTURE_HINT}`}
-            onCaptured={(id, how) => {
-              if (how.open)
-                void navigate({
-                  to: "/task/$taskId",
-                  params: { taskId: id },
-                  search: { focus: "description" },
-                });
-              // Settings → Adding tasks: the new task opens in the side panel, ready to write.
-              else if (loadOpenInPanel())
-                void navigate({
-                  to: ".",
-                  search: (prev: Record<string, unknown>) => ({
-                    ...prev,
-                    task: id,
-                    focus: "description" as const,
-                  }),
-                });
-            }}
-          />
-          <form
-            aria-label="Search tasks"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setQuery(searchText.trim());
-            }}
-            className="flex min-w-0 flex-col gap-1.5"
-          >
-            <div className="flex items-center gap-3 rounded-[10px] border border-line-strong px-3.5 py-1.5 focus-within:border-accent focus-within:bg-raised/60">
-              <Search size={16} className="shrink-0 text-rubric" aria-hidden />
-              <input
-                type="search"
-                aria-label="Search tasks"
-                placeholder="Search task titles and descriptions…"
-                value={searchText}
-                onChange={(event) => {
-                  setSearchText(event.target.value);
+        {!showingNotes && (
+          <>
+            <div className="grid grid-cols-2 items-start gap-3 px-10 pt-1 pb-2">
+              <CaptureBox
+                id={NEW_TASK_INPUT_ID}
+                className="min-w-0"
+                defaults={withDefaultProject(
+                  captureDefaults(scope, today),
+                  projects,
+                  scope.kind === "inbox",
+                )}
+                placeholder={`Add a task${typeof title === "string" ? ` to ${title}` : ""}…   ${CAPTURE_HINT}`}
+                onCaptured={(id, how) => {
+                  if (how.open)
+                    void navigate({
+                      to: "/task/$taskId",
+                      params: { taskId: id },
+                      search: { focus: "description" },
+                    });
+                  // Settings → Adding tasks: the new task opens in the side panel, ready to write.
+                  else if (loadOpenInPanel())
+                    void navigate({
+                      to: ".",
+                      search: (prev: Record<string, unknown>) => ({
+                        ...prev,
+                        task: id,
+                        focus: "description" as const,
+                      }),
+                    });
                 }}
-                className="min-w-0 flex-1 bg-transparent py-0.5 text-ink placeholder:text-ink-3 focus:outline-none"
               />
-              <Button size="sm" type="submit">
-                Search
-              </Button>
+              <form
+                aria-label="Search tasks"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setQuery(searchText.trim());
+                }}
+                className="flex min-w-0 flex-col gap-1.5"
+              >
+                <div className="flex items-center gap-3 rounded-[10px] border border-line-strong px-3.5 py-1.5 focus-within:border-accent focus-within:bg-raised/60">
+                  <Search size={16} className="shrink-0 text-rubric" aria-hidden />
+                  <input
+                    type="search"
+                    aria-label="Search tasks"
+                    placeholder="Search task titles and descriptions…"
+                    value={searchText}
+                    onChange={(event) => {
+                      setSearchText(event.target.value);
+                    }}
+                    className="min-w-0 flex-1 bg-transparent py-0.5 text-ink placeholder:text-ink-3 focus:outline-none"
+                  />
+                  <Button size="sm" type="submit">
+                    Search
+                  </Button>
+                </div>
+                <div aria-live="polite" className="px-1 text-xs text-ink-3">
+                  {searching
+                    ? "Searching…"
+                    : searchActive && !searchError
+                      ? `${taskCount} matching ${taskCount === 1 ? "task" : "tasks"}`
+                      : null}
+                </div>
+                {searchError && (
+                  <p role="alert" className="px-1 text-xs text-danger">
+                    Could not search tasks. Clear the search and try again.
+                  </p>
+                )}
+              </form>
             </div>
-            <div aria-live="polite" className="px-1 text-xs text-ink-3">
-              {searching
-                ? "Searching…"
-                : searchActive && !searchError
-                  ? `${taskCount} matching ${taskCount === 1 ? "task" : "tasks"}`
-                  : null}
-            </div>
-            {searchError && (
-              <p role="alert" className="px-1 text-xs text-danger">
-                Could not search tasks. Clear the search and try again.
-              </p>
+            {boardModel ? (
+              <BoardView
+                key={boardEpoch}
+                board={boardModel}
+                lookups={lookups}
+                selectedId={selectedId ?? null}
+                picked={selection.ids}
+                onOpen={onOpen}
+                onPick={onPick}
+                onAdd={addToLane}
+              />
+            ) : rows.length === 0 ? (
+              <EmptyArt>
+                {searchActive
+                  ? searching
+                    ? "Searching…"
+                    : searchError
+                      ? "Search unavailable."
+                      : "No matching tasks."
+                  : scope.kind === "inbox"
+                    ? "Inbox zero. Nothing to triage."
+                    : "No tasks here yet."}
+              </EmptyArt>
+            ) : (
+              <TaskList
+                rows={rows}
+                selectedId={selectedId ?? null}
+                picked={selection.ids}
+                onPick={onPick}
+                onToggleGroup={(id) => setCollapsedGroups((s) => toggle(s, id))}
+                onOpen={onOpen}
+                onOpenPage={onOpenPage}
+                onToggleDone={onToggleDone}
+                onToggleCollapse={onToggleCollapse}
+                onChange={onChange}
+                statuses={statuses}
+                projects={projects}
+                tags={tags}
+                today={today}
+                showProject={showProject}
+              />
             )}
-          </form>
-        </div>
-        {boardModel ? (
-          <BoardView
-            key={boardEpoch}
-            board={boardModel}
-            lookups={lookups}
-            selectedId={selectedId ?? null}
-            picked={selection.ids}
-            onOpen={onOpen}
-            onPick={onPick}
-            onAdd={addToLane}
-          />
-        ) : rows.length === 0 ? (
-          <EmptyArt>
-            {searchActive
-              ? searching
-                ? "Searching…"
-                : searchError
-                  ? "Search unavailable."
-                  : "No matching tasks."
-              : scope.kind === "inbox"
-                ? "Inbox zero. Nothing to triage."
-                : "No tasks here yet."}
-          </EmptyArt>
-        ) : (
-          <TaskList
-            rows={rows}
-            selectedId={selectedId ?? null}
-            picked={selection.ids}
-            onPick={onPick}
-            onToggleGroup={(id) => setCollapsedGroups((s) => toggle(s, id))}
-            onOpen={onOpen}
-            onOpenPage={onOpenPage}
-            onToggleDone={onToggleDone}
-            onToggleCollapse={onToggleCollapse}
-            onChange={onChange}
-            statuses={statuses}
-            projects={projects}
-            tags={tags}
-            today={today}
-            showProject={showProject}
-          />
+          </>
         )}
         {picking && <BulkBar ids={selection.ids} onClear={clearSelection} />}
       </div>

@@ -32,6 +32,7 @@ import type { Meeting, MeetingChange } from "../../lib/types";
 import { deleteMeeting, updateMeeting } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { useNow } from "../calendar/TimeGrid";
+import { MeetingNotes } from "../notes/MeetingNotes";
 import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import { EditableTitle } from "../shell/EditableTitle";
@@ -397,6 +398,7 @@ function MeetingEditor({ meeting, line }: { meeting: Meeting; line?: string }) {
         actions={files.actions}
         {...(files.uploader && { upload: files.uploader })}
       />
+      <MeetingNotes meeting={meeting} />
       <section aria-label="Participants" className="pl-10">
         <SectionLabel className="mb-1.5 block">Participants</SectionLabel>
         <ParticipantsField

@@ -1,14 +1,14 @@
 import { Link, useNavigate, useRouter } from "@tanstack/react-router";
 import { NotebookPen, X } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftIcon as ArrowLeft,
   FolderOpenIcon,
   DeleteIcon as Trash2,
 } from "../../components/TaskIcons";
 import { cx, IconButton, MENU, MENU_ITEM, MENU_LABEL, MENU_SEPARATOR } from "../../components/ui";
-import { tidy } from "../../lib/notes";
+import { folderOptions, folderPath, tidy } from "../../lib/notes";
 import type { Note, NoteChange } from "../../lib/types";
 import { deleteNote, moveNote, updateNote } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
@@ -25,7 +25,7 @@ const TITLE_SAVE_MS = 500;
 function FolderMenu({ note }: { note: Note }) {
   const store = useTaskStore();
   const folders = useStoreState((s) => s.note_folders);
-  const sorted = Object.values(folders).sort((a, b) => (a.rank < b.rank ? -1 : 1));
+  const sorted = useMemo(() => folderOptions(folders), [folders]);
   const current = note.folder_id ? folders[note.folder_id] : undefined;
   return (
     <DropdownMenu.Root modal={false}>
@@ -34,7 +34,7 @@ function FolderMenu({ note }: { note: Note }) {
         className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-hover hover:text-ink"
       >
         <FolderOpenIcon size={14} />
-        {current?.name ?? "No folder"}
+        {current ? folderPath(folders, current.id) : "No folder"}
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="start" sideOffset={4} className={cx(MENU, "min-w-44")}>
@@ -47,14 +47,14 @@ function FolderMenu({ note }: { note: Note }) {
             No folder
           </DropdownMenu.Item>
           {sorted.length > 0 && <DropdownMenu.Separator className={MENU_SEPARATOR} />}
-          {sorted.map((f) => (
+          {sorted.map(({ folder: f, path }) => (
             <DropdownMenu.Item
               key={f.id}
               className={MENU_ITEM}
               disabled={f.id === note.folder_id}
               onSelect={() => void moveNote(store, note.id, f.id)}
             >
-              {f.name}
+              {path}
             </DropdownMenu.Item>
           ))}
         </DropdownMenu.Content>

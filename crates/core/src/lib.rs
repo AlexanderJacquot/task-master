@@ -54,8 +54,8 @@ pub use model::{
     VIEW_SPEC_VERSION, View, ViewFilter, ViewScope, ViewSpec, review_status,
 };
 pub use notes::{
-    MAX_NOTE_BODY_CHARS, MAX_NOTE_TITLE_CHARS, NewNote, NewNoteFolder, NoteChange,
-    NoteFolderChange, NoteHit,
+    MAX_FOLDER_DEPTH, MAX_NOTE_BODY_CHARS, MAX_NOTE_TITLE_CHARS, NewNote, NewNoteFolder,
+    NoteChange, NoteFolderChange, NoteHit,
 };
 pub use ops::EntityKind;
 pub use parse::{Capture, NameMatch, Parsed, parse};

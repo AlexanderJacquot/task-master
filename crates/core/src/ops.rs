@@ -348,6 +348,7 @@ impl Entity {
             Self::NoteFolder => &[
                 "id",
                 "name",
+                "parent_id",
                 "rank",
                 "created_at",
                 "updated_at",

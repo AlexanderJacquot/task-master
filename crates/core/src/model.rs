@@ -596,20 +596,25 @@ pub struct TaskMark {
     pub deleted_at: Option<Timestamp>,
 }
 
-/// A folder of [`Note`]s (ADR 032). Folders do not nest.
+/// A folder of [`Note`]s (ADR 032). Folders nest (ADR 042).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct NoteFolder {
     pub id: Id,
     pub name: String,
+    /// The folder it is in; `None` at the top level.
+    #[serde(default)]
+    pub parent_id: Option<Id>,
+    /// Order among its siblings.
     pub rank: String,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
     pub deleted_at: Option<Timestamp>,
 }
 
-/// A markdown page in the sidebar's Notes (ADR 032). Its body links tasks and projects
-/// with `task:<id>` and `project:<id>` URLs.
+/// A markdown page in the sidebar's Notes (ADR 032). Its body links tasks, projects, epics
+/// and meetings with `task:<id>`, `project:<id>`, `epic:<id>` and `meeting:<id>` URLs
+/// (ADR 042).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
 pub struct Note {

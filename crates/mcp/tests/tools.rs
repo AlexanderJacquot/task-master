@@ -167,6 +167,7 @@ async fn lists_its_tools_and_names_the_session_task() {
             "get_meeting",
             "get_note",
             "get_task",
+            "link_meeting",
             "link_tasks",
             "list_agent_sessions",
             "list_attachments",
