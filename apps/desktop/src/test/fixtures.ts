@@ -289,6 +289,7 @@ export function noteFolder(overrides: Partial<NoteFolder> = {}): NoteFolder {
   return {
     id: `0192f0c8-0000-7000-8000-${String(counter).padStart(12, "0")}`,
     name: `Folder ${counter}`,
+    parent_id: null,
     rank: fixtureRank(),
     created_at: counter,
     updated_at: counter,

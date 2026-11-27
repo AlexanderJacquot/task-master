@@ -1,15 +1,18 @@
 // A meeting's summary, and "Send to Claude" (ADR 040): an agent session reads the meeting
-// with its transcript, writes the summary here and creates the tasks it calls for. This is
-// the one step that sends the transcript off the device, and only on this click (ADR 025).
+// with its transcript, writes the summary here, creates the tasks it calls for and writes
+// the meeting note in Notes (ADR 042). This is the one step that sends the transcript off
+// the device, and only on this click (ADR 025).
 
 import { Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button, SectionLabel } from "../../components/ui";
 import { followUpPrompt, followUpTitle } from "../../lib/meetings";
+import { meetingNoteHeader, meetingNoteTitle } from "../../lib/notes";
 import type { Attachment, Meeting, MeetingChange } from "../../lib/types";
 import { createTask, updateMeeting } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { SendToAgentDialog } from "../agents/SendToAgentDialog";
+import { meetingNoteLinks } from "../notes/MeetingNotes";
 import { DescriptionEditor, type Uploader } from "../task-detail/DescriptionEditor";
 import type { MarkdownActions } from "../task-detail/MarkdownView";
 
@@ -34,6 +37,13 @@ export function MeetingSummary({
   const projectId = meeting.project_id ?? live?.project_id ?? null;
   const project = useStoreState((s) => (projectId ? s.projects[projectId] : undefined));
   const [open, setOpen] = useState(false);
+  const tasks = useStoreState((s) => s.tasks);
+  const epics = useStoreState((s) => s.epics);
+  const projects = useStoreState((s) => s.projects);
+  const noteLinks = useMemo(
+    () => meetingNoteLinks({ tasks, epics, projects }, meeting),
+    [tasks, epics, projects, meeting],
+  );
   const summary = meeting.summary ?? "";
   const said = meeting.transcribed_at !== null || meeting.notes.trim() !== "";
   if (!summary && !(agents && said)) return null;
@@ -94,6 +104,13 @@ export function MeetingSummary({
           initialPrompt={followUpPrompt(
             meeting,
             project ? { id: project.id, name: project.name } : null,
+            {
+              title: meetingNoteTitle(meeting),
+              header: meetingNoteHeader(meeting, noteLinks),
+              taskId: noteLinks.task?.id ?? null,
+              project: noteLinks.project,
+              epic: noteLinks.epic,
+            },
           )}
           prepare={prepare}
         />

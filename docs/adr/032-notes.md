@@ -1,6 +1,7 @@
 # ADR 032: Notes in the sidebar, linked to tasks
 
-Date: 2026-11-20 · Status: proposed (implemented on branch `notes-page`; follow-ups on `notes-integrations`)
+Date: 2026-11-20 · Status: proposed (implemented on branch `notes-page`; follow-ups on `notes-integrations`;
+epic and meeting links and meeting notes in ADR 042)
 
 ## Context
 

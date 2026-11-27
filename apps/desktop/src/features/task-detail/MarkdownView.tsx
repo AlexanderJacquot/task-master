@@ -3,13 +3,14 @@ import { ImageOff } from "lucide-react";
 import { type ComponentProps, memo, type ReactNode, useMemo, useState } from "react";
 import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { CheckIcon, FileTextIcon as FileText } from "../../components/TaskIcons";
+import { CheckIcon, FileTextIcon as FileText, ScribeIcon } from "../../components/TaskIcons";
 import { cx } from "../../components/ui";
 import { attachmentId, formatSize, isImage } from "../../lib/attachments";
 import { remarkMentions } from "../../lib/mentions";
 import { entityLink } from "../../lib/notes";
 import type { Attachment } from "../../lib/types";
 import { useStoreState } from "../../store/context";
+import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import { useOpenTask } from "../shell/useOpenTask";
 import { remarkBreaks } from "./remarkBreaks";
@@ -23,7 +24,7 @@ export interface MarkdownActions {
   toggleTask?: (line: number, checked: boolean) => void;
 }
 
-/** Keeps `attachment:`, `task:` and `project:` links (resolved below) and the default safe set of URLs. */
+/** Keeps `attachment:`, `task:`, `project:`, `epic:` and `meeting:` links (resolved below) and the default safe set of URLs. */
 function urlTransform(url: string): string {
   return attachmentId(url) || entityLink(url) ? url : defaultUrlTransform(url);
 }
@@ -73,6 +74,56 @@ function ProjectLink({ id, children }: { id: string; children: ReactNode }) {
       {project && (
         <ProjectMark project={project} dotClass="size-2" className="self-center text-[12px]" />
       )}
+      {children}
+    </button>
+  );
+}
+
+/** An `epic:<id>` link (ADR 042): the link text with the epic's mark; opens the epic. */
+function EpicLink({ id, children }: { id: string; children: ReactNode }) {
+  const epic = useStoreState((s) => s.epics[id]);
+  const router = useRouter({ warn: false });
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        epic && void router?.navigate({ to: "/epic/$epicId", params: { epicId: id }, search: {} })
+      }
+      className={cx(ENTITY_LINK, !epic && "text-ink-3 line-through")}
+      title={epic ? `Open epic: ${epic.name}` : "This epic was deleted"}
+    >
+      {epic && (
+        <span className="self-center">
+          <EpicMark epic={epic} size={12} />
+        </span>
+      )}
+      {children}
+    </button>
+  );
+}
+
+/** A `meeting:<id>` link (ADR 042): the link text with the Scribe mark; opens the meeting. */
+function MeetingLink({ id, children }: { id: string; children: ReactNode }) {
+  const meeting = useStoreState((s) => {
+    const m = s.meetings[id];
+    return m && m.deleted_at === null ? m : undefined;
+  });
+  const router = useRouter({ warn: false });
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        meeting &&
+        void router?.navigate({
+          to: "/meeting/$meetingId",
+          params: { meetingId: id },
+          search: {},
+        })
+      }
+      className={cx(ENTITY_LINK, !meeting && "text-ink-3 line-through")}
+      title={meeting ? `Open meeting: ${meeting.title}` : "This meeting was deleted"}
+    >
+      <ScribeIcon size={12} className="shrink-0 self-center" />
       {children}
     </button>
   );
@@ -161,6 +212,8 @@ export const MarkdownView = memo(function MarkdownView({
       const entity = entityLink(href);
       if (entity?.kind === "task") return <TaskLink id={entity.id}>{children}</TaskLink>;
       if (entity?.kind === "project") return <ProjectLink id={entity.id}>{children}</ProjectLink>;
+      if (entity?.kind === "epic") return <EpicLink id={entity.id}>{children}</EpicLink>;
+      if (entity?.kind === "meeting") return <MeetingLink id={entity.id}>{children}</MeetingLink>;
       const id = attachmentId(href);
       if (id) {
         const attachment = attachments[id];

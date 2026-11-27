@@ -1,9 +1,11 @@
 // Scribe (ADR 025): the meetings, upcoming first then past ones newest first, with a
 // project filter and a search over titles, participants and notes. "Start meeting" opens
-// a meeting that begins now; "Plan a meeting" one at the next quarter hour.
+// a meeting that begins now; "Plan a meeting" one at the next quarter hour. "Up next" puts
+// the meeting in progress, or the one starting within 15 minutes, on top with Record.
 
 import { useNavigate } from "@tanstack/react-router";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Mic } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { PlayIcon, AddIcon as Plus, ScribeIcon } from "../../components/TaskIcons";
 import { Button, cx, FOCUS, INPUT, Select } from "../../components/ui";
@@ -11,10 +13,13 @@ import { formatRange } from "../../lib/calendar";
 import {
   filterMeetings,
   type MeetingFilter,
+  MINUTE,
   meetingLabel,
   meetingPhase,
   sortMeetings,
+  upNext,
 } from "../../lib/meetings";
+import { useScribe, useScribeStore } from "../../lib/scribe";
 import type { Meeting } from "../../lib/types";
 import { useStoreState } from "../../store/context";
 import { useNow } from "../calendar/TimeGrid";
@@ -86,6 +91,88 @@ export function MeetingRow({ meeting, now }: { meeting: Meeting; now: number }) 
   );
 }
 
+/**
+ * The meeting to record now, on top of Scribe: what it is, when, what it is filed under,
+ * and Record, which starts recording it and opens it (transcribed when it stops, unless
+ * Settings → Scribe says otherwise).
+ */
+function UpNext({ meeting, now }: { meeting: Meeting; now: number }) {
+  const navigate = useNavigate();
+  const scribe = useScribeStore();
+  const support = useScribe((s) => s.support);
+  const live = useScribe((s) => s.live);
+  const busy = useScribe((s) => s.busy) ?? false;
+  const project = useStoreState((s) =>
+    meeting.project_id ? s.projects[meeting.project_id] : undefined,
+  );
+  const epic = useStoreState((s) => (meeting.epic_id ? s.epics[meeting.epic_id] : undefined));
+  const open = () =>
+    void navigate({ to: "/meeting/$meetingId", params: { meetingId: meeting.id }, search: {} });
+  const minutes = Math.ceil((meeting.started_at - now) / MINUTE);
+  const when =
+    meetingPhase(meeting, now) === "now"
+      ? "In progress"
+      : minutes <= 1
+        ? "Starts in a minute"
+        : `Starts in ${minutes} minutes`;
+  const canRecord = !!scribe && !!support?.recording && live === null;
+  const why =
+    !scribe || !support
+      ? "Recording works in the desktop app."
+      : !support.recording
+        ? support.note
+        : live !== null
+          ? "Another meeting is being recorded."
+          : null;
+  return (
+    <section
+      aria-label="Up next"
+      className="mb-6 flex flex-wrap items-center gap-4 rounded-xl border border-accent/40 bg-accent/5 px-5 py-4"
+    >
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-[12px] font-medium tracking-wide text-accent uppercase">
+          Up next · {when}
+        </span>
+        <button
+          type="button"
+          onClick={open}
+          className={cx("truncate text-left text-[17px] text-ink hover:underline", FOCUS)}
+        >
+          {meeting.title}
+        </button>
+        <span className="flex min-w-0 flex-wrap items-center gap-x-3 text-[12.5px] text-ink-3">
+          {meeting.ended_at !== null && (
+            <span>{formatRange(meeting.started_at, meeting.ended_at)}</span>
+          )}
+          {project && (
+            <span className="flex items-center gap-1.5">
+              <ProjectMark project={project} />
+              {project.name}
+              {epic && ` · ${epic.name}`}
+            </span>
+          )}
+          {meeting.participants.length > 0 && <span>{meeting.participants.join(", ")}</span>}
+        </span>
+      </div>
+      <div className="flex flex-col items-end gap-1">
+        <Button
+          variant="primary"
+          busy={busy}
+          disabled={!canRecord}
+          onClick={async () => {
+            if (!scribe) return;
+            await scribe.getState().start(meeting.id);
+            open();
+          }}
+        >
+          <Mic size={14} /> Record
+        </Button>
+        {why && <span className="max-w-56 text-right text-[11.5px] text-ink-3">{why}</span>}
+      </div>
+    </section>
+  );
+}
+
 export function ScribePage() {
   const meetings = useStoreState((s) => s.meetings);
   const projects = useStoreState((s) => s.projects);
@@ -127,6 +214,7 @@ export function ScribePage() {
       .map((p) => ({ value: p.id, label: p.name, icon: <ProjectMark project={p} /> })),
   ];
   const total = Object.keys(meetings).length;
+  const next = useMemo(() => upNext(Object.values(meetings), now), [meetings, now]);
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-10 py-7">
@@ -149,6 +237,7 @@ export function ScribePage() {
           </Button>
         </div>
       </header>
+      {next && <UpNext meeting={next} now={now} />}
       {total > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3">
           <input

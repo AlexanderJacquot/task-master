@@ -8,6 +8,7 @@ import type { Epic, EpicState } from "../../lib/types";
 import { categoryOf } from "../../lib/views";
 import { deleteEpic, updateEpic } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
+import { EpicNotes, useNewEpicNote } from "../notes/ProjectNotes";
 import { MeetingsSection } from "../scribe/MeetingsSection";
 import { EditableTitle } from "../shell/EditableTitle";
 import { HeaderButton, ViewPage } from "../shell/ViewPage";
@@ -158,6 +159,7 @@ function EpicDetails({ epic }: { epic: Epic }) {
         }}
         className="w-full resize-y rounded-lg border border-transparent bg-transparent px-1.5 py-1 text-[14.5px] text-ink-2 hover:border-line-strong focus:border-accent focus:outline-none"
       />
+      <EpicNotes epic={epic} />
       <MeetingsSection link={{ epic: epic.id }} page={false} limit={3} />
     </div>
   );
@@ -167,6 +169,7 @@ function EpicDetails({ epic }: { epic: Epic }) {
 export function EpicPage({ epic }: { epic: Epic }) {
   const store = useTaskStore();
   const navigate = useNavigate();
+  const newNote = useNewEpicNote(epic);
   return (
     <ViewPage
       scope={{ kind: "epic", id: epic.id }}
@@ -181,6 +184,7 @@ export function EpicPage({ epic }: { epic: Epic }) {
         </span>
       }
       details={<EpicDetails key={epic.id} epic={epic} />}
+      notes={<EpicNotes epic={epic} full />}
       actions={
         <>
           <HeaderButton
@@ -188,6 +192,7 @@ export function EpicPage({ epic }: { epic: Epic }) {
           >
             Timeline
           </HeaderButton>
+          <HeaderButton onClick={() => void newNote()}>New note</HeaderButton>
           <HeaderButton
             onClick={async () => {
               if ((await deleteEpic(store, epic.id)) !== null) void navigate({ to: "/inbox" });

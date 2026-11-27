@@ -1,6 +1,7 @@
-//! Notes (ADR 032): markdown pages in the sidebar, in folders one level deep. A note may be
-//! attached to a task; its body links tasks and projects with `task:<id>` and
-//! `project:<id>` URLs, which the core leaves as text.
+//! Notes (ADR 032): markdown pages in the sidebar, in folders that nest (ADR 042). A note may be
+//! attached to a task; its body links tasks, projects, epics and meetings with
+//! `task:<id>`, `project:<id>`, `epic:<id>` and `meeting:<id>` URLs (ADR 042), which the
+//! core leaves as text.
 
 use rusqlite::{Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,8 @@ pub const MAX_NOTE_TITLE_CHARS: usize = 300;
 pub const MAX_NOTE_BODY_CHARS: usize = 1_000_000;
 /// Longest folder name, in characters.
 const MAX_FOLDER_NAME_CHARS: usize = 100;
+/// Deepest a folder may sit: a top-level folder is at depth 1.
+pub const MAX_FOLDER_DEPTH: usize = 8;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -54,7 +57,9 @@ pub enum NoteChange {
 pub struct NewNoteFolder {
     pub id: Option<Id>,
     pub name: String,
-    /// Defaults to after the last folder.
+    /// The folder to create it in; `None` at the top level.
+    pub parent_id: Option<Id>,
+    /// Defaults to after the last folder at that level.
     pub rank: Option<String>,
 }
 
@@ -63,6 +68,9 @@ pub struct NewNoteFolder {
 #[serde(rename_all = "snake_case")]
 pub enum NoteFolderChange {
     Name(String),
+    /// Moves it into another folder (`None`: the top level). Without a `Rank` change in
+    /// the same update it goes after the folders already there.
+    ParentId(Option<Id>),
     Rank(String),
 }
 
@@ -165,19 +173,18 @@ pub(crate) fn delete_note(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
 pub(crate) fn create_folder(b: &mut Batch<'_, '_>, n: NewNoteFolder) -> Result<()> {
     let id = client_id(n.id)?;
     let name = folder_name(&n.name)?;
+    if let Some(parent) = &n.parent_id {
+        live_folder(b, parent)?;
+        if depth(b, Some(parent))? + 1 > MAX_FOLDER_DEPTH {
+            return Err(too_deep());
+        }
+    }
     let rank = match n.rank {
         Some(r) => {
             rank::validate(&r)?;
             r
         }
-        None => {
-            let last: Option<String> = b.tx.query_row(
-                "SELECT MAX(rank) FROM note_folders WHERE deleted_at IS NULL",
-                [],
-                |r| r.get(0),
-            )?;
-            rank::key_between(last.as_deref(), None)?
-        }
+        None => end_of_level(b, n.parent_id.as_deref())?,
     };
     b.apply(Change::new(
         Entity::NoteFolder,
@@ -185,6 +192,7 @@ pub(crate) fn create_folder(b: &mut Batch<'_, '_>, n: NewNoteFolder) -> Result<(
         OpKind::Create,
         json!({
             "name": name,
+            "parent_id": n.parent_id,
             "rank": rank,
             "created_at": b.now,
             "updated_at": b.now,
@@ -203,17 +211,39 @@ pub(crate) fn update_folder(
             "update_note_folder needs at least one change",
         ));
     }
-    live_folder(b, id)?;
+    let folder = live_folder(b, id)?;
     let mut patch = Map::new();
+    let mut moved_to: Option<Option<Id>> = None;
     for change in changes {
         let (key, value) = match change {
             NoteFolderChange::Name(n) => ("name", json!(folder_name(&n)?)),
+            NoteFolderChange::ParentId(parent) => {
+                if let Some(p) = &parent {
+                    live_folder(b, p)?;
+                    if p == id || ancestors(b, p)?.iter().any(|a| a == id) {
+                        return Err(Error::invalid(
+                            "a folder cannot move into itself or one of its own folders",
+                        ));
+                    }
+                    if depth(b, Some(p))? + subtree_height(b, id)? > MAX_FOLDER_DEPTH {
+                        return Err(too_deep());
+                    }
+                }
+                moved_to = Some(parent.clone());
+                ("parent_id", json!(parent))
+            }
             NoteFolderChange::Rank(r) => {
                 rank::validate(&r)?;
                 ("rank", json!(r))
             }
         };
         patch.insert(key.into(), value);
+    }
+    if let Some(parent) = moved_to
+        && parent != folder.parent_id
+        && !patch.contains_key("rank")
+    {
+        patch.insert("rank".into(), json!(end_of_level(b, parent.as_deref())?));
     }
     patch.insert("updated_at".into(), json!(b.now));
     b.apply(Change::new(
@@ -224,10 +254,30 @@ pub(crate) fn update_folder(
     ))
 }
 
-/// Moves the folder's notes to the end of the top level, in their order, then deletes it.
-/// Undo puts them back.
+/// Moves the folder's notes and subfolders up into its parent (the top level for a
+/// top-level folder), at the end and in their order, then deletes it. Undo puts them back.
 pub(crate) fn delete_folder(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
-    live_folder(b, id)?;
+    let folder = live_folder(b, id)?;
+    let parent = folder.parent_id.clone();
+    let children: Vec<Id> = {
+        let mut stmt = b.tx.prepare(
+            "SELECT id FROM note_folders WHERE parent_id = ?1 AND deleted_at IS NULL \
+             ORDER BY rank, id",
+        )?;
+        stmt.query_map([id], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?
+    };
+    let mut last_folder = end_folder_rank(b, parent.as_deref())?;
+    for child in children {
+        let rank = rank::key_between(last_folder.as_deref(), None)?;
+        b.apply(Change::new(
+            Entity::NoteFolder,
+            &child,
+            OpKind::Update,
+            json!({ "parent_id": parent, "rank": rank, "updated_at": b.now }),
+        ))?;
+        last_folder = Some(rank);
+    }
     let inside: Vec<Id> = {
         let mut stmt = b.tx.prepare(
             "SELECT id FROM notes WHERE folder_id = ?1 AND deleted_at IS NULL ORDER BY rank, id",
@@ -235,14 +285,14 @@ pub(crate) fn delete_folder(b: &mut Batch<'_, '_>, id: &str) -> Result<()> {
         stmt.query_map([id], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?
     };
-    let mut last = end_rank(b, None)?;
+    let mut last = end_rank(b, parent.as_deref())?;
     for note_id in inside {
         let rank = rank::key_between(last.as_deref(), None)?;
         b.apply(Change::new(
             Entity::Note,
             &note_id,
             OpKind::Update,
-            json!({ "folder_id": null, "rank": rank, "updated_at": b.now }),
+            json!({ "folder_id": parent, "rank": rank, "updated_at": b.now }),
         ))?;
         last = Some(rank);
     }
@@ -299,6 +349,72 @@ fn end_of_folder(b: &Batch<'_, '_>, folder_id: Option<&str>) -> Result<String> {
     rank::key_between(end_rank(b, folder_id)?.as_deref(), None)
 }
 
+/// The last rank among the live folders in `parent` (`None`: the top level).
+fn end_folder_rank(b: &Batch<'_, '_>, parent: Option<&str>) -> Result<Option<String>> {
+    Ok(b.tx.query_row(
+        "SELECT MAX(rank) FROM note_folders WHERE parent_id IS ?1 AND deleted_at IS NULL",
+        [parent],
+        |r| r.get(0),
+    )?)
+}
+
+fn end_of_level(b: &Batch<'_, '_>, parent: Option<&str>) -> Result<String> {
+    rank::key_between(end_folder_rank(b, parent)?.as_deref(), None)
+}
+
+/// The folders above `id`, its parent first.
+fn ancestors(b: &Batch<'_, '_>, id: &str) -> Result<Vec<Id>> {
+    let mut out: Vec<Id> = Vec::new();
+    let mut current = folder(b.tx, id)?.parent_id;
+    while let Some(parent) = current {
+        // A cycle (only from a bad merge) stops here instead of looping.
+        if out.contains(&parent) || out.len() > MAX_FOLDER_DEPTH * 4 {
+            break;
+        }
+        current = folder(b.tx, &parent)?.parent_id;
+        out.push(parent);
+    }
+    Ok(out)
+}
+
+/// How deep a folder sits (1 at the top); 0 for the top level itself.
+fn depth(b: &Batch<'_, '_>, id: Option<&str>) -> Result<usize> {
+    Ok(match id {
+        Some(id) => ancestors(b, id)?.len() + 1,
+        None => 0,
+    })
+}
+
+/// Levels in the folder and the live folders under it (1 for a folder with none).
+fn subtree_height(b: &Batch<'_, '_>, id: &str) -> Result<usize> {
+    let mut height = 1;
+    let mut level = vec![id.to_owned()];
+    while !level.is_empty() && height <= MAX_FOLDER_DEPTH {
+        let mut next = Vec::new();
+        for parent in &level {
+            let mut stmt = b.tx.prepare_cached(
+                "SELECT id FROM note_folders WHERE parent_id = ?1 AND deleted_at IS NULL",
+            )?;
+            let ids = stmt
+                .query_map([parent], |r| r.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            next.extend(ids);
+        }
+        if next.is_empty() {
+            break;
+        }
+        height += 1;
+        level = next;
+    }
+    Ok(height)
+}
+
+fn too_deep() -> Error {
+    Error::invalid(format!(
+        "folders nest at most {MAX_FOLDER_DEPTH} levels deep"
+    ))
+}
+
 pub(crate) fn live_note(b: &Batch<'_, '_>, id: &str) -> Result<Note> {
     let note = note(b.tx, id)?;
     if note.deleted_at.is_some() {
@@ -320,7 +436,7 @@ fn live_folder(b: &Batch<'_, '_>, id: &str) -> Result<NoteFolder> {
 
 const NOTE_COLS: &str =
     "id, title, body, folder_id, task_id, rank, created_at, updated_at, deleted_at";
-const FOLDER_COLS: &str = "id, name, rank, created_at, updated_at, deleted_at";
+const FOLDER_COLS: &str = "id, name, parent_id, rank, created_at, updated_at, deleted_at";
 
 fn note_row(r: &Row<'_>) -> rusqlite::Result<Note> {
     Ok(Note {
@@ -340,10 +456,11 @@ fn folder_row(r: &Row<'_>) -> rusqlite::Result<NoteFolder> {
     Ok(NoteFolder {
         id: r.get(0)?,
         name: r.get(1)?,
-        rank: r.get(2)?,
-        created_at: r.get(3)?,
-        updated_at: r.get(4)?,
-        deleted_at: r.get(5)?,
+        parent_id: r.get(2)?,
+        rank: r.get(3)?,
+        created_at: r.get(4)?,
+        updated_at: r.get(5)?,
+        deleted_at: r.get(6)?,
     })
 }
 

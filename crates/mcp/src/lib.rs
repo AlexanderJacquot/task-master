@@ -578,6 +578,18 @@ pub struct SetMeetingSummary {
 }
 
 #[derive(Debug, Default, Deserialize, JsonSchema)]
+pub struct LinkMeeting {
+    pub meeting_id: String,
+    /// The project to file the meeting under (an id from list_projects), when it has none.
+    #[serde(default)]
+    pub project_id: Option<String>,
+    /// The epic to file it under (an id from list_projects), when it has none. Its home
+    /// project becomes the meeting's when the meeting has none.
+    #[serde(default)]
+    pub epic_id: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize, JsonSchema)]
 pub struct GetCalendar {
     /// Start: a date (`2026-11-12`, local midnight) or a time (`2026-11-12T09:00`).
     /// Default: today.
@@ -1526,6 +1538,110 @@ impl TaskServer {
     }
 
     #[tool(
+        description = "Files a meeting under a project and an epic it has none of yet (ids \
+                       from list_projects; ADR 042): a link already set is never replaced, \
+                       and an epic must belong to the meeting's project. Allowed when the \
+                       session works on the meeting's task (or a subtask of it), or when \
+                       editing the user's tasks is on."
+    )]
+    pub fn link_meeting(&self, Parameters(p): Parameters<LinkMeeting>) -> ToolResult {
+        let snapshot = self.with_store(|s| s.snapshot())?;
+        let meeting = snapshot
+            .meetings
+            .iter()
+            .find(|m| m.id == p.meeting_id)
+            .ok_or_else(|| format!("meeting {} not found", p.meeting_id))?;
+        if !self.may_use_meeting(&snapshot, meeting) {
+            return Err(
+                "the meeting is the user's and not linked to this session's task: \
+                        editing the user's tasks is turned off (Settings → Agents)"
+                    .into(),
+            );
+        }
+        let given = |v: &Option<String>| {
+            v.as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+        };
+        let project = match given(&p.project_id) {
+            Some(id) => Some(
+                snapshot
+                    .projects
+                    .iter()
+                    .find(|x| x.id == id)
+                    .ok_or_else(|| format!("project {id} not found"))?,
+            ),
+            None => None,
+        };
+        let epic = match given(&p.epic_id) {
+            Some(id) => Some(
+                snapshot
+                    .epics
+                    .iter()
+                    .find(|x| x.id == id)
+                    .ok_or_else(|| format!("epic {id} not found"))?,
+            ),
+            None => None,
+        };
+        let mut changes = Vec::new();
+        let mut project_id = meeting.project_id.clone();
+        if let Some(project) = project {
+            match &meeting.project_id {
+                Some(current) if current != &project.id => {
+                    return Err(format!(
+                        "the meeting is already filed under another project (`{current}`); \
+                         a link already set is not replaced"
+                    ));
+                }
+                Some(_) => {}
+                None => {
+                    changes.push(MeetingChange::ProjectId(Some(project.id.clone())));
+                    project_id = Some(project.id.clone());
+                }
+            }
+        }
+        if let Some(epic) = epic {
+            match &meeting.epic_id {
+                Some(current) if current != &epic.id => {
+                    return Err(format!(
+                        "the meeting is already filed under another epic (`{current}`); a \
+                         link already set is not replaced"
+                    ));
+                }
+                Some(_) => {}
+                None => {
+                    if let (Some(home), Some(chosen)) = (&epic.project_id, &project_id)
+                        && home != chosen
+                    {
+                        return Err(format!(
+                            "the epic {} belongs to another project than the meeting's",
+                            epic.name
+                        ));
+                    }
+                    if project_id.is_none()
+                        && let Some(home) = &epic.project_id
+                    {
+                        changes.push(MeetingChange::ProjectId(Some(home.clone())));
+                    }
+                    changes.push(MeetingChange::EpicId(Some(epic.id.clone())));
+                }
+            }
+        }
+        if changes.is_empty() {
+            return Ok(format!(
+                "Nothing to change: {} keeps its links",
+                meeting.title
+            ));
+        }
+        let written = self.write(vec![Command::UpdateMeeting {
+            id: meeting.id.clone(),
+            changes,
+        }])?;
+        Ok(format!("Filed {}{}", meeting.title, change_line(&written)))
+    }
+
+    #[tool(
         description = "The calendar day by day: time blocks (task, outcome, block id), \
                        meetings, the user's events from their shown Google calendars, and \
                        open tasks due or planned on each day. Pass utc_offset to read it in \
@@ -1748,9 +1864,12 @@ impl TaskServer {
         const VIEWS: &str = " get_calendar shows the user's time blocks, meetings and events \
                              (schedule_block plans time); list_meetings and get_meeting read \
                              the user's meetings, their notes and (transcript true) what was \
-                             said; set_meeting_summary writes a meeting's summary; get_lineage shows which \
+                             said; set_meeting_summary writes a meeting's summary and \
+                             link_meeting files it under a project and epic it has none of; \
+                             get_lineage shows which \
                              tasks wait on which (link_tasks adds a link). The user's Notes \
-                             (markdown pages in folders, linked to tasks) are read with \
+                             (markdown pages in nested folders, linked to tasks, projects, \
+                             epics and meetings) are read with \
                              list_notes and get_note and written with create_note and \
                              update_note; add_note is only your progress note on a task.";
         let edit = if self.edit_user_tasks {

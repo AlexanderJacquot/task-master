@@ -128,19 +128,23 @@ participants, attachment names, notes, summary) and, with `transcript: true`, wh
 said, one `[m:ss] Name: text` line per stretch of speech. `set_meeting_summary` writes a
 meeting's summary (ADR 040). The transcript and the summary are allowed when the session's
 task is the meeting's task or under it, which is how the meeting page's "Send to Claude"
-starts it, or when editing the user's tasks is on. Nothing else about a meeting is written. `get_calendar` shows meetings among
+starts it, or when editing the user's tasks is on. Nothing else about a meeting is written;
+its report goes to Notes with `create_note`, and `link_meeting` files a meeting under a
+project and epic it has none of yet, never replacing a link (ADR 042). `get_calendar` shows meetings among
 the day's items. Pass `utc_offset` to read times in local time.
 
 ### Notes
 
 The user's Notes (ADR 032: markdown pages in folders, which may be attached to a task and
-link tasks and projects with `[text](task:<id>)` and `[text](project:<id>)`):
+link tasks and projects with `[text](task:<id>)` and `[text](project:<id>)`, and since
+ADR 042 epics and meetings with `[text](epic:<id>)` and `[text](meeting:<id>)`):
 `list_notes` lists them most recently edited first, or with `query` those whose title or
-body match (best first, with the words around the match), narrowed by `folder` (a name or
-id; `""` for no folder) or `task_id` (attached to the task or linking to it); `get_note`
-returns one in full (folder, attached task, linked tasks and projects, attachments, then
-the body). `create_note` writes one (always allowed: it is the user's at once), in a
-folder by name (made when missing) and attached to a task if asked; `update_note` changes
+body match (best first, with the words around the match), narrowed by `folder` (an id, a
+name, or a path like `Perso / Gringotts`; `""` for no folder) or `task_id` (attached to the
+task or linking to it); folders nest and show by path (ADR 042); `get_note`
+returns one in full (folder, attached task, linked tasks, projects, epics and meetings,
+attachments, then the body). `create_note` writes one (always allowed: it is the user's at once), in a
+folder by id, name or path (the missing levels are made) and attached to a task if asked; `update_note` changes
 its title, body (or `append_body`), folder or task. `search` lists matching notes after
 the tasks. `add_note` is something else: a session's progress note on its task.
 

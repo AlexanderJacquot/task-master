@@ -499,6 +499,10 @@ where
             // The default statuses have the same fixed ids in every database: a status
             // command follows the space the front end names.
             C::CreateStatus { .. } | C::UpdateStatus { .. } | C::DeleteStatus { .. } => default,
+            // A folder inside another one lives where its parent does (ADR 042).
+            C::CreateNoteFolder { folder } if folder.parent_id.is_some() => {
+                follow(folder.parent_id.as_ref())?
+            }
             C::CreateTag { .. } | C::CreateNoteFolder { .. } => default,
             C::CreateNote { note } => follow(note.folder_id.as_ref())?,
             C::CreateAttachment { attachment } => follow(

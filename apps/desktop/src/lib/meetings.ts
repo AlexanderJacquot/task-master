@@ -137,6 +137,29 @@ export function sortMeetings(
   return { upcoming, past };
 }
 
+/** How soon before its start a meeting shows as "Up next" on the Scribe page. */
+export const UP_NEXT_MIN = 15;
+
+/**
+ * The meeting to record now (Scribe's "Up next"): one in progress that is not being
+ * recorded and has nothing recorded or transcribed yet, else the next one starting within
+ * `UP_NEXT_MIN` minutes. Soonest first; null when there is none.
+ */
+export function upNext(meetings: Meeting[], now: number): Meeting | null {
+  const fresh = (m: Meeting) =>
+    m.deleted_at === null &&
+    (m.state === "scheduled" || m.state === "held") &&
+    m.transcribed_at === null;
+  const candidates = meetings.filter((m) => {
+    if (!fresh(m)) return false;
+    const phase = meetingPhase(m, now);
+    if (phase === "now") return true;
+    return phase === "upcoming" && m.started_at - now <= UP_NEXT_MIN * MINUTE;
+  });
+  candidates.sort((a, b) => a.started_at - b.started_at || (a.id < b.id ? -1 : 1));
+  return candidates[0] ?? null;
+}
+
 /** Meetings linked to a project, an epic or a task, newest first. */
 export function meetingsLinkedTo(
   meetings: Meeting[],
@@ -220,22 +243,83 @@ export function followUpTitle(m: Meeting): string {
   return `Follow up: ${m.title.trim() || "meeting"}`;
 }
 
+/** The folder kept for meeting reports, inside the project and epic folders (ADR 042). */
+export const MEETING_NOTES_FOLDER = "Meeting notes";
+
+/** Where a meeting's report goes in Notes: `Project / Epic / Meeting notes`, without the
+ * levels the meeting has none of. */
+export function meetingNotesFolder(project?: { name: string }, epic?: { name: string }): string {
+  return [project?.name.trim(), epic?.name.trim(), MEETING_NOTES_FOLDER]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+/** The meeting report the follow-up session (ADR 040) writes in Notes (ADR 042). */
+export interface FollowUpNote {
+  title: string;
+  /** Its first line: links to the meeting, its task, epic and project. */
+  header: string;
+  /** The task to attach it to; null: the session's own task. */
+  taskId: string | null;
+  /** The meeting's project and epic as they are now (what step 2 may fill in). */
+  project?: { id: string; name: string } | undefined;
+  epic?: { id: string; name: string } | undefined;
+}
+
 /**
  * What a "Send to Claude" session on a meeting is asked (editable before it starts): read
- * the meeting with its transcript, write the summary, and create the tasks it calls for in
- * the meeting's project. Tasks are the user's own, since the user asked for them here.
+ * the meeting with its transcript; file it under a project and an epic when it has none
+ * (never replacing a link); write the summary; create the tasks it calls for in the
+ * meeting's project; and, given `note`, write the report in Notes under
+ * `Project / Epic / Meeting notes` (ADR 042). Tasks are the user's own, since the user asked
+ * for them here.
  */
-export function followUpPrompt(m: Meeting, project: { id: string; name: string } | null): string {
+export function followUpPrompt(
+  m: Meeting,
+  project: { id: string; name: string } | null,
+  note?: FollowUpNote,
+): string {
+  const id = `\`${m.id}\``;
+  const missing = [note && !note.project && "project", note && !note.epic && "epic"].filter(
+    Boolean,
+  ) as string[];
   const where = project
     ? `in the project ${project.name} (project_id \`${project.id}\`)`
-    : "in the Inbox (no project)";
+    : missing.includes("project")
+      ? "in the project you filed it under in step 2 (the Inbox when none fits)"
+      : "in the Inbox (no project)";
+  const steps: string[] = [
+    `Read it with get_meeting (meeting_id ${id}, transcript: true): notes, participants and what was said.`,
+  ];
+  if (missing.length)
+    steps.push(
+      `It has no ${missing.join(" and no ")} yet. Find the right ${missing.length > 1 ? "ones" : "one"} with list_projects, from its title, participants and what was said, and set ${missing.length > 1 ? "them" : "it"} with link_meeting (meeting_id ${id}). Never replace a link already set; when nothing fits, leave it empty and say so.`,
+    );
+  steps.push(
+    "Write a short summary with set_meeting_summary: the decisions, the open questions, and the action items with who takes each.",
+    `For each action item, create a task ${where} with create_task (owner me, top_level true): a clear title, who asked and who does it, and the meeting in the description. Search first and skip what already has a task.`,
+  );
+  if (note) {
+    const folder = missing.length
+      ? `"${meetingNotesFolder(note.project, note.epic)}", using the names of the project and epic the meeting is filed under once step 2 is done (leave out a level it has none of; "${MEETING_NOTES_FOLDER}" alone when it has neither)`
+      : `"${meetingNotesFolder(note.project, note.epic)}"`;
+    steps.push(
+      [
+        `Write the meeting report with create_note: title "${note.title}", attached to ${note.taskId ? `task_id \`${note.taskId}\`` : "this session's task"}, in the folder ${folder}; missing folders are created. Its body starts with this line of links, kept as it is${missing.length ? ", plus a link to each project or epic you set in step 2 ([name](project:<id>), [name](epic:<id>))" : ""}:`,
+        "",
+        `   ${note.header}`,
+        "",
+        "   then the participants, and the summary and the meeting's notes under ## Summary and ## Notes headings.",
+      ].join("\n"),
+    );
+  }
+  steps.push(
+    `Finish with complete_session, listing the tasks you created${note ? ", the note" : ""}${missing.length ? " and how you filed the meeting" : ""}.`,
+  );
   return [
-    `Follow up the meeting "${m.title.trim() || "meeting"}" (meeting_id \`${m.id}\`).`,
+    `Follow up the meeting "${m.title.trim() || "meeting"}" (meeting_id ${id}).`,
     "",
-    `1. Read it with get_meeting (meeting_id \`${m.id}\`, transcript: true): notes, participants and what was said.`,
-    "2. Write a short summary with set_meeting_summary: the decisions, the open questions, and the action items with who takes each.",
-    `3. For each action item, create a task ${where} with create_task (owner me, top_level true): a clear title, who asked and who does it, and the meeting in the description. Search first and skip what already has a task.`,
-    "4. Finish with complete_session, listing the tasks you created.",
+    ...steps.map((step, i) => `${i + 1}. ${step}`),
     "",
     "If creating my own tasks is refused, create them as agent tasks instead and say so.",
   ].join("\n");

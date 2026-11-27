@@ -1,5 +1,6 @@
-//! Notes for agents (ADR 032): the user's markdown pages in folders, which may be attached
-//! to a task and link tasks and projects with `[text](task:<id>)` / `[text](project:<id>)`.
+//! Notes for agents (ADR 032, ADR 042): the user's markdown pages in folders, which may be
+//! attached to a task and link tasks, projects, epics and meetings with `[text](task:<id>)`,
+//! `[text](project:<id>)`, `[text](epic:<id>)` and `[text](meeting:<id>)`.
 //! Not to be confused with `add_note`, a session's progress note on its task.
 //!
 //! Notes have no owner: creating one is always allowed (it is the user's at once); changing
@@ -23,7 +24,8 @@ pub struct ListNotes {
     /// Words to find in titles and bodies (prefix match), best first. All notes when absent.
     #[serde(default)]
     pub query: Option<String>,
-    /// Only the notes in this folder (its name or id); `""` for those outside any folder.
+    /// Only the notes in this folder (its id, name, or path like `Data / Onboarding`); `""`
+    /// for those outside any folder.
     #[serde(default)]
     pub folder: Option<String>,
     /// Only the notes about this task: attached to it or linking to it.
@@ -45,10 +47,12 @@ pub struct CreateNote {
     #[serde(default)]
     pub title: String,
     /// Markdown. Link a task with `[text](task:<id>)`, a project with
-    /// `[text](project:<id>)`.
+    /// `[text](project:<id>)`, an epic with `[text](epic:<id>)` and a meeting with
+    /// `[text](meeting:<id>)`.
     #[serde(default)]
     pub body: String,
-    /// A folder's name or id; a folder of that name is created when there is none.
+    /// A folder's id, name, or path with ` / ` between levels (`Data / Onboarding /
+    /// Meeting notes`); the folders that do not exist yet are created.
     #[serde(default)]
     pub folder: Option<String>,
     /// Attach it to this task.
@@ -67,8 +71,8 @@ pub struct UpdateNote {
     /// Added at the end of the body, on a new paragraph.
     #[serde(default)]
     pub append_body: Option<String>,
-    /// Move it to this folder (name or id; created when missing); `""` takes it out of any
-    /// folder.
+    /// Move it to this folder (id, name or path; created when missing); `""` takes it out
+    /// of any folder.
     #[serde(default)]
     pub folder: Option<String>,
     /// Attach it to this task; `""` detaches it.
@@ -90,19 +94,72 @@ pub(crate) fn title(note: &Note) -> &str {
     }
 }
 
-/// A folder by id, else by name (ignoring case).
-fn find_folder<'a>(snapshot: &'a Snapshot, given: &str) -> Option<&'a NoteFolder> {
-    let given = given.trim();
+/// The levels of a folder path: `Data / Onboarding` or `Data/Onboarding`, trimmed.
+fn path_parts(given: &str) -> Vec<&str> {
+    given
+        .split('/')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+/// The live folder named `name` (ignoring case) directly in `parent` (`None`: the top).
+fn child<'a>(snapshot: &'a Snapshot, parent: Option<&str>, name: &str) -> Option<&'a NoteFolder> {
     snapshot
         .note_folders
         .iter()
-        .find(|f| f.id == given)
-        .or_else(|| {
-            snapshot
-                .note_folders
-                .iter()
-                .find(|f| f.name.trim().eq_ignore_ascii_case(given))
-        })
+        .find(|f| f.parent_id.as_deref() == parent && f.name.trim().eq_ignore_ascii_case(name))
+}
+
+/// A folder by id; else, for a path (`A / B`), the folder at that path from the top; else,
+/// for a single name, the top-level folder of that name, or the only folder of that name
+/// at any level (ignoring case).
+fn find_folder<'a>(snapshot: &'a Snapshot, given: &str) -> Option<&'a NoteFolder> {
+    let given = given.trim();
+    if let Some(f) = snapshot.note_folders.iter().find(|f| f.id == given) {
+        return Some(f);
+    }
+    if let Some(f) = snapshot
+        .note_folders
+        .iter()
+        .find(|f| f.name.trim().eq_ignore_ascii_case(given) && f.parent_id.is_none())
+    {
+        return Some(f);
+    }
+    let parts = path_parts(given);
+    if parts.len() > 1 {
+        let mut current: Option<&NoteFolder> = None;
+        for part in parts {
+            current = Some(child(snapshot, current.map(|f| f.id.as_str()), part)?);
+        }
+        return current;
+    }
+    let mut named = snapshot
+        .note_folders
+        .iter()
+        .filter(|f| f.name.trim().eq_ignore_ascii_case(given));
+    match (named.next(), named.next()) {
+        (Some(only), None) => Some(only),
+        _ => None,
+    }
+}
+
+/// A folder's path from the top, `A / B / C`.
+pub(crate) fn folder_path(snapshot: &Snapshot, id: &str) -> String {
+    let mut names = Vec::new();
+    let mut current = Some(id.to_owned());
+    while let Some(id) = current {
+        let Some(folder) = snapshot.note_folders.iter().find(|f| f.id == id) else {
+            break;
+        };
+        names.push(folder.name.clone());
+        if names.len() > taskmaster_core::MAX_FOLDER_DEPTH * 4 {
+            break;
+        }
+        current = folder.parent_id.clone();
+    }
+    names.reverse();
+    names.join(" / ")
 }
 
 fn find_note<'a>(snapshot: &'a Snapshot, id: &str) -> Result<&'a Note, String> {
@@ -138,7 +195,7 @@ fn is_about(note: &Note, task_id: &str) -> bool {
 }
 
 /// One line of a listing: title, folder, attached task, last edit, id.
-fn line(snapshot: &Snapshot, folders: &HashMap<&str, &str>, note: &Note) -> String {
+fn line(snapshot: &Snapshot, folders: &HashMap<&str, String>, note: &Note) -> String {
     let mut parts = Vec::new();
     if let Some(folder) = note.folder_id.as_deref().and_then(|f| folders.get(f)) {
         parts.push(format!("in {folder}"));
@@ -162,7 +219,11 @@ fn render(snapshot: &Snapshot, note: &Note) -> String {
         .as_deref()
         .and_then(|id| snapshot.note_folders.iter().find(|f| f.id == id))
     {
-        out.push_str(&format!("- Folder: {} (`{}`)\n", folder.name, folder.id));
+        out.push_str(&format!(
+            "- Folder: {} (`{}`)\n",
+            folder_path(snapshot, &folder.id),
+            folder.id
+        ));
     }
     if let Some(id) = &note.task_id {
         let task = snapshot
@@ -187,6 +248,22 @@ fn render(snapshot: &Snapshot, note: &Note) -> String {
         .collect();
     if !projects.is_empty() {
         out.push_str(&format!("- Links projects: {}\n", projects.join(", ")));
+    }
+    let epics: Vec<String> = linked_ids(&note.body, "epic:")
+        .into_iter()
+        .filter_map(|id| snapshot.epics.iter().find(|e| e.id == id))
+        .map(|e| format!("{} (`{}`)", e.name, e.id))
+        .collect();
+    if !epics.is_empty() {
+        out.push_str(&format!("- Links epics: {}\n", epics.join(", ")));
+    }
+    let meetings: Vec<String> = linked_ids(&note.body, "meeting:")
+        .into_iter()
+        .filter_map(|id| snapshot.meetings.iter().find(|m| m.id == id))
+        .map(|m| format!("{} (`{}`)", m.title, m.id))
+        .collect();
+    if !meetings.is_empty() {
+        out.push_str(&format!("- Links meetings: {}\n", meetings.join(", ")));
     }
     let files: Vec<String> = snapshot
         .attachments
@@ -221,8 +298,10 @@ impl TaskServer {
         self.check_may_edit_users("this note")
     }
 
-    /// The folder `given` names: `Ok(None)` for `""` (no folder), creating one when no
-    /// folder has that name or id. The commands that create it go first in the batch.
+    /// The folder `given` names (an id, a name or a path, ADR 042): `Ok(None)` for `""` (no
+    /// folder). The levels of a path that do not exist are created, each inside the one
+    /// before; a single unknown name is created at the top. The commands that create them
+    /// go first in the batch.
     fn folder_for(
         &self,
         snapshot: &Snapshot,
@@ -236,26 +315,45 @@ impl TaskServer {
         if let Some(folder) = find_folder(snapshot, name) {
             return Ok(Some(folder.id.clone()));
         }
-        let id = taskmaster_core::new_id();
-        commands.push(Command::CreateNoteFolder {
-            folder: NewNoteFolder {
-                id: Some(id.clone()),
-                name: name.to_owned(),
-                rank: None,
-            },
-        });
-        Ok(Some(id))
+        let parts = path_parts(name);
+        if parts.len() > taskmaster_core::MAX_FOLDER_DEPTH {
+            return Err(format!(
+                "folders nest at most {} levels deep",
+                taskmaster_core::MAX_FOLDER_DEPTH
+            ));
+        }
+        let mut parent: Option<String> = None;
+        let mut creating = false;
+        for part in parts {
+            if !creating && let Some(existing) = child(snapshot, parent.as_deref(), part) {
+                parent = Some(existing.id.clone());
+                continue;
+            }
+            creating = true;
+            let id = taskmaster_core::new_id();
+            commands.push(Command::CreateNoteFolder {
+                folder: NewNoteFolder {
+                    id: Some(id.clone()),
+                    name: part.to_owned(),
+                    parent_id: parent.clone(),
+                    rank: None,
+                },
+            });
+            parent = Some(id);
+        }
+        Ok(parent)
     }
 }
 
 #[tool_router(router = notes_router, vis = "pub(crate)")]
 impl TaskServer {
     #[tool(
-        description = "The user's notes (the app's Notes: markdown pages in folders, which \
-                       may be attached to a task and link tasks and projects): title, \
-                       folder, attached task, last edit and id. query finds words in titles \
-                       and bodies (best first, with the words around the match); folder \
-                       and task_id narrow it. Folders are listed too."
+        description = "The user's notes (the app's Notes: markdown pages in folders that \
+                       nest, which may be attached to a task and link tasks, projects, epics \
+                       and meetings): title, folder path, attached task, last edit and id. \
+                       query finds words in titles and bodies (best first, with the words \
+                       around the match); folder (id, name or path like Data / Onboarding) \
+                       and task_id narrow it. Folders are listed too, by path."
     )]
     pub fn list_notes(&self, Parameters(p): Parameters<ListNotes>) -> ToolResult {
         let limit = list_limit(p.limit) as usize;
@@ -267,10 +365,10 @@ impl TaskServer {
             };
             Ok((s.snapshot()?, hits))
         })?;
-        let folders: HashMap<&str, &str> = snapshot
+        let folders: HashMap<&str, String> = snapshot
             .note_folders
             .iter()
-            .map(|f| (f.id.as_str(), f.name.as_str()))
+            .map(|f| (f.id.as_str(), folder_path(&snapshot, &f.id)))
             .collect();
         let folder = match p.folder.as_deref() {
             None => None,
@@ -323,19 +421,20 @@ impl TaskServer {
         let more = total - lines.len();
         let mut out = listing(lines, more, "No notes match.");
         if query.is_none() && p.folder.is_none() && !snapshot.note_folders.is_empty() {
-            let names: Vec<String> = snapshot
+            let mut names: Vec<String> = snapshot
                 .note_folders
                 .iter()
-                .map(|f| format!("{} (`{}`)", f.name, f.id))
+                .map(|f| format!("{} (`{}`)", folders[f.id.as_str()], f.id))
                 .collect();
+            names.sort();
             out.push_str(&format!("\n\nFolders: {}", names.join(", ")));
         }
         Ok(out)
     }
 
     #[tool(
-        description = "One note in full as markdown: title, folder, attached task, the tasks \
-                       and projects it links, its attachments, then its body."
+        description = "One note in full as markdown: title, folder, attached task, the tasks, \
+                       projects, epics and meetings it links, its attachments, then its body."
     )]
     pub fn get_note(&self, Parameters(p): Parameters<GetNote>) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;
@@ -345,9 +444,11 @@ impl TaskServer {
     #[tool(
         description = "Write a new note for the user (a markdown page in the app's Notes; \
                        not a progress note on your task, which is add_note). Optionally in a \
-                       folder (by name or id; created if missing) and attached to a task. \
-                       Link tasks with [text](task:<id>) and projects with \
-                       [text](project:<id>). Returns its id."
+                       folder (by id, name or path like Data / Onboarding / Meeting notes; \
+                       the missing levels are created) and attached to a task. \
+                       Link tasks with [text](task:<id>), projects with [text](project:<id>), \
+                       epics with [text](epic:<id>) and meetings with [text](meeting:<id>). \
+                       Returns its id."
     )]
     pub fn create_note(&self, Parameters(p): Parameters<CreateNote>) -> ToolResult {
         let snapshot = self.with_store(|s| s.snapshot())?;

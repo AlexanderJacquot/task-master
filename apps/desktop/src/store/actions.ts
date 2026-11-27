@@ -1758,11 +1758,15 @@ export function deleteNote(store: TaskStore, id: string) {
   return s.mutate([{ type: "delete_note", id }], { remove: { notes: [id] } });
 }
 
-/** Adds a folder after the others. Resolves to its id, or null when refused. */
+/**
+ * Adds a folder after the others at its level: the top, or inside `parentId` (ADR 042).
+ * Resolves to its id, or null when refused.
+ */
 export async function createNoteFolder(
   store: TaskStore,
   name: string,
   space?: Space,
+  parentId: string | null = null,
 ): Promise<string | null> {
   const s = store.getState();
   const clean = tidy(name);
@@ -1771,8 +1775,9 @@ export async function createNoteFolder(
   const folder: NoteFolder = {
     id: uuidv7(now),
     name: clean,
+    parent_id: parentId,
     rank: rankBetween(
-      lastRank(Object.values(s.note_folders), () => true),
+      lastRank(Object.values(s.note_folders), (f) => (f.parent_id ?? null) === parentId),
       null,
     ),
     created_at: now,
@@ -1780,7 +1785,12 @@ export async function createNoteFolder(
     deleted_at: null,
   };
   const changes = await s.mutate(
-    [{ type: "create_note_folder", folder: { id: folder.id, name: clean, rank: folder.rank } }],
+    [
+      {
+        type: "create_note_folder",
+        folder: { id: folder.id, name: clean, parent_id: parentId, rank: folder.rank },
+      },
+    ],
     { upsert: { note_folders: [folder] } },
     space,
   );
@@ -1792,31 +1802,63 @@ export function updateNoteFolder(store: TaskStore, id: string, changes: NoteFold
   const folder = s.note_folders[id];
   if (!folder || !changes.length) return Promise.resolve(null);
   const next = { ...folder, updated_at: Date.now() };
+  let moved = false;
   for (const change of changes) {
     if ("name" in change && change.name !== undefined) next.name = tidy(change.name);
-    else if ("rank" in change && change.rank !== undefined) next.rank = change.rank;
+    else if ("parent_id" in change) {
+      moved = (change.parent_id ?? null) !== (folder.parent_id ?? null);
+      next.parent_id = change.parent_id ?? null;
+    } else if ("rank" in change && change.rank !== undefined) next.rank = change.rank;
+  }
+  // Moved without a rank: after the folders already there, as the core does.
+  if (moved && !changes.some((c) => "rank" in c)) {
+    next.rank = rankBetween(
+      lastRank(
+        Object.values(s.note_folders),
+        (f) => f.id !== id && (f.parent_id ?? null) === next.parent_id,
+      ),
+      null,
+    );
   }
   return s.mutate([{ type: "update_note_folder", id, changes }], {
     upsert: { note_folders: [next] },
   });
 }
 
-/** Deletes a folder; its notes move to the end of the top level (undo puts them back). */
+/**
+ * Deletes a folder; its notes and subfolders move up into its parent (the top level for a
+ * top-level folder), at the end and in their order (undo puts them back).
+ */
 export function deleteNoteFolder(store: TaskStore, id: string) {
   const s = store.getState();
-  if (!s.note_folders[id]) return Promise.resolve(null);
+  const folder = s.note_folders[id];
+  if (!folder) return Promise.resolve(null);
+  const parent = folder.parent_id ?? null;
   const now = Date.now();
-  let last = lastRank(Object.values(s.notes), (n) => n.folder_id === null);
+  const byRank = <T extends { rank: string; id: string }>(a: T, b: T) =>
+    a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : 1;
+  let last = lastRank(Object.values(s.notes), (n) => n.folder_id === parent);
   const moved = Object.values(s.notes)
     .filter((n) => n.folder_id === id)
-    .sort((a, b) => (a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : 1))
+    .sort(byRank)
     .map((n) => {
       last = rankBetween(last, null);
-      return { ...n, folder_id: null, rank: last, updated_at: now };
+      return { ...n, folder_id: parent, rank: last, updated_at: now };
+    });
+  let lastFolder = lastRank(
+    Object.values(s.note_folders),
+    (f) => f.id !== id && (f.parent_id ?? null) === parent,
+  );
+  const children = Object.values(s.note_folders)
+    .filter((f) => f.parent_id === id)
+    .sort(byRank)
+    .map((f) => {
+      lastFolder = rankBetween(lastFolder, null);
+      return { ...f, parent_id: parent, rank: lastFolder, updated_at: now };
     });
   return s.mutate([{ type: "delete_note_folder", id }], {
     remove: { note_folders: [id] },
-    upsert: { notes: moved },
+    upsert: { notes: moved, note_folders: children },
   });
 }
 

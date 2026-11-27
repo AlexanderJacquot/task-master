@@ -1123,7 +1123,7 @@ export type Command_Deserialize = { type: "create_task"; task: NewTask_Deseriali
 /**  Adds a note (ADR 032). */
 { type: "create_note"; note: NewNote_Deserialize } | { type: "update_note"; id: string; changes: NoteChange_Deserialize[] } | 
 /**  Removes a note; undo brings it back. */
-{ type: "delete_note"; id: string } | { type: "create_note_folder"; folder: NewNoteFolder_Deserialize } | { type: "update_note_folder"; id: string; changes: NoteFolderChange[] } | 
+{ type: "delete_note"; id: string } | { type: "create_note_folder"; folder: NewNoteFolder_Deserialize } | { type: "update_note_folder"; id: string; changes: NoteFolderChange_Deserialize[] } | 
 /**  Moves the folder's notes to the top level, then deletes it. */
 { type: "delete_note_folder"; id: string } | 
 /**
@@ -1230,7 +1230,7 @@ export type Command_Serialize = { type: "create_task"; task: NewTask_Serialize }
 /**  Adds a note (ADR 032). */
 { type: "create_note"; note: NewNote_Serialize } | { type: "update_note"; id: string; changes: NoteChange_Serialize[] } | 
 /**  Removes a note; undo brings it back. */
-{ type: "delete_note"; id: string } | { type: "create_note_folder"; folder: NewNoteFolder_Serialize } | { type: "update_note_folder"; id: string; changes: NoteFolderChange[] } | 
+{ type: "delete_note"; id: string } | { type: "create_note_folder"; folder: NewNoteFolder_Serialize } | { type: "update_note_folder"; id: string; changes: NoteFolderChange_Serialize[] } | 
 /**  Moves the folder's notes to the top level, then deletes it. */
 { type: "delete_note_folder"; id: string } | 
 /**
@@ -2172,14 +2172,18 @@ export type NewNoteFolder = NewNoteFolder_Serialize | NewNoteFolder_Deserialize;
 export type NewNoteFolder_Deserialize = {
 	id?: string | null,
 	name?: string,
-	/**  Defaults to after the last folder. */
+	/**  The folder to create it in; `None` at the top level. */
+	parent_id?: string | null,
+	/**  Defaults to after the last folder at that level. */
 	rank?: string | null,
 };
 
 export type NewNoteFolder_Serialize = {
 	id: string | null,
 	name: string,
-	/**  Defaults to after the last folder. */
+	/**  The folder to create it in; `None` at the top level. */
+	parent_id: string | null,
+	/**  Defaults to after the last folder at that level. */
 	rank: string | null,
 };
 
@@ -2381,8 +2385,9 @@ export type NewView_Serialize = {
 };
 
 /**
- *  A markdown page in the sidebar's Notes (ADR 032). Its body links tasks and projects
- *  with `task:<id>` and `project:<id>` URLs.
+ *  A markdown page in the sidebar's Notes (ADR 032). Its body links tasks, projects, epics
+ *  and meetings with `task:<id>`, `project:<id>`, `epic:<id>` and `meeting:<id>` URLs
+ *  (ADR 042).
  */
 export type Note = Note_Serialize | Note_Deserialize;
 
@@ -2406,25 +2411,45 @@ export type NoteChange_Serialize = ({ title: string }) & { body?: never; folder_
 /**  Attaches it to a task, or detaches it with `None`. */
 ({ task_id: string | null }) & { body?: never; folder_id?: never; rank?: never; title?: never } | ({ rank: string }) & { body?: never; folder_id?: never; task_id?: never; title?: never };
 
-/**  A folder of [`Note`]s (ADR 032). Folders do not nest. */
+/**  A folder of [`Note`]s (ADR 032). Folders nest (ADR 042). */
 export type NoteFolder = NoteFolder_Serialize | NoteFolder_Deserialize;
 
-export type NoteFolderChange = ({ name: string }) & { rank?: never } | ({ rank: string }) & { name?: never };
+export type NoteFolderChange = NoteFolderChange_Serialize | NoteFolderChange_Deserialize;
 
-/**  A folder of [`Note`]s (ADR 032). Folders do not nest. */
+export type NoteFolderChange_Deserialize = ({ name: string }) & { parent_id?: never; rank?: never } | 
+/**
+ *  Moves it into another folder (`None`: the top level). Without a `Rank` change in
+ *  the same update it goes after the folders already there.
+ */
+({ parent_id?: string | null }) & { name?: never; rank?: never } | ({ rank: string }) & { name?: never; parent_id?: never };
+
+export type NoteFolderChange_Serialize = ({ name: string }) & { parent_id?: never; rank?: never } | 
+/**
+ *  Moves it into another folder (`None`: the top level). Without a `Rank` change in
+ *  the same update it goes after the folders already there.
+ */
+({ parent_id: string | null }) & { name?: never; rank?: never } | ({ rank: string }) & { name?: never; parent_id?: never };
+
+/**  A folder of [`Note`]s (ADR 032). Folders nest (ADR 042). */
 export type NoteFolder_Deserialize = {
 	id: string,
 	name: string,
+	/**  The folder it is in; `None` at the top level. */
+	parent_id?: string | null,
+	/**  Order among its siblings. */
 	rank: string,
 	created_at: number,
 	updated_at: number,
 	deleted_at?: number | null,
 };
 
-/**  A folder of [`Note`]s (ADR 032). Folders do not nest. */
+/**  A folder of [`Note`]s (ADR 032). Folders nest (ADR 042). */
 export type NoteFolder_Serialize = {
 	id: string,
 	name: string,
+	/**  The folder it is in; `None` at the top level. */
+	parent_id: string | null,
+	/**  Order among its siblings. */
 	rank: string,
 	created_at: number,
 	updated_at: number,
@@ -2439,8 +2464,9 @@ export type NoteHit = {
 };
 
 /**
- *  A markdown page in the sidebar's Notes (ADR 032). Its body links tasks and projects
- *  with `task:<id>` and `project:<id>` URLs.
+ *  A markdown page in the sidebar's Notes (ADR 032). Its body links tasks, projects, epics
+ *  and meetings with `task:<id>`, `project:<id>`, `epic:<id>` and `meeting:<id>` URLs
+ *  (ADR 042).
  */
 export type Note_Deserialize = {
 	id: string,
@@ -2460,8 +2486,9 @@ export type Note_Deserialize = {
 };
 
 /**
- *  A markdown page in the sidebar's Notes (ADR 032). Its body links tasks and projects
- *  with `task:<id>` and `project:<id>` URLs.
+ *  A markdown page in the sidebar's Notes (ADR 032). Its body links tasks, projects, epics
+ *  and meetings with `task:<id>`, `project:<id>`, `epic:<id>` and `meeting:<id>` URLs
+ *  (ADR 042).
  */
 export type Note_Serialize = {
 	id: string,
