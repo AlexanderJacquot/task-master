@@ -3163,10 +3163,10 @@ export type SyncReport_Serialize = {
 	hidden: number,
 };
 
-/**  What Settings → Sync shows. */
+/**  What the sync settings show. */
 export type SyncStatus = SyncStatus_Serialize | SyncStatus_Deserialize;
 
-/**  What Settings → Sync shows. */
+/**  What the sync settings show. */
 export type SyncStatus_Deserialize = {
 	/**  A server address is saved. */
 	configured: boolean,
@@ -3197,7 +3197,7 @@ export type SyncStatus_Deserialize = {
 	team?: TeamInfo_Deserialize | null,
 };
 
-/**  What Settings → Sync shows. */
+/**  What the sync settings show. */
 export type SyncStatus_Serialize = {
 	/**  A server address is saved. */
 	configured: boolean,

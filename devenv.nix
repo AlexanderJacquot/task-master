@@ -68,6 +68,15 @@ in
   # xcbuild's stand-in xcrun first on PATH, which hid Xcode from xcodebuild and xcrun.
   apple.sdk = null;
 
+  # macOS: no Nix C compiler in the shell. Its clang wrapper and `ld` came first on PATH
+  # (languages.c, which languages.rust turns on, and the rust-overlay toolchain, which
+  # propagates the wrapper), and xcodebuild then linked with them (`-objc_abi_version
+  # '-Xlinker' not supported`), so every Xcode build needed a scrubbed environment.
+  # enterShell drops the wrapper from PATH: `cc`, `clang` and `ld` are Xcode's /usr/bin
+  # shims, the same ones the per-target variables above name.
+  stdenv = if pkgs.stdenv.isDarwin then pkgs.stdenvNoCC else pkgs.stdenv;
+  languages.c.enable = lib.mkIf pkgs.stdenv.isDarwin (lib.mkForce false);
+
   # Node 24 (package.json `engines`); corepack provides the pnpm pinned in `packageManager`.
   languages.javascript = {
     enable = true;
@@ -87,7 +96,14 @@ in
     xdotool
   ]);
 
-  enterShell = ''
+  enterShell = lib.optionalString pkgs.stdenv.isDarwin ''
+    PATH=$(printf '%s' "$PATH" | tr ':' '\n' \
+      | grep -v -E '/nix/store/[^/]*-(clang-wrapper|clang|cctools-binutils-darwin|cctools-binutils-darwin-wrapper)-[0-9]' \
+      | paste -s -d: -)
+    export PATH CC=/usr/bin/clang CXX=/usr/bin/clang++
+    unset NIX_CC NIX_CC_FOR_BUILD NIX_CFLAGS_COMPILE NIX_CFLAGS_COMPILE_FOR_BUILD \
+      NIX_LDFLAGS NIX_LDFLAGS_FOR_BUILD CC_FOR_BUILD CXX_FOR_BUILD LD
+  '' + ''
     rustc --version
     node --version
   '';

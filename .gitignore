@@ -26,11 +26,13 @@ apps/desktop/src-tauri/binaries/
 # Playwright MCP screenshots and logs
 .playwright-mcp/
 
-# iOS generated bindings and build output (ADR 022)
+# iOS (ADR 040): generated bindings, the Rust XCFramework, the generated Xcode project
 apps/ios/TaskMasterKit/Sources/TaskMasterFFI/taskmaster_mobile.swift
 apps/ios/TaskMasterKit/Sources/taskmaster_mobileFFI/include/taskmaster_mobileFFI.h
 apps/ios/build/
 apps/ios/TaskMasterKit/Frameworks/
 apps/ios/*.xcodeproj
+# Xcode's per-user state for the package, written when it opens the project
+apps/ios/TaskMasterKit/.swiftpm/
 .build/
 *.xcresult

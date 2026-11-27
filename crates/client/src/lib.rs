@@ -8,8 +8,10 @@
 //! The store is locked only between network calls, so the app keeps writing meanwhile.
 
 pub mod caldav;
+pub mod engine;
 pub mod google;
 pub mod ical;
+pub mod oidc;
 
 use std::fmt;
 use std::io::{BufRead, BufReader};
@@ -38,8 +40,12 @@ pub enum Error {
     Unreachable(String),
     /// The server refused the credentials (none, wrong, revoked or wrong scope).
     Unauthorized(String),
-    /// Client and server run different database schemas: update the older one.
-    Schema(String),
+    /// Client and server run different database schemas: update the older one. `server`
+    /// is the server's version when it is known (from its info), to tell which is older.
+    Schema {
+        message: String,
+        server: Option<u32>,
+    },
     /// Any other HTTP error status, with the server's message.
     Http(u16, String),
     /// The server answered something this client cannot read.
@@ -54,7 +60,7 @@ impl fmt::Display for Error {
             Self::Unreachable(m) => write!(f, "server unreachable: {m}"),
             Self::Unauthorized(m) if m.is_empty() => write!(f, "not authorized"),
             Self::Unauthorized(m) => write!(f, "not authorized: {m}"),
-            Self::Schema(m) => write!(f, "{m}"),
+            Self::Schema { message, .. } => write!(f, "{message}"),
             Self::Http(code, m) => write!(f, "the server answered HTTP {code}: {m}"),
             Self::Protocol(m) => write!(f, "unexpected answer from the server: {m}"),
             Self::Core(e) => write!(f, "{e}"),
@@ -159,7 +165,10 @@ impl Client {
             .unwrap_or(text);
         Err(match status {
             401 | 403 => Error::Unauthorized(message),
-            409 => Error::Schema(message),
+            409 => Error::Schema {
+                message,
+                server: None,
+            },
             _ => Error::Http(status, message),
         })
     }
@@ -392,12 +401,54 @@ impl Replica for Mutex<Store> {
     }
 }
 
+/// A space that may close while a round runs (a team space the user left, ADR 033): each
+/// step then fails instead of writing to a store that is gone.
+impl Replica for Mutex<Option<Store>> {
+    fn lock_store(&self) -> Result<Box<dyn DerefMut<Target = Store> + '_>> {
+        let guard = self.lock().unwrap_or_else(PoisonError::into_inner);
+        if guard.is_none() {
+            return Err(Error::Protocol("the team space was closed".into()));
+        }
+        Ok(Box::new(OpenSpace(guard)))
+    }
+}
+
+struct OpenSpace<'a>(std::sync::MutexGuard<'a, Option<Store>>);
+
+impl std::ops::Deref for OpenSpace<'_> {
+    type Target = Store;
+    fn deref(&self) -> &Store {
+        self.0.as_ref().expect("checked when locked")
+    }
+}
+
+impl DerefMut for OpenSpace<'_> {
+    fn deref_mut(&mut self) -> &mut Store {
+        self.0.as_mut().expect("checked when locked")
+    }
+}
+
 fn lock(store: &dyn Replica) -> Result<Box<dyn DerefMut<Target = Store> + '_>> {
     store.lock_store()
 }
 
 /// One full sync round. Safe to repeat: everything is idempotent on the server.
 pub fn sync(client: &Client, store: &dyn Replica) -> Result<SyncReport> {
+    sync_with(client, store, Files::All)
+}
+
+/// Which attachment content a round downloads. Uploads always happen.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Files {
+    /// Everything this device lacks (the desktop).
+    #[default]
+    All,
+    /// Nothing: content is fetched when opened, with [`fetch_file`] (the phone, ADR 040).
+    OnDemand,
+}
+
+/// [`sync`], choosing what happens to attachment content.
+pub fn sync_with(client: &Client, store: &dyn Replica, files: Files) -> Result<SyncReport> {
     let mut report = SyncReport::default();
 
     let before = now_ms();
@@ -413,11 +464,14 @@ pub fn sync(client: &Client, store: &dyn Replica) -> Result<SyncReport> {
 
     let schema = lock(store)?.schema_version()?;
     if info.schema_version != schema {
-        return Err(Error::Schema(format!(
-            "this app is at database version {schema} and the server at {}; update the \
-             older one first",
-            info.schema_version
-        )));
+        return Err(Error::Schema {
+            message: format!(
+                "this app is at database version {schema} and the server at {}; update the \
+                 older one first",
+                info.schema_version
+            ),
+            server: Some(info.schema_version),
+        });
     }
 
     // A server behind what this device already pulled lost data: send everything again.
@@ -449,7 +503,9 @@ pub fn sync(client: &Client, store: &dyn Replica) -> Result<SyncReport> {
     if let Some(list) = client.list_blobs()? {
         report.files_dropped = lock(store)?.drop_purged(&list.purged)?;
     }
-    download_missing(client, store, &mut report)?;
+    if files == Files::All {
+        download_missing(client, store, &mut report)?;
+    }
     Ok(report)
 }
 
@@ -522,20 +578,38 @@ fn download_missing(client: &Client, store: &dyn Replica, report: &mut SyncRepor
         return Ok(());
     };
     for hash in missing {
-        let bytes = match client.get_blob(&hash) {
-            Ok(bytes) => bytes,
-            // The server never got it either (attached on a device that has not synced
-            // its files yet): try again next round.
-            Err(Error::Http(404, _)) => continue,
-            Err(e) => return Err(e),
-        };
-        let stored = lock(store)?.files()?.put_bytes(&bytes)?;
-        if stored.hash != hash {
-            return Err(Error::Protocol(format!(
-                "file {hash} arrived with different content"
-            )));
+        // Not on the server either (attached on a device that has not synced its files
+        // yet): try again next round.
+        if download(client, store, &hash)? {
+            report.files_down += 1;
         }
-        report.files_down += 1;
     }
     Ok(())
+}
+
+/// Downloads one file into the store. False when the server does not have it.
+fn download(client: &Client, store: &dyn Replica, hash: &str) -> Result<bool> {
+    let bytes = match client.get_blob(hash) {
+        Ok(bytes) => bytes,
+        Err(Error::Http(404, _)) => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    let stored = lock(store)?.files()?.put_bytes(&bytes)?;
+    if stored.hash != hash {
+        return Err(Error::Protocol(format!(
+            "file {hash} arrived with different content"
+        )));
+    }
+    Ok(true)
+}
+
+/// Makes sure the content of the attachment with this hash is on this device, fetching
+/// it from the server when it is not. False when the server does not have it yet (the
+/// device it was attached on has not synced its files).
+pub fn fetch_file(client: &Client, store: &dyn Replica, hash: &str) -> Result<bool> {
+    let path = lock(store)?.files()?.path(hash)?;
+    if path.exists() {
+        return Ok(true);
+    }
+    download(client, store, hash)
 }

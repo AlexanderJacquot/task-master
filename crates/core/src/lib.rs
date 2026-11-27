@@ -28,6 +28,7 @@ mod spaces;
 mod store;
 mod sync;
 mod terminal;
+pub mod views;
 
 pub use agent_workflow::{AgentWorkflow, IN_PROGRESS_STATUS_ID};
 pub use clock::{new_id, now_ms, utc_date};

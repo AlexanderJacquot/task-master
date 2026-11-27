@@ -430,6 +430,24 @@ impl Store {
         query::snapshot(&self.conn)
     }
 
+    /// The rows of a list view (grouped, sorted, subtasks under their parent).
+    pub fn list_rows(
+        &self,
+        spec: &crate::model::ViewSpec,
+        options: &crate::views::ViewOptions,
+    ) -> Result<Vec<crate::views::ViewRow>> {
+        Ok(crate::views::list_rows(&self.snapshot()?, spec, options))
+    }
+
+    /// The columns, lanes and cards of a board view.
+    pub fn board(
+        &self,
+        spec: &crate::model::ViewSpec,
+        options: &crate::views::ViewOptions,
+    ) -> Result<crate::views::Board> {
+        Ok(crate::views::board(&self.snapshot()?, spec, options))
+    }
+
     /// Like [`Store::snapshot`], keeping time blocks and agent sessions of tasks deleted
     /// here: the spaces layer decides, from both spaces, which to show (ADR 033).
     pub(crate) fn snapshot_keeping_task_rows(&self) -> Result<Snapshot> {
@@ -650,6 +668,17 @@ impl Store {
             }
         }
         Ok(removed)
+    }
+
+    /// Moves everything in the write-ahead log into the database file and empties the log,
+    /// so the file alone is complete. For the phone before iOS suspends the app (ADR 040):
+    /// nothing is left half in the log while the app holds no lock. Returns false when
+    /// another connection kept part of the log busy (it is checkpointed later).
+    pub fn checkpoint(&self) -> Result<bool> {
+        let busy: i64 = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |r| r.get(0))?;
+        Ok(busy == 0)
     }
 
     /// Writes a consistent copy of the database to `target` (replacing it).

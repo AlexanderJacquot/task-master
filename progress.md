@@ -144,6 +144,376 @@ line (`FOLD_CHILDREN_CLASS`: `ml-3 border-l pl-1.5`), which indents them 11px mo
 the old `pl-2`.
 Checks: `pnpm biome check`, `tsc`, `pnpm test` (694 passed); no Rust changed. Seen in the
 showcase, light and dark.
+**iPhone app** (plan agreed 2026-11-10; `docs/ios-plan.md`, ADR 040): a SwiftUI app over
+the Rust core through UniFFI (`crates/mobile`), the phone as one more sync replica, iOS 26
+and later. Milestones P0 (core preparation) to P8 (App Store). P0 (`p0-phone-core`) and P1
+(`p1-ios-walking-skeleton`) were built on Linux and green on CI. **Now on this Mac**:
+branch `p1-ios-mac` = P1 with `main` (0.25.0, schema 17) merged in; the app builds with
+Xcode 27.2 and runs in the iOS 27.2 simulator, and its UI test passes there (2026-11-19,
+see Done). Not merged into `main` and not pushed. Before it merges: the hands-on desktop
+sync check (P0 moved the desktop's sync loop into `crates/client`), and a CI run of
+`ios.yml` on the mirror. No Apple developer account yet, so no real iPhone. P2 is under
+way on `p2-ios-ui` (the mockups built in SwiftUI, entry below).
+
+**iPhone: Settings and a dock of your choice** (2026-11-25, branch `p2-ios-ui`):
+- Settings (the gear in Browse) chooses the tab bar's buttons, "the dock": Today, Inbox,
+  Plan, Browse, Notes, All tasks, or any project (personal or team), in the user's order
+  (drag), removed with the edit control, added from the lists below. `DockModel`
+  (TaskMasterKit) keeps them in UserDefaults as JSON. Search stays the round button
+  beside them.
+- At most 4 beside Search: with a fifth, iOS 26 turns Search into a plain tab behind
+  "More" (seen in the simulator). A saved dock that does not fit is trimmed on load.
+  Browse cannot leave the dock: projects, tags, views, notes folders and Settings open
+  from it. A pinned project that was deleted is not shown (it comes back if the project
+  does); a button removed while open moves the app to the first one.
+- A screen not in the dock opens on the current tab (`Route.screen`): links from
+  notifications and widgets (Inbox, Today, day plan) and Today's Now card. `DockActions`
+  in the environment gives the screens sync, settings and "open". Under UI tests the dock
+  is the standard one (a fresh UserDefaults suite each launch): the tests tap Inbox and
+  Today.
+- Fixed in the simulator: the add rows and the dock rows shared ids, so a screen added to
+  the dock kept its add row's look (no remove button or handle); the add rows have their
+  own ids.
+- Checks: TaskMasterKit 22 tests (new: the dock's order, limit, Browse, saved, trimmed); in
+  the simulator, Settings → removed Inbox, added task-master; the tab bar followed at
+  once; the Notes and project tabs open; Plan out of the dock opens on Today. Not run: the
+  UI tests (they need the sync test server CI starts), the device.
+
+**iPhone: detach a note's task, task picker rows, search order and filter** (2026-11-25,
+branch `p2-ios-ui`):
+- A note's task chip has a long-press menu (open the task, attach to another, detach), while
+  reading and while writing; detaching was only in the ⋯ menu, while reading. VoiceOver gets
+  a "Detach from the task" action. The detach icon was `link.badge.minus`, which does not
+  exist; now `xmark.circle`.
+- The note's task picker lists the Search tab's rows (status chip, project › epic, due date,
+  estimate, tags, subtasks), picked as a whole: `TaskRowView`'s check is display-only when
+  it has no toggle (`CheckMark`). Search shows the status chip too.
+- Search order and filter (`SearchModel.order`, `hideClosed`): best match, status (in
+  progress, to do, backlog, done, cancelled), due date (undated last), priority, newest;
+  "Hide completed" leaves out done and cancelled. Ties keep the best match first. Kept in
+  UserDefaults, shared by the Search tab and the task picker. A bar above the results
+  (the search field covers the navigation bar while it is active, so a toolbar button was
+  out of reach); with no open match, "Show completed".
+- The core returns the 50 best matches and the phone sorts and filters those: with more than
+  50 matches, open tasks past the 50th do not show when completed ones are hidden.
+- Checks: TaskMasterKit 21 tests (new: order and filter, settings shared); in the simulator,
+  Search sorted by due date with completed hidden, the picker with the same rows and
+  settings, attach then long-press → detach while writing. Not run: UI tests, the device.
+
+**iPhone: on a real iPhone, Xcode 27 settings, Enhanced Security** (2026-11-25, branch
+`p2-ios-ui`):
+- First run on a device: an iPhone 13 (iOS 26), signed with a free Apple ID (Personal
+  Team). `TEAM=<team id> scripts/ios/device.sh [--free]` builds the XCFramework,
+  generates the project, signs, installs and opens the app on the first connected iPhone
+  with Developer Mode on. A Personal Team can have neither the App Group nor Enhanced
+  Security ("Personal development teams … do not support the Enhanced Security
+  capability"), so `--free` signs with no entitlements: data in Application Support
+  (SharedStore's fallback), widgets and share extension without data, protections off,
+  installs expire after 7 days. The team ID stays out of the repo.
+- XcodeGen's presets were missing from every project generated on this Mac: started
+  through the Nix profile symlink, XcodeGen looks for `../share/xcodegen` next to the
+  symlink and only warns (`No "release config" settings found`). The project had 8
+  project-level settings instead of 65: Debug built with `-O` and no `DEBUG`, and Xcode
+  listed its "recommended settings" warnings. `scripts/ios/generate-project.sh` runs the
+  real binary and fails if the presets are still missing; `ios.yml` uses it too (CI's
+  Homebrew xcodegen was not affected).
+- `project.yml`: `xcodeVersion: "27.2"` and what a new Xcode 27.2 project has beyond the
+  presets (script sandboxing, string catalogs, asset symbols, C/C++ standards), found by
+  comparing with a fresh Xcode template. Not taken over: the template's Swift language
+  defaults (`SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor`, approachable concurrency, member
+  import visibility), which change semantics.
+- Enhanced Security (security audit): `ENABLE_ENHANCED_SECURITY: YES` for the project,
+  the hardened-process entitlements v2 on the app (hardened heap, read-only dyld,
+  platform restrictions). Pointer authentication stays off (`ENABLE_POINTER_AUTHENTICATION:
+  NO`): the XCFramework and TaskMasterKit are arm64 only. Hardware memory tagging not on
+  (A19 and later). Pure Swift, so the C warning and analyzer settings do not apply.
+- Swift warnings fixed: `PushAction` (Routes.swift) replaces the closure in the `push`
+  environment value, equal per tab, so screens reading it are no longer redrawn whenever
+  RootView makes a new closure; CaptureView's photo picker label reads a copy of
+  `photoData` (it is a Sendable closure).
+- App icon: the device showed a blank icon (the app had no asset catalog). `apps/ios/AppIcon.svg`
+  is `assets/brand/logo.svg` with the tile filling the square (iOS masks the corners);
+  `scripts/ios/generate-app-icon.sh` renders it with the Tauri CLI into
+  `Assets.xcassets/AppIcon.appiconset` as one 1024 px PNG without alpha.
+- `device.sh --free` signs with an empty entitlements file of its own
+  (`apps/ios/build/Free.entitlements`). It first emptied the generated entitlements files,
+  and the next simulator build, installed without the App Group, made the simulator delete
+  the App Group container and the app's data with it. An empty `CODE_SIGN_ENTITLEMENTS`
+  does not work: provisioning still reads the target's file.
+- Checks: simulator and device builds with no Swift warnings; TaskMasterKit 20 tests on
+  the iOS 27.2 simulator; the hardened app opens in the simulator, Browse → New note
+  pushes and an untouched note is discarded on back; the icon on the simulator home screen; the app installed and opened on the iPhone 13 (free team, no entitlements).
+  Not run: the UI tests, CI, Rust and desktop checks (no Rust or desktop change).
+- Left: Xcode warns "All interface orientations must be supported unless the app requires
+  full screen" (portrait only); decide between supporting landscape and resizing or
+  `UIRequiresFullScreen`. A paid developer account is needed to run the App Group,
+  widgets, share extension and Enhanced Security on a device.
+
+**iPhone: the mockups built** (2026-11-24, branch `p2-ios-ui`, from `p2-ios-plumbing`):
+the six screens of the mockups artifact (Today, Inbox, Project, Task detail, Capture, Day
+plan; light and dark) in SwiftUI, in the clean look (ADR 039).
+- Navigation: a `TabView` with Today, Inbox, Plan, Browse and a search tab; one
+  `NavigationStack` per tab; capture is a bar over the tab bar
+  (`tabViewBottomAccessory`) that opens the composer. The tab bar shrinks on scroll.
+- `crates/mobile`: `TaskRow` gained `epic_id`/`epic_name`, `estimate_min`, `tags` and
+  `created_at`; `preview_capture` reads a quick-capture line without adding it (tags,
+  project and epic, each with whether it exists; priority; due date; warnings) and
+  `capture_to(.., today)` adds it, optionally picked for today. Tests in `plumbing.rs`.
+- `crates/mobile/examples/demo.rs`: fills a phone data folder with the mockups' data
+  (three projects, two epics, a Today list with subtasks, two time blocks, five Inbox
+  captures) for looking at the app in the simulator.
+- TaskMasterKit: `CaptureModel` (the composer: live preview, Inbox or Today, add);
+  `TaskListModel.setToday` and `setProject`; the board opens on its first column with cards.
+- App views: `Theme.swift` (the ADR 039 colours, light and dark, plus chips, flow layout,
+  date words), `TaskRowView` (one detail line, swipe Done / Today / Project, context
+  menu), `TodayView` (overdue, today, the next block card, sync, undo), `InboxView`
+  (filing), `BrowseView` and search, `ScopeView` (list with epic progress, or board one
+  column at a time), `TaskDetailView` (field chips, markdown notes, subtasks, planned
+  blocks, attachments, activity), `CaptureView` (marker chips as you type, photo, "More
+  fields" opens the new task), `DayPlanView` (week strip, all-day row, timeline with
+  overlap columns and the now line, drag a block by quarter hours, "N to plan").
+  `TaskListView.swift` is gone.
+- The composer files a task into any project: a project chip (Inbox or a personal
+  project, indented by depth) next to the Today switch, from any tab. `capture_to` takes a
+  `project_id` used only when the line names no `@Project` or `+epic:` (a typed one wins
+  and the chip strikes through). The pick stays for the next line. "Added to <place>"
+  names the project, or Today or Inbox.
+- Notes on the phone (ADR 032; mockups: the Browse, Notes, Note, NoteEdit rows of the
+  artifact). `crates/mobile/src/notes.rs`: `notes()` (folders, then notes by folder and
+  rank, each with a plain-text snippet), `note(id)` (body, folder, attached task, the
+  task and project links in the text with their current titles and stage, attachments),
+  `task_notes` (attached first, then the ones linking to it), `search_notes`,
+  `create_note`/`edit_note`/`delete_note`, folders (create, rename, delete) and
+  `attach_note_file`. Kit: `NotesModel` (groups, search, writes) and `NoteModel` (typing
+  saves after 0.7 s, one undo step per save; `[[` matches; checklist ticks; photos;
+  `isUntouched`), `NoteText` (link and checklist edits, tested). App: Browse → Notes (All
+  notes, each folder, New note), `NotesView` (folders with a ⋯ menu, swipe delete, Move
+  to, search), `NoteView` (reader: headings, lists, ticking checklists, quotes, code,
+  embedded photos, links shown as ○/✓ chips that open the task or project; editor: title,
+  markdown text, a keyboard bar with heading, bold, list, checklist, `[[` link, photo;
+  task matches float above the bar). A new note left as it was made is thrown away. The
+  task page gained a Notes section (its notes and New note, titled like the task and
+  attached to it); its description is now called "Description".
+- New projects: `create_project` (name, colour, optionally inside a top-level project;
+  goes at the end; one level deep, as on the desktop). `NewProjectView` (name, the
+  desktop's ten colours, "Inside"), from Browse → Projects → New project (opens the new
+  project) and from the composer's project menu → "New project…" (files the line into it).
+- Looked at in the iPhone 18 Pro simulator with the demo data, light and dark: every
+  screen, swipe filing, the priority menu, capture with markers, search, planning a task
+  from "To plan". Fixed on the way: the timeline opened at midnight, the now line ran off
+  the screen, "To plan" rows could not be tapped (and the editor opened under the closing
+  sheet), the board opened on an empty Backlog, the composer said "Added to Inbox" for a
+  task with a project, search did not focus its field, Browse was black in dark mode.
+  Notes and projects, looked at the same way: a folder, a note typed and saved, a `[[`
+  link picked (the matches were under the keyboard bar at first), Done, a checklist
+  ticked, the link opening the task, the task's Notes and New note, a project made from
+  Browse (inside Home) and from the composer. Fixed: the notes list was black in dark
+  mode; an untouched note made from a task was kept. The simulator's typed text comes
+  out through the French layout (`[` becomes `^`), so `[[` went in by the bar's link button.
+  Checks after notes and projects: fmt, clippy (`-D warnings`, all targets), `cargo test
+  --workspace` (485 passed, 8 ignored), TaskMasterKit (20 on the iOS 27.2 simulator), the
+  three UI tests against the seeded server. No desktop code changed, so biome and `pnpm
+  test` were not rerun. Not done: a photo added to a note in the simulator, CI.
+- UI test: `WalkingSkeletonTests` goes through the Inbox tab and the composer now; it
+  passes locally against a seeded server on :8787 (the `ios.yml` steps), as do the two
+  intents tests.
+- Checks: fmt, clippy (`-D warnings`, all targets), `cargo test --workspace` (481
+  passed, 8 ignored), biome, `pnpm test` (746 passed, 2 skipped), TaskMasterKit on the
+  iOS 27.2 simulator, the UI tests above. Not done: a CI run, a real iPhone, VoiceOver and Dynamic Type passes.
+  In the simulator a first tap on the tab bar after a sheet or a scroll is sometimes
+  dropped; not seen to be the app's.
+
+**iPhone: `main` 0.30.1 merged** (2026-11-24, branch `p2-ios-plumbing`): CalDAV (ADR 037),
+meeting show-as (ADR 038), the clean look (ADR 039), Settings → MCP and the team
+assignee/@mention work came in. `main` had taken ADR 036 for Windows code signing, so the
+iPhone ADR is now **ADR 040** (`docs/adr/040-ios-app.md`, every reference renamed).
+Conflicts: `crates/client` modules and dependencies (both sides kept), the desktop's
+`config.rs` (`CaldavConfig` kept, `SyncAccount` from the engine). The phone's calendar
+tests gained `caldav`, `show_as` and `private`; the phone does not show an event's
+show-as or privacy yet. Checks: fmt, clippy (`-D warnings`, all targets), `cargo test
+--workspace` (479 passed, 8 ignored), biome, typecheck, `pnpm test` (746 passed, 2
+skipped), Swift bindings, XCFramework, TaskMasterKit (16 on the iOS 27.2 simulator), the
+app with its extensions built for the simulator. Not run: the UI tests, CI. Next: the UI.
+
+**iPhone: `main` 0.28.2 merged, devenv fixed** (2026-11-22, branch `p2-ios-plumbing`):
+- Merge: team spaces (ADR 033) came in on top of the shared sync engine. The desktop's
+  team round now runs through new engine hooks with defaults the phone ignores:
+  `Host::after_round` (the desktop syncs the team space there), `Host::pending_elsewhere`
+  (the team outbox in `pending`), `Engine::set_team` (the status's `team`) and
+  `Engine::watch_team` (the team's event stream; an announcement during a round makes the
+  round go again, as for the personal space). A failure opening the team space now shows
+  as the round's error (on `main` the next line cleared it). `sync_with`, `download` and
+  `fetch_file` lock a `Replica`. `crates/mobile` gained `note_id`, `show_closed_lanes`,
+  `roadmap` and `ServerInfo.team` where it builds those.
+- The iPhone ADR was ADR 036 then; it is **ADR 040** since `main` took 036 (Windows signing) to 039.
+- devenv on macOS: no Nix C compiler left in the shell. `languages.c` is off, the stdenv
+  is `stdenvNoCC`, and `enterShell` drops the clang wrapper and cctools (propagated by the
+  rust-overlay toolchain) from PATH, so `cc`, `clang`, `ld` and `ar` are Xcode's and
+  `NIX_CFLAGS_COMPILE`/`NIX_LDFLAGS` are gone. `xcodebuild` now works in the shell as is
+  (test-kit.sh's `env -i` is no longer needed, kept as harmless). A new worktree needs
+  `direnv allow` once; agent sessions get the main checkout's shell via the SessionStart hook.
+- Checks, all in this worktree's devenv shell with no overrides: fmt, clippy
+  (`-D warnings`, all targets), `cargo test --workspace` (435 passed, 8 ignored; whisper.cpp
+  and the other C code rebuilt with Xcode's clang), bindings unchanged, biome, typecheck,
+  `pnpm test` (712 passed, 2 skipped), Swift bindings, simulator XCFramework, TaskMasterKit
+  (14 on the iOS 27.2 simulator), the app with both extensions built for the simulator.
+  Not run: the UI tests (they need a seeded server), CI.
+- **Still to check by hand before merging into `main`**: desktop sync in the real app (now
+  including the team space, which moved onto the engine in this merge).
+- Backlog tasks in task-master under "Native Iphone App port": more widgets, Action button
+  and Control Center actions, OIDC against the real provider.
+
+**iPhone: team spaces on the phone** (2026-11-22, branch `p2-ios-plumbing`; ADR 040
+addendum): a member's phone syncs the team space beside its own.
+- `crates/mobile/src/team.rs`: the team `Store` in `team/` (database, attachments,
+  `member.json`), opened from `/info` after each personal round (`Host::after_round`),
+  reopened offline at start, closed and deleted when the token is no longer a member's (or
+  the member was removed: a refused team round). `Engine::watch_team` follows its stream.
+- Reads and writes go through `Spaces` (`Inner::with_spaces`, `data`, `execute`): one
+  merged snapshot as the desktop's store makes it, writes routed by the rows they name,
+  one undo history. `create_tag` takes `for_task_id` (a team task gets a team tag);
+  `TaskEdit::Assignee`; team tasks take the team's statuses in `set_done` and on team
+  boards. Rows, projects, epics and tags carry `team`; rows the assignee's name;
+  `Navigation.team` (`TeamNav`: name, members, statuses); `SyncStatus.team_name` and
+  `team_member`. Team attachments: the team's folder, fetched from `/team/blobs`.
+- Core: `ViewOptions::team_tasks` keeps team tasks out of the Inbox (test
+  `team_tasks_stay_out_of_the_inbox`). Client: `Replica for Mutex<Option<Store>>` (a
+  space that may close mid-round), now also the desktop's team round.
+- Reminders: a team task's due date reminds its assignee only; blocks always remind.
+- Swift: `NavigationModel.team`, `projects/tags/epics/statuses(team:)`, `createTag(_:for:)`,
+  `TaskDetailModel.setAssignee`; stand-in UI: a Team section in Browse, an Assignee picker
+  and space-limited pickers in the detail, `@name` on rows, the team on the sync screen.
+- Tests: `crates/mobile/tests/team.rs` against a real team server (Ada's phone, Bob's
+  desktop copy): both spaces listed, the Inbox without team tasks, navigation and board,
+  reminders, done/today/tag/new task landing in the team space (Today pick stays
+  personal), undo across spaces, reassignment both ways, the event stream with the
+  background loops, offline reopen, a no-member token closing and deleting the copy.
+  Kit: `withoutATeamEveryPickerIsPersonal`.
+- Not done: capture's `@project` names resolve in the personal space only (as on the
+  desktop); no team notes, comments or the Team overview page on the phone; sharing a
+  personal project to the team stays a desktop action.
+
+**iPhone: calendar events in the day plan** (2026-11-22, branch `p2-ios-plumbing`):
+- `crates/mobile/src/calendar.rs`. Events are not ops (ADR 014): when the server runs the
+  calendar sync, the phone fetches two days back to fifteen ahead from `/calendar/status`
+  and `/calendar/events` after a round (`after_round`, at most every 5 minutes) or on
+  `refresh_calendar` (the day plan opening, pull to refresh), and keeps them in
+  `calendar.json` beside the database: the day plan reads them offline and never waits on
+  the network. A failed fetch keeps the last good events and shows in
+  `CalendarInfo.last_error`, not as the round's error.
+- `day_events(date, day)`: events on the phone's local day (timed ones overlapping it,
+  all-day ones with the exclusive end), all-day first, with the calendar's name and
+  color. `CalendarInfo.availability`: `Available`, `NotConnected` (server runner without an
+  account), `OnDesktop` (a desktop runs it), `Unsupported` (older server), `Unknown`.
+  Disconnecting forgets the copy. `serde` (derive) added to `crates/mobile`, as every
+  other crate has it.
+- Swift: `DayPlanModel.events`, `.calendar`, `refreshCalendar()`; the day plan lists the
+  events above the blocks (time, location, calendar, a link) and says why there are none.
+- Tests: `crates/mobile/tests/calendar.rs` (a server running the sync against the fake
+  Google of the core's tests: fetched by a round, the right days, kept after a restart,
+  gone when a desktop takes the sync back, forgotten on disconnect); unit tests for the
+  dates, the window and local days; kit `withoutAServerTheDayPlanHasNoEvents`.
+
+Plumbing left on the phone (no design work in it):
+- Notes (ADR 032): read and edit pages and folders, notes linked to a task, note search.
+- Meetings (Scribe, ADR 025): read meetings and their notes and transcripts (recording on
+  the phone is a separate decision).
+- Calendar events when a desktop runs the calendar sync (always for classic Outlook): they
+  stay on that desktop. Getting them to the phone needs the desktop to upload its
+  `calendar_events` to the server (a new route): an architecture change, to propose first.
+- The token in the Keychain (shared through the App Group), not `account.json`.
+- Camera capture (only the photo picker today), shake to undo.
+- CI: `ios.yml` on `macos-26`/Xcode 26 has never built the widget and share extensions;
+  the kit's Linux build with `SharedStore`.
+- Checks by hand: reminders firing, background refresh (simulate from the debugger),
+  the capture field losing a first word.
+
+**iPhone: P4 finished and P5's system parts** (2026-11-20, branch `p2-ios-plumbing`, `main`
+merged in first, with the devenv fix): stand-in looks, as below.
+- Background app refresh (`BGAppRefreshTask` `space.solarnexus.taskmaster.sync`, scheduled
+  15 min out on going to the background; `Session.refreshInBackground` syncs then
+  checkpoints, and the reminders are rescheduled); a tapped reminder opens its task (app
+  delegate set before launch ends; reminders also show while the app is open).
+- `taskmaster://` links (`AppLink`: `task/<id>`, `inbox`, `today`, `day`; the sign-in
+  callback is not a place) routed by a `Router` the root view follows.
+- The data folder moved into the App Group `group.space.solarnexus.taskmaster`
+  (`SharedStore`: one `Core` per process; Application Support data moves in once; an
+  unsigned build without the group stays in Application Support). Entitlements on the app
+  and both extensions; a device build needs the group registered with the developer
+  account.
+- App Intents in `apps/ios/Shared` (compiled into the app and the widgets): `AddTaskIntent`
+  (capture line), `CompleteTaskIntent` over `TaskEntity` (string query: search; suggested:
+  Today), `ShowTodayIntent` (opens `taskmaster://today`); `TaskMasterShortcuts` phrases.
+  Intent type names, the entity and phrases are a public contract for saved shortcuts.
+- Widget extension `TaskMasterWidgets`: Today's open tasks (small, medium, large, lock
+  screen) with a checkbox per task that runs `CompleteTaskIntent` in the widget's process;
+  reloads after midnight and whenever the app's data changes.
+- Share extension `TaskMasterShare`: a link, text or images into the Inbox (title editable,
+  link in the description, images attached).
+- Spotlight: open tasks indexed (title, project, due date), rebuilt 3 s after changes; a
+  result opens its task.
+
+Tests: TaskMasterKit `SystemTests` (links, the one-time move, a background round; 14 kit
+tests pass on the simulator); UI test `IntentsTests` with AppIntentsTesting (iOS 27, out of
+process: add, find, complete; Show Today), compiled only where the SDK has it; the P1 UI
+test still passes against a seeded local server. By hand in the simulator: the data moved
+into the group container, both links, the share sheet from Safari (the app showed the task
+on return), the widget (added from the gallery; its checkbox completed a task without
+opening the app), Spotlight (found a task and opened it). Rust unchanged here: clippy and
+`cargo test --workspace` (354) pass after the merge with no workaround (one
+`cargo clean -p whisper-rs-sys` for the stale folder). Not checked: the kit's Linux build
+in CI (`SharedStore.groupContainer` is nil there), CI's `macos-26` Xcode with the
+extensions, notifications actually firing, background refresh being granted (simulate
+from Xcode's debugger with `_simulateLaunchForTaskWithIdentifier`), camera capture.
+
+**iPhone plumbing, P2–P6 without the design** (2026-11-20, branch `p2-ios-plumbing` on top
+of `p1-ios-mac`; not merged, docs/ios-plan.md): the user asked for every function now and
+form and UI later, so the plan's "mockups before SwiftUI" step is postponed, not dropped.
+Rust (`crates/mobile`, new modules `browse`, `edit`, `plan`, `account`):
+- reads: `navigation` (counts for Inbox, Today and overdue; projects in tree order with
+  their epics; tags; saved views; statuses), `Scope::View` (a saved view's own spec),
+  `board` (one column per status, cancelled left out, lanes merged), `task` (detail:
+  fields, parent, subtasks, tags, waits-on, attachments with `on_device`, time blocks),
+  `activity`, `search`;
+- edits, each one undo: `edit_task` (`TaskEdit`: title, description, priority, due date,
+  today, estimate, project, epic, status), `set_tags` (the set, diffed), `create_tag`
+  (finds a same-named one), `add_task` (`NewTaskInput`; a subtask takes its parent's
+  project and epic), `move_task` (`Placement`: between neighbours, into a status),
+  `set_parent`, `delete_task`, `redo`, `undo_state`;
+- the day: `day_blocks` (a local day from `Day.utc_offset_min`), `schedule`, `move_block`,
+  `set_block_outcome`, `unschedule`; `reminders(from, to, due_minute)` for local
+  notifications (open own tasks' due dates, planned blocks; stable keys);
+- `attach_file`, `attachment`, `fetch_attachment` (on demand), `remove_attachment`;
+  `sign_in` → `SignIn` (`page`, `finish(redirect_url)`) for OIDC with the system sheet;
+  `suspend` (new `Store::checkpoint`, WAL truncated) and `resume`
+  (`refresh_external_changes` + a sync kick);
+- `SyncStatus.update` (`App` or `Server`): the client's `Error::Schema` now carries the
+  server's version and the engine keeps it (`server_schema`, not sent to the desktop UI).
+
+Swift: `TaskMasterKit` gains `NavigationModel`, `BoardModel` (and `placement(of:at:in:)` for
+`onMove`), `TaskDetailModel`, `SearchModel`, `DayPlanModel`, `ReminderPlanner`, sign-in and
+`updateMessage` on `SyncModel`, `suspend`/`resume` on `Session`. App: stand-in screens
+(Browse with search, a scope as list or one-column board, task detail with every field,
+subtasks, photos and files with Quick Look, the day plan), reminders scheduled through
+`UNUserNotificationCenter` as a diff, suspend/resume on scene phase, sign-in through
+`webAuthenticationSession` (scheme `taskmaster`). The P1 home screen and its UI test are
+unchanged. Tests: core `checkpoint_empties_the_write_ahead_log`; mobile `tests/plumbing.rs`
+(6), `app.rs` `attachments_come_down_when_opened`,
+`a_newer_server_asks_for_an_app_update_and_the_phone_keeps_working` (a real server behind
+a stand-in `/info`), unit tests for dates and the update side; Swift `PlumbingTests` (7,
+all 11 kit tests pass on the iOS 27.2 simulator). Tried in the simulator: capture, detail
+edits, subtask, plan an hour, Browse counts and tag, day plan, the notification prompt.
+Checks: fmt, clippy (`-D warnings`, all targets), `cargo test --workspace` (354 passed, 8
+ignored), biome, typecheck, `pnpm test` (600 passed, 2 skipped), TaskMasterKit (11) on the
+simulator, and the P1 UI test against a local seeded server (the server then had the
+phone's task). `cargo test` needed the desktop workaround from "devenv on macOS, a clean build
+of the desktop fails" under Done (`CC=/usr/bin/clang CXX=/usr/bin/clang++ CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/clang`)
+and a stale whisper-rs-sys build folder removed (its CMakeCache had
+`WHISPER_BUILD_TESTS=ON`, so CMake looked for a `tests` folder the crate does not ship).
+Not done: OIDC sign-in against a real provider (needs the redirect registered in
+Authelia), notifications firing, the camera, App Group and extensions (P5). Seen in the
+simulator: the first word of a second capture typed right after submitting can be lost
+(the field takes focus again a moment later); check by hand on a device.
 
 **Release 0.30.1** (2026-11-24, on `main`, tag `v0.30.1`; notes
 `docs/releases/0.30.1.md`): the quick-capture Shift+Enter fix for Windows (below) and the
@@ -1558,6 +1928,51 @@ the app daily for two weeks before Phase 2 (plan section 10).
 
 ## Done
 
+### P1 on the Mac: walking skeleton brought up to `main` and run in the simulator (2026-11-19, branch `p1-ios-mac`)
+
+- Branch `p1-ios-mac` from `origin/p1-ios-walking-skeleton` (on `p0-phone-core`), `main`
+  merged in. The iPhone ADR was ADR 030 (`main`'s ADR 022 is saved Lineage views), then ADR 036, now **ADR 040** (`main`'s 030 is Outlook);
+  references renamed.
+- Merge: the sync round keeps `main`'s purges (sent after the push, dropped after the
+  pull) and downloads content only with `Files::All` (the phone fetches on demand);
+  Settings → Files on the desktop (`files_overview`) reads the account through the
+  engine's `Host`. The desktop keeps `main`'s behaviour otherwise; the desktop sync loop
+  is still the moved one from P0, **not yet checked by hand**.
+- Views in the core caught up with 0.15.0's nested subtasks: rows at any depth,
+  `expanded` per row, `ViewOptions::expanded_tasks`, `show_subtasks`. The shared vectors
+  encode `expanded`, have three new nesting cases and the snapshot's new `meetings` and
+  `terminal_sessions`; desktop and core agree (50 vector tests each side).
+- Sync engine fix (`crates/client/src/engine.rs`): the watcher drops announcements while
+  a round runs, so a push that landed after the round's pull waited for the next cycle.
+  A round now notes the heads announced while it ran and goes again when one is newer
+  than what it pulled. Found by `crates/mobile`'s two-phones test, which failed on macOS
+  every time (two loops' rounds overlapped); applies to the desktop too.
+- `scripts/ios/build-xcframework.sh` calls `rustup` only where it exists (CI); in
+  devenv it checks the target's std is installed. `scripts/ios/test-kit.sh` also runs on
+  macOS: the package tests on the booted simulator, with a clean PATH (devenv's Nix `ld`
+  breaks `xcodebuild`: `-objc_abi_version '-Xlinker' not supported`).
+- `apps/ios/project.yml` for Xcode 27: `EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64`
+  (the Rust slice is arm64; a generic simulator build failed to find `TaskMasterKit`),
+  `PRODUCT_NAME` on the UI test target (Xcode 27 left it empty:
+  `-Runner.app/PlugIns/.xctest`), `ALWAYS_SEARCH_USER_PATHS = NO`.
+- Run here: `scripts/ios/generate-bindings.sh`, `scripts/ios/build-xcframework.sh sim`,
+  `xcodegen` in `apps/ios`, the app on the iPhone 18 Pro simulator (XcodeBuildMCP)
+  against a local server seeded by `crates/mobile/examples/replica.rs` like CI: the
+  Inbox shows the seeded tasks, sync reads "up to date". UI test
+  `testSyncsWithTheServerAndAddsATask` passes and the server has the phone's task;
+  TaskMasterKit tests pass on the simulator (4). The SwiftUI code compiled unchanged.
+- **devenv on macOS, a clean build of the desktop fails** (affects `main` too, where the
+  checks probably passed on a warm `target/`): the Nix clang wrapper still compiles and
+  links with its macOS 14.4 SDK, whisper.cpp's CMake picks Xcode's SDK, clang 21 rejects
+  those headers, and with Xcode's clang the link misses `MTLResidencySetDescriptor`
+  (macOS 15 Metal). Workaround used for every check here:
+  `CC=/usr/bin/clang CXX=/usr/bin/clang++ CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/clang`.
+  The fix belongs in `devenv.nix` on `main` (see Later).
+- Checks pass (with that workaround): fmt, clippy, `cargo test --workspace` (342 passed,
+  8 ignored), biome, typecheck, `pnpm test` (600 passed, 2 skipped), TaskMasterKit (4 on
+  the simulator), the UI test. Under the cargo build's load many frontend tests time out
+  at 5 s; run them on an idle machine.
+
 ### Task detail: property order (2026-11-11, released in 0.16.0)
 
 - Side panel and task page now list properties in one fixed order: status, project, epic,
@@ -1575,6 +1990,92 @@ the app daily for two weeks before Phase 2 (plan section 10).
   a hands-on sync check first. Schema unchanged (12). Checks pass locally (fmt, clippy,
   cargo test, biome, typecheck, 409 frontend tests). Notes in `docs/releases/0.15.0.md`;
   tagged `v0.15.0`.
+
+### P1 iOS walking skeleton, step 1: `crates/mobile` (2026-11-10, branch `p1-ios-walking-skeleton`, stacked on `p0-phone-core`)
+
+- `crates/mobile` (new workspace member, `uniffi` 0.32.2 pinned; ADR 040): one `App`
+  object for Swift. `open(dir, device_name)` (database, attachments and `account.json`
+  in `dir`), `list(scope, day)` returning rows ready to draw, `capture` (the desktop's
+  quick-capture syntax, new tags created in the same batch), `set_done`, `undo`, the sync
+  account flow (`sync_connect`, `sync_set_token`, `sync_join`, `sync_now`, `sync_kick`,
+  `sync_disconnect`, `sync_status`, `sync_refresh`), `start()` for the background loops,
+  and a `Listener` implemented in Swift (`data_changed`, `sync_changed`). Attachments are
+  fetched on demand. The crate does not use the workspace lints (generated FFI code is
+  `unsafe`).
+- UniFFI builds with the workspace toolchain (edition 2024, Rust 1.99.1) and
+  `scripts/ios/generate-bindings.sh` writes the Swift bindings on Linux.
+- Tests (`crates/mobile/tests/app.rs`): capture, list, done, undo and reopening from
+  disk; two phones syncing through a token server by their own loops, the account
+  surviving a restart. Checks pass: clippy, cargo test.
+- **Swift on this machine**: Swift 6.4.2 through swiftly in `~/.local/share/swiftly`
+  (`. ~/.local/share/swiftly/env.sh`; the shell profile was not changed). Arch lacks two
+  libraries its build tool wants: `~/.local/share/swiftly/compat-lib` holds a link
+  `libncurses.so.6` → the system's `libncursesw.so.6` and a copy of `libxml2.so.2` from
+  the official `libxml2-legacy` package, both linked into the toolchain's
+  `usr/lib/swift/linux`. `sudo pacman -S libxml2-legacy` would replace the copy.
+- `apps/ios/TaskMasterKit` (Swift package, no SwiftUI): `Session` (the core, the day,
+  change observers on the main actor), `TaskListModel`, `SyncModel`. Tests run on Linux
+  against `target/debug`: `scripts/ios/test-kit.sh` (4 pass).
+- The exported Rust object is `Core` (not `App`, which SwiftUI owns).
+- `apps/ios/App` (SwiftUI): one list with an Inbox/Today/All switch, a capture field,
+  done by tap or swipe, pull to sync, and a sync screen (address, token, merge or
+  replace, status). `apps/ios/project.yml` (XcodeGen), `scripts/ios/build-xcframework.sh`,
+  `apps/ios/UITests`, `crates/mobile/examples/replica.rs` (seeds a test server and checks
+  what the phone sent).
+- `.github/workflows/ios.yml`: `kit` (Linux) and `app` (macOS 26: simulator build, UI
+  test against a server started in the job, screenshots and a video as artifacts).
+- **Green on CI** (run 42837497708 on the GitHub mirror, commit `327f58c`): `kit`
+  passes on Linux; `app` builds for the simulator with Xcode 26.6, and the UI test
+  connects to the job's server, sees the tasks another replica seeded, adds a task,
+  filters Today and reads "Up to date" on the sync screen; the job then finds the
+  phone's task on the server. Artifact `ios-ui` holds the four screenshots, a video of
+  the run and the logs. It took four pushes: missing folders for the generated bindings,
+  the server binary not built, and a UI test lookup were the three fixes; the SwiftUI
+  code compiled unchanged. The macOS job takes about 15 minutes.
+- P1's goal is met. Still open from the plan's P1 list: the screenshot gallery in light,
+  dark and two text sizes (today: four screenshots, light only), and the TestFlight job
+  (waits for the developer account). `actions/upload-artifact@v4` warns about Node 20.
+  OIDC sign-in and the token in the Keychain are P4.
+
+### P0 phone core, step 2: sync engine, OIDC flow, attachments on demand (2026-11-10, branch `p0-phone-core`)
+
+- `taskmaster_client::engine`: the sync schedule and account flow that lived in
+  `src-tauri/src/server_sync.rs` (`Engine`: run and watch loops, `sync_now`, status,
+  connect, token, join, disconnect, `finish_sign_in`), with a `Host` trait for what a
+  shell supplies (store, saved account, period, status events, the backup before a
+  replace, device name). `SyncAccount`, `SyncStatus` and `JoinMode` moved there (the
+  client crate has an optional `specta` feature, same pinned version as the core).
+- The desktop's `server_sync.rs` is now the `Host` implementation, the commands (same
+  names and types; `bindings.ts` changed in doc comments only), and the loopback redirect.
+- `taskmaster_client::oidc`: `begin(issuer, client_id, redirect)` → open `auth_url` →
+  `finish(code)`; `code_from_redirect` reads a custom-scheme callback URL (the phone).
+  The server needed no change: it only checks the ID token.
+- `sync_with(.., Files::OnDemand)` skips attachment downloads; `fetch_file` (and
+  `Engine::fetch_file`) gets one when it is opened. The desktop keeps downloading all.
+- Tests: engine against a real test server in `crates/server/tests/server.rs` (two
+  devices, replace, token, OIDC, the two loops carrying an edit), on-demand files, the
+  custom-scheme redirect. Checks pass: clippy, cargo test, biome, typecheck, 430 frontend tests.
+- **Not yet verified by hand**: desktop sync in the real app after the move (edit on one
+  desktop arrives on the other, Sync now, sign out and OIDC sign in, Settings → Sync
+  status while a round runs). The logic was moved, not rewritten, but only the tests ran.
+- P0 is complete. Next: P1 (`crates/mobile` with UniFFI, `TaskMasterKit`, `ios.yml`).
+
+### P0 phone core, step 1: views in the core (2026-11-10, branch `p0-phone-core`, uncommitted)
+
+- `crates/core/src/views.rs`: `list_rows` and `board` as pure functions of a `Snapshot`, a
+  `ViewSpec` and `ViewOptions` (today, UTC offset, collapsed groups and tasks), ported from
+  `lib/views.ts` and `lib/board.ts`; `Store::list_rows` and `Store::board` on top. The
+  desktop still evaluates views in TypeScript.
+- Shared vectors `crates/core/test-vectors/views.json` (30 tasks, 35 list cases, 12 board
+  cases). The expected rows are written by the desktop
+  (`VITE_UPDATE_VECTORS=1 pnpm vitest run src/lib/views.vectors.test.ts`, then biome
+  format) and checked by both sides (`views.vectors.test.ts`, `views::tests`).
+- Differences from the desktop: a board lane has one cell per column (empty ones included)
+  instead of a map; "closed today" uses the UTC offset passed in, not the machine's zone;
+  lanes with equal rank and name are ordered by key.
+- Checks pass: clippy, cargo test, biome, typecheck, 430 frontend tests.
+- The core takes every path from its caller already (no home or environment lookups
+  in `crates/core` or `crates/client`).
 
 ### Release 0.14.0 (2026-11-10)
 
@@ -3079,6 +3580,8 @@ Verified locally: all checks pass; the app creates and migrates its DB on first 
   smaller `audio_ctx` for a short last chunk would make it proportional; measure what it
   does to accuracy first.
 
+- iOS: the `ios.yml` macOS job still uses `macos-26`/Xcode 26; this Mac has Xcode 27.2.
+  Check the project.yml changes (PRODUCT_NAME, EXCLUDED_ARCHS) on CI.
 - `GET /roadmap.svg|png` on a team server reads the server's own space, like the remote
   MCP: a member's token should draw their personal space, or the team's (a `space`
   parameter).
