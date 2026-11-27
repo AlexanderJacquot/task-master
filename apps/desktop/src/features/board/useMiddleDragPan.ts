@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { zoomOf } from "../../lib/zoom";
 
 const MIDDLE = 1;
 
@@ -35,6 +36,7 @@ export function useMiddleDragPan<T extends HTMLElement>() {
       left: number;
       top: number;
       vertical: HTMLElement;
+      zoom: number;
     } | null = null;
 
     const end = () => {
@@ -54,14 +56,15 @@ export function useMiddleDragPan<T extends HTMLElement>() {
         left: root.scrollLeft,
         top: vertical.scrollTop,
         vertical,
+        zoom: zoomOf(root),
       };
       root.setPointerCapture?.(e.pointerId);
       root.dataset.panning = "";
     };
     const onPointerMove = (e: PointerEvent) => {
       if (!pan || e.pointerId !== pan.id) return;
-      root.scrollLeft = pan.left - (e.clientX - pan.x);
-      pan.vertical.scrollTop = pan.top - (e.clientY - pan.y);
+      root.scrollLeft = pan.left - (e.clientX - pan.x) / pan.zoom;
+      pan.vertical.scrollTop = pan.top - (e.clientY - pan.y) / pan.zoom;
     };
     const onPointerUp = (e: PointerEvent) => {
       if (pan && e.pointerId === pan.id) end();

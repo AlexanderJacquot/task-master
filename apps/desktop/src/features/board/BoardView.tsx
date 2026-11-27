@@ -4,7 +4,6 @@ import {
   DndContext,
   type DragEndEvent,
   type DragOverEvent,
-  DragOverlay,
   type DragStartEvent,
   getFirstCollision,
   KeyboardSensor,
@@ -42,8 +41,10 @@ import {
   AddIcon as Plus,
 } from "../../components/TaskIcons";
 import { cx, Dot, InlineInput } from "../../components/ui";
+import { ZoomDragOverlay } from "../../components/ZoomDragOverlay";
 import { adjacentStatus, type Board, type Card, type Column, type Lane } from "../../lib/board";
 import { type ClickMods, isSelectClick, modsOf } from "../../lib/selection";
+import { unzoomTransform, useRegionZoom, zoomOf } from "../../lib/zoom";
 import { moveCards } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
 import { applyTaskDrop, finishTaskDrag, startTaskDrag, taskDropOver } from "../shell/taskDrop";
@@ -495,7 +496,7 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
           ))}
         </div>
       </div>
-      <DragOverlay dropAnimation={droppedOutside || group ? null : undefined}>
+      <ZoomDragOverlay dropAnimation={droppedOutside || group ? null : undefined}>
         {active && (
           <div className="relative" style={{ width: overlayWidth ?? undefined }}>
             {/* Several cards: a stack behind the dragged one, and how many there are. */}
@@ -528,7 +529,7 @@ export function BoardView({ board, selectedId, picked, onOpen, onPick, onAdd, lo
             )}
           </div>
         )}
-      </DragOverlay>
+      </ZoomDragOverlay>
     </DndContext>
   );
 }
@@ -617,7 +618,7 @@ function ResizeHandle({
   width: number;
   onResize(width: number | null): void;
 }) {
-  const start = useRef<{ x: number; width: number } | null>(null);
+  const start = useRef<{ x: number; width: number; zoom: number } | null>(null);
   const end = (e: PointerEvent<HTMLDivElement>) => {
     start.current = null;
     if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
@@ -639,10 +640,11 @@ function ResizeHandle({
       onPointerDown={(e) => {
         e.preventDefault();
         e.currentTarget.setPointerCapture?.(e.pointerId);
-        start.current = { x: e.clientX, width };
+        start.current = { x: e.clientX, width, zoom: zoomOf(e.currentTarget) };
       }}
       onPointerMove={(e) => {
-        if (start.current) onResize(start.current.width + e.clientX - start.current.x);
+        if (start.current)
+          onResize(start.current.width + (e.clientX - start.current.x) / start.current.zoom);
       }}
       onPointerUp={end}
       onPointerCancel={end}
@@ -942,6 +944,7 @@ const SortableCard = memo(function SortableCard({
 }) {
   const id = card.task.id;
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+  const zoom = useRegionZoom();
   // A div, not a <button>: the card face holds block content. dnd-kit's attributes already
   // set role and tabIndex; they are repeated so the linter sees them.
   return (
@@ -971,7 +974,7 @@ const SortableCard = memo(function SortableCard({
         listeners?.onKeyDown?.(e);
       }}
       className="cursor-grab rounded-md pb-2 outline-none focus-visible:[&>div]:ring-2 focus-visible:[&>div]:ring-accent"
-      style={{ transform: CSS.Translate.toString(transform), transition }}
+      style={{ transform: CSS.Translate.toString(unzoomTransform(transform, zoom)), transition }}
     >
       <CardFace
         {...lookups}

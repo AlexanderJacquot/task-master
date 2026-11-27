@@ -2,7 +2,6 @@ import {
   DndContext,
   type DragEndEvent,
   type DragMoveEvent,
-  DragOverlay,
   type DragStartEvent,
   PointerSensor,
   pointerWithin,
@@ -43,6 +42,7 @@ import {
   MENU_LABEL,
   MENU_SEPARATOR,
 } from "../../components/ui";
+import { ZoomDragOverlay } from "../../components/ZoomDragOverlay";
 import { type NoteDropTarget, notePlacement, noteTitle, noteTree } from "../../lib/notes";
 import type { Note, NoteFolder, Space } from "../../lib/types";
 import {
@@ -503,14 +503,14 @@ export function NotesTree({
         <NoteRow key={n.id} note={n} folders={folderList} hint={hintFor(n.id)} />
       ))}
       {draggedNote?.folder_id && <TopLevelDrop />}
-      <DragOverlay dropAnimation={null}>
+      <ZoomDragOverlay dropAnimation={null}>
         {draggedNote && (
           <div className="flex items-center gap-2.5 rounded-lg border border-line-strong bg-overlay px-2.5 py-[5px] text-ink shadow-lg shadow-black/20">
             <FileTextIcon size={14} className="shrink-0" />
             <span className="max-w-52 truncate">{noteTitle(draggedNote)}</span>
           </div>
         )}
-      </DragOverlay>
+      </ZoomDragOverlay>
       {empty && !addingFolder && (
         <p className="px-2.5 py-1 text-[12.5px] text-ink-3">
           Markdown pages that can link your tasks. Use + to write one.

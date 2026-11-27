@@ -37,6 +37,7 @@ import {
 } from "../../lib/calendar";
 import type { ProposedBlock } from "../../lib/planner";
 import type { CalendarEvent, Task, TimeBlock } from "../../lib/types";
+import { zoomOf } from "../../lib/zoom";
 import { deleteBlock, moveBlock } from "../../store/actions";
 import { useTaskStore } from "../../store/context";
 import { BlockOutcomes } from "./BlockOutcome";
@@ -343,10 +344,11 @@ function BlockView({ iso, placed }: { iso: string; placed: Placed<TimeBlock> }) 
     e.preventDefault();
     const column = (e.currentTarget as HTMLElement).closest("[data-time-column]");
     const columnTop = column?.getBoundingClientRect().top ?? 0;
+    const zoom = zoomOf(column);
     const initial = edge === "start" ? placed.startMin : placed.endMin;
     let latest = initial;
     const move = (ev: PointerEvent) => {
-      const minute = snapMinute(minuteAt(ev.clientY, columnTop));
+      const minute = snapMinute(minuteAt(ev.clientY, columnTop, zoom));
       latest =
         edge === "start"
           ? Math.max(Math.min(minute, placed.endMin - SNAP_MIN), 0)

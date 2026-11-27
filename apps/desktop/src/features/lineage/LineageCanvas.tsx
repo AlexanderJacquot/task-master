@@ -18,6 +18,7 @@ import {
 } from "../../components/TaskIcons";
 import { Button, cx, Dot, FOCUS, IconButton } from "../../components/ui";
 import type { Epic, Project, Status, Task } from "../../lib/types";
+import { zoomOf } from "../../lib/zoom";
 import { EpicMark } from "../organize/EpicMark";
 import { ProjectMark } from "../organize/ProjectMark";
 import {
@@ -300,8 +301,11 @@ export function LineageCanvas({
     onEdit?.();
   }
   function relativePoint(event: { clientX: number; clientY: number }): Point {
-    const rect = canvas.current?.getBoundingClientRect();
-    return { x: event.clientX - (rect?.left ?? 0), y: event.clientY - (rect?.top ?? 0) };
+    const box = canvas.current ? canvasBox(canvas.current) : null;
+    return {
+      x: (event.clientX - (box?.left ?? 0)) / (box?.zoom ?? 1),
+      y: (event.clientY - (box?.top ?? 0)) / (box?.zoom ?? 1),
+    };
   }
   function fitView() {
     updateCamera(
@@ -340,7 +344,7 @@ export function LineageCanvas({
     if (!element) return;
     let lastSize: { width: number; height: number } | undefined;
     const resize = () => {
-      const { width, height } = element.getBoundingClientRect();
+      const { width, height } = canvasBox(element);
       if (lastSize && (width !== lastSize.width || height !== lastSize.height)) {
         const current = cameraRef.current;
         const next = {
@@ -361,13 +365,16 @@ export function LineageCanvas({
     const wheel = (event: WheelEvent) => {
       event.preventDefault();
       const current = cameraRef.current;
-      const rect = element.getBoundingClientRect();
+      const rect = canvasBox(element);
       const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1;
       const next =
         event.ctrlKey || event.metaKey
           ? zoomAt(
               current,
-              { x: event.clientX - rect.left, y: event.clientY - rect.top },
+              {
+                x: (event.clientX - rect.left) / rect.zoom,
+                y: (event.clientY - rect.top) / rect.zoom,
+              },
               current.zoom * Math.exp(-event.deltaY * factor * 0.006),
             )
           : {
@@ -408,7 +415,7 @@ export function LineageCanvas({
     if ((!initialized.current || scopeChanged) && graph.nodes.length) {
       const opening = !initialized.current;
       initialized.current = true;
-      const bounds = canvas.current?.getBoundingClientRect();
+      const bounds = canvas.current ? canvasBox(canvas.current) : undefined;
       const width = bounds?.width || size.width;
       const height = bounds?.height || size.height;
       const points = graph.nodes
@@ -444,7 +451,7 @@ export function LineageCanvas({
     if (!reveal) return;
     const point = worldRef.current[reveal.id];
     if (!point) return;
-    const bounds = canvas.current?.getBoundingClientRect();
+    const bounds = canvas.current ? canvasBox(canvas.current) : undefined;
     const width = bounds?.width || size.width;
     const height = bounds?.height || size.height;
     updateCamera(centerOn(point, cameraRef.current, width, height));
@@ -1383,4 +1390,20 @@ function AddLinked({
       )}
     </form>
   );
+}
+
+/**
+ * The canvas's screen position, and its size in layout px: with an interface zoom
+ * (lib/zoom.ts), screen px are layout px times `zoom`.
+ */
+function canvasBox(element: Element) {
+  const rect = element.getBoundingClientRect();
+  const zoom = zoomOf(element);
+  return {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width / zoom,
+    height: rect.height / zoom,
+    zoom,
+  };
 }

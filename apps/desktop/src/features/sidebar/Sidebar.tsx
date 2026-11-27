@@ -2,12 +2,14 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { FolderPlus, NotebookPen, PanelLeftClose, PanelLeftOpen, Users } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import {
+  Fragment,
   type MouseEvent,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
   useMemo,
   useState,
 } from "react";
+import { NO_ROW_DRAG, SortableList } from "../../components/SortableList";
 import {
   ArchiveIcon as Archive,
   UnarchiveIcon as ArchiveRestore,
@@ -47,10 +49,17 @@ import {
 import { isoDate } from "../../lib/dates";
 import { epicFolders } from "../../lib/epics";
 import { useKeymap, withKeys } from "../../lib/keymap";
+import {
+  type SidebarPage,
+  type SidebarSection,
+  useSidebarLayout,
+  visibleEntries,
+} from "../../lib/sidebarLayout";
 import { seenNotice } from "../../lib/team";
 import type { Epic, Project, Tag } from "../../lib/types";
 import { useUpdates } from "../../lib/updater";
 import { inView, isOpen, type ViewContext } from "../../lib/views";
+import { zoomOf } from "../../lib/zoom";
 import { createEpic, createProject, deleteProject, updateProject } from "../../store/actions";
 import { useStoreState, useTaskStore } from "../../store/context";
 import { isActive } from "../agents/sessions";
@@ -94,9 +103,11 @@ function SidebarResizer() {
   const onPointerDown = (e: ReactPointerEvent<HTMLHRElement>) => {
     e.preventDefault();
     const left = e.currentTarget.parentElement?.getBoundingClientRect().left ?? 0;
+    const zoom = zoomOf(e.currentTarget);
     let last = 0;
     const move = (ev: PointerEvent) => {
-      last = Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX - left)));
+      const width = (ev.clientX - left) / zoom;
+      last = Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, width)));
       applySidebarWidth(last);
     };
     const up = () => {
@@ -121,6 +132,12 @@ function SidebarResizer() {
       className="absolute inset-y-0 right-0 z-20 m-0 h-full w-1.5 cursor-col-resize border-0 hover:bg-accent/30"
     />
   );
+}
+
+/** Projects and the team come first by default; a rule sets them apart from what follows. */
+const OWN_GROUP: readonly SidebarSection[] = ["projects", "team"];
+function startsSmallGroup(previous: SidebarSection | undefined, id: SidebarSection) {
+  return previous !== undefined && OWN_GROUP.includes(previous) && !OWN_GROUP.includes(id);
 }
 
 function NavItem({
@@ -315,7 +332,7 @@ function NotesSection() {
         </IconButton>
       </div>
       {open && (
-        <div className={cx(FOLD_CHILDREN_CLASS, "mt-0.5 mb-1")}>
+        <div {...NO_ROW_DRAG} className={cx(FOLD_CHILDREN_CLASS, "mt-0.5 mb-1")}>
           <NotesTree addingFolder={addingFolder} onAddingFolder={setAddingFolder} />
         </div>
       )}
@@ -759,6 +776,420 @@ export function Sidebar({
     );
   };
 
+  const layout = useSidebarLayout((s) => s.layout);
+  const moveLayout = useSidebarLayout((s) => s.move);
+  const pages = visibleEntries(layout.pages);
+  const sectionIds = visibleEntries(layout.sections);
+
+  const pageRows: Record<SidebarPage, ReactNode> = {
+    inbox: (
+      <NavItem
+        to="/inbox"
+        count={counts.inbox}
+        icon={
+          <NavIcon
+            name="inbox"
+            size={17}
+            fallback={
+              <Inbox
+                size={17}
+                className="shrink-0 text-sky-700 dark:text-sky-300 clean:text-ink-2"
+              />
+            }
+          />
+        }
+      >
+        Inbox
+      </NavItem>
+    ),
+    today: (
+      <DropNavItem
+        drop={{ kind: "today" }}
+        to="/today"
+        count={counts.today}
+        icon={
+          <NavIcon
+            name="today"
+            size={17}
+            fallback={
+              <Sun
+                size={17}
+                className="shrink-0 text-amber-700 dark:text-amber-300 clean:text-ink-2"
+              />
+            }
+          />
+        }
+      >
+        Today
+      </DropNavItem>
+    ),
+    calendar: (
+      <NavItem
+        to="/calendar"
+        icon={
+          <NavIcon
+            name="due-date"
+            size={17}
+            fallback={<CalendarDays size={17} className="shrink-0 text-rubric clean:text-ink-2" />}
+          />
+        }
+      >
+        Calendar
+      </NavItem>
+    ),
+    all: (
+      <NavItem
+        to="/all"
+        icon={
+          <NavIcon
+            name="all-tasks"
+            size={17}
+            fallback={<Layers size={17} className="shrink-0" />}
+          />
+        }
+      >
+        All tasks
+      </NavItem>
+    ),
+    lineage: (
+      <NavItem
+        to="/lineage"
+        icon={
+          <GitBranch
+            size={17}
+            className="shrink-0 text-green-700 dark:text-green-300 clean:text-ink-2"
+          />
+        }
+      >
+        Lineage
+      </NavItem>
+    ),
+    notes: <NotesSection />,
+    roadmap: (
+      <NavItem
+        to="/roadmap"
+        icon={
+          <RoadmapIcon
+            size={17}
+            className="shrink-0 text-sky-700 dark:text-sky-300 clean:text-ink-2"
+          />
+        }
+      >
+        Roadmap
+      </NavItem>
+    ),
+    scribe: (
+      <NavItem
+        to="/scribe"
+        icon={
+          <ScribeIcon
+            size={17}
+            className="shrink-0 text-amber-800 dark:text-amber-200 clean:text-ink-2"
+          />
+        }
+      >
+        Scribe
+      </NavItem>
+    ),
+    agents: (
+      <NavItem
+        to="/agents"
+        count={runningAgents || undefined}
+        title={runningAgents ? `${runningAgents} active` : undefined}
+        icon={<Bot size={17} className={cx("shrink-0", runningAgents > 0 && "text-accent")} />}
+      >
+        Agents
+      </NavItem>
+    ),
+    metrics: (
+      <NavItem
+        to="/metrics"
+        icon={
+          <ChartNoAxesCombined
+            size={17}
+            className="shrink-0 text-purple-700 dark:text-purple-300 clean:text-ink-2"
+          />
+        }
+      >
+        Metrics
+      </NavItem>
+    ),
+  };
+
+  const railRows: Partial<Record<SidebarPage, ReactNode>> = {
+    inbox: (
+      <RailLink to="/inbox" label="Inbox">
+        <Inbox size={18} className="text-sky-700 dark:text-sky-300 clean:text-ink-2" />
+      </RailLink>
+    ),
+    today: (
+      <RailLink to="/today" label="Today">
+        <Sun size={18} className="text-amber-700 dark:text-amber-300 clean:text-ink-2" />
+      </RailLink>
+    ),
+    calendar: (
+      <RailLink to="/calendar" label="Calendar">
+        <CalendarDays size={18} className="text-rubric clean:text-ink-2" />
+      </RailLink>
+    ),
+    all: (
+      <RailLink to="/all" label="All tasks">
+        <Layers size={18} />
+      </RailLink>
+    ),
+    lineage: (
+      <RailLink to="/lineage" label="Lineage">
+        <GitBranch size={18} className="text-green-700 dark:text-green-300 clean:text-ink-2" />
+      </RailLink>
+    ),
+    roadmap: (
+      <RailLink to="/roadmap" label="Roadmap">
+        <RoadmapIcon size={18} className="text-sky-700 dark:text-sky-300 clean:text-ink-2" />
+      </RailLink>
+    ),
+    scribe: (
+      <RailLink to="/scribe" label="Scribe">
+        <ScribeIcon size={18} className="text-amber-800 dark:text-amber-200 clean:text-ink-2" />
+      </RailLink>
+    ),
+    agents: (
+      <RailLink to="/agents" label="Agents">
+        <Bot size={18} className={cx(runningAgents > 0 && "animate-pulse text-accent")} />
+      </RailLink>
+    ),
+    metrics: (
+      <RailLink to="/metrics" label="Metrics">
+        <ChartNoAxesCombined
+          size={18}
+          className="text-purple-700 dark:text-purple-300 clean:text-ink-2"
+        />
+      </RailLink>
+    ),
+  };
+
+  const sectionBlocks: Record<SidebarSection, ReactNode> = {
+    projects: (
+      <section>
+        <div className="group/section flex items-center justify-between pb-1.5">
+          <button
+            type="button"
+            aria-expanded={projectsOpen}
+            onClick={() => setProjectsOpen(!projectsOpen)}
+            className={cx(
+              "relative flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-0.5 text-left font-display text-[14px] tracking-wide text-rubric hover:bg-hover clean:text-[13px] clean:font-medium! clean:text-ink-3",
+              FOCUS,
+            )}
+          >
+            <FoldChevron open={projectsOpen} />
+            <ProjectsIcon size={16} />
+            <span className="flex-1">Projects</span>
+          </button>
+          <IconButton
+            label="New project"
+            onClick={() => {
+              setProjectsOpen(true);
+              setAdding("project");
+            }}
+            className="size-6"
+          >
+            <Plus size={14} />
+          </IconButton>
+        </div>
+        {projectsOpen && (
+          <div className={FOLD_CHILDREN_CLASS}>
+            <ProjectTree
+              nodes={areas}
+              renderProject={(p, children) => (
+                <ProjectRow
+                  project={p}
+                  count={projectCount(p.id, children)}
+                  shortcut={shortcutOf(p.id)}
+                />
+              )}
+            />
+            {adding === "project" && (
+              <InlineInput
+                initial=""
+                placeholder="Project name"
+                autoFocus
+                onCommit={(name) => {
+                  setAdding(null);
+                  void createProject(store, name);
+                }}
+                onCancel={() => setAdding(null)}
+                className="mt-1"
+              />
+            )}
+            {!areas.length && adding !== "project" && (
+              <button
+                type="button"
+                onClick={() => setAdding("project")}
+                className="rounded-lg px-2.5 py-1 text-left text-[13px] text-ink-3 hover:bg-hover"
+              >
+                Create your first project
+              </button>
+            )}
+            {archived.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  aria-expanded={showArchived}
+                  onClick={() => setShowArchived((v) => !v)}
+                  className="relative mt-1 flex items-center gap-1.5 px-2.5 py-0.5 text-left text-[12.5px] text-ink-3 hover:text-ink"
+                >
+                  <FoldChevron open={showArchived} size={12} />
+                  Archived ({archived.length})
+                </button>
+                {showArchived &&
+                  archived.map((p) => <ProjectRow key={p.id} project={p} count={0} muted />)}
+              </>
+            )}
+          </div>
+        )}
+      </section>
+    ),
+    team: team ? (
+      <Collapsible
+        id="team"
+        title={team.info?.name ?? "Team"}
+        icon={<Users size={16} className="shrink-0" />}
+        onAdd={() => setAdding("team-project")}
+        defaultOpen
+      >
+        <NavItem
+          to="/team"
+          count={unseenNotices || undefined}
+          title={unseenNotices ? `${unseenNotices} new for you` : undefined}
+          icon={<Users size={17} className="shrink-0" />}
+        >
+          Team overview
+        </NavItem>
+        <ProjectTree
+          nodes={teamAreas}
+          renderProject={(p, children) => (
+            <ProjectRow project={p} count={projectCount(p.id, children)} />
+          )}
+        />
+        {adding === "team-project" && (
+          <InlineInput
+            initial=""
+            placeholder="Team project name"
+            autoFocus
+            onCommit={(name) => {
+              setAdding(null);
+              void createProject(store, name, null, "team");
+            }}
+            onCancel={() => setAdding(null)}
+            className="mt-1"
+          />
+        )}
+        <p className="mt-2 px-2.5 text-[12px] text-ink-3">Team notes</p>
+        <NotesTree space="team" />
+      </Collapsible>
+    ) : null,
+    epics: (
+      <>
+        <Collapsible
+          id="epics"
+          title="Epics"
+          icon={<CrownIcon size={16} className="shrink-0" />}
+          count={epicList.length}
+          onAdd={() => setAdding("epic")}
+          defaultOpen={false}
+        >
+          {epicGroups.loose.map(epicRow)}
+          {epicGroups.folders.map(({ project, epics: inFolder }) => (
+            <EpicFolder
+              key={project.id}
+              project={project}
+              count={inFolder.filter((e) => e.state === "active").length}
+              onAdd={() => setAddingEpicIn(project.id)}
+            >
+              {inFolder.map(epicRow)}
+              {addingEpicIn === project.id && (
+                <InlineInput
+                  initial=""
+                  placeholder="Epic name"
+                  autoFocus
+                  onCommit={(name) => {
+                    setAddingEpicIn(null);
+                    void createEpic(store, name, project.id);
+                  }}
+                  onCancel={() => setAddingEpicIn(null)}
+                  className="mt-1"
+                />
+              )}
+            </EpicFolder>
+          ))}
+          {!epicList.length && !finishedEpics.length && (
+            <p className="px-2.5 py-1 text-[12.5px] text-ink-3">No epics yet</p>
+          )}
+        </Collapsible>
+        {adding === "epic" && (
+          <InlineInput
+            initial=""
+            placeholder="Epic name"
+            autoFocus
+            onCommit={(name) => {
+              setAdding(null);
+              void createEpic(store, name);
+            }}
+            onCancel={() => setAdding(null)}
+            className="mt-1"
+          />
+        )}
+      </>
+    ),
+    views: (
+      <Collapsible
+        id="views"
+        title="Saved views"
+        icon={<Bookmark size={16} className="shrink-0" />}
+        count={viewList.length}
+      >
+        {viewList.map((view) => (
+          <NavItem
+            key={view.id}
+            to="/view/$viewId"
+            params={{ viewId: view.id }}
+            icon={
+              view.spec.lineage ? (
+                <GitBranch size={14} className="shrink-0" />
+              ) : view.spec.roadmap ? (
+                <RoadmapIcon size={14} className="shrink-0" />
+              ) : (
+                <Bookmark size={14} className="shrink-0" />
+              )
+            }
+          >
+            {view.name}
+          </NavItem>
+        ))}
+        {viewList.length === 0 && (
+          <p className="px-2.5 py-1 text-[12.5px] text-ink-3">
+            Use "Save as view" in any view's Display menu, or on the Lineage or Roadmap page
+          </p>
+        )}
+      </Collapsible>
+    ),
+    tags: (
+      <Collapsible
+        id="tags"
+        title="Tags"
+        icon={<TagIcon size={16} className="shrink-0" />}
+        count={tagList.length}
+      >
+        {tagList.map((tag) => (
+          <TagRow key={tag.id} tag={tag} count={counts.perTag.get(tag.id)} />
+        ))}
+        {tagList.length === 0 && (
+          <p className="px-2.5 py-1 text-[12.5px] text-ink-3">Type #tag when adding a task</p>
+        )}
+      </Collapsible>
+    ),
+  };
+  const shownSections = sectionIds.filter((id) => sectionBlocks[id] != null);
+
   if (collapsed) {
     return (
       <nav
@@ -782,36 +1213,9 @@ export function Sidebar({
         >
           <Plus size={18} />
         </button>
-        <RailLink to="/inbox" label="Inbox">
-          <Inbox size={18} className="text-sky-700 dark:text-sky-300 clean:text-ink-2" />
-        </RailLink>
-        <RailLink to="/today" label="Today">
-          <Sun size={18} className="text-amber-700 dark:text-amber-300 clean:text-ink-2" />
-        </RailLink>
-        <RailLink to="/calendar" label="Calendar">
-          <CalendarDays size={18} className="text-rubric clean:text-ink-2" />
-        </RailLink>
-        <RailLink to="/all" label="All tasks">
-          <Layers size={18} />
-        </RailLink>
-        <RailLink to="/lineage" label="Lineage">
-          <GitBranch size={18} className="text-green-700 dark:text-green-300 clean:text-ink-2" />
-        </RailLink>
-        <RailLink to="/roadmap" label="Roadmap">
-          <RoadmapIcon size={18} className="text-sky-700 dark:text-sky-300 clean:text-ink-2" />
-        </RailLink>
-        <RailLink to="/scribe" label="Scribe">
-          <ScribeIcon size={18} className="text-amber-800 dark:text-amber-200 clean:text-ink-2" />
-        </RailLink>
-        <RailLink to="/agents" label="Agents">
-          <Bot size={18} className={cx(runningAgents > 0 && "animate-pulse text-accent")} />
-        </RailLink>
-        <RailLink to="/metrics" label="Metrics">
-          <ChartNoAxesCombined
-            size={18}
-            className="text-purple-700 dark:text-purple-300 clean:text-ink-2"
-          />
-        </RailLink>
+        {pages.map((id) => (
+          <Fragment key={id}>{railRows[id]}</Fragment>
+        ))}
         <div className="my-2 h-px w-6 bg-line" />
         {order.map((id, i) => {
           const p = projects[id];
@@ -884,342 +1288,27 @@ export function Sidebar({
           </button>
         </div>
 
-        <div className="flex flex-col gap-px">
-          <NavItem
-            to="/inbox"
-            count={counts.inbox}
-            icon={
-              <NavIcon
-                name="inbox"
-                size={17}
-                fallback={
-                  <Inbox
-                    size={17}
-                    className="shrink-0 text-sky-700 dark:text-sky-300 clean:text-ink-2"
-                  />
-                }
-              />
-            }
-          >
-            Inbox
-          </NavItem>
-          <DropNavItem
-            drop={{ kind: "today" }}
-            to="/today"
-            count={counts.today}
-            icon={
-              <NavIcon
-                name="today"
-                size={17}
-                fallback={
-                  <Sun
-                    size={17}
-                    className="shrink-0 text-amber-700 dark:text-amber-300 clean:text-ink-2"
-                  />
-                }
-              />
-            }
-          >
-            Today
-          </DropNavItem>
-          <NavItem
-            to="/calendar"
-            icon={
-              <NavIcon
-                name="due-date"
-                size={17}
-                fallback={
-                  <CalendarDays size={17} className="shrink-0 text-rubric clean:text-ink-2" />
-                }
-              />
-            }
-          >
-            Calendar
-          </NavItem>
-          <NavItem
-            to="/all"
-            icon={
-              <NavIcon
-                name="all-tasks"
-                size={17}
-                fallback={<Layers size={17} className="shrink-0" />}
-              />
-            }
-          >
-            All tasks
-          </NavItem>
-          <NavItem
-            to="/lineage"
-            icon={
-              <GitBranch
-                size={17}
-                className="shrink-0 text-green-700 dark:text-green-300 clean:text-ink-2"
-              />
-            }
-          >
-            Lineage
-          </NavItem>
-          <NotesSection />
-          <NavItem
-            to="/roadmap"
-            icon={
-              <RoadmapIcon
-                size={17}
-                className="shrink-0 text-sky-700 dark:text-sky-300 clean:text-ink-2"
-              />
-            }
-          >
-            Roadmap
-          </NavItem>
-          <NavItem
-            to="/scribe"
-            icon={
-              <ScribeIcon
-                size={17}
-                className="shrink-0 text-amber-800 dark:text-amber-200 clean:text-ink-2"
-              />
-            }
-          >
-            Scribe
-          </NavItem>
-          <NavItem
-            to="/agents"
-            count={runningAgents || undefined}
-            title={runningAgents ? `${runningAgents} active` : undefined}
-            icon={<Bot size={17} className={cx("shrink-0", runningAgents > 0 && "text-accent")} />}
-          >
-            Agents
-          </NavItem>
-          <NavItem
-            to="/metrics"
-            icon={
-              <ChartNoAxesCombined
-                size={17}
-                className="shrink-0 text-purple-700 dark:text-purple-300 clean:text-ink-2"
-              />
-            }
-          >
-            Metrics
-          </NavItem>
-        </div>
+        <SortableList
+          ids={pages}
+          onMove={(id, over) => moveLayout("pages", id, over)}
+          wholeRow
+          className="flex flex-col gap-px"
+        >
+          {(id) => pageRows[id]}
+        </SortableList>
 
-        <div className="mx-2 mt-4 mb-3 h-px bg-line" />
+        {pages.length > 0 && shownSections.length > 0 && (
+          <div className="mx-2 mt-4 mb-3 h-px bg-line" />
+        )}
 
-        <section>
-          <div className="group/section flex items-center justify-between pb-1.5">
-            <button
-              type="button"
-              aria-expanded={projectsOpen}
-              onClick={() => setProjectsOpen(!projectsOpen)}
-              className={cx(
-                "relative flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-0.5 text-left font-display text-[14px] tracking-wide text-rubric hover:bg-hover clean:text-[13px] clean:font-medium! clean:text-ink-3",
-                FOCUS,
-              )}
-            >
-              <FoldChevron open={projectsOpen} />
-              <ProjectsIcon size={16} />
-              <span className="flex-1">Projects</span>
-            </button>
-            <IconButton
-              label="New project"
-              onClick={() => {
-                setProjectsOpen(true);
-                setAdding("project");
-              }}
-              className="size-6"
-            >
-              <Plus size={14} />
-            </IconButton>
-          </div>
-          {projectsOpen && (
-            <div className={FOLD_CHILDREN_CLASS}>
-              <ProjectTree
-                nodes={areas}
-                renderProject={(p, children) => (
-                  <ProjectRow
-                    project={p}
-                    count={projectCount(p.id, children)}
-                    shortcut={shortcutOf(p.id)}
-                  />
-                )}
-              />
-              {adding === "project" && (
-                <InlineInput
-                  initial=""
-                  placeholder="Project name"
-                  autoFocus
-                  onCommit={(name) => {
-                    setAdding(null);
-                    void createProject(store, name);
-                  }}
-                  onCancel={() => setAdding(null)}
-                  className="mt-1"
-                />
-              )}
-              {!areas.length && adding !== "project" && (
-                <button
-                  type="button"
-                  onClick={() => setAdding("project")}
-                  className="rounded-lg px-2.5 py-1 text-left text-[13px] text-ink-3 hover:bg-hover"
-                >
-                  Create your first project
-                </button>
-              )}
-              {archived.length > 0 && (
-                <>
-                  <button
-                    type="button"
-                    aria-expanded={showArchived}
-                    onClick={() => setShowArchived((v) => !v)}
-                    className="relative mt-1 flex items-center gap-1.5 px-2.5 py-0.5 text-left text-[12.5px] text-ink-3 hover:text-ink"
-                  >
-                    <FoldChevron open={showArchived} size={12} />
-                    Archived ({archived.length})
-                  </button>
-                  {showArchived &&
-                    archived.map((p) => <ProjectRow key={p.id} project={p} count={0} muted />)}
-                </>
-              )}
-            </div>
-          )}
-        </section>
-
-        {team && (
-          <Collapsible
-            id="team"
-            title={team.info?.name ?? "Team"}
-            icon={<Users size={16} className="shrink-0" />}
-            onAdd={() => setAdding("team-project")}
-            defaultOpen
-          >
-            <NavItem
-              to="/team"
-              count={unseenNotices || undefined}
-              title={unseenNotices ? `${unseenNotices} new for you` : undefined}
-              icon={<Users size={17} className="shrink-0" />}
-            >
-              Team overview
-            </NavItem>
-            <ProjectTree
-              nodes={teamAreas}
-              renderProject={(p, children) => (
-                <ProjectRow project={p} count={projectCount(p.id, children)} />
-              )}
-            />
-            {adding === "team-project" && (
-              <InlineInput
-                initial=""
-                placeholder="Team project name"
-                autoFocus
-                onCommit={(name) => {
-                  setAdding(null);
-                  void createProject(store, name, null, "team");
-                }}
-                onCancel={() => setAdding(null)}
-                className="mt-1"
-              />
+        {shownSections.map((id, i) => (
+          <Fragment key={id}>
+            {startsSmallGroup(shownSections[i - 1], id) && (
+              <div className="mx-2 mt-4 mb-2 h-px bg-line" />
             )}
-            <p className="mt-2 px-2.5 text-[12px] text-ink-3">Team notes</p>
-            <NotesTree space="team" />
-          </Collapsible>
-        )}
-
-        <div className="mx-2 mt-4 mb-2 h-px bg-line" />
-
-        <Collapsible
-          id="epics"
-          title="Epics"
-          icon={<CrownIcon size={16} className="shrink-0" />}
-          count={epicList.length}
-          onAdd={() => setAdding("epic")}
-          defaultOpen={false}
-        >
-          {epicGroups.loose.map(epicRow)}
-          {epicGroups.folders.map(({ project, epics: inFolder }) => (
-            <EpicFolder
-              key={project.id}
-              project={project}
-              count={inFolder.filter((e) => e.state === "active").length}
-              onAdd={() => setAddingEpicIn(project.id)}
-            >
-              {inFolder.map(epicRow)}
-              {addingEpicIn === project.id && (
-                <InlineInput
-                  initial=""
-                  placeholder="Epic name"
-                  autoFocus
-                  onCommit={(name) => {
-                    setAddingEpicIn(null);
-                    void createEpic(store, name, project.id);
-                  }}
-                  onCancel={() => setAddingEpicIn(null)}
-                  className="mt-1"
-                />
-              )}
-            </EpicFolder>
-          ))}
-          {!epicList.length && !finishedEpics.length && (
-            <p className="px-2.5 py-1 text-[12.5px] text-ink-3">No epics yet</p>
-          )}
-        </Collapsible>
-        {adding === "epic" && (
-          <InlineInput
-            initial=""
-            placeholder="Epic name"
-            autoFocus
-            onCommit={(name) => {
-              setAdding(null);
-              void createEpic(store, name);
-            }}
-            onCancel={() => setAdding(null)}
-            className="mt-1"
-          />
-        )}
-
-        <Collapsible
-          id="views"
-          title="Saved views"
-          icon={<Bookmark size={16} className="shrink-0" />}
-          count={viewList.length}
-        >
-          {viewList.map((view) => (
-            <NavItem
-              key={view.id}
-              to="/view/$viewId"
-              params={{ viewId: view.id }}
-              icon={
-                view.spec.lineage ? (
-                  <GitBranch size={14} className="shrink-0" />
-                ) : view.spec.roadmap ? (
-                  <RoadmapIcon size={14} className="shrink-0" />
-                ) : (
-                  <Bookmark size={14} className="shrink-0" />
-                )
-              }
-            >
-              {view.name}
-            </NavItem>
-          ))}
-          {viewList.length === 0 && (
-            <p className="px-2.5 py-1 text-[12.5px] text-ink-3">
-              Use "Save as view" in any view's Display menu, or on the Lineage or Roadmap page
-            </p>
-          )}
-        </Collapsible>
-
-        <Collapsible
-          id="tags"
-          title="Tags"
-          icon={<TagIcon size={16} className="shrink-0" />}
-          count={tagList.length}
-        >
-          {tagList.map((tag) => (
-            <TagRow key={tag.id} tag={tag} count={counts.perTag.get(tag.id)} />
-          ))}
-          {tagList.length === 0 && (
-            <p className="px-2.5 py-1 text-[12.5px] text-ink-3">Type #tag when adding a task</p>
-          )}
-        </Collapsible>
+            {sectionBlocks[id]}
+          </Fragment>
+        ))}
 
         <div className="mt-auto flex flex-col gap-1 pt-4">
           <TimerPill />

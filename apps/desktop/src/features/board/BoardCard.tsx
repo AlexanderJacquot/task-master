@@ -104,15 +104,16 @@ export const CardFace = memo(function CardFace(p: Props) {
           </span>
         )}
         {p.showProject && project && (
-          <span className="flex max-w-28 shrink-0 items-center gap-1 truncate">
+          <span className="flex min-w-8 shrink items-center gap-1" title={project.name}>
             <Dot color={project.color} />
             <span className="truncate">{project.name}</span>
           </span>
         )}
         {epic && (
           <span
-            className="flex max-w-24 shrink-0 items-center gap-1 truncate text-violet-800 dark:text-violet-300"
+            className="flex min-w-8 shrink items-center gap-1 text-violet-800 dark:text-violet-300"
             style={epic.color ? { color: epic.color } : undefined}
+            title={epic.name}
           >
             <EpicMark epic={epic} size={10} />
             <span className="truncate">{epic.name}</span>
@@ -129,15 +130,18 @@ export const CardFace = memo(function CardFace(p: Props) {
           </span>
         )}
         <SessionChip taskId={task.id} className="max-w-36 shrink-0" />
-        <span className="flex min-w-0 flex-1 gap-1 overflow-hidden">
+        {/* Tags give way first, so the project and the epic stay readable. */}
+        <span className="flex min-w-0 shrink-[4] gap-1 overflow-hidden">
           {tags.map((tag) => (
-            <Chip key={tag.id} className="max-w-32 shrink-0 whitespace-nowrap">
+            <Chip key={tag.id} className="min-w-0 shrink whitespace-nowrap">
               <span className="truncate" title={`#${tag.name}`}>
                 #{tag.name}
               </span>
             </Chip>
           ))}
         </span>
+        {/* Pushes the counts and the due date right; takes no room from the labels. */}
+        <span className="flex-1" />
         {stale && (
           <span
             className="flex shrink-0 items-center gap-1 text-ink-3"

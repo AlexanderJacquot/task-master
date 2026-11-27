@@ -44,6 +44,10 @@ export const SHORTCUT_DEFS: ShortcutDef[] = [
 export const FIXED_SHORTCUTS: Array<{ keys: string; what: string }> = [
   { keys: "Ctrl+Shift+Space", what: "Quick capture from any app (where the desktop allows it)" },
   { keys: "Ctrl+1 … Ctrl+9", what: "Jump to the first nine projects in the sidebar" },
+  {
+    keys: "Ctrl+wheel / Ctrl+0",
+    what: "Zoom the sidebar or the page under the pointer / back to 100%",
+  },
   { keys: "Shift+Enter", what: "Open a task as a full page (in a list, or when adding one)" },
   { keys: "Alt+Enter", what: "In quick capture: save the task and start its timer" },
   {
@@ -160,6 +164,8 @@ const RESERVED = new Set([
   "Alt+ArrowLeft",
   "Alt+ArrowRight",
   "Ctrl+Shift+Space",
+  // Resets the interface zoom of the region under the pointer.
+  "Ctrl+0",
   ..."123456789".split("").flatMap((n) => [n, `Ctrl+${n}`]),
 ]);
 

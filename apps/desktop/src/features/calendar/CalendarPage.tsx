@@ -7,7 +7,6 @@ import {
   DndContext,
   type DragEndEvent,
   type DragMoveEvent,
-  DragOverlay,
   type DragStartEvent,
   PointerSensor,
   pointerWithin,
@@ -19,6 +18,7 @@ import { ChevronLeft, ChevronRight, ClipboardCheck, Dices } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { CalendarIcon as CalendarDays } from "../../components/TaskIcons";
 import { Button, cx, Dot, FOCUS, IconButton } from "../../components/ui";
+import { ZoomDragOverlay } from "../../components/ZoomDragOverlay";
 import {
   atMinute,
   blockMinutes,
@@ -54,6 +54,7 @@ import {
 } from "../../lib/planner";
 import { blocksToReview } from "../../lib/replan";
 import type { Task } from "../../lib/types";
+import { zoomOf } from "../../lib/zoom";
 import { moveBlock, scheduleBlocks, scheduleTask, updateTask } from "../../store/actions";
 import { useApi, useStoreState, useTaskStore } from "../../store/context";
 import { useOpenTask } from "../shell/useOpenTask";
@@ -122,9 +123,9 @@ const collision: CollisionDetection = (args) => {
   return hits.length > 0 ? hits : rectIntersection(args);
 };
 
-function columnTop(iso: string): number | null {
+function columnTop(iso: string): { top: number; zoom: number } | null {
   const el = document.querySelector(`[data-time-column="${iso}"]`);
-  return el ? el.getBoundingClientRect().top : null;
+  return el ? { top: el.getBoundingClientRect().top, zoom: zoomOf(el) } : null;
 }
 
 export function CalendarPage() {
@@ -299,9 +300,9 @@ export function CalendarPage() {
     let pointerMinute: number | undefined;
     if (over?.startsWith("time:")) {
       const iso = over.slice(5);
-      const top = columnTop(iso);
+      const column = columnTop(iso);
       const y = pointer.current;
-      if (top !== null && y !== null) pointerMinute = minuteAt(y, top);
+      if (column !== null && y !== null) pointerMinute = minuteAt(y, column.top, column.zoom);
     }
     const action = resolveDrop(
       { active: ref, over, pointerMinute, grabMinute: grabMinute.current },
@@ -340,10 +341,11 @@ export function CalendarPage() {
     // A block keeps the point it was grabbed at under the pointer.
     const initial = active.rect.current.initial;
     if (drag?.ref.startsWith("block:") && initial && "clientY" in activatorEvent) {
-      const offset = minuteAt((activatorEvent as PointerEvent).clientY, initial.top);
+      const zoom = zoomOf(activatorEvent.target as Element | null);
+      const offset = minuteAt((activatorEvent as PointerEvent).clientY, initial.top, zoom);
       const block = store.getState().time_blocks[drag.ref.slice(6)];
       // Grabbed from a month cell (a one-line chip): no offset.
-      grabMinute.current = block && initial.height > 24 ? Math.max(offset, 0) : 0;
+      grabMinute.current = block && initial.height / zoom > 24 ? Math.max(offset, 0) : 0;
     }
   };
 
@@ -545,7 +547,7 @@ export function CalendarPage() {
               />
             )}
           </div>
-          <DragOverlay dropAnimation={null}>
+          <ZoomDragOverlay dropAnimation={null}>
             {dragging && (
               <div className="flex max-w-56 items-center gap-1.5 rounded-md border border-line-strong bg-overlay px-2 py-1 text-[13px] shadow-lg">
                 <Dot color={dragging.color} />
@@ -557,7 +559,7 @@ export function CalendarPage() {
                 )}
               </div>
             )}
-          </DragOverlay>
+          </ZoomDragOverlay>
         </DndContext>
       </div>
       {review && <DayReview ids={review} onClose={() => setReview(null)} />}

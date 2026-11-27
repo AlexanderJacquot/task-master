@@ -6,6 +6,7 @@ import { Kbd } from "../../components/ui";
 import { withDefaultProject } from "../../lib/capturePrefs";
 import { isoDate } from "../../lib/dates";
 import { FIXED_SHORTCUTS, SHORTCUT_DEFS, useKeymap } from "../../lib/keymap";
+import { RegionZoomContext } from "../../lib/zoom";
 import type { AppSearch } from "../../router";
 import type { NewTaskInput } from "../../store/actions";
 import { useStoreState } from "../../store/context";
@@ -23,6 +24,7 @@ import { customTitleBarStyle, TitleBar, tauriWindowControls } from "./TitleBar";
 import { useFileDrop } from "./useFileDrop";
 import { useOpenTask } from "./useOpenTask";
 import { useShortcuts } from "./useShortcuts";
+import { useUiZoom } from "./useUiZoom";
 
 type Defaults = Omit<NewTaskInput, "title">;
 
@@ -67,6 +69,7 @@ export function Layout() {
   const [expandOnTaskPage, setExpandOnTaskPage] = useState(false);
   const onTaskPage = pathname.startsWith("/task/");
   const collapsed = onTaskPage ? !expandOnTaskPage : collapsedPref;
+  const zoom = useUiZoom();
 
   const toggleCollapsed = () => {
     if (onTaskPage) {
@@ -148,16 +151,26 @@ export function Layout() {
 
   return (
     <ShellContext.Provider value={shell}>
-      <Framed titleBar={titleBar(collapsed ? SIDEBAR_WIDTH.rail : SIDEBAR_WIDTH.open)}>
-        <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
-        <main className="relative flex min-w-0 flex-1 flex-col">
-          <MainDecor />
-          <RecordingBar />
-          <Outlet />
-        </main>
-        {task && !onTaskPage && (
-          <TaskDetail key={task} taskId={task} focusDescription={focus === "description"} />
+      <Framed
+        titleBar={titleBar(
+          collapsed
+            ? SIDEBAR_WIDTH.rail * zoom.sidebar
+            : `calc(${SIDEBAR_WIDTH.open} * ${zoom.sidebar})`,
         )}
+      >
+        <ZoomRegion region="sidebar" zoom={zoom.sidebar} className="flex shrink-0">
+          <Sidebar collapsed={collapsed} onToggleCollapsed={toggleCollapsed} />
+        </ZoomRegion>
+        <ZoomRegion region="main" zoom={zoom.main} className="flex min-w-0 flex-1">
+          <main className="relative flex min-w-0 flex-1 flex-col">
+            <MainDecor />
+            <RecordingBar />
+            <Outlet />
+          </main>
+          {task && !onTaskPage && (
+            <TaskDetail key={task} taskId={task} focusDescription={focus === "description"} />
+          )}
+        </ZoomRegion>
         <ErrorToast />
         {import.meta.env.DEV && <AssetLab />}
         <FaviconSync />
@@ -288,6 +301,30 @@ function ShortcutHelp({
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+/** A part of the window that Ctrl+wheel zooms on its own (see `useUiZoom`). */
+function ZoomRegion({
+  region,
+  zoom,
+  className,
+  children,
+}: {
+  region: "sidebar" | "main";
+  zoom: number;
+  className: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      data-zoom-region={region}
+      data-zoom={zoom}
+      className={className}
+      style={zoom === 1 ? undefined : { zoom }}
+    >
+      <RegionZoomContext.Provider value={zoom}>{children}</RegionZoomContext.Provider>
+    </div>
   );
 }
 

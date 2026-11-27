@@ -16,6 +16,7 @@ import {
   SNAP_MIN,
 } from "../../lib/calendar";
 import { isoDate } from "../../lib/dates";
+import { zoomOf } from "../../lib/zoom";
 import { captureTask, missingContainers } from "../../store/actions";
 import { useApi, useTaskStore } from "../../store/context";
 
@@ -41,8 +42,9 @@ export function useDrawBlock() {
     if (e.button !== 0 || e.target !== e.currentTarget) return;
     e.preventDefault();
     const columnTop = e.currentTarget.getBoundingClientRect().top;
+    const zoom = zoomOf(e.currentTarget);
     const startY = e.clientY;
-    const anchor = clampMin(floorSnap(minuteAt(e.clientY, columnTop)));
+    const anchor = clampMin(floorSnap(minuteAt(e.clientY, columnTop, zoom)));
     let moved = false;
     let current: Draft = {
       startMin: anchor,
@@ -54,7 +56,7 @@ export function useDrawBlock() {
     const move = (ev: PointerEvent) => {
       if (!moved && Math.abs(ev.clientY - startY) < CLICK_PX) return;
       moved = true;
-      const at = clampMin(floorSnap(minuteAt(ev.clientY, columnTop)));
+      const at = clampMin(floorSnap(minuteAt(ev.clientY, columnTop, zoom)));
       // Dragging up draws from the pointer down to the anchor's slot.
       const startMin = Math.min(anchor, at);
       const endMin = Math.max(anchor, at) + SNAP_MIN;

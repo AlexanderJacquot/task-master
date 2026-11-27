@@ -1,6 +1,5 @@
 import {
   DndContext,
-  DragOverlay,
   type DragStartEvent,
   PointerSensor,
   useDraggable,
@@ -11,6 +10,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { type PointerEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { cx, Dot } from "../../components/ui";
+import { ZoomDragOverlay } from "../../components/ZoomDragOverlay";
 import type { Task } from "../../lib/types";
 import type { Row } from "../../lib/views";
 import { useTaskStore } from "../../store/context";
@@ -166,9 +166,9 @@ export function TaskList({ rows, selectedId, picked, onToggleGroup, ...rowProps 
           })}
         </ul>
       </div>
-      <DragOverlay dropAnimation={null}>
+      <ZoomDragOverlay dropAnimation={null}>
         {dragged && <DragFace task={dragged.task} count={dragged.count} width={width} />}
-      </DragOverlay>
+      </ZoomDragOverlay>
     </DndContext>
   );
 }
