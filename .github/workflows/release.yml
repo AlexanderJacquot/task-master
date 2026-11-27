@@ -244,11 +244,11 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: task-master ${{ github.ref_name }}
           releaseBody: |
-            Scribe on Windows transcribes many times faster: the speech engine was compiled without optimization (thanks to samuelld85-blip, issue #1). Meeting recordings play again on every OS. The update manifest lists every platform again, so Apple Silicon Macs and Linux, which never saw 0.31.0, update to this release.
+            Scribe: name a meeting's voices from its participants, and the app works out the last one for you. The meeting page shows its summary and has Send to Claude, which reads the transcript, writes the summary and creates your follow-up tasks. The project's GitHub repository was restarted: older releases are no longer listed here, and installed apps keep updating as before.
 
-            Database schema 23, as in 0.29 and 0.30: no server migration, but desktops and the sync server should still run the same version. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.31.1.
+            Database schema 23, as in 0.29 and 0.30: no server migration, but desktops and the sync server should still run the same version. Server image: ghcr.io/alexanderjacquot/task-master-server:v0.32.0.
 
-            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.31.1/docs/releases/0.31.1.md
+            Full release notes: https://github.com/AlexanderJacquot/task-master/blob/v0.32.0/docs/releases/0.32.0.md
 
             Installed apps (0.2.0 and later) pick this up from Settings → About.
             New install: Windows setup .exe, macOS .dmg; Linux .deb/.rpm, or the .AppImage elsewhere.

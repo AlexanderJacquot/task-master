@@ -4,6 +4,13 @@ Running log for task-master. Read at the start of every session; update at the e
 
 ## Current milestone
 
+**Release 0.32.0** (2026-11-27, on `main`, tag `v0.32.0`; notes
+`docs/releases/0.32.0.md`): the Scribe entry below (voices from participants, deduction,
+Send to Claude, MCP transcript and summary), now on `main`. Schema 23, unchanged. First
+release from the restarted repository: check that installed 0.31.1 apps see it (same
+updater URL and signing key) and that `server-image.yml` can push to GHCR from the new
+repository.
+
 **Repository restart (2026-11-27, ADR 041).** The repository restarts from one commit on
 GitHub `AlexanderJacquot/task-master` (same name: installed apps update from its
 releases). Full history stays private in GitHub `task-master-legacy` and Forgejo
@@ -12,7 +19,7 @@ releases). Full history stays private in GitHub `task-master-legacy` and Forgejo
 gone (a mirror has no PRs).
 
 **Scribe: names from the participants, deduction, Send to Claude** (2026-11-26, branch
-`worktree-scribe-overhaul-fixes`, not merged; ADR 040; task "Scribe overhaul fixes"). A
+`worktree-scribe-overhaul-fixes`, on `main`; ADR 040; task "Scribe overhaul fixes"). A
 voice's name is now a picklist of the participants (plus its current name, "Someone
 else…" to type one, which then joins the participants; a meeting with nobody listed keeps
 the text field); picking a name another voice has merges the two. Deduction by
