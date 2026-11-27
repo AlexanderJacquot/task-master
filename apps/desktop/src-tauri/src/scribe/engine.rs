@@ -210,7 +210,10 @@ mod native {
     fn speech(models: &Models<'_>, samples: &[f32]) -> Result<Vec<(usize, usize)>, String> {
         use whisper_rs::{WhisperVadContext, WhisperVadContextParams, WhisperVadParams};
         let mut context_params = WhisperVadContextParams::default();
-        context_params.set_n_threads(threads());
+        // One thread: Silero is a tiny network run on each 32 ms window, so the threads'
+        // wait for each other at every step costs more than the work they share (a
+        // 13 min track took 35 s with 7 threads on an Intel Core Ultra 7 165U).
+        context_params.set_n_threads(1);
         let mut vad = WhisperVadContext::new(path_str(models.vad)?, context_params)
             .map_err(|e| format!("cannot load the voice detection model: {e}"))?;
         let mut params = WhisperVadParams::new();

@@ -37,6 +37,23 @@ meeting audio path decoding, updater manifest written once after every build) an
 `scribe.log` machine and window lines. Schema 23, unchanged. First release run of the
 `updater-json` job: check that it passes and `latest.json` lists all four platforms.
 
+**Scribe: voice detection on one thread** (2026-11-26, branch `scribe-windows-speed`,
+uncommitted). A `scribe.log` from Windows 11, Intel Core Ultra 7 165U (2 P-cores, 8 E-cores,
+2 low-power E-cores, 14 threads), plugged in, balanced plan, model small, 13 min recorded:
+done in 528 s. Voice detection 34.7 s on the mic track and 31.4 s on the computer-sound
+track (2 s of speech on it), with 7 threads; the mic's words 442 s (about 1.8× real time);
+the window was in the background through every chunk. `engine.rs` now runs Silero on one
+thread (a tiny network per 32 ms window: thread sync costs more than the work). Not
+measured yet on Windows: the next log's "voice detection" line shows it. Clippy and
+`cargo test` pass; no frontend change. Open, needs measuring on that PC before code:
+- Thread count for whisper on hybrid Intel: `logical / 2` gives 7 there. ggml hands out
+  matrix work in chunks (`current_chunk`), so slow cores hurt less than a fixed split
+  would; compare `TM_SCRIBE_THREADS` 2, 4, 7 and 10 on the same meeting, window in front
+  (a meeting with a transcript is transcribed again from scratch, so timings are real).
+- Windows background throttling (EcoQoS on hybrid CPUs): re-run once with the window in
+  front. If it helps, opting out needs `SetProcessInformation` (unsafe), so a small crate
+  of its own with an ADR, as `macos-panel` (ADR 027) and `outlook` (ADR 030).
+
 **Scribe on Windows: whisper was compiled without optimization** (2026-11-26, on `main`, not
 released; contributed by samuelld85-blip, GitHub issue #1, cherry-picked from their fork's
 `fix/windows-whisper-optimized-build`). The answer to the entry below: not
